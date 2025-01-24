@@ -4,3 +4,18 @@
 *.ptx
 *.cubin
 *.fatbin
+
+# C/C++
+*.o
+*.obj
+*.lib
+*.exp
+*.def
+*.manifest
+*.log
+*.log.*
+
+# Python
+*.pyc
+*.pyo
+*.pyd

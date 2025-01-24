@@ -184,6 +184,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
             // Get nodes for this side
             const int loc_n1 = nxQ(0, k, i34[ie]);
             const int loc_n2 = nxQ(1, k, i34[ie]);
+            CHECK THAT nxQ starts in 0, not 1
             const int n1 = elnode(loc_n1, ie);
             const int n2 = elnode(loc_n2, ie);
 

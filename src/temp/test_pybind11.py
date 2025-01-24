@@ -8,7 +8,7 @@ import numpy as np
 import timeit
 import sys
 
-sys.path.append(r'/blue/olabarrieta/jo.gonzalez/src/gschism/src')
+sys.path.append(r'C:\Users\jondina\src\gschism')  
 
 # import src.io.readSflux as readSflux
 from src.io.readSflux import SFlux
@@ -96,7 +96,7 @@ def compile_and_import(module_name, cpp_file):
 
 
 if __name__ == "__main__":
-    cpp_file = "../src/src/grid/read_and_process_grid.cpp"  # External C++ source file
+    cpp_file = "./src/grid/read_and_process_grid.cpp"  # External C++ source file
     module = compile_and_import("test", cpp_file)
 
 

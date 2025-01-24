@@ -18,12 +18,14 @@
  *         2 = Hit subdomain boundary upon entry
  *         3 = Hit subdomain boundary during tracking
  */
-__device__ int trackThroughElementsAndLevels(Mesh& mesh, Element *curElem,
+__device__ int trackThroughElementsAndLevels(Mesh& mesh,
                                              double x0, double y0, double z0,
                                              double xt, double yt, double zt, double dtb,
                                              double uuint, double vvint, double wwint, 
                                              int& jlev, Element *nextElem)
 {
+    Element *curElem = nextElem;
+
     // 1. Initial checks
     // Verify starting element is valid (wet)
     if (curElem->isDry) {
@@ -33,26 +35,28 @@ __device__ int trackThroughElementsAndLevels(Mesh& mesh, Element *curElem,
     // Checks if track has a zero length.
     double trm = time; //time remaining
 
-    nextElem = curElem;
 
-    // Nudge starting point towards element centroid to avoid ambiguity
-    constexpr double epsNudge = 0.01;  // 1.e-2 as in Fortran
+    // Nudging weights
+    constexpr double nudgeW1 = 0.01;  // Nudging weights
+    constexpr double nudgeW2 = 1.0 - nudgeW1;  // Nudging weights
+
     double xctr3, yctr3;
     if (ics == 1) {
-        xctr3 = curElem->getCenterX();
-        yctr3 = curElem->getCenterY();
+        double xctr3 = curElem->xc;
+        double yctr3 = curElem->yc;
     } else {
         // TODO: Handle lat/lon projection case
         // project_pt('g2l', xctr, yctr, zctr, gcor0, frame0, xctr3, yctr3, tmp)
     }
     
-    // Nudge x0,y0 towards center
-    x0 = (1.0 - epsNudge)*x0 + epsNudge*xctr3;
-    y0 = (1.0 - epsNudge)*y0 + epsNudge*yctr3;
+    // When close to an element side, nudge starting point towards element centroid to avoid ambiguity (nudgeW1 + nudgeW2 = 1.0)
+    const double x0 = nudgeW2*x0 + nudgeW1*xctr3;
+    const double y0 = nudgeW2*y0 + nudgeW1*yctr3;
 
-    double xcg=x0; ycg=y0
-    double pathl2 = (xt-xcg)*(xt-xcg)+(yt-ycg)*(yt-ycg);
-    if(pathl2==0.0 || trm==0.0) {
+    double xcg=x0, ycg=y0;
+    double pathl2 = (xt - xcg)*(xt - xcg) + (yt - ycg)*(yt - ycg);
+    
+    if (pathl2==0.0 || trm==0.0) {
         return 2; // Error code for zero length track
     }
 
@@ -66,7 +70,7 @@ __device__ int trackThroughElementsAndLevels(Mesh& mesh, Element *curElem,
         // Handle case where no intersection is found
         int intersectingEdge;
         double xIntersect, yIntersect;
-        if (!curElem].findPathIntersection(x0, y0, xt, yt, 
+        if (!curElem->findPathIntersection(x0, y0, xt, yt, 
                                         intersectingEdge, 
                                         xIntersect, yIntersect)) {
             return 3;  // No valid intersection found
@@ -84,25 +88,25 @@ __device__ int trackThroughElementsAndLevels(Mesh& mesh, Element *curElem,
         const int MAX_ITERATIONS = 1000;
         int iterations = 0;
         double xCurrent = x0, yCurrent = y0;
-        Element* currentElem = curElem;
+
         
         while (iterations++ < MAX_ITERATIONS) {
             // Check if current point is in current element
-            if (currentElem->containsPoint(xt, yt)) {
-                nextElem = currentElem;
+            if (curElem->containsPoint(xt, yt)) {
+                nextElem = curElem;
                 return 0;
             }
 
             // Find intersection with current element
             int intersectingEdge;
             double xIntersect, yIntersect;
-            if (!currentElem->findPathIntersection(xCurrent, yCurrent, xt, yt, 
+            if (!curElem->findPathIntersection(xCurrent, yCurrent, xt, yt, 
                                                 intersectingEdge, nextElem,
                                                 xIntersect, yIntersect)) {
                 return 4;  // No intersection found
             }
 
-            if (currentElem->isEdgeBoundary(intersectingEdge)) {
+            if (curElem->isEdgeBoundary(intersectingEdge)) {
                 return 5;
             }
 
@@ -113,7 +117,7 @@ __device__ int trackThroughElementsAndLevels(Mesh& mesh, Element *curElem,
             // Update position and element for next iteration
             xCurrent = xIntersect;
             yCurrent = yIntersect;
-            currentElem = nextElement;
+            curElem = nextElem;
         }
 
         if (iterations >= MAX_ITERATIONS) return 7;  // Hit iteration limit
