@@ -1,586 +1,425 @@
-// C++ POD struct that stores variable values at each node ot a FEM mesh (e.g. temperature, pressure, velocity, etc.). It is for
-// an array of structs. This if for CUDA, and we are working on a extremely optimized model.
-
-
-
-constexpr int N_TRACERS = 2;
-constexpr int mvtx = 4;  // Maximum number of vertices per element (4 for quads)
-
-// XXX These are to be set before compiling the code
-constexpr int nvrt = 10; // Number of vertical levels
+#include "meshdata.h"
 
 
 // Helper functions for computing the local node index at a given offset from another.
 inline int nxQ(int offset, int index, int size) {
-    return (index + offset) % size;
+   // In c++, the % operator can return negative numbers, for this reason we add 10*size 
+   // to the index to make it positive
+   assert(index + offset + 10*size >= 0);
+   return (index + offset + 10*size) % size;  
 }
 
 // Helper function for computing the local node index at a given offset from another.
 inline int nxQ(int index, int size) {
-    return index % size;
+   // In c++, the % operator can return negative numbers, for this reason we add 10*size 
+   // to the index to make it positive
+   assert(index + 10*size >= 0);
+   return (index + 10*size) % size; 
 }
 
 
-struct Tracers {
-    double tracer[N_TRACERS];
-};
 
 
-// Forward declarations
-struct Side;
-struct Element;
-struct Node;
 
 
-struct Element {
-   // Geometry information
-   int i34;                 // Number of sides for the element 
-   Side *sides[mvtx];      // Sides of the element
-   Node *nodes[mvtx];      // Nodes of the element
-   Element *nghbElems[mvtx]; // Neighbors of the element
 
-   
-   double area;               // Area of the element
-   double ssign[mvtx];        // Sign associated with each side of an element
-   double radiel;             // Element equivalent radii
 
-   int idry;                 // True if the element is dry
-   int kbe;                  // Bottom index of the element
 
-   double xc, yc, zc;         // Element center coordinates
-   double xlon_el, ylat_el;   // Element center lat/lon coordinates in _degrees_
-   double depth;              // Depth at element (min of all nodes)
-   double z[nvrt];            // z-coord  (local frame - vertical up)
 
-   // Physical information
-   Tracers tracers[nvrt];  // Tracer values at each vertical level  
 
 
-   __inline__ __device__ bool isTri (void) const { return i34 == 3; }
-   __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
 
-   __inline__ __device__ int nxQ(int index) const { return index % i34; }
-
-   __inline__ __device__ bool btrack(
-         int jlev,
-         double dt,            // Tracking timestep
-         double* sclr         // Array for backtracked values
-   ) {
-      const Element* currentElem = this;
-
-      // Initialize outputs
-      for(int i = 0; i < 4 + NUM_TRACERS; i++) {
-         sclr[i] = 0.0;
-      }
-        
-      // Start Euler tracking
-      double x0 = xt;
-      double y0 = yt; 
-      double z0 = zt;
-
-      while(true) {
-         // Calculate timestep
-         const double dtb = min(dtbk, time_rm);
-
-         // Euler step
-         xt = x0 - dtb * uuint;
-         yt = y0 - dtb * vvint;
-         zt = z0 - dtb * wwint;
-
-         Element* nextElem = nullptr;
-         // Find containing element and interpolate velocities
-         if (!currentElem->trackThroughElementsAndLevels(x0, y0, z0, 
-                                                        xt, yt, zt, dtb,
-                                                        uuint, vvint, wwint, 
-                                                        jlev, nextElem)) {
-            // Hit boundary or dry element
-            time_rm = 0.0;
-            break; // XXX This is not needed on GPU
-         }
-
-         // Check if velocity too small to continue
-         const double vmag_2 = uuint*uuint + vvint*vvint;
-         if(vmag_2 <= VELMIN_BTRACK_2) {   // XXX I think this is not needed on GPU
-            time_rm = 0.0;
-            break;
-         }
-
-         // Update remaining time and position
-         time_rm -= dtb;
-         if(time_rm <= 1e-6 * dt) break;
-
-         x0 = xt;
-         y0 = yt;
-         z0 = zt;
-      }
-
-      // Calculate final interpolated values for sclr array
-      // (Simplified for now - need to add proper interpolation)
-      interpolateTracers(sclr, xt, yt, zt, jlev);
-      
-      
-      return false; // Did not exit domain
-   
-      
-
-   }
-
-
-   /**
-      For a point (x1,y1) inside the element and a line segment (x1,y1)-(x2,y2), find the intersection point 
-      (xIntersect,yIntersect) and the side (intersectingSide) that it intersects.
-
-      Inputs:
-      @param x1, y1: point inside the element
-      @param x2, y2: other end of the line segment
-
-      Outputs:
-      @param intersectingSide:  side that intersects the line segment
-      @param nextElement: element that contains the intersection point
-      @param xIntersect, yIntersect: intersection point  
-
-      The equations for the two segments (the one we are considering and one of the sides of the element) are:
-      P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 ≤ tt1 ≤ 1
-      P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 ≤ tt2 ≤ 1
-
-      If the two segments are parallel, they do not intersect. This is checked by the determinant of the two vectors
-      (Delta) being zero.
-
-      The intersection point happens when:
-      tt1(x2-x1) - tt2(x4-x3) = x3-x1
-      tt1(y2-y1) - tt2(y4-y3) = y3-y1
-      
-      Assumption: the 4 points (including those of the side segment) are different.
-      The eqs. for the 2 lines are: X=X1+(X2-X1)*tt1 and X=X3+(X4-X3)*tt2.	
-      Output: false: no intersection or colinear; true: exactly 1 intersection.	
-      If true, (xIntersect,yIntersect) is the intersection.				
-      Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
-   **/
-   __inline__ __device__ bool findPathIntersection(double x1, double y1, double x2, double y2, 
-                                                   Side& intersectingSide, Element& nextElement,
-                                                   double& xIntersect, double& yIntersect) {
-      for (int i = 0; i < i34; i++) {
-         const double x3 = nodes[i]->x;
-         const double y3 = nodes[i]->y;
-         const double x4 = nodes[nxQ(i+1)]->x;
-         const double y4 = nodes[nxQ(i+1)]->y;
-
-         const Side& side = sides[i];
-
-         xIntersect=-1.e25;
-         yIntersect=-1.e25;
-
-         const double delta  = (x2-x1)*(y3-y4)-(y2-y1)*(x3-x4);
-         const double delta1 = (x3-x1)*(y3-y4)-(y3-y1)*(x3-x4);
-         const double delta2 = (x2-x1)*(y3-y1)-(y2-y1)*(x3-x1); 
-
-         if (delta != 0.0) {
-            // Solves the two linear equations for tt1 and tt2
-            const double tt1 = delta1/delta; // delta is not zero, so we can divide
-            const double tt2 = delta2/delta;
-
-            // It is enough to check tt2, since the range [0,1] is the same for both tt1 and tt2.
-            // Similarly, we use tt2 to compute the intersection point.
-            if (tt2 >= -small && tt2 <= 1.0 + small) {
-               xIntersect = x3 + (x4 - x3)*tt2;
-               yIntersect = y3 + (y4 - y3)*tt2;
-
-               intersectingSide = side;
-               nextElement = nghbElems[i];
-
-               return true;
-            }
-         
-         }
-         else {
-            // The two segments are parallel
-            return false;
-         }
-
-      }
-
-      return false;
-
-   }
-
-
-   /**  Interpolate velocities at the final position
-
-      @param shapeCoords: shape coordinates for the final position in the element.
-      @param uuint, vvint, wwint: velocities interpolated at the final position (xt,yt,zt)
-
-      This is done in four steps:
-
-      1. Find the shape coordinates for the final position in the element.
-      2. Interpolate the z level of the top and bottom levels at xt, yt. 
-      3. Perform a *binary search* to find the vertical level containing zt. It will have to interpolate the 
-         z levels at xt, yt at each step.   
-      4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
-         horizontally and vertically.
-   **/
-   __inline__ __device__ bool interpolateVelocities(double *shapeCoordsOfPoint,  
-                                                    double &uuint, double &vvint, double &wwint) {
-
-
-   }
-
-
-
-};
-
-
-struct Side {
-   // Geometry information
-   Node *n1, *n2;
-   Element *elems[2];     // Elements that share this side XXX (why not e1,e2?)
-
-   double length;         // Length of the side. Used to be called distj; but I think this name is less clear now.
-   double xc, yc;         // Location of side center. These variables used to have a j in their name: xcj, ycj, zcj
-   double zc[nvrt];       // Side center z-coord at each vertical level
-   double depth;          // Depth at side center
-
-   int bdysd;             // Boundary side flag
-   int kbs;               // Bottom index of the side
-   bool idry;             // True if the side is dry
- 
-   double nx, ny;         // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
-
-   double z[nvrt];        // Depth at side center.
-
-   // Physical information
-   double su2[nvrt], sv2[nvrt]; // Horizontal velocity
-
-   double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
-
-   // Get valid starting element (for backtracking)
-   __inline__ __device__ Element* getStartElement() {
-      return elems[0] ? elems[0] : elems[1];
-   }
-
-   __inline__ __device__ bool btrack(
-         int jlev,
-         double dt,            // Tracking timestep
-         double* sclr         // Array for backtracked values
-   ) {
-      // Set starting position to element center
-      double xt = 0.0;
-      double yt = 0.0;
-      double zt = 0.0;
-      
-      // Call generic backtracking function
-      return btrack(dt, xc, yc, zc, xt, yt, zt, jlev, sclr);
-   }
-
-
-
-
-
-   /*
-      Tracks a particle through elements and vertical levels in the mesh.
-
-      @param mesh         Reference to mesh object containing grid information
-      @param x0,y0,z0     Starting position coordinates
-      @param xt,yt,zt     Target position coordinates
-      @param dtb          Time step for tracking
-      @param uuint,vvint,wwint Initial velocity components
-      @param jlev         Current/resulting vertical level
-      @param nextElem     Starting/resulting element index
-
-      @return Status code of type trackExitCodes: 
-
-      Horizontal tracking:
-      - We start at a side center (x0,y0)
-      - We start on the element that contains the side center (nextElem). This is one of the elements that share this side.   
-      - We need to find the element that contains the target point (xt,yt)
-
-      At every step we have:
-         - A current element (curElem)
-         - A current position (xCur,yCur)
-         - A target position (xt,yt) (always the same)
-         - The side that we are currently on (At the start it is the side that contains the starting point, otherwise it is the side that contains the intersection point)
-
-      Now, there are two cases: (a) the element at the other side of the current side contains the target point, or (b) it does not.
-      In which case we know for sure that the target point is in a different element. And, for this reason we
-      know for sure that the segment (xCur,yCur)-(xt,yt) intersects the element sides.
-      
-      - We continue this process until we hit a boundary or the element that contains the target point.
-      - Once the target element is found, we compute the shape coordinates for the final position.
-
-      Vertical tracking:
-      - We then find the vertical level containing the target point.
-      - We interpolate the velocities at the final position.
-   */ 
-   enum trackExitCodes {
-      tec_success = 0,
-      tec_dry_element = 1,
-      tec_zero_length_track = 2,
-      tec_iteration_limit = 3,
-      tec_no_intersection = 4,
-      tec_edge_boundary = 5,
-      tec_no_element = 6,
-      tec_failed_to_compute_area_coords = 7,
-      tec_failed_to_find_vertical_level = 8,
-      tec_failed_to_interpolate_velocities = 9
-   };
-
-   __device__ trackExitCodes trackThroughElementsAndLevels(Mesh& mesh,
-                                                           double x0, double y0, double z0,
-                                                           double xt, double yt, double zt, double dtb,
-                                                           double uuint, double vvint, double wwint, 
-                                                           int& jlev, Side& side, Element *nextElem)
-   {
-
-      // We start with the element in the direction of the target point.
-      // Also, nudge the starting point towards the element centroid to avoid ambiguity
-      Element *curElem = findElementTowards(side, x0, y0, xt, yt);
-
-      // 1. Initial checks
-      // Verify starting element is valid (wet)
-      if (curElem->isDry) return tec_dry_element;  // Error code for invalid starting conditions
-
-      // Checks if track has a zero length.
-      double trm = time; //time remaining
-
-      // Nudging weights
-      constexpr double nudgeW1 = 0.01;  
-      constexpr double nudgeW2 = 1.0 - nudgeW1;  
-
-
-      double xctr3, yctr3;
-      if (ics == 1) {
-         double xctr3 = curElem->xc;
-         double yctr3 = curElem->yc;
-      } else {
-         // TODO: Handle lat/lon projection case
-         // project_pt('g2l', xctr, yctr, zctr, gcor0, frame0, xctr3, yctr3, tmp)
-      }
-
-
-      
-      // When close to an element side, nudge starting point towards element centroid to avoid ambiguity (nudgeW1 + nudgeW2 = 1.0)
-      // const double x0 = nudgeW2*x0 + nudgeW1*xctr3;
-      // const double y0 = nudgeW2*y0 + nudgeW1*yctr3;
-
-      double xcg = x0, ycg=y0;
-      double pathl2 = (xt - xcg)*(xt - xcg) + (yt - ycg)*(yt - ycg);
-      
-      if (pathl2==0.0 || trm==0.0)  return tec_zero_length_track; 
-      
-
-      const int MAX_ITERATIONS = 1000;
-      double xCur = x0, yCur = y0;        // Cur means current
-      double xInt = -1e10, yInt = -1e10;  // Int means intersection
-      
-      // Horizontal tracking loop
-      for (int iterations = 0; iterations < MAX_ITERATIONS; iterations++) {
-
-         // If we are already in the target element, we are done.
-          if (!curElem->containsPoint(xt, yt, zt)) break;
-
-
-         // Find the intersection of the segment (xCur,yCur)-(xt,yt) with the element sides.
-         int intersectingEdge;
-         double xIntersect, yIntersect;
- 
-
-         // Find intersection with current element
-         int intersectingEdge;
-         double xIntersect, yIntersect;
-         if (!curElem->findPathIntersection(xCur, yCur, xt, yt, 
-                                            side, nextElem,
-                                            xInt, yInt)) {
-            // findPathIntersection is written in such a way that it must find an intersection.
-            // If it doesn't find an intersection, then we have a problem.
-            return tec_no_intersection;  
-         }
-
-         // Additional error conditions.
-         if (curElem->isEdgeBoundary(intersectingEdge)) return tec_edge_boundary;
-         if (nextElement->isDry) return tec_dry_element;
-         
-
-         // Update position and element for next iteration
-         xCur = xInt;
-         yCur = yInt;
-         curElem = nextElem;
-      }
-
-      if (iterations >= MAX_ITERATIONS) return tec_iteration_limit;  
-   
-
-      // Compute shape coordinates for the final position
-      double shapeCoords[4];  // For both tri (3) and quad (4) cases
-      if (!currentElem->computeShapeCoords(xt, yt, shapeCoords)) {
-         return tec_failed_to_compute_area_coords;  
-      }
-
-      
-      // Interpolate velocities at the final position. This is a conceptually simple step,
-      // but the function is not simple, because it has to search for the vertical level containing zt.
-      if (!currentElem->interpolateVelocities(shapeCoords, jlev, 
-                                             uuint, vvint, wwint)) {
-         return tec_failed_to_interpolate_velocities;
-      }
-
-      return 0;
-   }
-   
-};
-
-
-struct Node {
-   // Geometry information
-   double x, y, z;
-   double lon, lat;
-   double depth;
-
-   int idry;                 // True if the node is dry
-
-   // Physical information
-   // double w; // Vertical velocity
-
-   Tracers tr_nd0[nvrt]; // Initial tracer conc. at nodes
-
-   double eta1; // Elevation at nodes at previous timestep
-   double eta2; // Elevation at nodes at current timestep
-};
-
-
-
-class Mesh {
-   public:  
-   const Node**    nodes;  // Array of pointers to NodeValues structs
-   const Element** elems;  // Array of pointers to ElementValues structs
-   const Side**    sides;  // Array of pointers to SideValues structs
-   
-   // Local memory
-   Node*    localNodeData; 
-   Element* localElemData;
-   Side*    localSideData; 
-   
-   const int npgb;  // Global number of horizontal nodes
-   const int negb;  // Global number of elements
-   const int nsgb;  // Global number of sides
-
-   const int np;   // Local number of horizontal nodes 
-   const int ne;   // Local number of elements
-   const int ns;   // Local number of sides
-
-   const int max_np; // Maximum number of horizontal nodes per partition (shared by all partitions)
-   const int max_ne; // Maximum number of elements per partition (shared by all partitions)
-   const int max_ns; // Maximum number of sides per partition (shared by all partitions)
-   
-
-   // Get's the pointer to the node using the array of global pointers to nodes
-   __device__ const Node *node(int jn) {
-      const int idx = jn / max_np; // Get the index of the partition that contains the node
-      return nodes[idx] + idx;
-   }
-
-   // Get's the pointer to the element using the array of global pointers to elements
-   __device__ const Element *elem(int je) {
-      const int idx = je / max_ne; // Get the index of the partition that contains the element
-      return elems[idx] + idx;
-   }
-
-   // Get's the pointer to the side using the array of global pointers to sides
-   __device__ const Side *side(int js) {
-      const int idx = js / max_ns; // Get the index of the partition that contains the side
-      return sides[idx] + idx;
-   }
-
-
-  
-   __device__ Mesh(int partNum,
-       int npgb, int negb, int nsgb, 
-       int np, int ne, int ns, int nvrt, 
-       int max_np, int max_ne, int max_ns,
-       const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
-       Node *_nodes, Element *_elems, Side *_sides, 
-       int *i34, int *elnode, int *elside) : 
-          npgb(npgb), negb(negb), nsgb(nsgb),
-          np(np), ne(ne), ns(ns), 
-          max_np(max_np), max_ne(max_ne), max_ns(max_ns),
-          nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
-          localNodeData(_nodes), localElemData(_elems), localSideData(_sides)
-          {
-
-          for (int i = 0; i < ne; i++) {
-             localElemData[i].i34 = i34[i];
-             for (int j = 0; j < localElemData[i].i34; j++) {
-                localElemData[i].sides[j] = &(localSideData[elside[i*mvtx + j]]);
-                localElemData[i].nodes[j] = &(localNodeData[elnode[i*mvtx + j]]);
-             }
-             printf("i34[%d] = %d\n", i, i34[i]);
-          }
-
-
-
-   }
-
-   __device__ ~Mesh() {
-
-   }
-};
 
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr;
 
 
 
-extern "C" {
-   __global__ void getStructSizes(int* sizes)  {
-      // Get the size of each struct. This is used to allocate memory for the structs in the host code.
-       sizes[0] = (int)sizeof(Node);
-       sizes[1] = (int)sizeof(Element);
-       sizes[2] = (int)sizeof(Side);
+
+
+
+
+
+
+/**
+   For a point on a side of an element and a line segment starting at that point and ending at (x2,y2), 
+   find the intersection point (given by parameter tIntersect) and the side (intersectingSide) that it intersects.
+   If the segment is completely inside the element, then it returns true.
+
+   This function assumes:
+   - The initial point is on a side of the element. 
+   - Its position is given by parameter t in the range [0,1].
+   - The line segment starting at that point and ending at (x2,y2) is either completely inside the element or it 
+      intersects the element (elements are convex).
+
+   To find the intersection point, this function does the following:
+   - it finds the intersection of the line segment with all the element side lines,
+      except for the one that contains the initial point.
+   - Because we do the interection with the lines (not the segments), the t parameter is not ncessearily in the range [0,1].
+   - let's call t1i the t parameter for the track segment and t2i the t parameter for the element side line.
+   - We want the closest intersection point, for which t1i > 0 and t2i in [0,1].
+   - From construction, we know that this intersection point *must* exist, even in extreme cases, like when the
+      track segment is almost parallel to the element side line.
+
+   Inputs:
+   @param t: t*side.n1 + (1-t)*side.n2 is the point on the side
+   @param x2, y2: other end of the line segment
+
+   Outputs:
+   @param side:  side that intersects the line segment (input and output)
+   @param nextElement: element that contains the intersection point (input and output)
+   @param tIntersect: New intersection point tIntersect*side.n1 + (1-tIntersect)*side.n2
+
+   The equations for the two segments (the one we are considering and one of the sides of the element) are:
+   P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 ≤ tt1 ≤ 1
+   P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 ≤ tt2 ≤ 1
+
+   If the two segments are parallel, they do not intersect. This is checked by the determinant of the two vectors
+   (Delta) being zero.
+
+   The intersection point happens when:
+   tt1(x2-x1) - tt2(x4-x3) = x3-x1
+   tt1(y2-y1) - tt2(y4-y3) = y3-y1
+   
+   Assumption: the 4 points (including those of the side segment) are different.
+   The eqs. for the 2 lines are: X=X1+(X2-X1)*tt1 and X=X3+(X4-X3)*tt2.	
+   Output: false: no intersection or colinear; true: exactly 1 intersection.	
+   If true, (xIntersect,yIntersect) is the intersection.				
+   Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
+**/
+__device__ bool Element::findNextIntersection(double t, double x2, double y2, 
+                                                         Side *side, Element *nextElement,
+                                                         double& tIntersect) {
+
+
+   double closest_intersect_t = 1e10;
+   bool found_intersection = false;
+
+   for (int i = 0; i < i34; i++) {
+
+      const Side *side2 = sides[i];
+
+      // Skip the side that contains the initial point
+      if (side2 == side) continue;
+
+      // (x1,y1)-(x2,y2) is the track line segment
+      const double x1 = t*side->n1->x + (1-t)*side->n2->x;
+      const double y1 = t*side->n1->y + (1-t)*side->n2->y;
+
+      // (x3,y3)-(x4,y4) is the element side line
+      const double x3 = side2->n1->x;
+      const double y3 = side2->n1->y;
+      const double x4 = side2->n2->x;
+      const double y4 = side2->n2->y;
+
+      // delta is 0 if the two lines are parallel. In this case, they do not intersect.
+      const double delta = (x2-x1)*(y3-y4) - (y2-y1)*(x3-x4);
+
+      if (delta != 0.0) {
+
+         const double delta1 = (x3-x1)*(y3-y4) - (y3-y1)*(x3-x4);
+         const double delta2 = (x2-x1)*(y3-y1) - (y2-y1)*(x3-x1); 
+
+         // Solves the two linear equations for tt1 and tt2
+         const double tt1 = delta1/delta; // delta is not zero, so we can divide
+         const double tt2 = delta2/delta;
+
+         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small) {
+            closest_intersect_t = min(closest_intersect_t, tt1);
+            side = side2;
+            nextElement = nghbElems[i];
+            tIntersect = max(small, min(tt1, 1.0-small));
+            found_intersection = true;
+         }
+      
+      }
+
+   }
+
+   // found_intersection should always be true, since we checked all the sides.  
+   return found_intersection;
+}
+
+
+__device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCoords[4],
+                                                       bool fixNegShapeCoords) {
+
+   // Compute the shape coordinates of the point (xt,yt) in the element.
+   if (i34==3) {
+      // Compute area coordinates for a given pt w.r.t. to a triangular element
+      // If ifl=1, will fix 0 or negative area coord. (assuming it's not too negative)
+      // and in this case, the pt will be nudged into the element
+      // It's not reliable to use the area coord for ics=2 when the pt is far away
+      // from the local frame, so use additional check.
+
+      double x0, y0, x1, y1, x2, y2;
+
+      if constexpr(ics==1) {
+         x0 = nodes[0]->x;
+         y0 = nodes[0]->y;
+         x1 = nodes[1]->x;
+         y1 = nodes[1]->y;
+         x2 = nodes[2]->x;
+         y2 = nodes[2]->y;
+      }
+      else // lat/lon
+      {
+         globalToLocal(nodes[0]->x, nodes[0]->y, nodes[0]->z, x0, y0, z0);
+         globalToLocal(nodes[1]->x, nodes[1]->y, nodes[1]->z, x1, y1, z1);
+         globalToLocal(nodes[2]->x, nodes[2]->y, nodes[2]->z, x2, y2, z2);
+      }
+
+
+      shpCoords[0] = signa2(xt,x1,x2,yt,y1,y2)/area;
+      shpCoords[1] = signa2(x0,xt,x2,y0,yt,y2)/area; 
+      shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
+      double tmpmin  = min(shpCoords[0], shpCoords[1], shpCoords[2]);
+
+      // If at least one of the shape coordinates is negative, and we have the flag fixNegShapeCoords set,
+      // then we fix the negative shape coordinates.
+      if (fixNegShapeCoords && tmpmin<=0.0) {
+
+         // XXX I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
+         // keeping the sum of the shape coordinates equal to 1.
+         // I have tested and compared the new algorithm with the old one, and they give
+         // very similar results in term of how close the "fixed" point is to the original point in cartesian coordinates.
+         // The new algorithm is faster since it is branchless.
+         const double a = - tmpmin + 1.0e-2;  // XXX it used to be 1.0e-4 in the comments of the original code
+         const double b = 1.0/(shpCoords[0] + shpCoords[1] + shpCoords[2] + 3.0*a);
+         
+         shpCoords[0] = (shpCoords[0] + a)*b;
+         shpCoords[1] = (shpCoords[1] + a)*b;
+         shpCoords[2] = (shpCoords[2] + a)*b;          
+
+         if (shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
+             shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) {
+            Error();
+         }
+
+        // Update the point coordinates for the new shape coordinates
+        xt = dot_product({x0,x1,x2}, shpCoords)
+        yt = dot_product({y0,y1,y2}, shpCoords)
+      }
+   }
+   else {
+      // Reproject pt in eframe of nel for ics=2
+      if constexpr(ics==1) {
+         xn2 = xt; 
+         yn2 = yt;
+      }
+      else {
+         localToGlobal(xt, yt, gcor0, xcg2, ycg2, zcg2)
+         globalToLocal(xcg2, ycg2, zcg2, xctr, yctr, zctr, xn2, yn2, zn2)
+      }
+
+      return quad_shape(1,6,nnel,xn2,yn2,inside2,arco)
    }
 }
 
 
+/**  Interpolate velocities at a given point (xt,yt,zt)
+
+   @param xt, yt, zt: coordinates of the point to interpolate
+   @param uuint, vvint, wwint: velocities interpolated at the final position (xt,yt,zt)
+
+   This is done in four steps:
+
+   1. Find the shape coordinates for the final position in the element.
+   2. Interpolate the z level of the top and bottom levels at xt, yt. 
+   3. Perform a *binary search* to find the vertical level containing zt. It will have to interpolate the 
+      z levels at xt, yt at each step.   
+   4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
+      horizontally and vertically.
+**/
+__device__ bool Element::interpolateVelocities(double xt, double yt, double zt, 
+                                                          double& uuint, double& vvint, double& wwint) {
+   // Interpolate the velocities at the point (xt,yt,zt). 
+   // This function works the same for triangular and quadrilateral elements.
+   double shapeCoords[4];
+
+   auto n0 = nodes[0];
+   auto n1 = nodes[1];
+   auto n2 = nodes[2];
+   auto n3 = nodes[3];
+   
+   // First step is to compute the shape coordinates of (xt,yt)
+   if (!computeShapeCoords(xt, yt, shapeCoords)) return tec_failed_to_compute_area_coords;
 
 
+   // Second step is to find the level that contains zt
+   // Uses a binary search to find the level
+   // Note that the z coordinates need to be computed, they are not stored.
+   // Also, note that interpolate only takes into account 3 nodes for triangular elements and 4 nodes for quadrilateral elements.
+   int L = kbe;   // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
+   int R = nvrt;
+   double zLAtNodes[4] = {n0->compZCoord(L), n1->compZCoord(L), n2->compZCoord(L), n3->compZCoord(L)};
+   double zRAtNodes[4] = {n0->compZCoord(R), n1->compZCoord(R), n2->compZCoord(R), n3->compZCoord(R)};
+   double zL = interpolate(shapeCoords, zLAtNodes);
+   double zR = interpolate(shapeCoords, zRAtNodes);
+   while (R - L > 1) {
+      int M = (L + R) / 2;
 
-extern "C" {
-__global__ void backtrackKernel(
-    const Mesh* mesh,
-    const double dt,
-    BacktrackResults* results  // Structure to store results
-) {
-    // Get side index
-    int sIdx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (sIdx >= mesh->ns) return;  // Check bounds for local sides
-    
-    // Get local side data
-    const Side* side = mesh->localSideData + sIdx;
-    if (side->isDry()) return;  // Skip dry sides
-    
-    // Get starting position (side center)
-    double x0 = side->xc;
-    double y0 = side->yc;
-    double z0 = side->zc;
-    
-    // Get starting element
-    Element* startElement = side->getStartElement();
-    
-    // Do backtracking
-    double xt, yt, zt;  // Final positions
-    bool exitedDomain = startElement->backtrack(
-        x0, y0, z0,
-        dt,
-        xt, yt, zt
-    );
-    
-    // Store results
-    results[sid].finalPos = {xt, yt, zt};
-    results[sid].exitedDomain = exitedDomain;
+      double zMAtNodes[4] = {nodes[0]->compZCoord(M), nodes[1]->compZCoord(M), nodes[2]->compZCoord(M), nodes[3]->compZCoord(M)};
+      double zM = interpolate(shapeCoords, zMAtNodes);
+      if (zM < zt) 
+      {
+         L = M;
+         zL = zM;
+      }
+      else 
+      {
+         R = M;
+         zR = zM;
+      }
+   }
+   // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
+
+   // Final step is the vertical interpolation
+
+   // Interpolate horizontally the velocities at the two levels L, R
+   const double uLAtNodes[4] = {nodes[0]->u(L), nodes[1]->u(L), nodes[2]->u(L), nodes[3]->u(L)};
+   const double vLAtNodes[4] = {nodes[0]->v(L), nodes[1]->v(L), nodes[2]->v(L), nodes[3]->v(L)};
+   const double wLAtNodes[4] = {nodes[0]->w(L), nodes[1]->w(L), nodes[2]->w(L), nodes[3]->w(L)};
+   const double uLint = interpolate(shapeCoords, uLAtNodes);
+   const double vLint = interpolate(shapeCoords, vLAtNodes);
+   const double wLint = interpolate(shapeCoords, wLAtNodes);
+
+   const double uRAtNodes[4] = {nodes[0]->u(R), nodes[1]->u(R), nodes[2]->u(R), nodes[3]->u(R)};
+   const double vRAtNodes[4] = {nodes[0]->v(R), nodes[1]->v(R), nodes[2]->v(R), nodes[3]->v(R)};
+   const double wRAtNodes[4] = {nodes[0]->w(R), nodes[1]->w(R), nodes[2]->w(R), nodes[3]->w(R)};
+   const double uRint = interpolate(shapeCoords, uRAtNodes);
+   const double vRint = interpolate(shapeCoords, vRAtNodes);
+   const double wRint = interpolate(shapeCoords, wRAtNodes);
+
+   // Interpolate vertically the velocities at the level zt
+   const double ratio = (zt - zL)/(zR - zL);
+   uuint = (1-ratio)*uLint + ratio*uRint;
+   vvint = (1-ratio)*vLint + ratio*vRint;
+   wwint = (1-ratio)*wLint + ratio*wRint;
+
 }
 
 
-__device__ bool btrack(Mesh* mesh) {
+// /**
+//    For a point (x1,y1) inside the element and a line segment (x1,y1)-(x2,y2), find the intersection point 
+//    (xIntersect,yIntersect) and the side (intersectingSide) that it intersects.
 
-     
-};
+//    Inputs:
+//    @param x1, y1: point inside the element
+//    @param x2, y2: other end of the line segment
+
+//    Outputs:
+//    @param intersectingSide:  side that intersects the line segment
+//    @param nextElement: element that contains the intersection point
+//    @param xIntersect, yIntersect: intersection point  
+
+//    The equations for the two segments (the one we are considering and one of the sides of the element) are:
+//    P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 ≤ tt1 ≤ 1
+//    P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 ≤ tt2 ≤ 1
+
+//    If the two segments are parallel, they do not intersect. This is checked by the determinant of the two vectors
+//    (Delta) being zero.
+
+//    The intersection point happens when:
+//    tt1(x2-x1) - tt2(x4-x3) = x3-x1
+//    tt1(y2-y1) - tt2(y4-y3) = y3-y1
+   
+//    Assumption: the 4 points (including those of the side segment) are different.
+//    The eqs. for the 2 lines are: X=X1+(X2-X1)*tt1 and X=X3+(X4-X3)*tt2.	
+//    Output: false: no intersection or colinear; true: exactly 1 intersection.	
+//    If true, (xIntersect,yIntersect) is the intersection.				
+//    Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
+// **/
+// __inline__ __device__ bool Element::findPathIntersection(double x1, double y1, double x2, double y2, 
+//                                                          Side& intersectingSide, Element& nextElement,
+//                                                          double& xIntersect, double& yIntersect) {
+//    for (int i = 0; i < i34; i++) {
+//       const double x3 = nodes[i]->x;
+//       const double y3 = nodes[i]->y;
+//       const double x4 = nodes[nxQ(i+1)]->x;
+//       const double y4 = nodes[nxQ(i+1)]->y;
+
+//       const Side& side = sides[i];
+
+//       xIntersect=-1.e25;
+//       yIntersect=-1.e25;
+
+//       const double delta  = (x2-x1)*(y3-y4)-(y2-y1)*(x3-x4);
+//       const double delta1 = (x3-x1)*(y3-y4)-(y3-y1)*(x3-x4);
+//       const double delta2 = (x2-x1)*(y3-y1)-(y2-y1)*(x3-x1); 
+
+//       if (delta != 0.0) {
+//          // Solves the two linear equations for tt1 and tt2
+//          const double tt1 = delta1/delta; // delta is not zero, so we can divide
+//          const double tt2 = delta2/delta;
+
+//          // It is enough to check tt2, since the range [0,1] is the same for both tt1 and tt2.
+//          // Similarly, we use tt2 to compute the intersection point.
+//          if (tt2 >= -small && tt2 <= 1.0 + small) {
+//             xIntersect = x3 + (x4 - x3)*tt2;
+//             yIntersect = y3 + (y4 - y3)*tt2;
+
+//             intersectingSide = side;
+//             nextElement = nghbElems[i];
+
+//             return true;
+//          }
+      
+//       }
+//       else {
+//          // The two segments are parallel
+//          return false;
+//       }
+
+//    }
+
+//    return false;
+
+// }
+
+
+
+
+
+
+
+
+// extern "C" {
+// __global__ void backtrackKernel(
+//     const Mesh* mesh,
+//     const double dt,
+//     BacktrackResults* results  // Structure to store results
+// ) {
+//     // Get side index
+//     int sIdx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (sIdx >= mesh->ns) return;  // Check bounds for local sides
+    
+//     // Get local side data
+//     const Side* side = mesh->localSideData + sIdx;
+//     if (side->isDry()) return;  // Skip dry sides
+    
+//     // Get starting position (side center)
+//     double x0 = side->xc;
+//     double y0 = side->yc;
+//     double z0 = side->zc;
+    
+//     // Get starting element
+//     Element* startElement = side->getStartElement();
+    
+//     // Do backtracking
+//     double xt, yt, zt;  // Final positions
+//     bool exitedDomain = startElement->backtrack(
+//         x0, y0, z0,
+//         dt,
+//         xt, yt, zt
+//     );
+    
+//     // Store results
+//     results[sid].finalPos = {xt, yt, zt};
+//     results[sid].exitedDomain = exitedDomain;
+// }
+
+
 
 
 extern "C" { 
@@ -600,7 +439,7 @@ extern "C" {
       const bool isLand = (side->elems[1] == 0 && side->bdysd <= 0);  // XXX What does isbs (bdysd) mean?
       
       // Get the bottom index for this side
-      const int kbs = side->kbs;
+      const int kbs = side->kb;
       
       // Process each vertical level
       for (int k = kbs + 1; k < nvrt; k++) {
@@ -609,8 +448,8 @@ extern "C" {
 
           } else {
               // Calculate normal component of the velocity at current and previous levels
-              const double vnor1 = side->su2[k  ]*side->nx + side->sv2[k  ]*side->ny;
-              const double vnor2 = side->su2[k-1]*side->nx + side->sv2[k-1]*side->ny;
+              const double vnor1 = side->u2[k  ]*side->nx + side->v2[k  ]*side->ny;
+              const double vnor2 = side->u2[k-1]*side->nx + side->v2[k-1]*side->ny;
               
               // Calculate flux (normal * area in local x-direction)
               const double height = side->zc[k] - side->zc[k-1]; // Vertical distance between the two side centers

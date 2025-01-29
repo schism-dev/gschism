@@ -14,11 +14,15 @@
 
 namespace py = pybind11;
 
+const double pi = 3.14159265358979323846;
+const double deg2rad = pi / 180.0;
+
 // Helper function for computing the local node index at a given offset from another.
 inline int nxQ(int offset, int index, int size) {
-
-    int result = (index + offset) % size;
-    return result >= 0 ? result : result + size;
+  assert(index + offset + 10*size >= 0);
+  // In c++, the % operator can return negative numbers, for this reason we add 10*size 
+  // to the index to make it positive
+  return (index + offset + 10*size) % size; 
 }
 
 // ----------------------------------------------------

@@ -8,10 +8,11 @@ import numpy as np
 import timeit
 import sys
 
-sys.path.append(r'C:\Users\jondina\src\gschism')  
+sys.path.append(r'/mnt/c/Users/jondina/src/gschism/src')  
+
 
 # import src.io.readSflux as readSflux
-from src.io.readSflux import SFlux
+from iop.readSflux import SFlux
 
 def launch_kernel(kernel_func, num_items, n_gpus, threads_per_block=256):
     """
@@ -57,13 +58,16 @@ def compile_and_import(module_name, cpp_file):
             Extension(
                 module_name,
                 sources=[cpp_file],
-                include_dirs=[pybind11.get_include(), "/apps/intel/2020.0.166/metis/5.2.1/include"],
+                # include_dirs=[pybind11.get_include(), "/apps/intel/2020.0.166/metis/5.2.1/include"],
+                include_dirs=[pybind11.get_include(), "/home/jmg/local/include", "/home/jmg/src/lib/metis/METIS/GKlib"],
                 language="c++",
                 # extra_compile_args=["-std=c++20", "-march=native"],
-                extra_link_args=["-lmetis"],
-                libraries=['metis'],  # Add METIS to libraries
-                library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],  # Add library directory
-                runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],
+                extra_link_args=["-lmetis", '-lGKlib'],
+                libraries=['metis', 'GKlib'],  # Add METIS to libraries
+                # library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],  # Add library directory
+                library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],  # Add library directory
+                # runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],
+                runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],
             )
         ]
 
@@ -96,7 +100,7 @@ def compile_and_import(module_name, cpp_file):
 
 
 if __name__ == "__main__":
-    cpp_file = "./src/grid/read_and_process_grid.cpp"  # External C++ source file
+    cpp_file = "../../src/grid/read_and_process_grid.cpp"  # External C++ source file
     module = compile_and_import("test", cpp_file)
 
 
@@ -108,11 +112,22 @@ if __name__ == "__main__":
     # mesh_file = "/home/jo.gonzalez/src/gschism/test/hgrid.gr3"
     # mesh_file = "/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
     # mesh_file = "/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
-    mesh_file = "/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
+    # mesh_file = "/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
+    hgrid_file = "/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE_LSC2/hgrid.ll"
+    vgrid_file = "/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/vgrid.in"
 
     
-    numPartitions = 2
-    i34, partElements, partNodes, partSides, elnode, elside, nodes, ic3, isdel = module.readMesh(mesh_file, numPartitions)
+
+    numPartitions = 1
+    i34, partElements, partNodes, partSides, elnode, elside, nodes, ic3, isdel = \
+        module.readHGrid(hgrid_file, numPartitions)
+
+
+    [ivcor, nvrt, kz, nsiglev], ztot, [h_s, theta_b, theta_f], sigma_lcl, sigma = \
+        module.readVGrid(vgrid_file, nodes.shape[0])
+
+
+    wind_rotate_angle = module.readWindRotationAngle(r"/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/windrot_geo2proj.gr3", elnode.shape[1])
 
 
     # Before sending the mesh to the GPU, we need to do some preprocessing, including computing the 
@@ -122,7 +137,8 @@ if __name__ == "__main__":
     # sflux_inputs = readSflux.readSFluxNamelist(r"/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt")
     nodes = nodes.T # XXX Why .T?
     nodes[:2,:] = np.deg2rad(nodes[:2,:]) # XXX Why deg2rad?
-    sflux = SFlux(r'/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt', nodes) 
+    # sflux = SFlux(r'/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt', nodes) 
+    sflux = SFlux(r'/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/sflux/sflux_inputs.txt', nodes) 
     print(sflux)
 
     u_air_node = np.zeros(nodes.shape[1])
@@ -144,7 +160,7 @@ if __name__ == "__main__":
     isdel           = cp.array(isdel,        dtype=cp.int32)
     # js         = cp.array(js)
     # Read the CUDA source
-    with open('../src/kernels/meshdata.cu', 'r') as f:
+    with open('../kernels/meshdata.cu', 'r') as f:
         cuda_source = f.read()
 
     # Create the kernel module
@@ -244,7 +260,8 @@ if __name__ == "__main__":
                         nodesPtr, elemsPtr, sidesPtr,
                         nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
                         # , partNodes, partSides,
-                        i34[partElements], elnode[:, partElements == ipart], elside[:, partElements == ipart]) #, nodes, ic3, isdel)
+                        i34[partElements], elnode[:, partElements == ipart], elside[:, partElements == ipart],
+                        wind_rotate_angle[partElements == ipart]) #, nodes, ic3, isdel)
             )
 
 
@@ -258,8 +275,8 @@ if __name__ == "__main__":
 
 
 
-    time = timeit.timeit('module.readMesh("/media/jmg/New450/src/gschism/test/hgrid.gr3")',  globals={'module': module, 'array': array}, number=1)
-    print(f"Time pybind11: {time:.6f} seconds")
+    # time = timeit.timeit('module.readHGrid("/media/jmg/New450/src/gschism/test/hgrid.gr3")',  globals={'module': module, 'array': array}, number=1)
+    # print(f"Time pybind11: {time:.6f} seconds")
     # time2 = timeit.timeit("result = np.sinh(abs(np.sinh(1/pow(array,  2.1))))",  globals={'array': array, 'np': np}, number=10)
     # print(f"Time pybind11: {time:.6f} seconds")
     # print(f"Time numpy: {time2:.6f} seconds")

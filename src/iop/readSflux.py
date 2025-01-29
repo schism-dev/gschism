@@ -4,7 +4,7 @@ import numpy as np
 from netCDF4 import Dataset
 from datetime import datetime
 from typing import Tuple
-from src.io.logger import *
+from iop.logger import *
 from scipy.spatial import Delaunay
 
 
@@ -38,7 +38,8 @@ data, in the areas where it is available, it will use (mostly) the high-resoluti
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
-in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
+# in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
+in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
 
 t_freeze = 273.15
 
@@ -578,6 +579,8 @@ class SFlux:
             # Merge with defaults (only if the key is not already present in the namelist)
             for key, default in DEFAULTS.items():
                 self.inputs.setdefault(key, default)
+
+            print(self.inputs)
 
       
         except Exception as e:

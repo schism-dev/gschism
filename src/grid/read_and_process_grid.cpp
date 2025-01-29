@@ -183,8 +183,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         for (int k = 0; k < i34[ie]; k++) {
             // Get nodes for this side
             const int loc_n1 = nxQ(0, k, i34[ie]);
-            const int loc_n2 = nxQ(1, k, i34[ie]);
-            CHECK THAT nxQ starts in 0, not 1
+            const int loc_n2 = nxQ(1, k, i34[ie]); 
+            // CHECK THAT nxQ starts in 0, not 1
             const int n1 = elnode(loc_n1, ie);
             const int n2 = elnode(loc_n2, ie);
 
@@ -389,13 +389,13 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
                 for (int l = 0; l < i34[ie]; l++) {
                     if (elnode(l, ie) == i) {
                         ilocal = l;
-                        break;
+                        break;     
                     }
                 }
                 if (ilocal == -1) {
                     throw std::runtime_error("Node " + std::to_string(i+1) + 
-                                          " not found in its own element " + 
-                                          std::to_string(ie+1));
+                                             " not found in its own element " + 
+                                             std::to_string(ie+1));
                 }
 
                 // If ilocal is a boundary node and ilocal-1 is too, then this is a boundary element
@@ -403,14 +403,15 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
                     icount++;
                     vertexElements(i, 0) = ie;
                 }
-            }
+            }   
 
-            if (icount != 1) {
+            if (icount != 1) {   
+                printStackTrace();  
                 throw std::runtime_error("Illegal boundary node " + std::to_string(i+1) + 
-                                       ": found " + std::to_string(icount) + 
-                                       " boundary elements");
+                                         ": found " + std::to_string(icount) + 
+                                         " boundary elements");
             }
-        }
+        }     
 
         // For all nodes: recompute remaining elements in counter-clockwise order
         for (size_t j = 1; j < vertexElements.rowSize(i); j++) {
@@ -553,7 +554,7 @@ void partitionNodesAndSides(int nElements, int nNodes, int nSides,
         partNodes[in] = partitions[ie];
     }
 
-    printFormatted(ansi::blue("Partitfdfioning sides = %d"), nSides);
+    printFormatted(ansi::blue("Partitioning sides = %d"), nSides);
 
     // Assign sides to partitions
     for (int is = 0; is < nSides; is++) {
@@ -576,8 +577,16 @@ py::array_t<T> toPyArray(const std::vector<T>& data) {
 
 template<typename T>
 py::array_t<T> toPyArray(const Array2D<T>& data) {
+    if (data.rows() == 0 || data.cols() == 0) {
+        return py::array_t<T>();  // Return empty array
+    }
     auto array = py::array_t<T>({data.rows(), data.cols()});
     auto ptr = static_cast<T*>(array.request().ptr);
+
+    if (ptr == nullptr) {
+        throw std::runtime_error("Failed to allocate memory for Python array");
+    }
+
     std::copy(&data(0,0), &data(0,0) + data.rows() * data.cols(), ptr);
     return array;
 }
@@ -591,16 +600,20 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<double>,     // nodes
            py::array_t<int32_t>,    // ic3
            py::array_t<int32_t>>    // isdel
-readMesh(const std::string& filename, idx_t nPartitions) {
+readHGrid(const std::string& filename, idx_t nPartitions) {
 
-
+    
     // Read the header information
     std::ifstream file(filename);
     if (!file.is_open()) throw std::runtime_error("Could not open file");
     
+    
     // Read mesh name
     std::string meshName;
     std::getline(file, meshName);
+
+    printf("bbb %s\n", filename.c_str());
+    printf("aaaaa %s\n", meshName.c_str());
 
     // Read element and node counts
     int nElements, nNodes, nSides;
@@ -609,18 +622,20 @@ readMesh(const std::string& filename, idx_t nPartitions) {
     nElements = numElementsNodes[0];
     nNodes    = numElementsNodes[1];
 
-
+    printf("aaaaa %d %d\n", nElements, nNodes);
     // Initialize arrays for node and element data
     Array2D<double> nodes(nNodes, 3);      // [x, y, depth]
     std::vector<int> i34(nElements);    // Number of nodes per element
     Array2D<int> elnode(4, nElements);  // Node indices for each element
     Array2D<int> elside(4, nElements);
 
+
     printFormatted("%s: %i, %s: %i", ansi::red("n_nodes: ").c_str(), nNodes, ansi::green("n_elements: ").c_str(), nElements); 
 
     // Read node information
     std::string line;
     for (int i = 0; i < nNodes; i++) {
+
         progressBar("Reading nodes", i, nNodes, ansi::RED, 20);
         std::getline(file, line);
         std::istringstream nodeIss(line); 
@@ -822,45 +837,46 @@ readMesh(const std::string& filename, idx_t nPartitions) {
 
     reorderElementsCounterClockwise(nNodes, isbnd, vertexElements, elnode, i34, ic3);
 
-
-    
-
-    printFormatted(ansi::green("Partitioning mesh using METIS into %d partitions, nElements = %d"), nPartitions, nElements);
-
-    // Prepare METIS arrays
     idx_t nvtxs = nElements;  // number of vertices (elements in our case)
-    idx_t ncon = 1;          // number of balancing constraints
-
     std::vector<idx_t> partElements(nvtxs);  // array to store partition numbers
-    
-    // METIS options
-    idx_t options[METIS_NOPTIONS];
-    METIS_SetDefaultOptions(options);
-    
-    printFormatted(ansi::red("Partitioning mesh using METIS into %d partitions"), nPartitions);
-    // Call METIS directly with adjList's data
-    idx_t objval;
-    int ret = METIS_PartGraphKway(
-        &nvtxs,
-        &ncon,
-        adjList.xadj.data(),     // Use directly from adjList
-        adjList.adjncy.data(),   // Use directly from adjList
-        nullptr,
-        nullptr,
-        adjList.adjwgt.data(),   // Use directly from adjList
-        &nPartitions,
-        nullptr,
-        nullptr,
-        options,
-        &objval,
-        partElements.data()
-    );
+    if (nPartitions > 1) {
+        printFormatted(ansi::green("Partitioning mesh using METIS into %d partitions, nElements = %d"), nPartitions, nElements);
 
-    if (ret != METIS_OK) {
-        throw std::runtime_error("METIS partitioning failed");
+        idx_t ncon = 1;          // number of balancing constraints
+        
+        // METIS options
+        idx_t options[METIS_NOPTIONS];
+        METIS_SetDefaultOptions(options);
+        
+        printFormatted(ansi::red("Partitioning mesh using METIS into %d partitions"), nPartitions);
+        // Call METIS directly with adjList's data
+        idx_t objval;
+        int ret = METIS_PartGraphKway(
+            &nvtxs,
+            &ncon,
+            adjList.xadj.data(),     // Use directly from adjList
+            adjList.adjncy.data(),   // Use directly from adjList
+            nullptr,
+            nullptr,
+            adjList.adjwgt.data(),   // Use directly from adjList
+            &nPartitions,
+            nullptr,
+            nullptr,
+            options,
+            &objval,
+            partElements.data()
+        );
+
+        if (ret != METIS_OK) {
+            throw std::runtime_error("METIS partitioning failed");
+        }
+
+        printFormatted(ansi::green("METIS partitioning completed with Edge cut ratio: %f"), objval / float(adjList.ntedge));
     }
-
-    printFormatted(ansi::green("METIS partitioning completed with Edge cut ratio: %f"), objval / float(adjList.ntedge));
+    else {
+        printFormatted(ansi::green("No partitioning"));
+        std::fill(partElements.begin(), partElements.end(), 0);  // All elements in partition 0
+    }
 
     bool reorderPartitions = false;
     if (reorderPartitions) {
@@ -877,6 +893,8 @@ readMesh(const std::string& filename, idx_t nPartitions) {
 
     partitionNodesAndSides(nElements, nNodes, nSides, elnode, i34, ic3, isdel, partElements, vertexElements, partNodes, partSides);
 
+    // printf("i34.size() = %d, partElements.size() = %d, partNodes.size() = %d, partSides.size() = %d\n", i34.size(), partElements.size(), partNodes.size(), partSides.size());
+    // printf("elnode.size() = %d, elside.size() = %d, nodes.size() = %d, ic3.size() = %d,  isdel.size() = %d\n", elnode.rows(), elside.rows(), nodes.rows(), ic3.rows(), isdel.rows());
     
     return std::make_tuple(
         toPyArray(i34),
@@ -889,9 +907,246 @@ readMesh(const std::string& filename, idx_t nPartitions) {
         toPyArray(ic3),
         toPyArray(isdel)
 
-    );
+    );  
+}
+
+
+/** Reads a vertical grid file from a vgrid.in file 
+ * @param filename: the name of the vgrid.in file
+ * @param nNodes: the number of nodes in the mesh
+ * @return: a tuple containing:
+ *              - the vertical coordinate type (ivcor)
+ *              - the number of levels (nvrt)
+ *              - the total depth (ztot)
+ *              - the localized sigma coordinates (sigma_lcl)
+ *              - the sigma coordinates (sigma)
+ * 
+ * There are two types of vertical coordinates:
+ * 1. Localized sigma coordinates (ivcor = 1). In this case, the sigma coordinates are defined for each node
+ * 2. SZ coordinates (ivcor = 2). In this case, the sigma coordinates are defined for each level
+*/
+std::tuple<py::array_t<int32_t>,     // ivcor, nvrt
+           py::array_t<double>,       // ztot (nNodes for ivcor=1, empty for ivcor=2)
+           py::array_t<double>,       // h_s, theta_b, theta_f (3 values for ivcor=2, empty for ivcor=1)
+           py::array_t<double>,       // sigma_lcl (nvrt x nNodes for ivcor=1, empty for ivcor=2)
+           py::array_t<double>       // sigma (nvrt values for ivcor=2, empty for ivcor=1)
+>
+readVGrid(const std::string& filename, int nNodes) {
+
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open vgrid file: " + filename);
+    }
+
+    // Read vertical coordinate type and number of levels
+    int ivcor, nvrt;
+    std::string dummy;
+    file >> ivcor >> dummy;
+
+    printFormatted(ansi::red("Reading vertical grid file: %s"), filename.c_str());
+
+    if (ivcor != 1 && ivcor != 2) {
+        throw std::runtime_error("Invalid vertical coordinate type. It must be 1 or 2. It is: " + std::to_string(ivcor));
+    }
+    
+    if (ivcor == 1) {
+        // Localized sigma coordinates
+
+        file >> nvrt >> dummy;
+    
+        Array2D<double> sigma_lcl(nvrt, nNodes);
+        std::vector<double> ztot(nNodes);
+    
+            
+        for (int i = 0; i < nNodes; i++) {
+            int node_number;
+            file >> node_number;
+
+            progressBar("Reading localized sigma coordinates", i, nNodes, ansi::RED, 20);
+
+            if (node_number != i + 1) {  // node number is 1-based index, but we use 0-based indexing
+                throw std::runtime_error("Invalid node number in vgrid file");
+            }
+            
+            file >> ztot[i];
+            if (ztot[i] < 0) {
+                throw std::runtime_error("Negative ztot value found");
+            }
+            
+            for (int k = 0; k < nvrt; k++) {
+                file >> sigma_lcl(k, i);
+            }
+        }
+        
+        return std::make_tuple(
+            toPyArray(std::vector<int>{ivcor, nvrt, 0, nvrt}),
+            toPyArray(ztot),                          // ztot for ivcor=1
+            toPyArray(std::vector<double>()),         // empty h_s, theta_b, theta_f
+            toPyArray(sigma_lcl),                     // sigma_lcl for ivcor=1
+            toPyArray(std::vector<double>())         // empty sigma
+        );
+        
+    } else if (ivcor == 2) {
+        // SZ coordinates
+        double h_s, h_c, theta_b, theta_f;
+        int kz;
+
+        file >> nvrt >> kz >> h_s >> dummy;  
+
+        std::getline(file,  dummy);  
+        std::getline(file,  dummy);  // Skip "Z levels" comment
+
+        int nsiglev = nvrt - kz + 1;
+
+        if (nvrt < 2) {
+            throw std::runtime_error("nvrt < 2");
+        }
+        if (kz < 1) {
+            throw std::runtime_error("Invalid kz: " + std::to_string(kz));
+        }
+        if (h_s < 6.0) {
+            throw std::runtime_error("h_s needs to be larger: " + std::to_string(h_s));
+        }
+        
+
+        std::vector<double> sigma(nvrt);
+        std::vector<double> cs(nvrt);
+        std::vector<double> dcs(nvrt);
+        std::vector<double> ztot(nNodes);
+        
+        // Read the z levels
+        for (int k = 0; k < kz - 1; k++) {
+            int level_number;
+            file >> level_number >> ztot[k];
+
+            
+            if (level_number != k + 1) {  // Convert to 0-based indexing
+                throw std::runtime_error("Invalid level number in vgrid file");
+            }
+
+            if(ztot[k]>=-h_s) {
+                throw std::runtime_error("Illegal Z level: " + std::to_string(k) + " ztot = " + std::to_string(ztot[k]) + " h_s = " + std::to_string(h_s));
+            }
+
+            if (k>1 && ztot[k]<=ztot[k-1]) {
+                throw std::runtime_error("z-level inverted: " + std::to_string(k));
+            }
+        }
+
+        // Level kz is not neccesary to be read.
+        std::getline(file,  dummy);  
+
+        // Read the sigma levels
+
+
+        sigma[0] = -1.0; //bottom
+        sigma[nsiglev] = 0.0; //surface
+        
+        std::getline(file, dummy);  // Skip "S levels" comment
+        std::getline(file, dummy); 
+        
+
+        // Read sigma level parameters
+        file >> h_c >> theta_b >> theta_f >> dummy;
+        std::getline(file, dummy); 
+
+        if (h_c<5.0 || h_c>=h_s) {
+            throw std::runtime_error("h_c needs to be larger to avoid 2nd type abnormaty: " + std::to_string(h_c));
+        }
+        if (theta_b<0.0 || theta_b>1.0) {
+            throw std::runtime_error("Wrong theta_b: " + std::to_string(theta_b));
+        }
+        if (theta_f<=0.0) {
+            throw std::runtime_error("Wrong theta_f: " + std::to_string(theta_f));
+        }
+
+        // Skip the kz level
+        std::getline(file, dummy); 
+        
+        // Read the sigma levels
+        for (int k = kz + 1 ; k < nvrt; k++) {
+            const int ksig = k - kz;
+            int level_number;
+            file >> level_number >> sigma[ksig];
+
+            
+            if (level_number != k - kz + 1) {  // Convert to 0-based indexing
+                throw std::runtime_error("Invalid level number in vgrid file");
+            }
+
+            if (sigma[ksig] <= sigma[ksig-1] || sigma[ksig] >=   0.0) {
+                throw std::runtime_error("Invalid sigma levels at: " + std::to_string(ksig) + ", sigma(" + std::to_string(ksig) + ") = " + std::to_string(sigma[ksig]) + ", sigma(" + std::to_string(ksig-1) + ") = " + std::to_string(sigma[ksig-1]));
+            }
+       
+        }
+
+        printFormatted(ansi::red("Read vertical grid file"));
+        
+        return std::make_tuple(
+            toPyArray(std::vector<int>{ivcor, nvrt, kz, nsiglev}),
+            toPyArray(ztot),        
+            toPyArray(std::vector<double>{h_s, theta_b, theta_f}),  // SZ parameters
+            toPyArray(Array2D<double>()),           // empty sigma_lcl
+            toPyArray(sigma)                        // sigma for ivcor=2
+        );
+    } else {
+        throw std::runtime_error("Invalid vertical coordinate type");
+    }
+}
+
+
+
+/** Reads the wind rotation angle input file
+ * @param filename: the name of the wind rotation angle input file
+ * @param nNodes: the number of nodes in the mesh
+ * @return: a tuple containing:
+ *              - the wind rotation angle (wind_rotate_angle)
+*/
+py::array_t<double>
+readWindRotationAngle(const std::string& filename, int nElements) {
+
+
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open wind rotation angle file: " + filename);
+    }
+
+    std::string dummy;
+    std::getline(file, dummy);
+    std::getline(file, dummy); 
+
+    std::vector<double> wind_rotate_angle(nElements);
+
+    for (int i = 0; i < nElements; i++) {
+        int node_number;
+        double xtmp, ytmp, angle;
+
+        progressBar("Reading wind rotation angle", i, nElements, ansi::BLUE, 20);
+
+        file >> node_number >> xtmp >> ytmp >> angle;
+
+        wind_rotate_angle[i] = angle*deg2rad;
+    }
+
+    printFormatted(ansi::blue("Read wind rotation angle"));
+
+    return toPyArray(wind_rotate_angle);
+
 }
 
 PYBIND11_MODULE(test, m) {
-    m.def("readMesh", &readMesh, "Read a mesh file");
+        m.attr("__name__") = "test"; // This is the name of the module
+    
+    // Register exception translator
+    py::register_exception_translator([](std::exception_ptr p) {
+        try {
+            if (p) std::rethrow_exception(p);
+        } catch (const std::exception& e) {
+            PyErr_SetString(PyExc_RuntimeError, e.what());
+        }
+    });
+
+    m.def("readHGrid", &readHGrid, "Read a horizontal grid file");
+    m.def("readVGrid", &readVGrid, "Read a vertical grid file");    
+    m.def("readWindRotationAngle", &readWindRotationAngle, "Read the wind rotation angle file");
 }
