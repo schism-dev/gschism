@@ -820,7 +820,7 @@ __global__ void createMesh(int partNum,
       return;
    };
 
-   mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, np, ne, ns, max_np, max_ne, max_ns,
+   mesh = new wind_rotate_angle, isdel, isbnd, indnd, indel(partNum, npgb, negb, nsgb, nvrt, np, ne, ns, max_np, max_ne, max_ns,
                    nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides, i34, elnode, elside,
                    wind_rotate_angle, isdel, isbnd, indnd, indel);
    
