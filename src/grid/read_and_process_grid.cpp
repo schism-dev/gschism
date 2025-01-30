@@ -13,14 +13,22 @@ namespace py = pybind11;
 // elnode[4, nElements] -> Global index to the nodes that form the element
 // elside[4, nElements] -> Global index to the sides of the element
 // i34[nElements] -> Number of nodes per element
-// ic3[4, nElements] -> Global index to the element that shares the side 
+// ic3[4, nElements] -> For each element, global index to the other element that shares the side 
 // isdel[2, nSides] -> Global index to the elements that share the side
 
-void buildVertexElements(const Array2D<int>& elnode, const std::vector<int>& i34, int nElements, int nNodes, 
-                         ArrayOfRows<int>& vertexElements) {
+// ArrayOfRows (the first index has variable size)
+// nodeNeighElems[:, nNodes] -> Global index to the nodes that are neighbors of each node
+// nodeNeighNodes[:, nNodes] -> Global index to the nodes that are neighbors of each node
+
+
+
+void buildNodeNeighborsLists(const Array2D<int>& elnode, const std::vector<int>& i34, 
+                             const std::vector<int>& isbnd, int nElements, int nNodes, 
+                             ArrayOfRows<int>& nodeNeighElems, ArrayOfRows<int>& nodeNeighNodes) {
 
     // Initialize arrays
-    std::vector<size_t> nne(nNodes, 0);  // vertexConnectionCounts.
+    std::vector<size_t> nne(nNodes, 0);  // Node neighbor element counts.
+    std::vector<size_t> nnp(nNodes, 0);  // Node neighbor node counts.
 
     // Count elements connected to each vertex
     for (int i = 0; i < nElements; i++) {
@@ -48,13 +56,13 @@ void buildVertexElements(const Array2D<int>& elnode, const std::vector<int>& i34
         throw std::runtime_error(msg);
     }
 
-    // Create the vertex-to-elements mapping "array"
-    vertexElements.rebuild(nne);
+    // Create the node-to-elements mapping array
+    nodeNeighElems.rebuild(nne);
 
-    // Build vertex-to-elements mapping
+    // Build node-to-elements mapping
     std::fill(nne.begin(), nne.end(), 0);  // Reset connection counts
     for (int elemIdx = 0; elemIdx < nElements; elemIdx++) {
-        progressBar("Building vertex-to-element mapping", elemIdx, nElements, ansi::YELLOW, 20);
+        progressBar("Building node-to-element mapping", elemIdx, nElements, ansi::YELLOW, 20);
         int nVerts = i34[elemIdx];
 
         // For each vertex in this element
@@ -65,18 +73,81 @@ void buildVertexElements(const Array2D<int>& elnode, const std::vector<int>& i34
             const int j = nne[vertex];
 
             // Add element to vertex's connection list
-            vertexElements(vertex, j) = elemIdx;
+            nodeNeighElems(vertex, j) = elemIdx;
 
             nne[vertex]++;
         }
     }
 
     print("");
+
+    // Build node-to-nodes mapping
+
+    // First pass: count number of neighboring nodes
+    for (int i = 0; i < nNodes; i++) {
+        // For each element containing this node
+        for (size_t j = 0; j < nodeNeighElems.rowSize(i); j++) {
+            const int ie = nodeNeighElems(i, j);
+            
+            if (j == nodeNeighElems.rowSize(i) - 1) {  // Last element
+                if (isbnd[i] == -1) {  // Internal node
+                    nnp[i] += i34[ie] - 2;  // Exclude self and duplicate
+                } else {  // Boundary node
+                    nnp[i] += i34[ie] - 1;  // Only exclude self
+                }
+            } else {  // Not last element
+                nnp[i] += i34[ie] - 2;  // Exclude self and duplicate
+            }
+        }
+    }
+
+    // Allocate space
+    nodeNeighNodes.rebuild(nnp);
+
+    // Second pass: fill the neighbors array
+    std::vector<size_t> currentCount(nNodes, 0);
+
+    for (int i = 0; i < nNodes; i++) {
+        // For each element containing this node
+
+        progressBar("Building node-to-node mapping", i, nNodes, ansi::YELLOW, 20);
+
+        for (size_t j = 0; j < nodeNeighElems.rowSize(i); j++) {
+            const int ie = nodeNeighElems(i, j);
+            
+            
+            // Find position of node i in this element
+            int ii = -1;
+            for (int k = 0; k < i34[ie]; k++) {
+                if (elnode(k, ie) == i) {
+                    ii = k;
+                    break;
+                }
+            }
+            
+            // Add nodes counter-clockwise around this node
+            for (int k = 1; k < i34[ie] - 1; k++) {
+                nodeNeighNodes(i, currentCount[i]) = elnode(nqx(k, ii, i34[ie]), ie);
+                currentCount[i]++;
+            }
+            
+            // For the last element in the ball around node i
+            if (j == nodeNeighElems.rowSize(i) - 1) {
+                if (isbnd[i] != -1) {  // Boundary node
+                    nodeNeighNodes(i, currentCount[i]) = elnode(nqx(i34[ie]-1, ii, i34[ie]), ie);
+                    currentCount[i]++;
+                }
+            }
+        }
+    }    
+
+    print("");
+    
 }
 
 
 AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<int>& i34, 
-                                 const ArrayOfRows<int>& vertexElements, int nElements) {
+                                 const ArrayOfRows<int>& nodeNeighElems, int nElements) {
     // First pass: count edges
     int ntedge = 0;  // total number of edges
     int mxnedge = 0;  // max number of local edges
@@ -92,9 +163,9 @@ AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<i
             int ip = elnode(j, ie);
 
             // For each element connected to this node
-            for (size_t k = 0; k < vertexElements.rowSize(ip); k++) {
+            for (size_t k = 0; k < nodeNeighElems.rowSize(ip); k++) {
 
-                const int je = vertexElements(ip, k);
+                const int je = nodeNeighElems(ip, k);
 
                 // Check if je is not ie and not already in tempAdjncy
                 if (je != ie) {
@@ -138,9 +209,9 @@ AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<i
         for (int j = 0; j < i34[ie]; j++) {
             int ip = elnode(j, ie);
 
-            for (size_t k = 0; k < vertexElements.rowSize(ip); k++) {
+            for (size_t k = 0; k < nodeNeighElems.rowSize(ip); k++) {
 
-                const int je = vertexElements(ip, k);
+                const int je = nodeNeighElems(ip, k);
 
                 if (je != ie) {
                     // Check if je is not already in adjncy
@@ -170,28 +241,28 @@ AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<i
 
 
 void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<int>& i34,
-                                  const ArrayOfRows<int>& vertexElements, 
+                                  const ArrayOfRows<int>& nodeNeighElems, 
                                   int nElements, int nNodes, 
                                   Array2D<int>& elside, Array2D<int>& isdel, Array2D<int>& ic3,
                                   int &nSides) {
 
-    // Builds the table (ic3)that maps each side of an element to the element that shares the side
+    // Builds the table (ic3) that maps each side of an element to the element that shares the side
 
 
     for (int ie = 0; ie < nElements; ie++) {
         progressBar("Building element-side-element table", ie, nElements, ansi::CYAN, 20);
         for (int k = 0; k < i34[ie]; k++) {
             // Get nodes for this side
-            const int loc_n1 = nxQ(0, k, i34[ie]);
-            const int loc_n2 = nxQ(1, k, i34[ie]); 
-            // CHECK THAT nxQ starts in 0, not 1
+            const int loc_n1 = nqx(0, k, i34[ie]);
+            const int loc_n2 = nqx(1, k, i34[ie]); 
+            // CHECK THAT nqx starts in 0, not 1
             const int n1 = elnode(loc_n1, ie);
             const int n2 = elnode(loc_n2, ie);
 
             // Look for matching element
-            for (size_t l = 0; l < vertexElements.rowSize(n1); l++) {
+            for (size_t l = 0; l < nodeNeighElems.rowSize(n1); l++) {
 
-                const int je = vertexElements(n1, l);
+                const int je = nodeNeighElems(n1, l);
 
                 // Check if this element shares n2
                 if (je != ie) {
@@ -215,8 +286,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
             int je = ic3(k, ie);
             if (je != -1) {
                 for (int l = 0; l < i34[je]; l++) {
-                    int n1_je = nxQ(0, l, i34[je]);
-                    int n2_je = nxQ(1, l, i34[je]);
+                    int n1_je = nqx(0, l, i34[je]);
+                    int n2_je = nqx(1, l, i34[je]);
 
                     if (elnode(n1_je, je) == n1 && elnode(n2_je, je) == n2) {
                         throw std::runtime_error("Elem " + std::to_string(ie+1) + 
@@ -227,6 +298,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
             }
         }
     }
+    print("");
 
     // Count global number of sides and build global element-side index table
     int ns = 0;
@@ -280,8 +352,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         for (int j = 0; j < i34[ie]; j++) {
             const int jsj = elside(j, ie);  
 
-            // const int n1 = elnode(nxQ(0, j, i34[ie]), ie);
-            // const int n2 = elnode(nxQ(1, j, i34[ie]), ie);
+            // const int n1 = elnode(nqx(0, j, i34[ie]), ie);
+            // const int n2 = elnode(nqx(1, j, i34[ie]), ie);
 
             if (ic3(j,ie)==0 || (ic3(j,ie)>0)) { 
             // // && iegb<ielg(max(1,ic3(j,ie)))) ||
@@ -317,7 +389,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
 
 // void buildSideData(int nElements, int nSides, 
 //                   const Array2D<int>& elnode, const Array2D<int>& elside, const std::vector<int>& i34,
-//                   const Array2D<int>& ic3, const ArrayOfRows<int>& vertexElements,
+//                   const Array2D<int>& ic3, const ArrayOfRows<int>& nodeNeighElems,
 //                   const Array2D<int>& isdel, const Array2D<int>& isidenode,
 //                   const Array2D<double>& xcj, const Array2D<double>& ycj, const Array2D<double>& zcj,
 //                   const Array2D<double>& dps, const Array2D<double>& side) {
@@ -326,8 +398,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         
 //         for (int j = 0; j < i34[ie]; j++) {
 //             int jsj = elside(j, ie);  // Side index
-//             int n1 = elnode(nxQ(0, j, i34[ie]), ie);  // First node of side
-//             int n2 = elnode(nxQ(1, j, i34[ie]), ie);  // Second node of side
+//             int n1 = elnode(nqx(0, j, i34[ie]), ie);  // First node of side
+//             int n2 = elnode(nqx(1, j, i34[ie]), ie);  // Second node of side
             
 //             // Check if this is a new local side
 //             if (ic3(j, ie) == 0 || 
@@ -372,17 +444,17 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
 
 
 void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd, 
-                                   ArrayOfRows<int>& vertexElements,
-                                   const Array2D<int>& elnode, const std::vector<int>& i34,
-                                   const Array2D<int>& ic3) {
+                                     ArrayOfRows<int>& nodeNeighElems,
+                                     const Array2D<int>& elnode, const std::vector<int>& i34,
+                                     const Array2D<int>& ic3) {
     for (int i = 0; i < np; i++) {
         progressBar("Reordering node elements counter-clockwise", i, np, ansi::LIGHT_BLUE, 20);
         // If it is a boundary node, starts with a boundary element
         if (isbnd[i] != -1) {
             // Find first boundary element and place it first
             int icount = 0;
-            for (size_t ielocal = 0; ielocal < vertexElements.rowSize(i); ielocal++) {
-                const int ie = vertexElements(i, ielocal);
+            for (size_t ielocal = 0; ielocal < nodeNeighElems.rowSize(i); ielocal++) {
+                const int ie = nodeNeighElems(i, ielocal);
 
                 // Find local index of current node i in element ie
                 int ilocal = -1;
@@ -399,9 +471,9 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
                 }
 
                 // If ilocal is a boundary node and ilocal-1 is too, then this is a boundary element
-                if (ic3(nxQ(-1, ilocal, i34[ie]), ie) == -1) {
+                if (ic3(nqx(-1, ilocal, i34[ie]), ie) == -1) {
                     icount++;
-                    vertexElements(i, 0) = ie;
+                    nodeNeighElems(i, 0) = ie;
                 }
             }   
 
@@ -414,9 +486,9 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
         }     
 
         // For all nodes: recompute remaining elements in counter-clockwise order
-        for (size_t j = 1; j < vertexElements.rowSize(i); j++) {
+        for (size_t j = 1; j < nodeNeighElems.rowSize(i); j++) {
             // Get previous element
-            const int ie = vertexElements(i, j - 1);
+            const int ie = nodeNeighElems(i, j - 1);
 
             // Find local index of node i in element ie
             int ilocal = -1;
@@ -433,7 +505,7 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
             }
 
             // Find next element by going two sides back counter-clockwise
-            const int newElement = ic3(nxQ(i34[ie] - 3, ilocal, i34[ie]), ie);
+            const int newElement = ic3(nqx(i34[ie] - 3, ilocal, i34[ie]), ie);
             if (newElement == -1) {
                 throw std::runtime_error("Incomplete ball around node " + 
                                          std::to_string(i+1) + 
@@ -441,7 +513,7 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
                                          std::to_string(j));
             }
 
-            vertexElements(i, j) = newElement;
+            nodeNeighElems(i, j) = newElement;
         }
     }
     print("");
@@ -532,7 +604,7 @@ void partitionNodesAndSides(int nElements, int nNodes, int nSides,
                             const Array2D<int>& elnode, const std::vector<int>& i34, 
                             const Array2D<int>& ic3, const Array2D<int>& isdel,
                             const std::vector<idx_t>& partitions,
-                            const ArrayOfRows<int>& vertexElements,
+                            const ArrayOfRows<int>& nodeNeighElems,
                             std::vector<int> &partNodes, std::vector<int> &partSides)
 {
     // Assigns nodes and sides also to different partitions. This is done by choosing
@@ -544,13 +616,13 @@ void partitionNodesAndSides(int nElements, int nNodes, int nSides,
 
     // Assign nodes to partitions
     for (int in = 0; in < nNodes; in++) {
-        const int numElementsPerNode = vertexElements.rowSize(in);
+        const int numElementsPerNode = nodeNeighElems.rowSize(in);
 
         // Choses one of the elements that the node belongs to and assigns the partition
         // of that element to the node.
         const int le = rand() % numElementsPerNode;
 
-        const int ie = vertexElements(in, le);
+        const int ie = nodeNeighElems(in, le);
         partNodes[in] = partitions[ie];
     }
 
@@ -630,13 +702,13 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     Array2D<int> elside(4, nElements);
 
 
-    printFormatted("%s: %i, %s: %i", ansi::red("n_nodes: ").c_str(), nNodes, ansi::green("n_elements: ").c_str(), nElements); 
+    printFormatted("%s: %i, %s: %i", ansi::blue("n_nodes: ").c_str(), nNodes, ansi::green("n_elements: ").c_str(), nElements); 
 
     // Read node information
     std::string line;
     for (int i = 0; i < nNodes; i++) {
 
-        progressBar("Reading nodes", i, nNodes, ansi::RED, 20);
+        progressBar("Reading nodes", i, nNodes, ansi::BLUE, 20);
         std::getline(file, line);
         std::istringstream nodeIss(line); 
         int index;
@@ -820,22 +892,22 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
 
 
     // Process the mesh
-    ArrayOfRows<int> vertexElements;
+    ArrayOfRows<int> nodeNeighElems, nodeNeighNodes;
 
 
-    buildVertexElements(elnode, i34, nElements, nNodes, vertexElements);
+    buildNodeNeighborsLists(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
 
-    AdjacencyList adjList = buildAdjacencyList(elnode, i34, vertexElements, nElements);
+    AdjacencyList adjList = buildAdjacencyList(elnode, i34, nodeNeighElems, nElements);
 
     Array2D<int> js(4, 1, -1);
     Array2D<int> ic3(4, nElements, -1);
     Array2D<int> isdel(2, 1, -1); // We still don't know the number of sides
 
-    buildElementSideElementTable(elnode, i34, vertexElements, nElements, nNodes, 
+    buildElementSideElementTable(elnode, i34, nodeNeighElems, nElements, nNodes, 
                                  elside, isdel, ic3, nSides);
 
 
-    reorderElementsCounterClockwise(nNodes, isbnd, vertexElements, elnode, i34, ic3);
+    reorderElementsCounterClockwise(nNodes, isbnd, nodeNeighElems, elnode, i34, ic3);
 
     idx_t nvtxs = nElements;  // number of vertices (elements in our case)
     std::vector<idx_t> partElements(nvtxs);  // array to store partition numbers
@@ -848,7 +920,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
         idx_t options[METIS_NOPTIONS];
         METIS_SetDefaultOptions(options);
         
-        printFormatted(ansi::red("Partitioning mesh using METIS into %d partitions"), nPartitions);
+        printFormatted(ansi::green("Partitioning mesh using METIS into %d partitions"), nPartitions);
         // Call METIS directly with adjList's data
         idx_t objval;
         int ret = METIS_PartGraphKway(
@@ -891,7 +963,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     std::vector<int> partNodes;
     std::vector<int> partSides;
 
-    partitionNodesAndSides(nElements, nNodes, nSides, elnode, i34, ic3, isdel, partElements, vertexElements, partNodes, partSides);
+    partitionNodesAndSides(nElements, nNodes, nSides, elnode, i34, ic3, isdel, partElements, nodeNeighElems, partNodes, partSides);
 
     // printf("i34.size() = %d, partElements.size() = %d, partNodes.size() = %d, partSides.size() = %d\n", i34.size(), partElements.size(), partNodes.size(), partSides.size());
     // printf("elnode.size() = %d, elside.size() = %d, nodes.size() = %d, ic3.size() = %d,  isdel.size() = %d\n", elnode.rows(), elside.rows(), nodes.rows(), ic3.rows(), isdel.rows());
@@ -943,7 +1015,7 @@ readVGrid(const std::string& filename, int nNodes) {
     std::string dummy;
     file >> ivcor >> dummy;
 
-    printFormatted(ansi::red("Reading vertical grid file: %s"), filename.c_str());
+    printFormatted(ansi::yellow("Reading vertical grid file: %s"), filename.c_str());
 
     if (ivcor != 1 && ivcor != 2) {
         throw std::runtime_error("Invalid vertical coordinate type. It must be 1 or 2. It is: " + std::to_string(ivcor));
@@ -962,7 +1034,7 @@ readVGrid(const std::string& filename, int nNodes) {
             int node_number;
             file >> node_number;
 
-            progressBar("Reading localized sigma coordinates", i, nNodes, ansi::RED, 20);
+            progressBar("Reading localized sigma coordinates", i, nNodes, ansi::YELLOW, 20);
 
             if (node_number != i + 1) {  // node number is 1-based index, but we use 0-based indexing
                 throw std::runtime_error("Invalid node number in vgrid file");
@@ -1080,7 +1152,7 @@ readVGrid(const std::string& filename, int nNodes) {
        
         }
 
-        printFormatted(ansi::red("Read vertical grid file"));
+        printFormatted(ansi::yellow("Read vertical grid file"));
         
         return std::make_tuple(
             toPyArray(std::vector<int>{ivcor, nvrt, kz, nsiglev}),

@@ -47,6 +47,7 @@ inline void printStackTrace(int maxFrames = 10) {
         printStackTrace(); \
         throw std::out_of_range("Array2D index out of bounds: (" + std::to_string(i) + ", " + std::to_string(j) + ")"); \
     }
+#else
 #define ARRAY_BOUNDS_CHECK(i, j, sizeI, sizeJ) // No checks in release mode
 #endif
 

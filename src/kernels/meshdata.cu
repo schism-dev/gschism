@@ -2,28 +2,20 @@
 
 
 // Helper functions for computing the local node index at a given offset from another.
-inline int nxQ(int offset, int index, int size) {
-   // In c++, the % operator can return negative numbers, for this reason we add 10*size 
+inline int nqx(int offset, int index, int size) {
+   // In c++, the % operator can return negative numbers, for this reason we add 16*size 
    // to the index to make it positive
-   assert(index + offset + 10*size >= 0);
-   return (index + offset + 10*size) % size;  
+   assert(index + offset + 16*size >= 0);
+   return (index + offset + 16*size) % size;  
 }
 
 // Helper function for computing the local node index at a given offset from another.
-inline int nxQ(int index, int size) {
-   // In c++, the % operator can return negative numbers, for this reason we add 10*size 
+inline int nqx(int index, int size) {
+   // In c++, the % operator can return negative numbers, for this reason we add 16*size 
    // to the index to make it positive
-   assert(index + 10*size >= 0);
-   return (index + 10*size) % size; 
+   assert(index + 16*size >= 0);
+   return (index + 16*size) % size; 
 }
-
-
-
-
-
-
-
-
 
 
 
@@ -336,8 +328,8 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
 //    for (int i = 0; i < i34; i++) {
 //       const double x3 = nodes[i]->x;
 //       const double y3 = nodes[i]->y;
-//       const double x4 = nodes[nxQ(i+1)]->x;
-//       const double y4 = nodes[nxQ(i+1)]->y;
+//       const double x4 = nodes[nqx(i+1)]->x;
+//       const double y4 = nodes[nqx(i+1)]->y;
 
 //       const Side& side = sides[i];
 
@@ -841,7 +833,7 @@ __global__ void createMesh(int partNum,
                            int max_np, int max_ne, int max_ns,
                            const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
                            Node    *nodes, Element *elems, Side *sides,
-                           int *i34, int *elnode, int *elside) {
+                           int *i34, int *elnode, int *elside, int *isbnd, int *isdel, int *indnd, int *indel) {
 
    if (mesh != nullptr) 
    {

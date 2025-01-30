@@ -63,7 +63,7 @@ struct Element {
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
 
-   __inline__ __device__ int nxQ(int index) const { return index % i34; }
+   __inline__ __device__ int nqx(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
 
    __inline__ __device__ bool containsPoint(double xt, double yt) const {
       // Check if the point (xt,yt) is inside the element
@@ -468,8 +468,6 @@ struct Node {
 
 
 
-
-
 class Mesh {
    public:  
    // Pointers to each GPU's local memory (size is the number of partitions).
@@ -497,7 +495,7 @@ class Mesh {
   
 
    // Additional topology information
-   Node **connectedNodes;    // Array of pointers to the nodes connected to each node
+   Node    **connectedNodes; // Array of pointers to the nodes connected to each node
    Element **sharedElements; // Array of pointers to the elements shared by each node
 
 
