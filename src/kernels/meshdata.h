@@ -304,6 +304,36 @@ struct Side {
    };
 
 #ifdef BACKTRACKING
+   /**
+    * Tracks a particle through elements and vertical levels in the mesh.
+    * 
+    * @param x0,y0,z0     Starting position coordinates
+    * @param xt,yt,zt     Target position coordinates
+    * @param dtb          Time step for tracking
+    * @param uuint,vvint,wwint Initial velocity components
+    * @param jlev         Current/resulting vertical level
+    * @param nextElem     Starting/resulting element index
+    * 
+    * @return Status code of type trackExitCodes
+    * 
+    * This function uses the same ideas as the original Fortran code (function QuickSearch), but some
+    * of the details are different. The idea is that the code requires less branches and is better fit
+    * for GPU execution.
+    * 
+    * The main ideas here are:
+    * - The starting point is guaranteed to be in the starting element.
+    * - since it is inside the element, there are only two cases: (a) segment (x0,y0)-(xt,yt) intersects the element sides, or (b) it does not and (xt,yt) is in the same element.
+    * - If it is not inside the element, we know that an interection must exist. We compute the intersection
+    *   of the segment with the *lines* (infinite length) that form the element sides.
+    * - The intersection is computed as the parametric value tt1 of the intersection point on the segment (x0,y0)-(xt,yt).
+    * - tt1 can be positive or negative. We only consider the positive values.
+    * - The next intersection will occur at the smallest positive tt1.
+    * - This intersection will be the next (x0,y0) position.
+    * - Proceeding this way it is guaranteed that we are always moving forward, so there is no chance
+    *   of getting stuck in a loop.
+    * - Additionally, this function never finds intersections with the side segment where the last intersection
+    *   was found.
+    */
    __device__ trackExitCodes trackThroughElementsAndLevels(double x0, double y0, double z0,
                                                            double xt, double yt, double zt, double dtb,
                                                            double uuint, double vvint, double wwint, 
