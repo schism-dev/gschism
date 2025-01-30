@@ -663,15 +663,41 @@ py::array_t<T> toPyArray(const Array2D<T>& data) {
     return array;
 }
 
+template<typename T>
+py::tuple toPyArray(const ArrayOfRows<T>& data) {
+    if (data.rows() == 0 || data.nonzeroCount() == 0) {
+        return py::array_t<T>();  // Return empty array
+    }
+
+    auto array = py::array_t<T>({data.nonzeroCount()});
+    auto ptr = static_cast<T*>(array.request().ptr);
+
+    auto arrayIndices = py::array_t<T>({data.rows() + 1});
+    auto ptrIndices = static_cast<T*>(arrayIndices.request().ptr);
+
+    if (ptr == nullptr) {
+        throw std::runtime_error("Failed to allocate memory for Python array");
+    }
+
+
+    std::copy(data.data_ptr(), data.data_ptr() + data.nonzeroCount(), ptr);
+    std::copy(data.rowStarts_ptr(), data.rowStarts_ptr() + data.rows() + 1, ptrIndices);
+    return py::make_tuple(array, arrayIndices);
+}
+
 std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>,    // partElements
            py::array_t<int32_t>,    // partNodes
            py::array_t<int32_t>,    // partSides
            py::array_t<int32_t>,    // elnode
            py::array_t<int32_t>,    // elside
-           py::array_t<double>,     // nodes
+           py::array_t<double>,     // nodeCoords
            py::array_t<int32_t>,    // ic3
-           py::array_t<int32_t>>    // isdel
+           py::array_t<int32_t>,    // isdel
+           py::array_t<int32_t>,    // isbnd
+           py::tuple,               // nodeNeighElems
+           py::tuple                // nodeNeighNodes
+           >
 readHGrid(const std::string& filename, idx_t nPartitions) {
 
     
@@ -694,9 +720,9 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     nElements = numElementsNodes[0];
     nNodes    = numElementsNodes[1];
 
-    printf("aaaaa %d %d\n", nElements, nNodes);
+    
     // Initialize arrays for node and element data
-    Array2D<double> nodes(nNodes, 3);      // [x, y, depth]
+    Array2D<double> nodeCoords(3, nNodes);      // [x, y, depth]
     std::vector<int> i34(nElements);    // Number of nodes per element
     Array2D<int> elnode(4, nElements);  // Node indices for each element
     Array2D<int> elside(4, nElements);
@@ -716,7 +742,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
 
         try {
             for (int j = 0; j < 3; j++) {
-                nodeIss >> nodes(i, j);
+                nodeIss >> nodeCoords(j, i);
             }
         } catch (const std::exception& e) {
             std::cerr << "Error reading node " << i << std::endl;
@@ -966,8 +992,9 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     partitionNodesAndSides(nElements, nNodes, nSides, elnode, i34, ic3, isdel, partElements, nodeNeighElems, partNodes, partSides);
 
     // printf("i34.size() = %d, partElements.size() = %d, partNodes.size() = %d, partSides.size() = %d\n", i34.size(), partElements.size(), partNodes.size(), partSides.size());
-    // printf("elnode.size() = %d, elside.size() = %d, nodes.size() = %d, ic3.size() = %d,  isdel.size() = %d\n", elnode.rows(), elside.rows(), nodes.rows(), ic3.rows(), isdel.rows());
-    
+    // printf("elnode.size() = %d, elside.size() = %d, nodeCoords.size() = %d, ic3.size() = %d,  isdel.size() = %d\n", elnode.rows(), elside.rows(), nodes.rows(), ic3.rows(), isdel.rows());
+
+   
     return std::make_tuple(
         toPyArray(i34),
         toPyArray(partElements),
@@ -975,9 +1002,12 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
         toPyArray(partSides),
         toPyArray(elnode),
         toPyArray(elside),
-        toPyArray(nodes),
+        toPyArray(nodeCoords),
         toPyArray(ic3),
-        toPyArray(isdel)
+        toPyArray(isdel),
+        toPyArray(isbnd),
+        toPyArray(nodeNeighElems),
+        toPyArray(nodeNeighNodes)
 
     );  
 }

@@ -10,6 +10,11 @@ constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast to z levels)
 
 
+constexpr double small1 = 1.0e-10;       // Small non-negative number
+constexpr double small2 = small1*100.0;  // Slightly larger than small1
+constexpr double small = 0.0;            // Small positive number or 0
+
+
 struct Tracers {
     double tracer[N_TRACERS];
 };
@@ -22,11 +27,11 @@ struct Frame {
 
 
 
-
 // Forward declarations
 struct Side;
 struct Element;
 struct Node;
+struct Mesh;
 
 
 struct Element {
@@ -65,6 +70,10 @@ struct Element {
 
    __inline__ __device__ int nqx(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
 
+   __device__ bool findNextIntersection(double t, double x2, double y2, 
+                                              Side *side, Element *nextElement,
+                                              double& tIntersect);
+
    __inline__ __device__ bool containsPoint(double xt, double yt) const {
       // Check if the point (xt,yt) is inside the element
       printf("NOT IMPLEMENTED: containsPoint\n");
@@ -84,15 +93,18 @@ struct Element {
       return true;
    }
 
-   __inline__ __device__ bool btrack(
-         int jlev,
-         double dt,            // Tracking timestep
-         double* sclr         // Array for backtracked values
+#ifdef BACKTRACKING
+   __inline__ __device__ bool btrack(double xt, double yt, double zt,
+                                     double uuint, double vvint, double wwint,
+                                     int jlev,
+                                     double dt, double dtbk,  // Tracking timesteps
+                                     double time_rm,        // Remaining time
+                                     double* sclr             // Array for backtracked values
    ) {
       const Element* curElem = this;
 
       // Initialize outputs
-      for(int i = 0; i < 4 + NUM_TRACERS; i++) {
+      for(int i = 0; i < 4 + N_TRACERS; i++) {
          sclr[i] = 0.0;
       }
         
@@ -147,6 +159,7 @@ struct Element {
       
 
    }
+#endif
 
 };
 
@@ -195,23 +208,24 @@ struct Side {
       const double vy = yt - yc;
 
       // Dot product of the vector with the side normal vector
-      const double dot_product = vx*nx + vy*ny;
+      const double dot_prod1 = vx*nx + vy*ny;
       
       // Vector from side center to element 0 centroid
       const double vx2 = elems[0]->xc - xc;
       const double vy2 = elems[0]->yc - yc;
 
       // Dot product of the vector with the side normal vector
-      const double dot_product2 = vx2*nx + vy2*ny;
+      const double dot_prod2 = vx2*nx + vy2*ny;
 
       // If the dot product is positive, returns the element whose vector to the centroid is in the same direction as the target point
-      // Otherwise, returns the other element (otherwise includes dot_product == 0)
+      // Otherwise, returns the other element (otherwise includes dot_prod1 == 0)
 
-      if (dot_product*dot_product2 > 0.0) return elems[0];
-      else return elems[1];
+      if (dot_prod1*dot_prod2 > 0.0) return elems[0];
+      else                           return elems[1];
 
    }
 
+#ifdef BACKTRACKING
    __inline__ __device__ bool btrack(
          int jlev,
          double dt,            // Tracking timestep
@@ -236,7 +250,7 @@ struct Side {
 
       }
    }
-
+#endif
 
 
 
@@ -289,6 +303,7 @@ struct Side {
       tec_failed_to_interpolate_velocities = 9
    };
 
+#ifdef BACKTRACKING
    __device__ trackExitCodes trackThroughElementsAndLevels(double x0, double y0, double z0,
                                                            double xt, double yt, double zt, double dtb,
                                                            double uuint, double vvint, double wwint, 
@@ -350,7 +365,7 @@ struct Side {
 
       return tec_success;
    }
-   
+#endif
 };
 
 
@@ -380,10 +395,12 @@ struct Node {
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
 
-   static __device__ void setMesh(Mesh* _mesh) { mesh = _mesh; }
 
-   __device__ __inline__ double sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }
+   __device__ __inline__ double Node::sigmaTransitionDepth(void) const;
 
+
+
+#ifdef BACKTRACKING
    __device__ void updateZCoordData() {
    // XXX: To be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
@@ -461,7 +478,7 @@ struct Node {
       printf("ZCOOR: invalid level or coordinate system\n");
       return 0.0;
    }
-
+#endif
 
 };
 
@@ -498,6 +515,14 @@ class Mesh {
    Node    **connectedNodes; // Array of pointers to the nodes connected to each node
    Element **sharedElements; // Array of pointers to the elements shared by each node
 
+   // Vertical coordinate system
+   // Sigma levels
+   double h_s; 
+   double h_c; 
+
+
+
+
 
    // Get's the pointer to the node using the array of global pointers to nodes
    __device__ const Node *node(int jn) {
@@ -525,7 +550,8 @@ class Mesh {
        int max_np, int max_ne, int max_ns,
        const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
        Node *_nodes, Element *_elems, Side *_sides, 
-       int *i34, int *elnode, int *elside) : 
+       int *i34, int *elnode, int *elside,
+       double *wind_rotate_angle, int *isdel, int *isbnd, int *indnd, int *indel) : 
           npgb(npgb), negb(negb), nsgb(nsgb),
           np(np), ne(ne), ns(ns), 
           max_np(max_np), max_ne(max_ne), max_ns(max_ns),
@@ -538,8 +564,9 @@ class Mesh {
              for (int j = 0; j < localElemData[i].i34; j++) {
                 localElemData[i].sides[j] = &(localSideData[elside[i*4 + j]]);
                 localElemData[i].nodes[j] = &(localNodeData[elnode[i*4 + j]]);
+                if (i % 100 == 0) printf("i = %d, j = %d, elnode = %d, elside = %d\n", i, j, elnode[i*4 + j], elside[i*4 + j]);
              }
-             printf("i34[%d] = %d\n", i, i34[i]);
+            
           }
 
 
@@ -550,6 +577,44 @@ class Mesh {
 
    }
 };
+
+
+__device__ void Error(const char* msg) {
+   // TODO: Implement error handling
+}
+
+
+__device__ __inline__ double dotprod3(double* vec1, double* vec2) {
+   return vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];
+}
+
+__device__ __inline__ double dotprod4(double* vec1, double* vec2) {
+   return vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2] + vec1[3]*vec2[3];
+}   
+
+__device__ __inline__ double min3(double a, double b, double c) {
+   return min(a, min(b, c));
+}
+
+__device__ __inline__ double min4(double a, double b, double c, double d) {
+   return min(a, min(b, min(c, d)));
+}
+
+
+// Helper functions for computing the local node index at a given offset from another.
+__device__ __inline__ int nqx(int offset, int index, int size) {
+   // In c++, the % operator can return negative numbers, for this reason we add 16*size 
+   // to the index to make it positive
+   assert(index + offset + 16*size >= 0);
+   return (index + offset + 16*size) % size;  
+}
+
+__device__ __inline__ int nqx(int index, int size) {
+   // In c++, the % operator can return negative numbers, for this reason we add 16*size 
+   // to the index to make it positive
+   assert(index + 16*size >= 0);
+   return (index + 16*size) % size; 
+}
 
 
 extern "C" {

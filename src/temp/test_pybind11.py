@@ -119,15 +119,20 @@ if __name__ == "__main__":
     
 
     numPartitions = 1
-    i34, partElements, partNodes, partSides, elnode, elside, nodes, ic3, isdel = \
-        module.readHGrid(hgrid_file, numPartitions)
+    i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
+        ic3, isdel, isbnd, nodeNeighElems, nodeNeighNodes = \
+            module.readHGrid(hgrid_file, numPartitions)
+    
+    print(nodeCoords.shape)
+    print(nodeNeighNodes)
 
 
     [ivcor, nvrt, kz, nsiglev], ztot, [h_s, theta_b, theta_f], sigma_lcl, sigma = \
-        module.readVGrid(vgrid_file, nodes.shape[0])
+        module.readVGrid(vgrid_file, nodeCoords.shape[1])
 
 
     wind_rotate_angle = module.readWindRotationAngle(r"/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/windrot_geo2proj.gr3", elnode.shape[1])
+
 
 
     # Before sending the mesh to the GPU, we need to do some preprocessing, including computing the 
@@ -135,36 +140,47 @@ if __name__ == "__main__":
 
     # Test the readSflux module
     # sflux_inputs = readSflux.readSFluxNamelist(r"/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt")
-    nodes = nodes.T # XXX Why .T?
-    nodes[:2,:] = np.deg2rad(nodes[:2,:]) # XXX Why deg2rad?
+    nodeCoords[:2,:] = np.deg2rad(nodeCoords[:2,:]) # XXX Why deg2rad?
     # sflux = SFlux(r'/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt', nodes) 
-    sflux = SFlux(r'/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/sflux/sflux_inputs.txt', nodes) 
+    sflux = SFlux(r'/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/sflux/sflux_inputs.txt', nodeCoords) 
     print(sflux)
 
-    u_air_node = np.zeros(nodes.shape[1])
-    v_air_node = np.zeros(nodes.shape[1])
-    p_air_node = np.zeros(nodes.shape[1])
-    t_air_node = np.zeros(nodes.shape[1])
-    q_air_node = np.zeros(nodes.shape[1])
+    u_air_node = np.zeros(nodeCoords.shape[1])
+    v_air_node = np.zeros(nodeCoords.shape[1])
+    p_air_node = np.zeros(nodeCoords.shape[1])
+    t_air_node = np.zeros(nodeCoords.shape[1])
+    q_air_node = np.zeros(nodeCoords.shape[1])
     sflux.getWind(2452424.0, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
 
 
     # convert arrays to cupy
-    i34             = cp.array(i34,          dtype=cp.int32)
-    partElements    = cp.array(partElements, dtype=cp.int32)
-    partNodes       = cp.array(partNodes,    dtype=cp.int32)
-    partSides       = cp.array(partSides,    dtype=cp.int32)
-    elnode          = cp.array(elnode,       dtype=cp.int32)
-    nodes           = cp.array(nodes,        dtype=cp.float64)
-    ic3             = cp.array(ic3,          dtype=cp.int32)
-    isdel           = cp.array(isdel,        dtype=cp.int32)
+    i34                  = cp.array(i34,               dtype=cp.int32)
+    partElements         = cp.array(partElements,      dtype=cp.int32)
+    partNodes            = cp.array(partNodes,         dtype=cp.int32)
+    partSides            = cp.array(partSides,         dtype=cp.int32)
+    elnode               = cp.array(elnode,            dtype=cp.int32)
+    elside               = cp.array(elside,            dtype=cp.int32)
+    nodeCoords           = cp.array(nodeCoords,        dtype=cp.int32)
+    ic3                  = cp.array(isdel,             dtype=cp.int32)
+    isdel                = cp.array(isdel,             dtype=cp.int32)
+    isbnd                = cp.array(isbnd,             dtype=cp.int32)
+    nodeNeighNodesStart  = cp.array(nodeNeighNodes[1], dtype=cp.int32)
+    nodeNeighNodes       = cp.array(nodeNeighNodes[0], dtype=cp.int32)
+    nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32)
+    nodeNeighElems       = cp.array(nodeNeighElems[0], dtype=cp.int32)
+    wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64)
+
     # js         = cp.array(js)
     # Read the CUDA source
-    with open('../kernels/meshdata.cu', 'r') as f:
-        cuda_source = f.read()
+    cuda_source = ""
+    source_files = ["../kernels/meshdata.h", "../kernels/meshdata.cu"]
+    for file in source_files:
+        with open(file, 'r') as f:
+            cuda_source += f.read()
 
     # Create the kernel module
-    mod = cp.RawModule(code=cuda_source, options=("-std=c++20", '-diag-suppress=64,1055')) # the diag-suppress is to suppress the warning about the anonymous union
+    mod = cp.RawModule(code=cuda_source, 
+                       options=("-std=c++20", '-diag-suppress=64,1055')) # the diag-suppress is to suppress the warning about the anonymous union
 
     # Get the kernel functions
     createMesh          = mod.get_function('createMesh')
@@ -176,11 +192,10 @@ if __name__ == "__main__":
     n_gpus = cp.cuda.runtime.getDeviceCount()
     print(f"Found {n_gpus} GPUs")
 
-    numNodes = nodes.shape[0]
+    numNodes = nodeCoords.shape[1]
     numElements = elnode.shape[1]
-    numSides = isdel.shape[1]   
-
-
+    numSides = isdel.shape[1]  
+ 
 
 
     # file_name = readSflux.getFileName('sflux_rad_1', 1)
@@ -261,8 +276,9 @@ if __name__ == "__main__":
                         nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
                         # , partNodes, partSides,
                         i34[partElements], elnode[:, partElements == ipart], elside[:, partElements == ipart],
-                        wind_rotate_angle[partElements == ipart]) #, nodes, ic3, isdel)
+                        wind_rotate_angle[partElements == ipart], isdel, isbnd, nodeNeighNodes, nodeNeighElems)
             )
+            print('HERE2')
 
 
     # Launch kernel on each GPU

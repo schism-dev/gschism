@@ -185,4 +185,7 @@ public:
 
     size_t rowSize(size_t i) const { return rowStarts[i+1] - rowStarts[i]; }
     size_t rows() const { return sizeI; }
+    size_t nonzeroCount() const { return rowStarts[sizeI]; }
+    T* data_ptr() const { return data; }
+    size_t* rowStarts_ptr() const { return rowStarts; }
 };

@@ -1,33 +1,8 @@
-#include "meshdata.h"
-
-
-// Helper functions for computing the local node index at a given offset from another.
-inline int nqx(int offset, int index, int size) {
-   // In c++, the % operator can return negative numbers, for this reason we add 16*size 
-   // to the index to make it positive
-   assert(index + offset + 16*size >= 0);
-   return (index + offset + 16*size) % size;  
-}
-
-// Helper function for computing the local node index at a given offset from another.
-inline int nqx(int index, int size) {
-   // In c++, the % operator can return negative numbers, for this reason we add 16*size 
-   // to the index to make it positive
-   assert(index + 16*size >= 0);
-   return (index + 16*size) % size; 
-}
-
-
-
 
 
 
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr;
-
-
-
-
 
 
 
@@ -80,8 +55,8 @@ __device__ Mesh* mesh = nullptr;
    Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
 **/
 __device__ bool Element::findNextIntersection(double t, double x2, double y2, 
-                                                         Side *side, Element *nextElement,
-                                                         double& tIntersect) {
+                                              Side *side, Element *nextElement,
+                                              double& tIntersect) {
 
 
    double closest_intersect_t = 1e10;
@@ -89,7 +64,7 @@ __device__ bool Element::findNextIntersection(double t, double x2, double y2,
 
    for (int i = 0; i < i34; i++) {
 
-      const Side *side2 = sides[i];
+      Side *side2 = sides[i];
 
       // Skip the side that contains the initial point
       if (side2 == side) continue;
@@ -133,6 +108,7 @@ __device__ bool Element::findNextIntersection(double t, double x2, double y2,
 }
 
 
+#ifdef BACKTRACKING
 __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCoords[4],
                                                        bool fixNegShapeCoords) {
 
@@ -165,7 +141,7 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
       shpCoords[0] = signa2(xt,x1,x2,yt,y1,y2)/area;
       shpCoords[1] = signa2(x0,xt,x2,y0,yt,y2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
-      double tmpmin  = min(shpCoords[0], shpCoords[1], shpCoords[2]);
+      double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
 
       // If at least one of the shape coordinates is negative, and we have the flag fixNegShapeCoords set,
       // then we fix the negative shape coordinates.
@@ -189,11 +165,12 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
          }
 
         // Update the point coordinates for the new shape coordinates
-        xt = dot_product({x0,x1,x2}, shpCoords)
-        yt = dot_product({y0,y1,y2}, shpCoords)
+        xt = dotprod3({x0,x1,x2}, shpCoords)
+        yt = dotprod3({y0,y1,y2}, shpCoords)
       }
    }
    else {
+      // XXX Not implemented yet
       // Reproject pt in eframe of nel for ics=2
       if constexpr(ics==1) {
          xn2 = xt; 
@@ -290,7 +267,7 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
    wwint = (1-ratio)*wLint + ratio*wRint;
 
 }
-
+#endif
 
 // /**
 //    For a point (x1,y1) inside the element and a line segment (x1,y1)-(x2,y2), find the intersection point 
@@ -411,7 +388,7 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
 //     results[sid].exitedDomain = exitedDomain;
 // }
 
-
+__device__ __inline__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }    
 
 
 extern "C" { 
@@ -833,8 +810,10 @@ __global__ void createMesh(int partNum,
                            int max_np, int max_ne, int max_ns,
                            const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
                            Node    *nodes, Element *elems, Side *sides,
-                           int *i34, int *elnode, int *elside, int *isbnd, int *isdel, int *indnd, int *indel) {
+                           int *i34, int *elnode, int *elside, 
+                           double *wind_rotate_angle, int *isdel, int *isbnd, int *indnd, int *indel) {
 
+   printf("HERE3");
    if (mesh != nullptr) 
    {
       printf("ERROR: Mesh is already initialized\n");
@@ -842,8 +821,8 @@ __global__ void createMesh(int partNum,
    };
 
    mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, np, ne, ns, max_np, max_ne, max_ns,
-                  //  start_p, start_e, start_s, end_p, end_e, end_s,
-                   nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides, i34, elnode, elside);
+                   nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides, i34, elnode, elside,
+                   wind_rotate_angle, isdel, isbnd, indnd, indel);
    
 }
 
