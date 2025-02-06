@@ -671,7 +671,7 @@ class Mesh {
          // It only ensures that it is consistent for all elements. Otherwise, it is arbitrary.
          for (int j = 0; j < i34; j++)  
          {
-            if (sides[j]->elems[0] == &elem) {
+            if (elems.sides[j]->elems[0] == &elem) {
                elem.ssign[j] = 1;
             }
             else {
