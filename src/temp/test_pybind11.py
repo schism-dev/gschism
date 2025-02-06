@@ -8,8 +8,14 @@ import numpy as np
 import timeit
 import sys
 
-sys.path.append(r'/mnt/c/Users/jondina/src/gschism/src')  
+sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
 
+
+# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
+# in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
+# in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
+# in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
+in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -53,6 +59,25 @@ def compile_and_import(module_name, cpp_file):
     else:
         print("Compiling the C++ code...")
 
+        # # Define the extension
+        # ext_modules = [
+        #     Extension(
+        #         module_name,
+        #         sources=[cpp_file],
+        #         # include_dirs=[pybind11.get_include(), "/apps/intel/2020.0.166/metis/5.2.1/include"],
+        #         include_dirs=[pybind11.get_include(), "/home/jmg/local/include", "/home/jmg/src/lib/metis/METIS/GKlib"],
+        #         language="c++",
+        #         # extra_compile_args=["-std=c++20", "-march=native"],
+        #         extra_link_args=["-lmetis", '-lGKlib'],
+        #         libraries=['metis', 'GKlib'],  # Add METIS to libraries
+        #         # library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],  # Add library directory
+        #         library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],  # Add library directory
+        #         # runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],
+        #         runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],
+        #     )
+        # ]
+
+
         # Define the extension
         ext_modules = [
             Extension(
@@ -62,8 +87,8 @@ def compile_and_import(module_name, cpp_file):
                 include_dirs=[pybind11.get_include(), "/home/jmg/local/include", "/home/jmg/src/lib/metis/METIS/GKlib"],
                 language="c++",
                 # extra_compile_args=["-std=c++20", "-march=native"],
-                extra_link_args=["-lmetis", '-lGKlib'],
-                libraries=['metis', 'GKlib'],  # Add METIS to libraries
+                extra_link_args=["-lmetis"],
+                libraries=['metis'],  # Add METIS to libraries
                 # library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],  # Add library directory
                 library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],  # Add library directory
                 # runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],
@@ -100,7 +125,13 @@ def compile_and_import(module_name, cpp_file):
 
 
 if __name__ == "__main__":
-    cpp_file = "../../src/grid/read_and_process_grid.cpp"  # External C++ source file
+    # Get the project root directory (src folder)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Set paths relative to project root
+    cpp_file = os.path.join(project_root, "grid", "read_and_process_grid.cpp")
+
+    print("Looking for file at:", os.path.abspath(cpp_file))
     module = compile_and_import("test", cpp_file)
 
 
@@ -113,14 +144,14 @@ if __name__ == "__main__":
     # mesh_file = "/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
     # mesh_file = "/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
     # mesh_file = "/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
-    hgrid_file = "/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE_LSC2/hgrid.ll"
-    vgrid_file = "/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/vgrid.in"
+    hgrid_file = os.path.join(in_dir, 'hgrid.ll')
+    vgrid_file = os.path.join(in_dir, 'vgrid.in')
 
     
 
     numPartitions = 1
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
-        ic3, isdel, isbnd, nodeNeighElems, nodeNeighNodes = \
+        ic3, isdel, isidenode,isbnd, nodeNeighElems, nodeNeighNodes = \
             module.readHGrid(hgrid_file, numPartitions)
     
     print(nodeCoords.shape)
@@ -131,8 +162,7 @@ if __name__ == "__main__":
         module.readVGrid(vgrid_file, nodeCoords.shape[1])
 
 
-    wind_rotate_angle = module.readWindRotationAngle(r"/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/windrot_geo2proj.gr3", elnode.shape[1])
-
+    wind_rotate_angle = module.readWindRotationAngle(os.path.join(in_dir, 'windrot_geo2proj.gr3'), elnode.shape[1])
 
 
     # Before sending the mesh to the GPU, we need to do some preprocessing, including computing the 
@@ -142,7 +172,7 @@ if __name__ == "__main__":
     # sflux_inputs = readSflux.readSFluxNamelist(r"/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt")
     nodeCoords[:2,:] = np.deg2rad(nodeCoords[:2,:]) # XXX Why deg2rad?
     # sflux = SFlux(r'/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt', nodes) 
-    sflux = SFlux(r'/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE/sflux/sflux_inputs.txt', nodeCoords) 
+    sflux = SFlux(in_dir, r'sflux_inputs.txt', nodeCoords) 
     print(sflux)
 
     u_air_node = np.zeros(nodeCoords.shape[1])
@@ -153,27 +183,32 @@ if __name__ == "__main__":
     sflux.getWind(2452424.0, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
 
 
+    
     # convert arrays to cupy
-    i34                  = cp.array(i34,               dtype=cp.int32)
-    partElements         = cp.array(partElements,      dtype=cp.int32)
-    partNodes            = cp.array(partNodes,         dtype=cp.int32)
-    partSides            = cp.array(partSides,         dtype=cp.int32)
-    elnode               = cp.array(elnode,            dtype=cp.int32)
-    elside               = cp.array(elside,            dtype=cp.int32)
-    nodeCoords           = cp.array(nodeCoords,        dtype=cp.int32)
-    ic3                  = cp.array(isdel,             dtype=cp.int32)
-    isdel                = cp.array(isdel,             dtype=cp.int32)
-    isbnd                = cp.array(isbnd,             dtype=cp.int32)
-    nodeNeighNodesStart  = cp.array(nodeNeighNodes[1], dtype=cp.int32)
-    nodeNeighNodes       = cp.array(nodeNeighNodes[0], dtype=cp.int32)
-    nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32)
-    nodeNeighElems       = cp.array(nodeNeighElems[0], dtype=cp.int32)
-    wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64)
+    i34                  = cp.array(i34,               dtype=cp.int32, order='F')
+    partElements         = cp.array(partElements,      dtype=cp.int32, order='F')
+    partNodes            = cp.array(partNodes,         dtype=cp.int32, order='F')
+    partSides            = cp.array(partSides,         dtype=cp.int32, order='F')
+    elnode               = cp.array(elnode,            dtype=cp.int32, order='F')
+    elside               = cp.array(elside,            dtype=cp.int32, order='F')
+    ic3                  = cp.array(ic3,               dtype=cp.int32, order='F')
+    isdel                = cp.array(isdel,             dtype=cp.int32, order='F')
+    isidenode            = cp.array(isidenode,         dtype=cp.int32, order='F')
+    isbnd                = cp.array(isbnd,             dtype=cp.int32, order='F')
+    nodeNeighNodesStart  = cp.array(nodeNeighNodes[1], dtype=cp.int32, order='F')
+    nodeNeighNodes       = cp.array(nodeNeighNodes[0], dtype=cp.int32, order='F')
+    nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32, order='F')
+    nodeNeighElems       = cp.array(nodeNeighElems[0], dtype=cp.int32, order='F')
+    nodeCoords           = cp.array(nodeCoords,        dtype=cp.float64, order='F')
+    wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
 
     # js         = cp.array(js)
     # Read the CUDA source
     cuda_source = ""
-    source_files = ["../kernels/meshdata.h", "../kernels/meshdata.cu"]
+    source_files = [
+        os.path.join(project_root, "kernels", "meshdata.h"),
+        os.path.join(project_root, "kernels", "meshdata.cu")
+    ]
     for file in source_files:
         with open(file, 'r') as f:
             cuda_source += f.read()
@@ -182,8 +217,10 @@ if __name__ == "__main__":
     mod = cp.RawModule(code=cuda_source, 
                        options=("-std=c++20", '-diag-suppress=64,1055')) # the diag-suppress is to suppress the warning about the anonymous union
 
+    
     # Get the kernel functions
     createMesh          = mod.get_function('createMesh')
+    populateMesh        = mod.get_function('populateMesh')
     getStructSizes      = mod.get_function('getStructSizes')
     computeFluxAdvHface = mod.get_function('computeFluxAdvHface')
     # destroy_mesh = mod.get_function('destroyMeshCPU')
@@ -192,23 +229,13 @@ if __name__ == "__main__":
     n_gpus = cp.cuda.runtime.getDeviceCount()
     print(f"Found {n_gpus} GPUs")
 
+    # This list stores references to the device memory of the local arrays. This ensures that the memory is not freed until the mesh is destroyed.
+    deviceMemRef = []
+
     numNodes = nodeCoords.shape[1]
     numElements = elnode.shape[1]
     numSides = isdel.shape[1]  
  
-
-
-    # file_name = readSflux.getFileName('sflux_rad_1', 1)
-    # times = readSflux.getFileTimes(file_name, 1000)
-    # print(times)
-
-    # times, files = readSflux.getTimesEtc('sflux_rad_1', 1000, 100)
-    # print(times)
-    # print(files)
-
-    # info = 
-    # print(info)
-
 
 
 
@@ -249,37 +276,105 @@ if __name__ == "__main__":
             # Reserves CPU memory for the structs
             nodesMem = cp.zeros(max(numPartNodes)   *nodesSize, dtype=cp.int8)
             elemsMem = cp.zeros(max(numPartElements)*elemsSize, dtype=cp.int8)
-            sidesMem = cp.zeros(max(numPartSides)   *sidesSize,    dtype=cp.int8)
+            sidesMem = cp.zeros(max(numPartSides)   *sidesSize, dtype=cp.int8)
 
             nodesMemList.append(nodesMem.data.ptr)
             elemsMemList.append(elemsMem.data.ptr)
             sidesMemList.append(sidesMem.data.ptr)
 
     # Create the arrays of pointers to the start of the device memory
-    nodesPtr = cp.zeros(numPartitions, dtype=cp.uintp)
-    elemsPtr = cp.zeros(numPartitions, dtype=cp.uintp)
-    sidesPtr = cp.zeros(numPartitions, dtype=cp.uintp)
-    for ipart, device_id in enumerate(range(n_gpus)):
-        nodesPtr[ipart] = nodesMemList[ipart]
-        elemsPtr[ipart] = elemsMemList[ipart]
-        sidesPtr[ipart] = sidesMemList[ipart]
+    nodesPtr = cp.array(nodesMemList, dtype=cp.uintp)
+    elemsPtr = cp.array(elemsMemList, dtype=cp.uintp)
+    sidesPtr = cp.array(sidesMemList, dtype=cp.uintp)
 
-    # Create the mesh objects, one per GPU
+
+
+    # Create the local node and element neighbor arrays
     for ipart, device_id in enumerate(range(n_gpus)):
         with cp.cuda.Device(device_id):
 
-            createMesh((1,), (1,),  
-                       (ipart, numNodes, numElements, numSides, 1,
-                        max(numPartNodes), max(numPartElements), max(numPartSides),
-                        numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart],
-                        nodesPtr, elemsPtr, sidesPtr,
-                        nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
-                        # , partNodes, partSides,
-                        i34[partElements], elnode[:, partElements == ipart], elside[:, partElements == ipart],
-                        wind_rotate_angle[partElements == ipart], isdel, isbnd, nodeNeighNodes, nodeNeighElems)
-            )
-            print('HERE2')
+            maskNodesPart = (partNodes == ipart)
+            maskElemsPart = (partElements == ipart)
 
+            partNodeNeighNodesSize = maskNodesPart.sum().item()
+            partNodeNeighElemsSize = maskElemsPart.sum().item()
+
+            # compute the local size of the node and element neighbor arrays
+            partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
+            partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
+
+            pointerSize = cp.dtype(cp.uintp).itemsize 
+            partNodeNeighNodesMem = cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)
+            partNodeNeighElemsMem = cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)
+
+
+    # Create arrays that convert from global indices to (partition,localIdx)
+    # These arrays will be released after building the mesh
+    with cp.cuda.Device(0):
+        localNodeIndices = cp.zeros(numNodes,    dtype=cp.int32)
+        localElemIndices = cp.zeros(numElements, dtype=cp.int32)
+        localSideIndices = cp.zeros(numSides,    dtype=cp.int32)
+        localNodePart    = cp.zeros(numNodes,    dtype=cp.int32)
+        localElemPart    = cp.zeros(numElements, dtype=cp.int32)
+        localSidePart    = cp.zeros(numSides,    dtype=cp.int32)
+
+        for ipart in range(n_gpus):
+            
+            maskNodesPart = (partNodes == ipart)
+            maskElemsPart = (partElements == ipart)
+            maskSidesPart = (partSides == ipart)
+
+            # Given a global index, this array will return the local index
+            localNodeIndices[maskNodesPart] = cp.arange(numPartNodes[ipart])
+            localElemIndices[maskElemsPart] = cp.arange(numPartElements[ipart])
+            localSideIndices[maskSidesPart] = cp.arange(numPartSides[ipart])
+
+            # Given a global index, this array will return the partition index
+            localNodePart   [maskNodesPart] = ipart
+            localElemPart   [maskElemsPart] = ipart
+            localSidePart   [maskSidesPart] = ipart
+
+    for ipart in range(n_gpus):
+        with cp.cuda.Device(ipart):
+
+            maskNodesPart = (partNodes == ipart)
+            maskElemsPart = (partElements == ipart)
+            nodeIndicesPart = cp.where(maskNodesPart)[0].astype(cp.int32)
+
+            i34Part    = i34[maskElemsPart].copy(order='F')
+            elnodePart = elnode[:, maskElemsPart].copy(order='F')
+            elsidePart = elside[:, maskElemsPart].copy(order='F')
+            nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
+            windRotateAnglePart = wind_rotate_angle[maskElemsPart].copy(order='F')
+
+            createMesh((1,), (1,),  
+                       (ipart, numNodes, numElements, numSides, 
+                        numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt,
+                        max(numPartNodes), max(numPartElements), max(numPartSides),
+                        nodesPtr, elemsPtr, sidesPtr,
+                        nodesMem, elemsMem, sidesMem,
+                        partNodeNeighNodesMem, partNodeNeighElemsMem)
+            )
+            
+            # Given a local index, this array will return the global index
+            globalNodeIndices = cp.arange(numPartNodes   [ipart]).astype(cp.int32)[maskNodesPart]
+            globalElemIndices = cp.arange(numPartElements[ipart]).astype(cp.int32)[maskElemsPart]
+            globalSideIndices = cp.arange(numPartSides   [ipart]).astype(cp.int32)[maskSidesPart]
+
+
+            populateMesh((1,), (1,),  (i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
+                                       isdel, isidenode, isbnd,
+                                       globalNodeIndices, globalElemIndices, globalSideIndices,
+                                       localNodeIndices, localElemIndices, localSideIndices,
+                                       localNodePart, localElemPart, localSidePart))
+
+            # # Adds information so each mesh knows about the other meshes
+            # communicateMeshes((1,), (1,),  
+            #            (ipart, isdel, isbnd, nodeIndicesPart, 
+            #             nodeNeighNodes, nodeNeighNodesStart, 
+            #             nodeNeighElems, nodeNeighElemsStart,
+            #             partNodeNeighNodesMem, partNodeNeighElemsMem)
+            # )
 
     # Launch kernel on each GPU
     launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)

@@ -36,19 +36,17 @@ data, in the areas where it is available, it will use (mostly) the high-resoluti
 """
 
 
-# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
-# in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
-# in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
-in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
+
 
 t_freeze = 273.15
 
 
 class DatasetInfo:
     """Represents a single sflux dataset and its interpolation information"""
-    def __init__(self, name: str, nodes: np.ndarray):
+    def __init__(self, in_dir: str,name: str, nodes: np.ndarray):
         
         self.name = name
+        self.in_dir = in_dir
 
 
         self.out_x = nodes[0, :]
@@ -85,7 +83,7 @@ class DatasetInfo:
 
         # determine if the first file for this dataset exists
         file_name = self.getFileName(1)
-        self.exist = path.exists(path.join(in_dir, file_name))
+        self.exist = path.exists(path.join(self.in_dir, file_name))
             
         if not self.exist:
             return
@@ -108,7 +106,7 @@ class DatasetInfo:
             
 
         # read in lon and lat from the first file
-        ds = Dataset(path.join(in_dir, file_name), 'r')
+        ds = Dataset(path.join(self.in_dir, file_name), 'r')
         try:
             self.lat = ds.variables['lat'][:,:].astype(np.float64)
             self.lon = ds.variables['lon'][:,:].astype(np.float64)
@@ -319,7 +317,7 @@ class DatasetInfo:
 
         file_name = self.getFileName(file_idx + 1)
 
-        ds = Dataset(path.join(in_dir, file_name),'r')
+        ds = Dataset(path.join(self.in_dir, file_name),'r')
 
         times = ds.variables['time'][:].astype(np.float64)
 
@@ -352,7 +350,7 @@ class DatasetInfo:
         num_files = 0
         while True:
             file_name = self.getFileName(num_files + 1)
-            if not path.exists(path.join(in_dir, file_name)):
+            if not path.exists(path.join(self.in_dir, file_name)):
                 break
             num_files += 1
 
@@ -479,7 +477,7 @@ class DatasetInfo:
         try:
             # Open netCDF file in read-only mode
             file_name = self.getFileName(file_num)
-            with Dataset(path.join(in_dir, file_name), 'r') as nc:
+            with Dataset(path.join(self.in_dir, file_name), 'r') as nc:
                 # Read the data for the specified time
                 # netCDF is 0-based, so we subtract 1 from time_num
                 data_tmp = nc.variables[data_name][time_idx, :, :]
@@ -547,7 +545,7 @@ class SFlux:
     The interpolation weights, both time and space, are stored in the DatasetInfo objects.
     """
 
-    def __init__(self, namelist_file: str, nodes: np.ndarray):
+    def __init__(self, in_dir: str, namelist_file: str, nodes: np.ndarray):
 
         # Read the namelist file
 
@@ -571,7 +569,7 @@ class SFlux:
 
         try:
             # Read the namelist
-            nml = f90nml.read(namelist_file)
+            nml = f90nml.read(path.join(in_dir, 'sflux', namelist_file))
 
             # Get the 'sflux_inputs' section
             self.inputs = nml.get('sflux_inputs', {})
@@ -580,7 +578,6 @@ class SFlux:
             for key, default in DEFAULTS.items():
                 self.inputs.setdefault(key, default)
 
-            print(self.inputs)
 
       
         except Exception as e:
@@ -596,12 +593,12 @@ class SFlux:
         
 
         # Initialize the two datasets
-        self.dataset1 = DatasetInfo(self.inputs['air_1_file'], nodes)
+        self.dataset1 = DatasetInfo(in_dir, self.inputs['air_1_file'], nodes)
         self.dataset1.max_window_hours = self.inputs['air_1_max_window_hours']
         self.dataset1.fail_if_missing  = self.inputs['air_1_fail_if_missing']
         self.dataset1.relative_weight  = self.inputs['air_1_relative_weight']
         
-        self.dataset2 = DatasetInfo(self.inputs['air_2_file'], nodes)
+        self.dataset2 = DatasetInfo(in_dir, self.inputs['air_2_file'], nodes)
         self.dataset2.max_window_hours = self.inputs['air_2_max_window_hours']
         self.dataset2.fail_if_missing  = self.inputs['air_2_fail_if_missing']
         self.dataset2.relative_weight  = self.inputs['air_2_relative_weight']

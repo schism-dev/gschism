@@ -6,7 +6,7 @@
 #include "../include/misc.h"
 #include "../include/grid_helper_types.h"
 
-namespace py = pybind11; 
+namespace py = pybind11;  
 
 // 
 
@@ -15,6 +15,7 @@ namespace py = pybind11;
 // i34[nElements] -> Number of nodes per element
 // ic3[4, nElements] -> For each element, global index to the other element that shares the side 
 // isdel[2, nSides] -> Global index to the elements that share the side
+// isidenodes[2, nSides] -> Global index to the nodes that form the side
 
 // ArrayOfRows (the first index has variable size)
 // nodeNeighElems[:, nNodes] -> Global index to the nodes that are neighbors of each node
@@ -243,7 +244,8 @@ AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<i
 void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<int>& i34,
                                   const ArrayOfRows<int>& nodeNeighElems, 
                                   int nElements, int nNodes, 
-                                  Array2D<int>& elside, Array2D<int>& isdel, Array2D<int>& ic3,
+                                  Array2D<int>& elside, Array2D<int>& isdel, 
+                                  Array2D<int>& ic3, Array2D<int>& isidenode,
                                   int &nSides) {
 
     // Builds the table (ic3) that maps each side of an element to the element that shares the side
@@ -252,10 +254,11 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
     for (int ie = 0; ie < nElements; ie++) {
         progressBar("Building element-side-element table", ie, nElements, ansi::CYAN, 20);
         for (int k = 0; k < i34[ie]; k++) {
+            ic3(k, ie) = -1;
             // Get nodes for this side
             const int loc_n1 = nqx(0, k, i34[ie]);
             const int loc_n2 = nqx(1, k, i34[ie]); 
-            // CHECK THAT nqx starts in 0, not 1
+
             const int n1 = elnode(loc_n1, ie);
             const int n2 = elnode(loc_n2, ie);
 
@@ -306,31 +309,44 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
     printFormatted(ansi::blue("Building global element-side index table"));
     for (int ie = 0; ie < nElements; ie++) {
         for (int j = 0; j < i34[ie]; j++) {  // Visit each side associated with element ie
-            if (ic3(j, ie) == 0 || ie < ic3(j, ie)) {  // New global side
-                ns++;
-                elside(j, ie) = ns;
-                
-                if (ic3(j, ie) != 0) {  // Old internal side
-                    int je = ic3(j, ie);
-                    int l = -1;
-                    
-                    // Find matching side in neighboring element
-                    for (int k = 0; k < i34[je]; k++) {
-                        if (ic3(k, je) == ie) {
-                            l = k;
-                            break;
+
+            // if the side is not a boundary side.
+            if (ic3(j, ie) != -1) {
+                if (ie < ic3(j, ie)) { 
+                // To avoid double counting sides, we only count each side once.
+
+                    elside(j, ie) = ns;
+
+                    const int je = ic3(j, ie);
+                    if (je != -1) {  
+                        
+                        int l = -1;
+                        
+                        // Find matching side in neighboring element
+                        for (int k = 0; k < i34[je]; k++) {
+                            if (ic3(k, je) == ie) {
+                                l = k;
+                                break;
+                            }
                         }
+                        
+                        if (l == -1) {
+                            throw std::runtime_error("AQUIRE_HGRID: Wrong ball info for elements " + 
+                                                std::to_string(ie) + ", " + 
+                                                std::to_string(j) + ", " + 
+                                                std::to_string(ns));
+                        }
+                        elside(l, je) = ns;
+                        // isdel(1, ns) = je;
                     }
-                    
-                    if (l == -1) {
-                        throw std::runtime_error("AQUIRE_HGRID: Wrong ball info for elements " + 
-                                              std::to_string(ie) + ", " + 
-                                              std::to_string(j) + ", " + 
-                                              std::to_string(ns));
-                    }
-                    elside(l, je) = ns;
-                    // isdel(1, ns) = je;
+                    ns++;
                 }
+  
+            }
+            else
+            {
+                elside(j, ie) = ns;
+                ns++;
             }
         }
     }
@@ -345,31 +361,43 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
 
     // Build isdel
     nSides = ns + 1;
+    printFormatted(ansi::blue("nSides = %d !!!!!!!!!!"), nSides);
     isdel.resize(2, nSides); 
-
+    isidenode.resize(2, nSides);
     for (int ie = 0; ie < nElements; ie++) {
         
         for (int j = 0; j < i34[ie]; j++) {
             const int jsj = elside(j, ie);  
 
-            // const int n1 = elnode(nqx(0, j, i34[ie]), ie);
-            // const int n2 = elnode(nqx(1, j, i34[ie]), ie);
+            if (jsj==-1) {
+                printFormatted(ansi::red("jsj==-1"));
+                break;
+            }
 
-            if (ic3(j,ie)==0 || (ic3(j,ie)>0)) { 
+            const int n1 = elnode(nqx(0, j, i34[ie]), ie);
+            const int n2 = elnode(nqx(1, j, i34[ie]), ie);
+
+            if (n1==-1) {
+                printFormatted(ansi::red("n1==-1"));
+            }
+            if (n2==-1) {
+                printFormatted(ansi::red("n2==-1"));
+            }   
+
+            if (true) { //ic3(j,ie)==0) { 
             // // && iegb<ielg(max(1,ic3(j,ie)))) ||
             //     // (ic3(j,ie)<0 && iegb<iabs(ic3(j,ie)))) {
-
                 isdel(0,jsj)=ie;
                 isdel(1,jsj)=ic3(j,ie);
-            //     // isidenode(1,jsj)=n1
-            //     // isidenode(2,jsj)=n2
+                isidenode(0,jsj)=n1;
+                isidenode(1,jsj)=n2;
             } else {
                 // old augmented subdomain boundary side (reverse orientation)
-
+                // printFormatted(ansi::red("Old augmented subdomain boundary side (reverse orientation)"));
                 isdel(0,jsj)=ic3(j,ie);
                 isdel(1,jsj)=ie;
-            //     // isidenode(1,jsj)=n2
-            //     // isidenode(2,jsj)=n1
+                isidenode(0,jsj)=n2;
+                isidenode(1,jsj)=n1;
             }
         }
     }
@@ -694,6 +722,7 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<double>,     // nodeCoords
            py::array_t<int32_t>,    // ic3
            py::array_t<int32_t>,    // isdel
+           py::array_t<int32_t>,    // isidenode
            py::array_t<int32_t>,    // isbnd
            py::tuple,               // nodeNeighElems
            py::tuple                // nodeNeighNodes
@@ -724,9 +753,8 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     // Initialize arrays for node and element data
     Array2D<double> nodeCoords(3, nNodes);      // [x, y, depth]
     std::vector<int> i34(nElements);    // Number of nodes per element
-    Array2D<int> elnode(4, nElements);  // Node indices for each element
-    Array2D<int> elside(4, nElements);
-
+    Array2D<int> elnode(4, nElements, -1);  // Node indices for each element
+    Array2D<int> elside(4, nElements, -1);
 
     printFormatted("%s: %i, %s: %i", ansi::blue("n_nodes: ").c_str(), nNodes, ansi::green("n_elements: ").c_str(), nElements); 
 
@@ -928,10 +956,9 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     Array2D<int> js(4, 1, -1);
     Array2D<int> ic3(4, nElements, -1);
     Array2D<int> isdel(2, 1, -1); // We still don't know the number of sides
-
+    Array2D<int> isidenode(2, 1, -1); // We still don't know the number of sides
     buildElementSideElementTable(elnode, i34, nodeNeighElems, nElements, nNodes, 
-                                 elside, isdel, ic3, nSides);
-
+                                 elside, isdel, ic3, isidenode, nSides);
 
     reorderElementsCounterClockwise(nNodes, isbnd, nodeNeighElems, elnode, i34, ic3);
 
@@ -1005,6 +1032,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
         toPyArray(nodeCoords),
         toPyArray(ic3),
         toPyArray(isdel),
+        toPyArray(isidenode),
         toPyArray(isbnd),
         toPyArray(nodeNeighElems),
         toPyArray(nodeNeighNodes)
@@ -1230,6 +1258,7 @@ readWindRotationAngle(const std::string& filename, int nElements) {
         wind_rotate_angle[i] = angle*deg2rad;
     }
 
+    print("");
     printFormatted(ansi::blue("Read wind rotation angle"));
 
     return toPyArray(wind_rotate_angle);

@@ -15,6 +15,16 @@ constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 0.0;            // Small positive number or 0
 
 
+__inline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
+  // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
+  return 0.5*((x1-x3)*(y2-y3)-(x2-x3)*(y1-y3));
+}
+
+__inline__ __device__ void Error(const char* msg) {
+   printf("Error: %s\n", msg);
+   exit(1);
+}
+
 struct Tracers {
     double tracer[N_TRACERS];
 };
@@ -22,9 +32,6 @@ struct Tracers {
 
 struct Frame {
 }; 
-
-
-
 
 
 // Forward declarations
@@ -46,7 +53,7 @@ struct Element {
    
    double area;               // Area of the element
    double ssign[4];           // Sign associated with each side of an element
-   double radiel;             // Element equivalent radii
+   double radius;             // Element equivalent radii
 
    double wind_angle;         // Wind rotation angle
 
@@ -69,6 +76,24 @@ struct Element {
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
 
    __inline__ __device__ int nqx(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
+
+   __inline__ __device__ double computeSignedArea(void) const {
+      // Compute the area of the element
+
+      double res = signedArea(nodes[0]->x, nodes[1]->x, nodes[2]->x, nodes[0]->y, nodes[1]->y, nodes[2]->y);
+
+      if (isQuad()) {
+         double ar1 = signedArea(nodes[0]->x, nodes[2]->x, nodes[3]->x, nodes[0]->y, nodes[2]->y, nodes[3]->y);
+         double ar2 = signedArea(nodes[0]->x, nodes[1]->x, nodes[3]->x, nodes[0]->y, nodes[1]->y, nodes[3]->y);
+         double ar3 = signedArea(nodes[1]->x, nodes[2]->x, nodes[3]->x, nodes[1]->y, nodes[2]->y, nodes[3]->y);
+         if (ar1 < 0.0 || ar2 < 0.0 || ar3 < 0.0) {
+            Error("Negative area found in quad element");
+         }
+         res += ar1;
+      }
+
+      return res;
+   }
 
    __device__ bool findNextIntersection(double t, double x2, double y2, 
                                               Side *side, Element *nextElement,
@@ -182,7 +207,6 @@ struct Side {
  
    double nx, ny;         // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
-   double z[nvrt];        // Depth at side center.
 
    // Physical information
    double u2[nvrt], v2[nvrt]; // Horizontal velocity
@@ -517,6 +541,9 @@ struct Node {
 
 class Mesh {
    public:  
+
+   int partNum; // Partition number for this mesh.
+
    // Pointers to each GPU's local memory (size is the number of partitions).
    const Node**    nodes;  
    const Element** elems;  
@@ -540,7 +567,6 @@ class Mesh {
    const int max_ns; // Maximum number of sides per partition (shared by all partitions)
 
   
-
    // Additional topology information
    Node    **connectedNodes; // Array of pointers to the nodes connected to each node
    Element **sharedElements; // Array of pointers to the elements shared by each node
@@ -554,60 +580,168 @@ class Mesh {
 
 
 
-   // Get's the pointer to the node using the array of global pointers to nodes
-   __device__ const Node *node(int jn) {
-      const int idx = jn / max_np; // Get the index of the partition that contains the node
-      return nodes[idx] + idx;
-   }
+   // // Get's the pointer to the node using the array of global pointers to nodes
+   // __device__ const Node *getGlobalNode(int jn) {
+   //    const int idx = jn / max_np; // Get the index of the partition that contains the node
+   //    return nodes[idx] + idx;
+   // }
 
-   // Get's the pointer to the element using the array of global pointers to elements
-   __device__ const Element *elem(int je) {
-      const int idx = je / max_ne; // Get the index of the partition that contains the element
-      return elems[idx] + idx;
-   }
+   // // Get's the pointer to the element using the array of global pointers to elements
+   // __device__ const Element *getGlobalElem(int je) {
+   //    const int idx = je / max_ne; // Get the index of the partition that contains the element
+   //    return elems[idx] + idx;
+   // }
 
-   // Get's the pointer to the side using the array of global pointers to sides
-   __device__ const Side *side(int js) {
-      const int idx = js / max_ns; // Get the index of the partition that contains the side
-      return sides[idx] + idx;
-   }
+   // // Get's the pointer to the side using the array of global pointers to sides
+   // __device__ const Side *getGlobalSide(int js) {
+   //    const int idx = js / max_ns; // Get the index of the partition that contains the side
+   //    return sides[idx] + idx;
+   // }
 
+   // // Get's the global index of local node idx
+   // __device__ int getGlobalNodeIndex(int idx) {
+   //    return idx + partNum * max_np;
+   // }
 
-  
+   // // Get's the global index of local element idx
+   // __device__ int getGlobalElemIndex(int idx) {
+   //    return idx + partNum * max_ne;
+   // }
+
+   // // Get's the global index of local side idx
+   // __device__ int getGlobalSideIndex(int idx) {
+   //    return idx + partNum * max_ns;
+   // }  
+
    __device__ Mesh(int partNum,
-       int npgb, int negb, int nsgb, 
-       int np, int ne, int ns, int nvrt, 
-       int max_np, int max_ne, int max_ns,
-       const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
-       Node *_nodes, Element *_elems, Side *_sides, 
-       int *i34, int *elnode, int *elside,
-       double *wind_rotate_angle, int *isdel, int *isbnd, int *indnd, int *indel) : 
-          npgb(npgb), negb(negb), nsgb(nsgb),
-          np(np), ne(ne), ns(ns), 
-          max_np(max_np), max_ne(max_ne), max_ns(max_ns),
-          nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
-          localNodeData(_nodes), localElemData(_elems), localSideData(_sides)
-          {
-
-          for (int i = 0; i < ne; i++) {
-             localElemData[i].i34 = i34[i];
-             for (int j = 0; j < localElemData[i].i34; j++) {
-                localElemData[i].sides[j] = &(localSideData[elside[i*4 + j]]);
-                localElemData[i].nodes[j] = &(localNodeData[elnode[i*4 + j]]);
-                if (i % 100 == 0) printf("i = %d, j = %d, elnode = %d, elside = %d\n", i, j, elnode[i*4 + j], elside[i*4 + j]);
-             }
-            
-          }
-
-
-
+                   int npgb, int negb, int nsgb, 
+                   int np, int ne, int ns, int nvrt,
+                   int max_np, int max_ne, int max_ns,
+                   const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
+                   Node *nodesMem, Element *elemsMem, Side *sidesMem,
+                   Node    **localNodeNeighNodesMem,
+                   Element **localNodeNeighElemsMem
+                   ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
+                       np(np), ne(ne), ns(ns),
+                       max_np(max_np), max_ne(max_ne), max_ns(max_ns),
+                       nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
+                       localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
+                       connectedNodes(localNodeNeighNodesMem), sharedElements(localNodeNeighElemsMem)
+   {
+      printf("Mesh constructor for partition %d\n", partNum);
    }
 
-   __device__ ~Mesh() {
+   __device__ void populateMesh(int *i34, int *elnode, int *elside,
+                   double *node_coords, double *wind_rotate_angle, 
+                   int *isdel, int *isidenode, int *isbnd,
+                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                   int *localNodePart,     int *localElemPart,     int *localSidePart) {
 
+      printf("Populating mesh for partition %d\n", partNum);
+
+      printf("Processing %d elements\n", ne);
+      for (int i = 0; i < ne; i++)
+      {
+         const int i34 = i34[i];
+
+         Element &elem = localElemData[i];
+
+         elem.i34 = i34;
+         elem.wind_angle = wind_rotate_angle[i];
+
+         elem.xc = 0.0;
+         elem.yc = 0.0;
+         elem.depth = 0.0;
+         for (int j = 0; j < i34; j++) {
+            elem.xc    += elem.nodes[j]->x/i34;
+            elem.yc    += elem.nodes[j]->y/i34;
+            elem.depth += elem.nodes[j]->z/i34;
+         }
+
+         // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;
+         // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
+ 
+      
+
+   
+         elem.area = elem.computeSignedArea(); 
+         elem.radius = sqrt(elem.area)/M_PI; 
+         // Determines which way the normal vector to each side is oriented.
+         // It only ensures that it is consistent for all elements. Otherwise, it is arbitrary.
+         for (int j = 0; j < i34; j++)  
+         {
+            if (sides[j]->elems[0] == &elem) {
+               elem.ssign[j] = 1;
+            }
+            else {
+               elem.ssign[j] = -1;
+            }
+
+         }
+
+      }
+
+
+      printf("Processing %d nodes\n", np);      
+      for (int i = 0; i < np; i++)
+      {
+         // localNodeData[i].nodes = connectedNodes[i];
+         Node &node = localNodeData[i];
+
+         node.x = node_coords[i * 3];
+         node.y = node_coords[i * 3 + 1];
+         node.z = node_coords[i * 3 + 2];
+      }
+
+      printf("Processing %d sides\n", ns);
+      for (int i = 0; i < ns; i++)
+      {
+         // localNodeData[i].nodes = connectedNodes[i];
+         Side &side = localSideData[i];
+
+         // finding the pointer to the nodes that form the side
+         const int idx_n1 = isidenode[globalSideIndices[i]*2];
+         const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
+
+         const int locidx_n1 = localNodeIndices[idx_n1];
+         const int locidx_n2 = localNodeIndices[idx_n2];
+         const int part_n1 =   localNodePart[idx_n1];
+         const int part_n2 =   localNodePart[idx_n2];
+
+         side.n1 = (Node *)&(nodes[part_n1][locidx_n1]);
+         side.n2 = (Node *)&(nodes[part_n2][locidx_n2]);
+
+         if (i<10) printf("Side %d: %p %p\n", i, side.n1, side.n2);
+
+         // finding the pointer to the elements that share the side
+         const int idx_e1 = isdel[globalSideIndices[i]*2];
+         const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
+
+         const int locidx_e1 = localElemIndices[idx_e1];
+         const int locidx_e2 = localElemIndices[idx_e2];
+         const int part_e1 =  localElemPart[idx_e1];
+         const int part_e2 =  localElemPart[idx_e2];
+
+         // if (i<10) printf("Side %d: %d %d %d %d\n", i, idx_e1, idx_e2, part_e1, part_e2);
+         side.elems[0] = (Element *)&(elems[part_e1][locidx_e1]);
+         side.elems[1] = (Element *)&(elems[part_e2][locidx_e2]);
+
+         side.xc = 0.5*(side.n1->x + side.n2->x);
+         side.yc = 0.5*(side.n1->y + side.n2->y);
+         for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->znl[k] + side.n2->znl[k]);
+
+         side.length = sqrt((side.n2->x - side.n1->x)*(side.n2->x - side.n1->x) + 
+                            (side.n2->y - side.n1->y)*(side.n2->y - side.n1->y));
+      }
+   }
+
+
+
+   __device__ ~Mesh()
+   {
    }
 };
-
 
 __device__ void Error(const char* msg) {
    // TODO: Implement error handling

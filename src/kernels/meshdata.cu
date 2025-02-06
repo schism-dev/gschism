@@ -38,8 +38,8 @@ __device__ Mesh* mesh = nullptr;
    @param tIntersect: New intersection point tIntersect*side.n1 + (1-tIntersect)*side.n2
 
    The equations for the two segments (the one we are considering and one of the sides of the element) are:
-   P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 ≤ tt1 ≤ 1
-   P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 ≤ tt2 ≤ 1
+   P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 <= tt1 <= 1
+   P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 <= tt2 <= 1
 
    If the two segments are parallel, they do not intersect. This is checked by the determinant of the two vectors
    (Delta) being zero.
@@ -283,8 +283,8 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
 //    @param xIntersect, yIntersect: intersection point  
 
 //    The equations for the two segments (the one we are considering and one of the sides of the element) are:
-//    P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 ≤ tt1 ≤ 1
-//    P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 ≤ tt2 ≤ 1
+//    P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 <= tt1 <= 1
+//    P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 <= tt2 <= 1
 
 //    If the two segments are parallel, they do not intersect. This is checked by the determinant of the two vectors
 //    (Delta) being zero.
@@ -809,9 +809,8 @@ __global__ void createMesh(int partNum,
                            int np, int ne, int ns, 
                            int max_np, int max_ne, int max_ns,
                            const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
-                           Node    *nodes, Element *elems, Side *sides,
-                           int *i34, int *elnode, int *elside, 
-                           double *wind_rotate_angle, int *isdel, int *isbnd, int *indnd, int *indel) {
+                           Node *nodes, Element *elems, Side *sides,
+                           Node    **partNodeNeighNodesMem, Element **partNodeNeighElemsMem) {
 
    printf("HERE3");
    if (mesh != nullptr) 
@@ -820,11 +819,28 @@ __global__ void createMesh(int partNum,
       return;
    };
 
-   mesh = new wind_rotate_angle, isdel, isbnd, indnd, indel(partNum, npgb, negb, nsgb, nvrt, np, ne, ns, max_np, max_ne, max_ns,
-                   nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides, i34, elnode, elside,
-                   wind_rotate_angle, isdel, isbnd, indnd, indel);
+
+
+   mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, np, ne, ns, max_np, max_ne, max_ns,
+                   nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides,
+                   partNodeNeighNodesMem, partNodeNeighElemsMem);
    
 }
+
+extern "C"
+  __global__ void populateMesh(int *i34, int *elnode, int *elside,
+                   double *node_coords, double *wind_rotate_angle, 
+                   int *isdel, int *isidenode, int *isbnd,
+                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+                   int *localNodeIndices, int *localElemIndices, int *localSideIndices,
+                   int *localNodePart,    int *localElemPart,    int *localSidePart) {
+
+    mesh->populateMesh(i34, elnode, elside, node_coords, wind_rotate_angle, 
+                       isdel, isidenode, isbnd,
+                   globalNodeIndices, globalElemIndices, globalSideIndices,
+                   localNodeIndices, localElemIndices, localSideIndices,
+                   localNodePart, localElemPart, localSidePart);
+  }
 
 extern "C" 
 __global__ void destroyMeshCPU(void) {
