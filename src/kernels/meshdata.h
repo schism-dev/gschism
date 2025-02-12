@@ -14,15 +14,33 @@ constexpr double small1 = 1.0e-10;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 0.0;            // Small positive number or 0
 
+constexpr int internalNode = -1;
+constexpr int landNode = -2;
+
+constexpr double pi = 3.14159265358979323846;
+
+enum trackExitCodes {
+   tec_success = 0,
+   tec_dry_element = 1,
+   tec_zero_length_track = 2,
+   tec_iteration_limit = 3,
+   tec_no_intersection = 4,
+   tec_edge_boundary = 5,
+   tec_no_element = 6,
+   tec_failed_to_compute_area_coords = 7,
+   tec_failed_to_find_vertical_level = 8,
+   tec_failed_to_interpolate_velocities = 9
+};
+
 
 __inline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
   // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
-  return 0.5*((x1-x3)*(y2-y3)-(x2-x3)*(y1-y3));
+  return 0.5*((x1-x3)*(y2-y3) - (x2-x3)*(y1-y3));
 }
 
 __inline__ __device__ void Error(const char* msg) {
    printf("Error: %s\n", msg);
-   exit(1);
+   assert(false);
 }
 
 struct Tracers {
@@ -45,9 +63,9 @@ struct Element {
    static Mesh* mesh;
 
    // Geometry information
-   int i34;                 // Number of sides for the element 
-   Side *sides[4];      // Sides of the element
-   Node *nodes[4];      // Nodes of the element
+   int i34;               // Number of sides for the element 
+   Side *sides[4];        // Sides of the element
+   Node *nodes[4];        // Nodes of the element
    Element *nghbElems[4]; // Neighbors of the element
 
    
@@ -77,33 +95,25 @@ struct Element {
 
    __inline__ __device__ int nqx(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
 
-   __inline__ __device__ double computeSignedArea(void) const {
-      // Compute the area of the element
+   __inline__ __device__ bool isEdgeBoundary(Side *side) const { printf("inside isEdgeBoundary\n"); return false; }
 
-      double res = signedArea(nodes[0]->x, nodes[1]->x, nodes[2]->x, nodes[0]->y, nodes[1]->y, nodes[2]->y);
+   __inline__ __device__ double computeSignedArea(void) const;
 
-      if (isQuad()) {
-         double ar1 = signedArea(nodes[0]->x, nodes[2]->x, nodes[3]->x, nodes[0]->y, nodes[2]->y, nodes[3]->y);
-         double ar2 = signedArea(nodes[0]->x, nodes[1]->x, nodes[3]->x, nodes[0]->y, nodes[1]->y, nodes[3]->y);
-         double ar3 = signedArea(nodes[1]->x, nodes[2]->x, nodes[3]->x, nodes[1]->y, nodes[2]->y, nodes[3]->y);
-         if (ar1 < 0.0 || ar2 < 0.0 || ar3 < 0.0) {
-            Error("Negative area found in quad element");
-         }
-         res += ar1;
-      }
+   __device__ bool computeShapeCoords(double &xt, double &yt, double shpCoords[4], bool fixNegShapeCoords) const;
 
-      return res;
-   }
-
-   __device__ bool findNextIntersection(double t, double x2, double y2, 
-                                              Side *side, Element *nextElement,
-                                              double& tIntersect);
+   __device__ bool findNextIntersection(double x2, double y2, Side *&side, Element *&nextElement, double &t, double& tIntersect);
+   __device__ bool findNextIntersection(double x1, double y1, double x2, double y2, 
+                                        Side *&side, Element *&nextElement, double &t, double& tIntersect);
 
    __inline__ __device__ bool containsPoint(double xt, double yt) const {
       // Check if the point (xt,yt) is inside the element
-      printf("NOT IMPLEMENTED: containsPoint\n");
-      return true;
+      double shpCoords[4];
+      bool res = computeShapeCoords(xt, yt, shpCoords, false);
+      return res;
    }
+
+   __device__ bool interpolateVelocities(double xt, double yt, double zt, 
+                                         double& uuint, double& vvint, double& wwint);
 
 
    __inline__ __device__ bool globalToLocal(double xt, double yt, double &xlocal, double &ylocal) const {
@@ -117,6 +127,119 @@ struct Element {
       printf("NOT IMPLEMENTED: localToGlobal\n");
       return true;
    }
+
+
+    
+
+   /**
+    * Tracks a particle through elements and vertical levels in the mesh.
+    * 
+    * @param x0,y0,z0     Starting position coordinates
+    * @param xt,yt,zt     Target position coordinates
+    * @param dtb          Time step for tracking
+    * @param uuint,vvint,wwint Initial velocity components
+    * @param jlev         Current/resulting vertical level
+    * @param nextElem     Starting/resulting element index
+    * 
+    * @return Status code of type trackExitCodes
+    * 
+    * This function uses the same ideas as the original Fortran code (function QuickSearch), but some
+    * of the details are different. The idea is that the code requires less branches and is better fit
+    * for GPU execution.
+    * 
+    * The main ideas here are:
+    * - The starting point is guaranteed to be in the starting element.
+    * - since it is inside the element, there are only two cases: (a) segment (x0,y0)-(xt,yt) intersects the element sides, or (b) it does not and (xt,yt) is in the same element.
+    * - If it is not inside the element, we know that an interection must exist. We compute the intersection
+    *   of the segment with the *lines* (infinite length) that form the element sides.
+    * - The intersection is computed as the parametric value tt1 of the intersection point on the segment (x0,y0)-(xt,yt).
+    * - tt1 can be positive or negative. We only consider the positive values.
+    * - The next intersection will occur at the smallest positive tt1.
+    * - This intersection will be the next (x0,y0) position.
+    * - Proceeding this way it is guaranteed that we are always moving forward, so there is no chance
+    *   of getting stuck in a loop.
+    * - Additionally, this function never finds intersections with the side segment where the last intersection
+    *   was found.
+    */
+   __device__ trackExitCodes trackThroughElementsAndLevels(double x0, double y0, double z0,
+                                                           double xt, double yt, double zt, double dtb,
+                                                           double time,
+                                                           double uuint, double vvint, double wwint, 
+                                                           int& jlev, Side *side, Element *nextElem)
+   {
+      printf("trackThroughElementsAndLevels: x0=%f, y0=%f, xt=%f, yt=%f\n", x0, y0, xt, yt);
+      // First thing is to check if the target point is inside the element. If it is there is nothing
+      // else to do.
+      if (containsPoint(xt, yt)) return tec_success;
+
+      // 1. Initial checks
+      // Verify starting element is valid (wet)
+      if (nextElem->idry) return tec_dry_element;  // Error code for invalid starting conditions
+
+      // Checks if track has a zero length.
+      double trm = time; //time remaining
+
+
+      double xcg = x0, ycg=y0;
+      double pathl2 = (xt - xcg)*(xt - xcg) + (yt - ycg)*(yt - ycg);
+      
+      if (pathl2==0.0 || trm==0.0)  return tec_zero_length_track; 
+      
+
+      const int MAX_ITERATIONS = 1000;
+      double xCur = x0, yCur = y0;        // Cur means current
+      double xInt = -1e10, yInt = -1e10;  // Int means intersection
+      
+      double t;
+      Side *nextSide = nullptr;
+      double tIntersect = 1e10;
+
+      // Horizontal tracking loop
+      // Finds the first intersection with the element sides. It is guaranteed to exist because
+      // (x0,y0) is inside the element but the target point is not.
+      bool found_intersection = findNextIntersection(x0, y0, xt, yt, nextSide, nextElem, t, tIntersect);
+
+      if (!found_intersection) {
+         printf("Error: No intersection found\n");
+         return tec_no_intersection;
+      }
+
+      // Keeps searching for the next intersection until we find xt, yt inside nextElem.
+      int iterations = 0;
+      while (iterations < MAX_ITERATIONS) {
+         iterations++;
+
+        
+         bool found_intersection = nextElem->findNextIntersection(xt, yt, nextSide, nextElem, t, tIntersect);
+
+         // If we are already in the target element, we are done.
+         // Remember that, if we are here, the point (xt,yt) is inside curElem.
+         if (!found_intersection) break;
+
+         // Additional error conditions.
+         if (nextElem->isEdgeBoundary(nextSide)) return tec_edge_boundary;
+         if (nextElem->idry) return tec_dry_element;
+         
+         // Update position and element for next iteration
+         side = nextSide;
+         // t = tIntersect;
+      }
+
+
+      if (iterations >= MAX_ITERATIONS) return tec_iteration_limit;  
+   
+      
+      // Interpolate velocities at the final position. This is a conceptually simple step,
+      // but the function is not simple, because it has to search for the vertical level containing zt.
+      if (!nextElem->interpolateVelocities(xt, yt, zt, uuint, vvint, wwint)) {
+         return tec_failed_to_interpolate_velocities;
+      }
+
+      side = nullptr;
+
+      return tec_success;
+   }
+
 
 #ifdef BACKTRACKING
    __inline__ __device__ bool btrack(double xt, double yt, double zt,
@@ -247,6 +370,14 @@ struct Side {
       if (dot_prod1*dot_prod2 > 0.0) return elems[0];
       else                           return elems[1];
 
+  
+  
+  
+   }
+
+   __inline__ __device__ Element* otherElement(Element* elem) {
+      // Given an element, returns the other element that shares this side
+      return elems[0] == elem ? elems[1] : elems[0];
    }
 
 #ifdef BACKTRACKING
@@ -279,147 +410,10 @@ struct Side {
 
 
 
-   /*
-      Tracks a particle through elements and vertical levels in the mesh.
-
-      @param mesh         Reference to mesh object containing grid information
-      @param x0,y0,z0     Starting position coordinates
-      @param xt,yt,zt     Target position coordinates
-      @param dtb          Time step for tracking
-      @param uuint,vvint,wwint Initial velocity components
-      @param jlev         Current/resulting vertical level
-      @param nextElem     Starting/resulting element index
-
-      @return Status code of type trackExitCodes: 
-
-      Horizontal tracking:
-      - We start at a side center (x0,y0)
-      - We start on the element that contains the side center (nextElem). This is one of the elements that share this side.   
-      - We need to find the element that contains the target point (xt,yt)
-
-      At every step we have:
-         - A current element (curElem)
-         - A current position (xCur,yCur)
-         - A target position (xt,yt) (always the same)
-         - The side that we are currently on (At the start it is the side that contains the starting point, otherwise it is the side that contains the intersection point)
-
-      Now, there are two cases: (a) the element at the other side of the current side contains the target point, or (b) it does not.
-      In which case we know for sure that the target point is in a different element. And, for this reason we
-      know for sure that the segment (xCur,yCur)-(xt,yt) intersects the element sides.
-      
-      - We continue this process until we hit a boundary or the element that contains the target point.
-      - Once the target element is found, we compute the shape coordinates for the final position.
-
-      Vertical tracking:
-      - We then find the vertical level containing the target point.
-      - We interpolate the velocities at the final position.
-   */ 
-   enum trackExitCodes {
-      tec_success = 0,
-      tec_dry_element = 1,
-      tec_zero_length_track = 2,
-      tec_iteration_limit = 3,
-      tec_no_intersection = 4,
-      tec_edge_boundary = 5,
-      tec_no_element = 6,
-      tec_failed_to_compute_area_coords = 7,
-      tec_failed_to_find_vertical_level = 8,
-      tec_failed_to_interpolate_velocities = 9
-   };
-
-#ifdef BACKTRACKING
-   /**
-    * Tracks a particle through elements and vertical levels in the mesh.
-    * 
-    * @param x0,y0,z0     Starting position coordinates
-    * @param xt,yt,zt     Target position coordinates
-    * @param dtb          Time step for tracking
-    * @param uuint,vvint,wwint Initial velocity components
-    * @param jlev         Current/resulting vertical level
-    * @param nextElem     Starting/resulting element index
-    * 
-    * @return Status code of type trackExitCodes
-    * 
-    * This function uses the same ideas as the original Fortran code (function QuickSearch), but some
-    * of the details are different. The idea is that the code requires less branches and is better fit
-    * for GPU execution.
-    * 
-    * The main ideas here are:
-    * - The starting point is guaranteed to be in the starting element.
-    * - since it is inside the element, there are only two cases: (a) segment (x0,y0)-(xt,yt) intersects the element sides, or (b) it does not and (xt,yt) is in the same element.
-    * - If it is not inside the element, we know that an interection must exist. We compute the intersection
-    *   of the segment with the *lines* (infinite length) that form the element sides.
-    * - The intersection is computed as the parametric value tt1 of the intersection point on the segment (x0,y0)-(xt,yt).
-    * - tt1 can be positive or negative. We only consider the positive values.
-    * - The next intersection will occur at the smallest positive tt1.
-    * - This intersection will be the next (x0,y0) position.
-    * - Proceeding this way it is guaranteed that we are always moving forward, so there is no chance
-    *   of getting stuck in a loop.
-    * - Additionally, this function never finds intersections with the side segment where the last intersection
-    *   was found.
-    */
-   __device__ trackExitCodes trackThroughElementsAndLevels(double x0, double y0, double z0,
-                                                           double xt, double yt, double zt, double dtb,
-                                                           double uuint, double vvint, double wwint, 
-                                                           int& jlev, Side *side, Element *nextElem)
-   {
-
-      // 1. Initial checks
-      // Verify starting element is valid (wet)
-      if (nextElem->isDry) return tec_dry_element;  // Error code for invalid starting conditions
-
-      // Checks if track has a zero length.
-      double trm = time; //time remaining
 
 
-      double xcg = x0, ycg=y0;
-      double pathl2 = (xt - xcg)*(xt - xcg) + (yt - ycg)*(yt - ycg);
-      
-      if (pathl2==0.0 || trm==0.0)  return tec_zero_length_track; 
-      
-
-      const int MAX_ITERATIONS = 1000;
-      double xCur = x0, yCur = y0;        // Cur means current
-      double xInt = -1e10, yInt = -1e10;  // Int means intersection
-      
-      double t = 0.5; // Initial t value for intersection search is in the middle of the side
-      Side *nextSide = side;
-      double tIntersect = 1e10;
-
-      // Horizontal tracking loop
-      for (int iterations = 0; iterations < MAX_ITERATIONS; iterations++) {
-
-         bool found_intersection = curElem->findNextIntersection(t, xt, yt, nextSide, nextElement, tIntersect);
-
-         // If we are already in the target element, we are done.
-         // Remember that, if we are here, the point (xt,yt) is inside curElem.
-         if (!found_intersection) break;
-
-         // Additional error conditions.
-         if (nextElement->isEdgeBoundary(nextSide)) return tec_edge_boundary;
-         if (nextElement->isDry) return tec_dry_element;
-         
-         // Update position and element for next iteration
-         side = nextSide;
-         t = tIntersect;
-      }
 
 
-      if (iterations >= MAX_ITERATIONS) return tec_iteration_limit;  
-   
-      
-      // Interpolate velocities at the final position. This is a conceptually simple step,
-      // but the function is not simple, because it has to search for the vertical level containing zt.
-      if (!currentElem->interpolateVelocities(shapeCoords, jlev, 
-                                              uuint, vvint, wwint)) {
-         return tec_failed_to_interpolate_velocities;
-      }
-
-      side = nullptr;
-
-      return tec_success;
-   }
-#endif
 };
 
 
@@ -427,11 +421,11 @@ struct Node {
    static Mesh* mesh;
 
    // Geometry information
-   Node **nodes;   // pointer to the nodes connected to this node
-   int numNodes;   // number of nodes connected to this node
+   Node **nodes;   // pointer to the nodes that are neighbors of this node (there is no guarantee that they are connected)
+   int numNodes;   // number of nodes neighbors of this node
 
-   Element **elements; // pointer to the elements connected to this node
-   int numElements;   // number of elements shared by this node
+   Element **elements; // pointer to the elements that share this node
+   int numElements;   // number of elements that share this node
 
    double x, y, z;
    double u[nvrt], v[nvrt], w[nvrt];
@@ -450,7 +444,7 @@ struct Node {
    double eta2; // Elevation at nodes at current timestep
 
 
-   __device__ __inline__ double Node::sigmaTransitionDepth(void) const;
+   __host__ __device__ double sigmaTransitionDepth(void) const;
 
 
 
@@ -568,8 +562,8 @@ class Mesh {
 
   
    // Additional topology information
-   Node    **connectedNodes; // Array of pointers to the nodes connected to each node
-   Element **sharedElements; // Array of pointers to the elements shared by each node
+   Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
+   Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
 
    // Vertical coordinate system
    // Sigma levels
@@ -626,127 +620,46 @@ class Mesh {
                        max_np(max_np), max_ne(max_ne), max_ns(max_ns),
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
-                       connectedNodes(localNodeNeighNodesMem), sharedElements(localNodeNeighElemsMem)
+                       nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem)
    {
       printf("Mesh constructor for partition %d\n", partNum);
+
+
    }
 
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
+                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
-                   int *localNodePart,     int *localElemPart,     int *localSidePart) {
-
-      printf("Populating mesh for partition %d\n", partNum);
-
-      printf("Processing %d elements\n", ne);
-      for (int i = 0; i < ne; i++)
-      {
-         const int i34 = i34[i];
-
-         Element &elem = localElemData[i];
-
-         elem.i34 = i34;
-         elem.wind_angle = wind_rotate_angle[i];
-
-         elem.xc = 0.0;
-         elem.yc = 0.0;
-         elem.depth = 0.0;
-         for (int j = 0; j < i34; j++) {
-            elem.xc    += elem.nodes[j]->x/i34;
-            elem.yc    += elem.nodes[j]->y/i34;
-            elem.depth += elem.nodes[j]->z/i34;
-         }
-
-         // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;
-         // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
- 
-      
-
-   
-         elem.area = elem.computeSignedArea(); 
-         elem.radius = sqrt(elem.area)/M_PI; 
-         // Determines which way the normal vector to each side is oriented.
-         // It only ensures that it is consistent for all elements. Otherwise, it is arbitrary.
-         for (int j = 0; j < i34; j++)  
-         {
-            if (elems.sides[j]->elems[0] == &elem) {
-               elem.ssign[j] = 1;
-            }
-            else {
-               elem.ssign[j] = -1;
-            }
-
-         }
-
-      }
-
-
-      printf("Processing %d nodes\n", np);      
-      for (int i = 0; i < np; i++)
-      {
-         // localNodeData[i].nodes = connectedNodes[i];
-         Node &node = localNodeData[i];
-
-         node.x = node_coords[i * 3];
-         node.y = node_coords[i * 3 + 1];
-         node.z = node_coords[i * 3 + 2];
-      }
-
-      printf("Processing %d sides\n", ns);
-      for (int i = 0; i < ns; i++)
-      {
-         // localNodeData[i].nodes = connectedNodes[i];
-         Side &side = localSideData[i];
-
-         // finding the pointer to the nodes that form the side
-         const int idx_n1 = isidenode[globalSideIndices[i]*2];
-         const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
-
-         const int locidx_n1 = localNodeIndices[idx_n1];
-         const int locidx_n2 = localNodeIndices[idx_n2];
-         const int part_n1 =   localNodePart[idx_n1];
-         const int part_n2 =   localNodePart[idx_n2];
-
-         side.n1 = (Node *)&(nodes[part_n1][locidx_n1]);
-         side.n2 = (Node *)&(nodes[part_n2][locidx_n2]);
-
-         if (i<10) printf("Side %d: %p %p\n", i, side.n1, side.n2);
-
-         // finding the pointer to the elements that share the side
-         const int idx_e1 = isdel[globalSideIndices[i]*2];
-         const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
-
-         const int locidx_e1 = localElemIndices[idx_e1];
-         const int locidx_e2 = localElemIndices[idx_e2];
-         const int part_e1 =  localElemPart[idx_e1];
-         const int part_e2 =  localElemPart[idx_e2];
-
-         // if (i<10) printf("Side %d: %d %d %d %d\n", i, idx_e1, idx_e2, part_e1, part_e2);
-         side.elems[0] = (Element *)&(elems[part_e1][locidx_e1]);
-         side.elems[1] = (Element *)&(elems[part_e2][locidx_e2]);
-
-         side.xc = 0.5*(side.n1->x + side.n2->x);
-         side.yc = 0.5*(side.n1->y + side.n2->y);
-         for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->znl[k] + side.n2->znl[k]);
-
-         side.length = sqrt((side.n2->x - side.n1->x)*(side.n2->x - side.n1->x) + 
-                            (side.n2->y - side.n1->y)*(side.n2->y - side.n1->y));
-      }
-   }
+                   int *localNodePart,     int *localElemPart,     int *localSidePart);
 
 
 
    __device__ ~Mesh()
    {
    }
-};
 
-__device__ void Error(const char* msg) {
-   // TODO: Implement error handling
-}
+   __device__ void test(double x, double y, double z)
+   {
+      for (int i = 0; i < ne; i++) {
+         auto isInside = localElemData[i].containsPoint(x, y);
+         if (isInside) {
+            printf("Point %f %f %f is inside element %d\n", x, y, z, i);
+            Element *elem = &localElemData[i];
+            
+            int jlev = 0;
+            Side *side = nullptr;
+            
+            auto res = elem->trackThroughElementsAndLevels(x,y,z, x+0.1,y,z,
+                                                     0.1, 1.0, 1.0,0.0,0.0,jlev, side, elem);
+         }
+      }
+   } 
 
+}; // End of Mesh class
 
 __device__ __inline__ double dotprod3(double* vec1, double* vec2) {
    return vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];

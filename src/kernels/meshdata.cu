@@ -54,24 +54,88 @@ __device__ Mesh* mesh = nullptr;
    If true, (xIntersect,yIntersect) is the intersection.				
    Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
 **/
-__device__ bool Element::findNextIntersection(double t, double x2, double y2, 
-                                              Side *side, Element *nextElement,
-                                              double& tIntersect) {
+__device__ bool Element::findNextIntersection(double x2, double y2, 
+                                              Side *&side, Element *&nextElement,
+                                              double &t, double& tIntersect) {
 
 
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
 
+   // (x1,y1)-(x2,y2) is the track line segment. Every step we move (x1,y1) to the next
+   // intersection point, at position t on "side". The final position is (x2,y2)=(xt,yt).
+   const double x1 = (1-t)*side->n1->x + t*side->n2->x;
+   const double y1 = (1-t)*side->n1->y + t*side->n2->y;
+   printf(">findNextIntersection: x1=%f, y1=%f, x2=%f, y2=%f\n", x1, y1, x2, y2);
+
+   Side *nextSide = nullptr;
+
    for (int i = 0; i < i34; i++) {
 
+      // Element's i-th side 
       Side *side2 = sides[i];
 
+      printf("SIDE: side = %p, side2 = %p\n", side, side2);
       // Skip the side that contains the initial point
       if (side2 == side) continue;
 
-      // (x1,y1)-(x2,y2) is the track line segment
-      const double x1 = t*side->n1->x + (1-t)*side->n2->x;
-      const double y1 = t*side->n1->y + (1-t)*side->n2->y;
+      printf("### i = %d, side2->n1->x=%f, side2->n1->y=%f, side2->n2->x=%f, side2->n2->y=%f\n", i, side2->n1->x, side2->n1->y, side2->n2->x, side2->n2->y);
+
+      // (x3,y3)-(x4,y4) is the element side line
+      const double x3 = side2->n1->x;
+      const double y3 = side2->n1->y;
+      const double x4 = side2->n2->x;
+      const double y4 = side2->n2->y;
+
+      // delta is 0 if the two lines are parallel. In this case, they do not intersect.
+      const double delta = (x2-x1)*(y3-y4) - (y2-y1)*(x3-x4);
+
+      if (delta != 0.0) {
+
+         const double delta1 = (x3-x1)*(y3-y4) - (y3-y1)*(x3-x4);
+         const double delta2 = (x2-x1)*(y3-y1) - (y2-y1)*(x3-x1); 
+
+         // Solves the two linear equations for tt1 and tt2
+         const double tt1 = delta1/delta; // delta is not zero, so we can divide
+         const double tt2 = delta2/delta;
+
+         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small) {
+            closest_intersect_t = min(closest_intersect_t, tt1);
+            nextSide = side2;
+            nextElement = nextSide->otherElement(this);
+            tIntersect = max(small, min(tt1, 1.0-small));
+            t = tt2;
+            printf("### t = %f, tIntersect=%f\n", t , tIntersect);
+            found_intersection = true;
+         }
+      
+      }
+
+   }
+
+   if (!found_intersection) {
+      printf("### findNextIntersection: No intersection found, tIntersect=%f\n", tIntersect);
+   }
+
+   
+   // found_intersection should always be true, since we checked all the sides.  
+   side = nextSide;
+   return found_intersection;
+}
+
+
+__device__ bool Element::findNextIntersection(double x1, double y1, double x2, double y2, 
+                                              Side *&side, Element *&nextElement,
+                                              double &t, double& tIntersect) {
+
+   double closest_intersect_t = 1e10;
+   bool found_intersection = false;
+
+   printf("findNextIntersection: x1=%f, y1=%f, x2=%f, y2=%f\n", x1, y1, x2, y2);
+
+   for (int i = 0; i < i34; i++) {
+
+      Side *side2 = sides[i];
 
       // (x3,y3)-(x4,y4) is the element side line
       const double x3 = side2->n1->x;
@@ -94,9 +158,11 @@ __device__ bool Element::findNextIntersection(double t, double x2, double y2,
          if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
-            nextElement = nghbElems[i];
+            nextElement = side->otherElement(this);
+            t = tt2;
             tIntersect = max(small, min(tt1, 1.0-small));
             found_intersection = true;
+            
          }
       
       }
@@ -108,9 +174,35 @@ __device__ bool Element::findNextIntersection(double t, double x2, double y2,
 }
 
 
-#ifdef BACKTRACKING
+__inline__ __device__ double Element::computeSignedArea(void) const {
+   // Compute the area of the element
+
+   double res = signedArea(nodes[0]->x, nodes[1]->x, nodes[2]->x, nodes[0]->y, nodes[1]->y, nodes[2]->y);
+
+   if (isQuad()) {
+      double ar1 = signedArea(nodes[0]->x, nodes[2]->x, nodes[3]->x, nodes[0]->y, nodes[2]->y, nodes[3]->y);
+      double ar2 = signedArea(nodes[0]->x, nodes[1]->x, nodes[3]->x, nodes[0]->y, nodes[1]->y, nodes[3]->y);
+      double ar3 = signedArea(nodes[1]->x, nodes[2]->x, nodes[3]->x, nodes[1]->y, nodes[2]->y, nodes[3]->y);
+      if (ar1 < 0.0 || ar2 < 0.0 || ar3 < 0.0) {
+         Error("Negative area found in quad element");
+      }
+      res += ar1;
+   }
+
+   return res;
+}
+
+
+
+/**
+   Compute the shape coordinates of the point (xt,yt) in the element.
+   @param xt, yt: coordinates of the point
+   @param shpCoords: shape coordinates of the point
+   @param fixNegShapeCoords: if true, fix negative shape coordinates
+   @return true if the point is inside the element, false otherwise
+**/
 __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCoords[4],
-                                                       bool fixNegShapeCoords) {
+                                            bool fixNegShapeCoords) const {
 
    // Compute the shape coordinates of the point (xt,yt) in the element.
    if (i34==3) {
@@ -132,14 +224,15 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
       }
       else // lat/lon
       {
+#ifdef ICS2
          globalToLocal(nodes[0]->x, nodes[0]->y, nodes[0]->z, x0, y0, z0);
          globalToLocal(nodes[1]->x, nodes[1]->y, nodes[1]->z, x1, y1, z1);
          globalToLocal(nodes[2]->x, nodes[2]->y, nodes[2]->z, x2, y2, z2);
+#endif
       }
 
-
-      shpCoords[0] = signa2(xt,x1,x2,yt,y1,y2)/area;
-      shpCoords[1] = signa2(x0,xt,x2,y0,yt,y2)/area; 
+      shpCoords[0] = signedArea(xt,x1,x2,yt,y1,y2)/area;
+      shpCoords[1] = signedArea(x0,xt,x2,y0,yt,y2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
 
@@ -161,16 +254,25 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
 
          if (shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
              shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) {
-            Error();
+            Error("Negative shape coordinates in computeShapeCoords, when fixNegShapeCoords is true");
          }
 
-        // Update the point coordinates for the new shape coordinates
-        xt = dotprod3({x0,x1,x2}, shpCoords)
-        yt = dotprod3({y0,y1,y2}, shpCoords)
+         // Update the point coordinates for the new shape coordinates
+         double xcoords[3] = {x0, x1, x2};
+         double ycoords[3] = {y0, y1, y2};
+         xt = dotprod3(xcoords, shpCoords);
+         yt = dotprod3(ycoords, shpCoords);
+
       }
+
+      // Check if the point is inside the element
+      // XXX printf("Shape coordinates: %f %f %f %f\n", shpCoords[0], shpCoords[1], shpCoords[2], shpCoords[3]);
+      return min(min(shpCoords[0], shpCoords[1]), shpCoords[2]) > -small;      
    }
    else {
       // XXX Not implemented yet
+      Error("Not implemented yet");
+#ifdef QUADS
       // Reproject pt in eframe of nel for ics=2
       if constexpr(ics==1) {
          xn2 = xt; 
@@ -182,7 +284,9 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
       }
 
       return quad_shape(1,6,nnel,xn2,yn2,inside2,arco)
+#endif
    }
+
 }
 
 
@@ -201,10 +305,15 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
       horizontally and vertically.
 **/
 __device__ bool Element::interpolateVelocities(double xt, double yt, double zt, 
-                                                          double& uuint, double& vvint, double& wwint) {
+                                               double& uuint, double& vvint, double& wwint) {
    // Interpolate the velocities at the point (xt,yt,zt). 
    // This function works the same for triangular and quadrilateral elements.
    double shapeCoords[4];
+   printf("### interpolateVelocities not implemented yet\n");
+   // Error("interpolateVelocities Not implemented yet");
+   return false;
+}
+#ifdef BACKTRACKING   
 
    auto n0 = nodes[0];
    auto n1 = nodes[1];
@@ -388,7 +497,7 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
 //     results[sid].exitedDomain = exitedDomain;
 // }
 
-__device__ __inline__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }    
+__host__ __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }    
 
 
 extern "C" { 
@@ -430,6 +539,153 @@ extern "C" {
       }
    }
 }
+
+
+
+__device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
+                double *node_coords, double *wind_rotate_angle, 
+                int *isdel, int *isidenode, int *isbnd,
+                int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+                int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                int *localNodePart,     int *localElemPart,     int *localSidePart) {
+
+   printf("Populating mesh for partition %d\n", partNum);
+
+
+   printf("Processing %d nodes\n", np);      
+   for (int i = 0; i < np; i++)
+   {
+      Node &node = localNodeData[i];
+
+      const int idxStart = nodeNeighNodesStart[i];
+      const int idxEnd   = nodeNeighNodesStart[i+1];
+      node.numNodes = idxEnd - idxStart;
+      node.nodes = (Node **)(nodeNeighNodes + idxStart*sizeof(Node *));
+
+      for (int idx = idxStart; idx < idxEnd; idx++) {
+         int idxNode = nodeNeighNodesIndices[idx];
+         Node *node_ptr = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
+
+         nodeNeighNodes[idxNode] = node_ptr;
+         node.nodes = &(nodeNeighNodes[idxNode]);
+      }
+
+      // Element **elements; // pointer to the elements connected to this node
+      // int numElements;   // number of elements shared by this node
+
+      node.x = node_coords[i * 3];
+      node.y = node_coords[i * 3 + 1];
+      node.z = node_coords[i * 3 + 2];
+   }
+
+
+   printf("Processing %d sides\n", ns);
+   for (int i = 0; i < ns; i++)
+   {
+      Side &side = localSideData[i];
+
+      // finding the pointer to the nodes that form the side
+      const int idx_n1 = isidenode[globalSideIndices[i]*2];
+      const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
+
+      const int locidx_n1 = localNodeIndices[idx_n1];
+      const int locidx_n2 = localNodeIndices[idx_n2];
+      const int part_n1 =   localNodePart[idx_n1];
+      const int part_n2 =   localNodePart[idx_n2];
+
+      side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
+      side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
+
+      // finding the pointer to the elements that share the side
+      const int idx_e1 = isdel[globalSideIndices[i]*2];
+      const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
+
+      const int locidx_e1 = localElemIndices[idx_e1];
+      const int locidx_e2 = localElemIndices[idx_e2];
+      const int part_e1 =  localElemPart[idx_e1];
+      const int part_e2 =  localElemPart[idx_e2];
+
+      side.elems[0] = (Element *)&(elems[part_e1][locidx_e1]);
+      side.elems[1] = (Element *)&(elems[part_e2][locidx_e2]);
+
+      // Compute the center of the side
+      side.xc = 0.5*(side.n1->x + side.n2->x);
+      side.yc = 0.5*(side.n1->y + side.n2->y);
+
+      // Compute the z level at the center of the side
+      for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->znl[k] + side.n2->znl[k]);
+
+      // Compute the length of the side
+      side.length = sqrt((side.n2->x - side.n1->x)*(side.n2->x - side.n1->x) + 
+                         (side.n2->y - side.n1->y)*(side.n2->y - side.n1->y));
+
+   }
+
+   printf("Processing %d elements\n", ne);
+   for (int i = 0; i < ne; i++)
+   {
+      Element &elem = localElemData[i];
+
+      for (int j = 0; j < i34[i]; j++) {
+         const int idxNode = elnode[i*4 + j];  
+         const int idxSide = elside[i*4 + j];
+         
+         elem.nodes[j] = (Node *)&(nodes[localElemPart[idxNode]][localElemIndices[idxNode]]);
+         elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
+
+         // Find the neighboring element  
+         if (elem.sides[j]->elems[0] == &elem) {
+            elem.nghbElems[j] = elem.sides[j]->elems[1];
+         }
+         else {
+            elem.nghbElems[j] = elem.sides[j]->elems[0];
+         }
+      }
+
+      
+
+      elem.i34 = i34[i];
+      elem.wind_angle = wind_rotate_angle[i];
+
+      // Compute the centroid of the element and its depth
+      elem.xc = 0.0;
+      elem.yc = 0.0;
+      elem.depth = 0.0;
+      for (int j = 0; j < i34[i]; j++) {
+         elem.xc    += elem.nodes[j]->x/i34[i];
+         elem.yc    += elem.nodes[j]->y/i34[i];
+         elem.depth += elem.nodes[j]->z/i34[i];
+      }
+ 
+      
+      // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
+      // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
+
+      elem.area = elem.computeSignedArea(); 
+      elem.radius = sqrt(elem.area)/pi; 
+      
+      // Determines which way the normal vector to each side is oriented.
+      // The orientation means that for each side, elems[0] points to elems[1]. In the boundary this guarantees that the normal vector is pointing outwards.
+      for (int j = 0; j < i34[i]; j++)  
+      {
+         if (elem.sides[j]->elems[0] == &elem) {
+            elem.ssign[j] =  1.0;
+         }
+         else {
+            elem.ssign[j] = -1.0;
+         }
+
+      }
+
+   }
+
+ 
+
+   
+}
+
 
 
 
@@ -812,14 +1068,11 @@ __global__ void createMesh(int partNum,
                            Node *nodes, Element *elems, Side *sides,
                            Node    **partNodeNeighNodesMem, Element **partNodeNeighElemsMem) {
 
-   printf("HERE3");
    if (mesh != nullptr) 
    {
       printf("ERROR: Mesh is already initialized\n");
       return;
    };
-
-
 
    mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, np, ne, ns, max_np, max_ne, max_ns,
                    nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides,
@@ -831,18 +1084,27 @@ extern "C"
   __global__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
+                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices, int *localElemIndices, int *localSideIndices,
                    int *localNodePart,    int *localElemPart,    int *localSidePart) {
 
     mesh->populateMesh(i34, elnode, elside, node_coords, wind_rotate_angle, 
                        isdel, isidenode, isbnd,
-                   globalNodeIndices, globalElemIndices, globalSideIndices,
-                   localNodeIndices, localElemIndices, localSideIndices,
-                   localNodePart, localElemPart, localSidePart);
+                       nodeNeighNodesStart, nodeNeighNodesIndices,
+                       nodeNeighElemsStart, nodeNeighElemsIndices,
+                       globalNodeIndices, globalElemIndices, globalSideIndices,
+                       localNodeIndices, localElemIndices, localSideIndices,
+                       localNodePart, localElemPart, localSidePart);
   }
 
 extern "C" 
 __global__ void destroyMeshCPU(void) {
    delete mesh;
+}
+
+extern "C"
+__global__ void test(double x, double y, double z) {
+   mesh->test(x, y, z);
 }

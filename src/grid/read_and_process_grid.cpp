@@ -8,6 +8,9 @@
 
 namespace py = pybind11;  
 
+constexpr int internalNode = -1;
+constexpr int landNode = -2;
+
 // 
 
 // elnode[4, nElements] -> Global index to the nodes that form the element
@@ -16,20 +19,16 @@ namespace py = pybind11;
 // ic3[4, nElements] -> For each element, global index to the other element that shares the side 
 // isdel[2, nSides] -> Global index to the elements that share the side
 // isidenodes[2, nSides] -> Global index to the nodes that form the side
-
-// ArrayOfRows (the first index has variable size)
-// nodeNeighElems[:, nNodes] -> Global index to the nodes that are neighbors of each node
-// nodeNeighNodes[:, nNodes] -> Global index to the nodes that are neighbors of each node
+// nodeNeighElems[:, nNodes]: ArrayOfRows -> Global index to the nodes that are neighbors of each node
+// nodeNeighNodes[:, nNodes]: ArrayOfRows -> Global index to the nodes that are neighbors of each node
 
 
 
-void buildNodeNeighborsLists(const Array2D<int>& elnode, const std::vector<int>& i34, 
+void buildListsOfElementNeighbors(const Array2D<int>& elnode, const std::vector<int>& i34, 
                              const std::vector<int>& isbnd, int nElements, int nNodes, 
                              ArrayOfRows<int>& nodeNeighElems, ArrayOfRows<int>& nodeNeighNodes) {
 
-    // Initialize arrays
     std::vector<size_t> nne(nNodes, 0);  // Node neighbor element counts.
-    std::vector<size_t> nnp(nNodes, 0);  // Node neighbor node counts.
 
     // Count elements connected to each vertex
     for (int i = 0; i < nElements; i++) {
@@ -82,7 +81,18 @@ void buildNodeNeighborsLists(const Array2D<int>& elnode, const std::vector<int>&
 
     print("");
 
-    // Build node-to-nodes mapping
+}
+
+
+void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const std::vector<int>& i34, 
+                              const std::vector<int>& isbnd, int nElements, int nNodes, 
+                              ArrayOfRows<int>& nodeNeighElems, ArrayOfRows<int>& nodeNeighNodes) {
+
+    // Build node-to-nodes mapping.
+    // NOTE: A node is considered a neighborg of another if there is an element that contains both. 
+    // They don't need to be connected.
+
+    std::vector<size_t> nnp(nNodes, 0);  // Node neighbor node counts.
 
     // First pass: count number of neighboring nodes
     for (int i = 0; i < nNodes; i++) {
@@ -91,7 +101,7 @@ void buildNodeNeighborsLists(const Array2D<int>& elnode, const std::vector<int>&
             const int ie = nodeNeighElems(i, j);
             
             if (j == nodeNeighElems.rowSize(i) - 1) {  // Last element
-                if (isbnd[i] == -1) {  // Internal node
+                if (isbnd[i] == internalNode) {  // Internal node
                     nnp[i] += i34[ie] - 2;  // Exclude self and duplicate
                 } else {  // Boundary node
                     nnp[i] += i34[ie] - 1;  // Only exclude self
@@ -115,8 +125,8 @@ void buildNodeNeighborsLists(const Array2D<int>& elnode, const std::vector<int>&
 
         for (size_t j = 0; j < nodeNeighElems.rowSize(i); j++) {
             const int ie = nodeNeighElems(i, j);
-            
-            
+
+                        
             // Find position of node i in this element
             int ii = -1;
             for (int k = 0; k < i34[ie]; k++) {
@@ -125,7 +135,12 @@ void buildNodeNeighborsLists(const Array2D<int>& elnode, const std::vector<int>&
                     break;
                 }
             }
+            if (ii == -1) {
+                throw std::runtime_error("Node " + std::to_string(i) + " not found in element " + std::to_string(ie));
+            }
             
+
+
             // Add nodes counter-clockwise around this node
             for (int k = 1; k < i34[ie] - 1; k++) {
                 nodeNeighNodes(i, currentCount[i]) = elnode(nqx(k, ii, i34[ie]), ie);
@@ -133,13 +148,25 @@ void buildNodeNeighborsLists(const Array2D<int>& elnode, const std::vector<int>&
             }
             
             // For the last element in the ball around node i
-            if (j == nodeNeighElems.rowSize(i) - 1) {
-                if (isbnd[i] != -1) {  // Boundary node
-                    nodeNeighNodes(i, currentCount[i]) = elnode(nqx(i34[ie]-1, ii, i34[ie]), ie);
+            if (j == nodeNeighElems.rowSize(i) - 1) {  // Last element
+                int lastNode = elnode(nqx(i34[ie] - 1, ii, i34[ie]), ie);
+  
+                
+                if (isbnd[i] == internalNode) {  // Internal node 
+                    // Check if the ball is complete - last node should match first node
+                    if (lastNode != nodeNeighNodes(i, 0)) {
+                        throw std::runtime_error("Broken ball for node " + std::to_string(i) + 
+                            ": last node " + std::to_string(lastNode) + 
+                            " doesn't match first node " + std::to_string(nodeNeighNodes(i, 0)));
+                    }
+                } else {  // Boundary node
+                    // For boundary nodes, add the last node
+                    nodeNeighNodes(i, currentCount[i]) = lastNode;
                     currentCount[i]++;
                 }
             }
         }
+
     }    
 
     print("");
@@ -256,8 +283,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         for (int k = 0; k < i34[ie]; k++) {
             ic3(k, ie) = -1;
             // Get nodes for this side
-            const int loc_n1 = nqx(0, k, i34[ie]);
-            const int loc_n2 = nqx(1, k, i34[ie]); 
+            const int loc_n1 = nqx(1, k, i34[ie]);
+            const int loc_n2 = nqx(2, k, i34[ie]); 
 
             const int n1 = elnode(loc_n1, ie);
             const int n2 = elnode(loc_n2, ie);
@@ -361,7 +388,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
 
     // Build isdel
     nSides = ns + 1;
-    printFormatted(ansi::blue("nSides = %d !!!!!!!!!!"), nSides);
+
     isdel.resize(2, nSides); 
     isidenode.resize(2, nSides);
     for (int ie = 0; ie < nElements; ie++) {
@@ -374,8 +401,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                 break;
             }
 
-            const int n1 = elnode(nqx(0, j, i34[ie]), ie);
-            const int n2 = elnode(nqx(1, j, i34[ie]), ie);
+            const int n1 = elnode(nqx(1, j, i34[ie]), ie);
+            const int n2 = elnode(nqx(2, j, i34[ie]), ie);
 
             if (n1==-1) {
                 printFormatted(ansi::red("n1==-1"));
@@ -384,31 +411,14 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                 printFormatted(ansi::red("n2==-1"));
             }   
 
-            if (true) { //ic3(j,ie)==0) { 
-            // // && iegb<ielg(max(1,ic3(j,ie)))) ||
-            //     // (ic3(j,ie)<0 && iegb<iabs(ic3(j,ie)))) {
-                isdel(0,jsj)=ie;
-                isdel(1,jsj)=ic3(j,ie);
-                isidenode(0,jsj)=n1;
-                isidenode(1,jsj)=n2;
-            } else {
-                // old augmented subdomain boundary side (reverse orientation)
-                // printFormatted(ansi::red("Old augmented subdomain boundary side (reverse orientation)"));
-                isdel(0,jsj)=ic3(j,ie);
-                isdel(1,jsj)=ie;
-                isidenode(0,jsj)=n2;
-                isidenode(1,jsj)=n1;
-            }
+            isdel(0,jsj)=ie;
+            isdel(1,jsj)=ic3(j,ie);
+            isidenode(0,jsj)=n1;
+            isidenode(1,jsj)=n2;
+
         }
     }
 
-
-    // for (int is = 0; is < nSides; is++) {
-    //     isdel(0, is) = js(0, is);
-    //     isdel(1, is) = ic3(0, is);
-    // }
-
-    
 
     print("");
 
@@ -478,7 +488,8 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
     for (int i = 0; i < np; i++) {
         progressBar("Reordering node elements counter-clockwise", i, np, ansi::LIGHT_BLUE, 20);
         // If it is a boundary node, starts with a boundary element
-        if (isbnd[i] != -1) {
+
+        if (isbnd[i] != internalNode) {
             // Find first boundary element and place it first
             int icount = 0;
             for (size_t ielocal = 0; ielocal < nodeNeighElems.rowSize(i); ielocal++) {
@@ -517,7 +528,6 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
         for (size_t j = 1; j < nodeNeighElems.rowSize(i); j++) {
             // Get previous element
             const int ie = nodeNeighElems(i, j - 1);
-
             // Find local index of node i in element ie
             int ilocal = -1;
             for (int l = 0; l < i34[ie]; l++) {
@@ -533,7 +543,8 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
             }
 
             // Find next element by going two sides back counter-clockwise
-            const int newElement = ic3(nqx(i34[ie] - 3, ilocal, i34[ie]), ie);
+            const int newElement = ic3(nqx(-2, ilocal, i34[ie]), ie);
+
             if (newElement == -1) {
                 throw std::runtime_error("Incomplete ball around node " + 
                                          std::to_string(i+1) + 
@@ -543,6 +554,8 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
 
             nodeNeighElems(i, j) = newElement;
         }
+
+  
     }
     print("");
 }
@@ -840,7 +853,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     // Allocate arrays for open boundary segments
     std::vector<int> nond(nope, 0);                    // nodes per segment
     Array2D<int> iond(nope, mnond);                    // node indices for each segment
-    std::vector<int> isbnd(nNodes, -1);                // which segment each node belongs to
+    std::vector<int> isbnd(nNodes, internalNode);      // is boundary 
 
     // Fill the arrays using stored segment_nodes
     for (size_t k = 0; k < segmentNodes.size(); k++) {
@@ -935,8 +948,8 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
 
         // Mark boundary nodes and check for overlap with open boundaries
         for (int ip : nodes) {
-            if (isbnd[ip] == -1) {
-                isbnd[ip] = -2;  // overlap with open boundary
+            if (isbnd[ip] == internalNode) {
+                isbnd[ip] = landNode;  // overlap with open boundary
             }
         }
     }
@@ -949,7 +962,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     ArrayOfRows<int> nodeNeighElems, nodeNeighNodes;
 
 
-    buildNodeNeighborsLists(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
+    buildListsOfElementNeighbors(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
 
     AdjacencyList adjList = buildAdjacencyList(elnode, i34, nodeNeighElems, nElements);
 
@@ -961,6 +974,10 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
                                  elside, isdel, ic3, isidenode, nSides);
 
     reorderElementsCounterClockwise(nNodes, isbnd, nodeNeighElems, elnode, i34, ic3);
+
+    // This function must be called after reorderElementsCounterClockwise. In general, the order
+    // of functions is important in this section.
+    buildListsOfNodeNeighbors(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
 
     idx_t nvtxs = nElements;  // number of vertices (elements in our case)
     std::vector<idx_t> partElements(nvtxs);  // array to store partition numbers

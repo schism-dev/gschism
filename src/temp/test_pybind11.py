@@ -7,15 +7,18 @@ import pybind11
 import numpy as np
 import timeit
 import sys
+from matplotlib import pyplot as plt
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
 
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
 in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -202,6 +205,55 @@ if __name__ == "__main__":
     nodeCoords           = cp.array(nodeCoords,        dtype=cp.float64, order='F')
     wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
 
+    if True:    
+        plt.figure(figsize=(12, 8))
+        plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.')
+        for i in range(100):
+            plt.annotate(str(i), 
+                        (nodeCoords[0,i].get(), nodeCoords[1,i].get()),
+                        xytext=(2, 2),  # Small offset from the point
+                        textcoords='offset points',
+                        fontsize=8)
+            
+        # Plot first 1000 triangles
+        for i in range(100):
+            pass
+            # Get the three nodes of the triangle
+            nodes = elnode[:3,i].get()
+            # Add the first node again to close the triangle
+            nodes = np.append(nodes, nodes[0])
+            
+            # Get coordinates for these nodes
+            x = nodeCoords[0,nodes].get()
+            y = nodeCoords[1,nodes].get()
+            
+            # Plot the triangle
+            plt.plot(x, y, 'r-', alpha=0.3)  # Red lines with transparency
+            
+            # Optionally, add triangle index at centroid
+            centroid_x = np.mean(x[:-1])  # Exclude the repeated first node
+            centroid_y = np.mean(y[:-1])
+            plt.annotate(f'T{i}', 
+                        (centroid_x, centroid_y),
+                        color='red',
+                        fontsize=8)
+            
+            # Add side indices
+            sides = elside[:3,i].get()  # Get the three sides of this triangle
+            for j in range(3):
+                # Get midpoint of each side to place the label
+                mid_x = (x[j] + x[j+1]) / 2
+                mid_y = (y[j] + y[j+1]) / 2
+                plt.annotate(f'S{sides[(j + 2) % 3]}',
+                           (mid_x, mid_y),
+                           xytext=(0, 3),  # Offset slightly above the line
+                           textcoords='offset points',
+                           color='blue',
+                           fontsize=8)
+            
+        plt.show()
+        plt.pause(0)
+
     # js         = cp.array(js)
     # Read the CUDA source
     cuda_source = ""
@@ -223,6 +275,7 @@ if __name__ == "__main__":
     populateMesh        = mod.get_function('populateMesh')
     getStructSizes      = mod.get_function('getStructSizes')
     computeFluxAdvHface = mod.get_function('computeFluxAdvHface')
+    test                = mod.get_function('test')
     # destroy_mesh = mod.get_function('destroyMeshCPU')
 
     # Get number of GPUs
@@ -362,19 +415,17 @@ if __name__ == "__main__":
             globalSideIndices = cp.arange(numPartSides   [ipart]).astype(cp.int32)[maskSidesPart]
 
 
+    for ipart in range(n_gpus):
+        with cp.cuda.Device(ipart):
             populateMesh((1,), (1,),  (i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
                                        isdel, isidenode, isbnd,
+                                       nodeNeighNodesStart, nodeNeighNodes,
+                                       nodeNeighElemsStart, nodeNeighElems,
                                        globalNodeIndices, globalElemIndices, globalSideIndices,
                                        localNodeIndices, localElemIndices, localSideIndices,
                                        localNodePart, localElemPart, localSidePart))
 
-            # # Adds information so each mesh knows about the other meshes
-            # communicateMeshes((1,), (1,),  
-            #            (ipart, isdel, isbnd, nodeIndicesPart, 
-            #             nodeNeighNodes, nodeNeighNodesStart, 
-            #             nodeNeighElems, nodeNeighElemsStart,
-            #             partNodeNeighNodesMem, partNodeNeighElemsMem)
-            # )
+            test((1,), (1,), (-2.21334,  0.76058, 1.0))
 
     # Launch kernel on each GPU
     launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)
