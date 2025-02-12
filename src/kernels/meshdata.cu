@@ -66,7 +66,7 @@ __device__ bool Element::findNextIntersection(double x2, double y2,
    // intersection point, at position t on "side". The final position is (x2,y2)=(xt,yt).
    const double x1 = (1-t)*side->n1->x + t*side->n2->x;
    const double y1 = (1-t)*side->n1->y + t*side->n2->y;
-   printf(">findNextIntersection: x1=%f, y1=%f, x2=%f, y2=%f\n", x1, y1, x2, y2);
+   printf(">findNextIntersection: Element %d, side %d, x1=%f, y1=%f, x2=%f, y2=%f\n", this->idx, side->idx, x1, y1, x2, y2);
 
    Side *nextSide = nullptr;
 
@@ -75,11 +75,11 @@ __device__ bool Element::findNextIntersection(double x2, double y2,
       // Element's i-th side 
       Side *side2 = sides[i];
 
-      printf("SIDE: side = %p, side2 = %p\n", side, side2);
+      // printf("SIDE: side = %p, side2 = %p\n", side, side2);
       // Skip the side that contains the initial point
       if (side2 == side) continue;
 
-      printf("### i = %d, side2->n1->x=%f, side2->n1->y=%f, side2->n2->x=%f, side2->n2->y=%f\n", i, side2->n1->x, side2->n1->y, side2->n2->x, side2->n2->y);
+      // printf("### i = %d, side2->n1->x=%f, side2->n1->y=%f, side2->n2->x=%f, side2->n2->y=%f\n", i, side2->n1->x, side2->n1->y, side2->n2->x, side2->n2->y);
 
       // (x3,y3)-(x4,y4) is the element side line
       const double x3 = side2->n1->x;
@@ -90,6 +90,7 @@ __device__ bool Element::findNextIntersection(double x2, double y2,
       // delta is 0 if the two lines are parallel. In this case, they do not intersect.
       const double delta = (x2-x1)*(y3-y4) - (y2-y1)*(x3-x4);
 
+
       if (delta != 0.0) {
 
          const double delta1 = (x3-x1)*(y3-y4) - (y3-y1)*(x3-x4);
@@ -99,13 +100,19 @@ __device__ bool Element::findNextIntersection(double x2, double y2,
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
          const double tt2 = delta2/delta;
 
-         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small) {
+         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             nextSide = side2;
+if (nextSide->elems[1] != nullptr) {
+   printf("### e1 = %d, e2 = %d, nextElement = %d\n", nextSide->elems[0]->idx, nextSide->elems[1]->idx, nextSide->otherElement(this)->idx);
+}
+else {
+   printf("### e1 = %d, WALL  nextElement = %d\n", nextSide->elems[0]->idx, nextSide->otherElement(this)->idx);
+}
             nextElement = nextSide->otherElement(this);
             tIntersect = max(small, min(tt1, 1.0-small));
             t = tt2;
-            printf("### t = %f, tIntersect=%f\n", t , tIntersect);
+            // printf("### t = %f, tIntersect=%f\n", t , tIntersect);
             found_intersection = true;
          }
       
@@ -121,6 +128,127 @@ __device__ bool Element::findNextIntersection(double x2, double y2,
    // found_intersection should always be true, since we checked all the sides.  
    side = nextSide;
    return found_intersection;
+}
+
+
+
+/**
+ * Tracks a particle through elements and vertical levels in the mesh.
+ * 
+ * @param x0,y0,z0     Starting position coordinates
+ * @param xt,yt,zt     Target position coordinates
+ * @param dtb          Time step for tracking
+ * @param uuint,vvint,wwint Initial velocity components
+ * @param jlev         Current/resulting vertical level
+ * @param nextElem     Starting/resulting element index
+ * 
+ * @return Status code of type trackExitCodes
+ * 
+ * This function uses the same ideas as the original Fortran code (function QuickSearch), but some
+ * of the details are different. The idea is that the code requires less branches and is better fit
+ * for GPU execution.
+ * 
+ * The main ideas here are:
+ * - The starting point is guaranteed to be in the starting element.
+ * - since it is inside the element, there are only two cases: (a) segment (x0,y0)-(xt,yt) intersects the element sides, or (b) it does not and (xt,yt) is in the same element.
+ * - If it is not inside the element, we know that an interection must exist. We compute the intersection
+ *   of the segment with the *lines* (infinite length) that form the element sides.
+ * - The intersection is computed as the parametric value tt1 of the intersection point on the segment (x0,y0)-(xt,yt).
+ * - tt1 can be positive or negative. We only consider the positive values.
+ * - The next intersection will occur at the smallest positive tt1.
+ * - This intersection will be the next (x0,y0) position.
+ * - Proceeding this way it is guaranteed that we are always moving forward, so there is no chance
+ *   of getting stuck in a loop.
+ * - Additionally, this function never finds intersections with the side segment where the last intersection
+ *   was found.
+ */
+__device__ trackExitCodes Element::trackThroughElementsAndLevels(double x0, double y0, double z0,
+                                                                  double xt, double yt, double zt, double dtb,
+                                                                  double time,
+                                                                  double uuint, double vvint, double wwint, 
+                                                                  int& jlev, Side *side, Element *nextElem)
+         {
+   printf("trackThroughElementsAndLevels: x0=%f, y0=%f, xt=%f, yt=%f\n", x0, y0, xt, yt);
+   // First thing is to check if the target point is inside the element. If it is there is nothing
+   // else to do.
+   if (containsPoint(xt, yt)) return tec_success;
+
+   // 1. Initial checks
+   // Verify starting element is valid (wet)
+   if (nextElem->idry) return tec_dry_element;  // Error code for invalid starting conditions
+
+   // Checks if track has a zero length.
+   double trm = time; //time remaining
+
+
+   double xcg = x0, ycg=y0;
+   double pathl2 = (xt - xcg)*(xt - xcg) + (yt - ycg)*(yt - ycg);
+   
+   if (pathl2==0.0 || trm==0.0)  return tec_zero_length_track; 
+   
+
+   const int MAX_ITERATIONS = 1000;
+   double xCur = x0, yCur = y0;        // Cur means current
+   double xInt = -1e10, yInt = -1e10;  // Int means intersection
+   
+   double t;
+   Side *nextSide = nullptr;
+   double tIntersect = 1e10;
+
+   // Horizontal tracking loop
+   // Finds the first intersection with the element sides. It is guaranteed to exist because
+   // (x0,y0) is inside the element but the target point is not.
+   bool found_intersection = findNextIntersection(x0, y0, xt, yt, nextSide, nextElem, t, tIntersect);
+
+   if (!found_intersection) {
+      printf("Error: No intersection found\n");
+      return tec_no_intersection;
+   }
+
+   // Keeps searching for the next intersection until we find xt, yt inside nextElem.
+   int iterations = 0;
+   while (iterations < MAX_ITERATIONS) {
+      iterations++;
+
+      printf("iteration = %d, nextElem = %d, nextSide = %d\n", iterations, nextElem->idx, nextSide->idx);
+      bool found_intersection = nextElem->findNextIntersection(xt, yt, nextSide, nextElem, t, tIntersect);
+
+      // If we are already in the target element, we are done.
+      // Remember that, if we are here, the point (xt,yt) is inside curElem.
+      if (!found_intersection) break;
+
+
+      // if the tracking segment goes out of water (either dry or edge boundary).
+      if (nextElem->isEdgeBoundary(nextSide) || (nextElem->idry)) {
+         printf("Tracking segment goes out of water\n");
+         printf("Implement here the tangent velocity\n");
+         return tec_success;
+      }
+      
+      // Update position and element for next iteration
+      side = nextSide;
+      // t = tIntersect;
+   }
+
+   printf("EHREHREHREH iterations = %d\n", iterations);
+   printf("xt = %f, yt = %f\n", xt, yt);
+   printf("nextElem->Nodes[0]->x = %f, nextElem->Nodes[0]->y = %f\n", nextElem->nodes[0]->x, nextElem->nodes[0]->y);
+   printf("nextElem->Nodes[1]->x = %f, nextElem->Nodes[1]->y = %f\n", nextElem->nodes[1]->x, nextElem->nodes[1]->y);
+   printf("nextElem->Nodes[2]->x = %f, nextElem->Nodes[2]->y = %f\n", nextElem->nodes[2]->x, nextElem->nodes[2]->y);
+
+   printf("nextElem = %d, containsPoint = %d\n", nextElem->idx, nextElem->containsPoint(xt, yt));
+   if (iterations >= MAX_ITERATIONS) return tec_iteration_limit;  
+
+   
+   // Interpolate velocities at the final position. This is a conceptually simple step,
+   // but the function is not simple, because it has to search for the vertical level containing zt.
+   if (!nextElem->interpolateVelocities(xt, yt, zt, uuint, vvint, wwint)) {
+      return tec_failed_to_interpolate_velocities;
+   }
+
+   side = nullptr;
+
+   return tec_success;
 }
 
 
@@ -155,7 +283,7 @@ __device__ bool Element::findNextIntersection(double x1, double y1, double x2, d
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
          const double tt2 = delta2/delta;
 
-         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small) {
+         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
             nextElement = side->otherElement(this);
@@ -192,7 +320,10 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
    return res;
 }
 
-
+__inline__ __device__ bool Element::isEdgeBoundary(Side *side) const { 
+   printf("isEdgeBoundary: side->elems[0] = %p, side->elems[1] = %p\n", side->elems[0], side->elems[1]);
+   return side->elems[1] == nullptr; 
+}
 
 /**
    Compute the shape coordinates of the point (xt,yt) in the element.
@@ -309,19 +440,19 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
    // Interpolate the velocities at the point (xt,yt,zt). 
    // This function works the same for triangular and quadrilateral elements.
    double shapeCoords[4];
-   printf("### interpolateVelocities not implemented yet\n");
-   // Error("interpolateVelocities Not implemented yet");
-   return false;
-}
-#ifdef BACKTRACKING   
+   printf("### interpolating Velocities, element = %d\n", idx);
 
    auto n0 = nodes[0];
    auto n1 = nodes[1];
    auto n2 = nodes[2];
    auto n3 = nodes[3];
+
+   printf("### interpolating Velocities: n0 = %p, n1 = %p, n2 = %p, n3 = %p\n", n0, n1, n2, n3);
    
    // First step is to compute the shape coordinates of (xt,yt)
-   if (!computeShapeCoords(xt, yt, shapeCoords)) return tec_failed_to_compute_area_coords;
+   // if (!computeShapeCoords(xt, yt, shapeCoords)) return tec_failed_to_compute_area_coords;
+   computeShapeCoords(xt, yt, shapeCoords, false);
+   printf("### interpolating Velocities: shapeCoords = %f %f %f %f\n", shapeCoords[0], shapeCoords[1], shapeCoords[2], shapeCoords[3]);
 
 
    // Second step is to find the level that contains zt
@@ -351,7 +482,7 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
       }
    }
    // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
-
+#ifdef BACKTRACKING
    // Final step is the vertical interpolation
 
    // Interpolate horizontally the velocities at the two levels L, R
@@ -374,9 +505,8 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
    uuint = (1-ratio)*uLint + ratio*uRint;
    vvint = (1-ratio)*vLint + ratio*vRint;
    wwint = (1-ratio)*wLint + ratio*wRint;
-
-}
 #endif
+}
 
 // /**
 //    For a point (x1,y1) inside the element and a line segment (x1,y1)-(x2,y2), find the intersection point 
@@ -497,7 +627,56 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
 //     results[sid].exitedDomain = exitedDomain;
 // }
 
-__host__ __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }    
+__host__ __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
+
+__device__ double Node::compZCoord(int k) const {
+   // Computes the z coordinate at level k.
+   // Depending on the vertical coordinate system, the z coordinate is computed differently.
+   // When ivcor=1, the z coordinate is computed using the localized sigma levels.
+   // When ivcor=2, the z coordinate is computed using the zeta/sigma levels. Z levels are
+   // used 
+   
+   // NOTE: Assumes that updateZCoordData() has been called before this function.
+      
+   if (idry) {
+      printf("compZCoord: dry location: %f %f\n", depth, eta2);
+      return 0.0;
+   }
+
+   if constexpr(ivcor == 2) {
+      // Special levels
+      const double hmod2 = sigmaTransitionDepth(); // Depth transition between z and sigma levels
+
+      if (k == mesh->kz)    return -hmod2;
+      else if (k == nvrt-1) return eta2;
+      else if (k >= kb) {
+         const int ksig = k - mesh->nzlevels + 1;
+
+         if (hmod2 <= mesh->h_c) {
+            return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
+         } 
+         else if (eta2 <= - mesh->h_c - (depth - mesh->h_c) * mesh->theta_f/mesh->s_con1) {
+            printf("ZCOOR: Please choose larger h_c: %f %f\n", eta2, mesh->h_c);
+            return 0.0;
+         } 
+         else {
+            return eta2*(1.0 + mesh->sigma[ksig]) + 
+                     mesh->h_c * mesh->sigma[ksig] + 
+                     (hmod2 - mesh->h_c) * mesh->cs[ksig];
+         }
+      }
+   }
+   else if (mesh->ivcor == 1) {
+      if (k == kb) return -depth;
+      else if (k == nvrt-1) return eta2;
+      else if (k >= kb) {
+            return (eta2 + depth) * node->sigma_lcl[k] + eta2;
+      }
+   }
+   
+   printf("ZCOOR: invalid level or coordinate system\n");
+   return 0.0;
+}
 
 
 extern "C" { 
@@ -563,6 +742,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       const int idxEnd   = nodeNeighNodesStart[i+1];
       node.numNodes = idxEnd - idxStart;
       node.nodes = (Node **)(nodeNeighNodes + idxStart*sizeof(Node *));
+      node.idx = i;
 
       for (int idx = idxStart; idx < idxEnd; idx++) {
          int idxNode = nodeNeighNodesIndices[idx];
@@ -585,7 +765,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
    for (int i = 0; i < ns; i++)
    {
       Side &side = localSideData[i];
-
+      side.idx = i;
       // finding the pointer to the nodes that form the side
       const int idx_n1 = isidenode[globalSideIndices[i]*2];
       const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
@@ -602,14 +782,25 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       const int idx_e1 = isdel[globalSideIndices[i]*2];
       const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
 
-      const int locidx_e1 = localElemIndices[idx_e1];
-      const int locidx_e2 = localElemIndices[idx_e2];
-      const int part_e1 =  localElemPart[idx_e1];
-      const int part_e2 =  localElemPart[idx_e2];
+      if (idx_e1 > -1) {
+         const int locidx_e1 = localElemIndices[idx_e1];
+         const int part_e1 =  localElemPart[idx_e1];
+         side.elems[0] = (Element *)&(elems[part_e1][locidx_e1]);
+      }
+      else {
+         side.elems[0] = nullptr;
+      }
 
-      side.elems[0] = (Element *)&(elems[part_e1][locidx_e1]);
-      side.elems[1] = (Element *)&(elems[part_e2][locidx_e2]);
+      if (idx_e2 > -1) {
+         const int locidx_e2 = localElemIndices[idx_e2];
+         const int part_e2 =  localElemPart[idx_e2];
+         side.elems[1] = (Element *)&(elems[part_e2][locidx_e2]);
+      }
+      else {
+         side.elems[1] = nullptr;
+      }
 
+ 
       // Compute the center of the side
       side.xc = 0.5*(side.n1->x + side.n2->x);
       side.yc = 0.5*(side.n1->y + side.n2->y);
@@ -627,7 +818,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
    for (int i = 0; i < ne; i++)
    {
       Element &elem = localElemData[i];
-
+      elem.idx = i;
       for (int j = 0; j < i34[i]; j++) {
          const int idxNode = elnode[i*4 + j];  
          const int idxSide = elside[i*4 + j];

@@ -10,15 +10,15 @@ import sys
 from matplotlib import pyplot as plt
 
 
-# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
 in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -86,8 +86,8 @@ def compile_and_import(module_name, cpp_file):
             Extension(
                 module_name,
                 sources=[cpp_file],
-                # include_dirs=[pybind11.get_include(), "/apps/intel/2020.0.166/metis/5.2.1/include"],
-                include_dirs=[pybind11.get_include(), "/home/jmg/local/include", "/home/jmg/src/lib/metis/METIS/GKlib"],
+                include_dirs=[pybind11.get_include(), "/apps/intel/2020.0.166/metis/5.2.1/include"],
+                # include_dirs=[pybind11.get_include(), "/home/jmg/local/include", "/home/jmg/src/lib/metis/METIS/GKlib"],
                 language="c++",
                 # extra_compile_args=["-std=c++20", "-march=native"],
                 extra_link_args=["-lmetis"],
@@ -205,7 +205,7 @@ if __name__ == "__main__":
     nodeCoords           = cp.array(nodeCoords,        dtype=cp.float64, order='F')
     wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
 
-    if True:    
+    if False:    
         plt.figure(figsize=(12, 8))
         plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.')
         for i in range(100):
@@ -216,7 +216,7 @@ if __name__ == "__main__":
                         fontsize=8)
             
         # Plot first 1000 triangles
-        for i in range(100):
+        for i in range(3000):
             pass
             # Get the three nodes of the triangle
             nodes = elnode[:3,i].get()
