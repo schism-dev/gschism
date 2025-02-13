@@ -6,8 +6,6 @@ __device__ Mesh* mesh = nullptr;
 
 
 
-
-
 /**
    For a point on a side of an element and a line segment starting at that point and ending at (x2,y2), 
    find the intersection point (given by parameter tIntersect) and the side (intersectingSide) that it intersects.
@@ -66,7 +64,7 @@ __device__ bool Element::findNextIntersection(double x2, double y2,
    // intersection point, at position t on "side". The final position is (x2,y2)=(xt,yt).
    const double x1 = (1-t)*side->n1->x + t*side->n2->x;
    const double y1 = (1-t)*side->n1->y + t*side->n2->y;
-   printf(">findNextIntersection: Element %d, side %d, x1=%f, y1=%f, x2=%f, y2=%f\n", this->idx, side->idx, x1, y1, x2, y2);
+printf("[%f, %f]\n", x1, y1);   
 
    Side *nextSide = nullptr;
 
@@ -78,8 +76,6 @@ __device__ bool Element::findNextIntersection(double x2, double y2,
       // printf("SIDE: side = %p, side2 = %p\n", side, side2);
       // Skip the side that contains the initial point
       if (side2 == side) continue;
-
-      // printf("### i = %d, side2->n1->x=%f, side2->n1->y=%f, side2->n2->x=%f, side2->n2->y=%f\n", i, side2->n1->x, side2->n1->y, side2->n2->x, side2->n2->y);
 
       // (x3,y3)-(x4,y4) is the element side line
       const double x3 = side2->n1->x;
@@ -103,12 +99,12 @@ __device__ bool Element::findNextIntersection(double x2, double y2,
          if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             nextSide = side2;
-if (nextSide->elems[1] != nullptr) {
-   printf("### e1 = %d, e2 = %d, nextElement = %d\n", nextSide->elems[0]->idx, nextSide->elems[1]->idx, nextSide->otherElement(this)->idx);
-}
-else {
-   printf("### e1 = %d, WALL  nextElement = %d\n", nextSide->elems[0]->idx, nextSide->otherElement(this)->idx);
-}
+// if (nextSide->elems[1] != nullptr) {
+//    printf("### e1 = %d, e2 = %d, nextElement = %d\n", nextSide->elems[0]->idx, nextSide->elems[1]->idx, nextSide->otherElement(this)->idx);
+// }
+// else {
+//    printf("### e1 = %d, WALL  nextElement = %d\n", nextSide->elems[0]->idx, nextSide->otherElement(this)->idx);
+// }
             nextElement = nextSide->otherElement(this);
             tIntersect = max(small, min(tt1, 1.0-small));
             t = tt2;
@@ -120,16 +116,64 @@ else {
 
    }
 
-   if (!found_intersection) {
-      printf("### findNextIntersection: No intersection found, tIntersect=%f\n", tIntersect);
-   }
-
    
    // found_intersection should always be true, since we checked all the sides.  
    side = nextSide;
    return found_intersection;
 }
 
+
+
+
+__device__ bool Element::findNextIntersection(double x1, double y1, double x2, double y2, 
+                                              Side *&side, Element *&nextElement,
+                                              double &t, double& tIntersect) {
+
+   double closest_intersect_t = 1e10;
+   bool found_intersection = false;
+
+printf("findNextIntersection: x1=%f, y1=%f, x2=%f, y2=%f\n", x1, y1, x2, y2);
+double xIntersect, yIntersect;
+
+   for (int i = 0; i < i34; i++) {
+
+      Side *side2 = sides[i];
+
+      // (x3,y3)-(x4,y4) is the element side line
+      const double x3 = side2->n1->x;
+      const double y3 = side2->n1->y;
+      const double x4 = side2->n2->x;
+      const double y4 = side2->n2->y;
+
+      // delta is 0 if the two lines are parallel. In this case, they do not intersect.
+      const double delta = (x2-x1)*(y3-y4) - (y2-y1)*(x3-x4);
+
+      if (delta != 0.0) {
+
+         const double delta1 = (x3-x1)*(y3-y4) - (y3-y1)*(x3-x4);
+         const double delta2 = (x2-x1)*(y3-y1) - (y2-y1)*(x3-x1); 
+
+         // Solves the two linear equations for tt1 and tt2
+         const double tt1 = delta1/delta; // delta is not zero, so we can divide
+         const double tt2 = delta2/delta;
+
+         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0) {
+            closest_intersect_t = min(closest_intersect_t, tt1);
+            side = side2;
+            nextElement = side->otherElement(this);
+            t = tt2;
+            tIntersect = max(small, min(tt1, 1.0-small));
+            found_intersection = true;
+         }
+      
+      }
+
+   }
+
+
+   // found_intersection should always be true, since we checked all the sides.  
+   return found_intersection;
+}
 
 
 /**
@@ -210,7 +254,7 @@ __device__ trackExitCodes Element::trackThroughElementsAndLevels(double x0, doub
    while (iterations < MAX_ITERATIONS) {
       iterations++;
 
-      printf("iteration = %d, nextElem = %d, nextSide = %d\n", iterations, nextElem->idx, nextSide->idx);
+// printf("iteration = %d, nextElem = %d, nextSide = %d\n", iterations, nextElem->idx, nextSide->idx);
       bool found_intersection = nextElem->findNextIntersection(xt, yt, nextSide, nextElem, t, tIntersect);
 
       // If we are already in the target element, we are done.
@@ -252,54 +296,7 @@ __device__ trackExitCodes Element::trackThroughElementsAndLevels(double x0, doub
 }
 
 
-__device__ bool Element::findNextIntersection(double x1, double y1, double x2, double y2, 
-                                              Side *&side, Element *&nextElement,
-                                              double &t, double& tIntersect) {
 
-   double closest_intersect_t = 1e10;
-   bool found_intersection = false;
-
-   printf("findNextIntersection: x1=%f, y1=%f, x2=%f, y2=%f\n", x1, y1, x2, y2);
-
-   for (int i = 0; i < i34; i++) {
-
-      Side *side2 = sides[i];
-
-      // (x3,y3)-(x4,y4) is the element side line
-      const double x3 = side2->n1->x;
-      const double y3 = side2->n1->y;
-      const double x4 = side2->n2->x;
-      const double y4 = side2->n2->y;
-
-      // delta is 0 if the two lines are parallel. In this case, they do not intersect.
-      const double delta = (x2-x1)*(y3-y4) - (y2-y1)*(x3-x4);
-
-      if (delta != 0.0) {
-
-         const double delta1 = (x3-x1)*(y3-y4) - (y3-y1)*(x3-x4);
-         const double delta2 = (x2-x1)*(y3-y1) - (y2-y1)*(x3-x1); 
-
-         // Solves the two linear equations for tt1 and tt2
-         const double tt1 = delta1/delta; // delta is not zero, so we can divide
-         const double tt2 = delta2/delta;
-
-         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0) {
-            closest_intersect_t = min(closest_intersect_t, tt1);
-            side = side2;
-            nextElement = side->otherElement(this);
-            t = tt2;
-            tIntersect = max(small, min(tt1, 1.0-small));
-            found_intersection = true;
-            
-         }
-      
-      }
-
-   }
-
-   // found_intersection should always be true, since we checked all the sides.  
-   return found_intersection;
-}
 
 
 __inline__ __device__ double Element::computeSignedArea(void) const {
@@ -307,11 +304,13 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
 
    double res = signedArea(nodes[0]->x, nodes[1]->x, nodes[2]->x, nodes[0]->y, nodes[1]->y, nodes[2]->y);
 
+   // In the quad case we need to add the area of the other triangle.
    if (isQuad()) {
       double ar1 = signedArea(nodes[0]->x, nodes[2]->x, nodes[3]->x, nodes[0]->y, nodes[2]->y, nodes[3]->y);
       double ar2 = signedArea(nodes[0]->x, nodes[1]->x, nodes[3]->x, nodes[0]->y, nodes[1]->y, nodes[3]->y);
       double ar3 = signedArea(nodes[1]->x, nodes[2]->x, nodes[3]->x, nodes[1]->y, nodes[2]->y, nodes[3]->y);
       if (ar1 < 0.0 || ar2 < 0.0 || ar3 < 0.0) {
+         // XXX Aren't we computing a signed area? why is it not allowed to be negative?
          Error("Negative area found in quad element");
       }
       res += ar1;
@@ -321,15 +320,16 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
 }
 
 __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const { 
-   printf("isEdgeBoundary: side->elems[0] = %p, side->elems[1] = %p\n", side->elems[0], side->elems[1]);
+   // In boundary sides, the element 1 is nullptr
    return side->elems[1] == nullptr; 
 }
 
 /**
    Compute the shape coordinates of the point (xt,yt) in the element.
-   @param xt, yt: coordinates of the point
-   @param shpCoords: shape coordinates of the point
-   @param fixNegShapeCoords: if true, fix negative shape coordinates
+   @param xt (input): x-coordinate of the point
+   @param yt (input): y-coordinate of the point
+   @param shpCoords (output): shape coordinates of the point
+   @param fixNegShapeCoords (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
 __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCoords[4],
@@ -355,6 +355,7 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
       }
       else // lat/lon
       {
+         Error("Not implemented yet");
 #ifdef ICS2
          globalToLocal(nodes[0]->x, nodes[0]->y, nodes[0]->z, x0, y0, z0);
          globalToLocal(nodes[1]->x, nodes[1]->y, nodes[1]->z, x1, y1, z1);
@@ -365,17 +366,18 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
       shpCoords[0] = signedArea(xt,x1,x2,yt,y1,y2)/area;
       shpCoords[1] = signedArea(x0,xt,x2,y0,yt,y2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
+      shpCoords[3] = 0.0;
       double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
 
       // If at least one of the shape coordinates is negative, and we have the flag fixNegShapeCoords set,
       // then we fix the negative shape coordinates.
       if (fixNegShapeCoords && tmpmin<=0.0) {
 
-         // XXX I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
+         // NOTE: I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
          // keeping the sum of the shape coordinates equal to 1.
          // I have tested and compared the new algorithm with the old one, and they give
-         // very similar results in term of how close the "fixed" point is to the original point in cartesian coordinates.
-         // The new algorithm is faster since it is branchless.
+         // very similar results in terms of how close the "fixed" point is to the original point in cartesian coordinates.
+         // The new algorithm should be faster since it is branchless.
          const double a = - tmpmin + 1.0e-2;  // XXX it used to be 1.0e-4 in the comments of the original code
          const double b = 1.0/(shpCoords[0] + shpCoords[1] + shpCoords[2] + 3.0*a);
          
@@ -401,7 +403,6 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
       return min(min(shpCoords[0], shpCoords[1]), shpCoords[2]) > -small;      
    }
    else {
-      // XXX Not implemented yet
       Error("Not implemented yet");
 #ifdef QUADS
       // Reproject pt in eframe of nel for ics=2
@@ -482,20 +483,29 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
       }
    }
    // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
-#ifdef BACKTRACKING
+
    // Final step is the vertical interpolation
 
+   double uLAtNodes[4];
+   getNodalValues(L, &Node::u, uLAtNodes);
+   printf("### interpolating Velocities: uLAtNodes = %f %f %f %f\n", uLAtNodes[0], uLAtNodes[1], uLAtNodes[2], uLAtNodes[3]);
+#ifdef BACKTRACKING
    // Interpolate horizontally the velocities at the two levels L, R
-   const double uLAtNodes[4] = {nodes[0]->u(L), nodes[1]->u(L), nodes[2]->u(L), nodes[3]->u(L)};
-   const double vLAtNodes[4] = {nodes[0]->v(L), nodes[1]->v(L), nodes[2]->v(L), nodes[3]->v(L)};
-   const double wLAtNodes[4] = {nodes[0]->w(L), nodes[1]->w(L), nodes[2]->w(L), nodes[3]->w(L)};
+   interpVel(L, shapeCoords, uLint, vLint, wLint);
+   interpVel(R, shapeCoords, uRint, vRint, wRint);
+
+   
+
+   const double uLAtNodes[4] = {nodes[0]->u[L], nodes[1]->u[L], nodes[2]->u[L], nodes[3]->u[L]};
+   const double vLAtNodes[4] = {nodes[0]->v[L], nodes[1]->v[L], nodes[2]->v[L], nodes[3]->v[L]};
+   const double wLAtNodes[4] = {nodes[0]->w[L], nodes[1]->w[L], nodes[2]->w[L], nodes[3]->w[L]};
    const double uLint = interpolate(shapeCoords, uLAtNodes);
    const double vLint = interpolate(shapeCoords, vLAtNodes);
    const double wLint = interpolate(shapeCoords, wLAtNodes);
 
-   const double uRAtNodes[4] = {nodes[0]->u(R), nodes[1]->u(R), nodes[2]->u(R), nodes[3]->u(R)};
-   const double vRAtNodes[4] = {nodes[0]->v(R), nodes[1]->v(R), nodes[2]->v(R), nodes[3]->v(R)};
-   const double wRAtNodes[4] = {nodes[0]->w(R), nodes[1]->w(R), nodes[2]->w(R), nodes[3]->w(R)};
+   const double uRAtNodes[4] = {nodes[0]->u[R], nodes[1]->u[R], nodes[2]->u[R], nodes[3]->u[R]};
+   const double vRAtNodes[4] = {nodes[0]->v[R], nodes[1]->v[R], nodes[2]->v[R], nodes[3]->v[R]};
+   const double wRAtNodes[4] = {nodes[0]->w[R], nodes[1]->w[R], nodes[2]->w[R], nodes[3]->w[R]};
    const double uRint = interpolate(shapeCoords, uRAtNodes);
    const double vRint = interpolate(shapeCoords, vRAtNodes);
    const double wRint = interpolate(shapeCoords, wRAtNodes);
@@ -646,31 +656,42 @@ __device__ double Node::compZCoord(int k) const {
    if constexpr(ivcor == 2) {
       // Special levels
       const double hmod2 = sigmaTransitionDepth(); // Depth transition between z and sigma levels
+      const int kz = mesh->kz;
 
-      if (k == mesh->kz)    return -hmod2;
-      else if (k == nvrt-1) return eta2;
-      else if (k >= kb) {
-         const int ksig = k - mesh->nzlevels + 1;
+      // TODO: Here we are assuming that the bottom level, kbpl, was found in a previous step.
+      // The FORTAN code computes it every time this function is called, but it should be done only 
+      // once per time step/node.
+      // CHECK: updateZCoordData
+
+      if (k == kz)               return -hmod2;
+      else if (k == nvrt-1)      return eta2;
+      else if (k == kb)          return -depth;
+      else if (k < kz && k >= 0) return mesh->ztot[k];
+      else if (k > kz) {
+         const int ksig = k - kz + 1;
 
          if (hmod2 <= mesh->h_c) {
             return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
          } 
-         else if (eta2 <= - mesh->h_c - (depth - mesh->h_c) * mesh->theta_f/mesh->s_con1) {
-            printf("ZCOOR: Please choose larger h_c: %f %f\n", eta2, mesh->h_c);
-            return 0.0;
+         else if (eta2 <= - mesh->h_c - (depth - mesh->h_c) * mesh->theta_f/mesh->sinh_theta_f) {
+            printf("Please choose larger h_c: %f %f\n", eta2, mesh->h_c);
+            Error("ZCOOR: invalid h_c\n");
          } 
          else {
             return eta2*(1.0 + mesh->sigma[ksig]) + 
-                     mesh->h_c * mesh->sigma[ksig] + 
-                     (hmod2 - mesh->h_c) * mesh->cs[ksig];
+                         mesh->h_c * mesh->sigma[ksig] + 
+                         (hmod2 - mesh->h_c) * mesh->cs[ksig];
          }
+      } else { 
+         Error("ZCOOR: invalid level or coordinate system\n");
       }
+
    }
-   else if (mesh->ivcor == 1) {
+   else if constexpr(ivcor == 1) {
       if (k == kb) return -depth;
       else if (k == nvrt-1) return eta2;
       else if (k >= kb) {
-            return (eta2 + depth) * node->sigma_lcl[k] + eta2;
+            return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
       }
    }
    
@@ -732,7 +753,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
    printf("Populating mesh for partition %d\n", partNum);
 
-
+   // Horizontal grid
    printf("Processing %d nodes\n", np);      
    for (int i = 0; i < np; i++)
    {
@@ -879,7 +900,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
 
 
-
+#ifdef DONTCOMPILE
 __global__ void checkMassConservation(Tracers* sumtr) {
 
    int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -910,7 +931,7 @@ __global__ void checkMassConservation(Tracers* sumtr) {
    //  This function returns per element sums. A reduction must be done on the host side.
 }
 
-#ifdef DONTCOMPILE
+
 __global__ void transport(void) {
 
    int ie = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1252,12 +1273,14 @@ __global__ void transport(void) {
 // factory functions
 extern "C" 
 __global__ void createMesh(int partNum, 
-                           int npgb, int negb, int nsgb, int nvrt,
+                           int npgb, int negb, int nsgb, int nvrt, int kz,
                            int np, int ne, int ns, 
                            int max_np, int max_ne, int max_ns,
                            const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
-                           Node    **partNodeNeighNodesMem, Element **partNodeNeighElemsMem) {
+                           Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
+                           double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
+                           double *ztot, double *cs, double *dcs) {
 
    if (mesh != nullptr) 
    {
@@ -1265,9 +1288,11 @@ __global__ void createMesh(int partNum,
       return;
    };
 
-   mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, np, ne, ns, max_np, max_ne, max_ns,
+   printf("Creating mesh for partition %d\n", partNum);
+   mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, kz, np, ne, ns, max_np, max_ne, max_ns,
                    nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides,
-                   partNodeNeighNodesMem, partNodeNeighElemsMem);
+                   partNodeNeighNodesMem, partNodeNeighElemsMem, 
+                   h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
    
 }
 

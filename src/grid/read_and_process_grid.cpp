@@ -1076,7 +1076,9 @@ std::tuple<py::array_t<int32_t>,     // ivcor, nvrt
            py::array_t<double>,       // ztot (nNodes for ivcor=1, empty for ivcor=2)
            py::array_t<double>,       // h_s, theta_b, theta_f (3 values for ivcor=2, empty for ivcor=1)
            py::array_t<double>,       // sigma_lcl (nvrt x nNodes for ivcor=1, empty for ivcor=2)
-           py::array_t<double>       // sigma (nvrt values for ivcor=2, empty for ivcor=1)
+           py::array_t<double>,       // sigma (nvrt values for ivcor=2, empty for ivcor=1)
+           py::array_t<double>,       // cs (nvrt values for ivcor=2, empty for ivcor=1)
+           py::array_t<double>        // dcs (nvrt values for ivcor=2, empty for ivcor=1)
 >
 readVGrid(const std::string& filename, int nNodes) {
 
@@ -1120,8 +1122,10 @@ readVGrid(const std::string& filename, int nNodes) {
                 throw std::runtime_error("Negative ztot value found");
             }
             
+            printf("Reading sigma_lcl for node %d\n", i);
             for (int k = 0; k < nvrt; k++) {
                 file >> sigma_lcl(k, i);
+                printf("sigma_lcl(%d, %d) = %f\n", k, i, sigma_lcl(k, i));
             }
         }
         
@@ -1130,7 +1134,9 @@ readVGrid(const std::string& filename, int nNodes) {
             toPyArray(ztot),                          // ztot for ivcor=1
             toPyArray(std::vector<double>()),         // empty h_s, theta_b, theta_f
             toPyArray(sigma_lcl),                     // sigma_lcl for ivcor=1
-            toPyArray(std::vector<double>())         // empty sigma
+            toPyArray(std::vector<double>()),         // empty sigma
+            toPyArray(std::vector<double>()),         // empty cs
+            toPyArray(std::vector<double>())          // empty dcs
         );
         
     } else if (ivcor == 2) {
@@ -1227,14 +1233,23 @@ readVGrid(const std::string& filename, int nNodes) {
        
         }
 
-        printFormatted(ansi::yellow("Read vertical grid file"));
+        // Compute Cs and its derivative
+        for (int k = 0 ; k < nsiglev; k++) {
+            cs[k] = (1.0 - theta_b)*sinh(theta_f*sigma[k])/sinh(theta_f) + 
+                    theta_b*(tanh(theta_f*(sigma[k] + 0.5)) - tanh(theta_f*0.5))/2.0/tanh(theta_f*0.5);
+            dcs[k] = (1.0 - theta_b)*theta_f*cosh(theta_f*sigma[k])/sinh(theta_f) + 
+                    theta_b*theta_f/2.0/tanh(theta_f*0.5)/cosh(pow(theta_f*(sigma[k] + 0.5), 2.0));
+        }
+
         
         return std::make_tuple(
             toPyArray(std::vector<int>{ivcor, nvrt, kz, nsiglev}),
             toPyArray(ztot),        
             toPyArray(std::vector<double>{h_s, theta_b, theta_f}),  // SZ parameters
-            toPyArray(Array2D<double>()),           // empty sigma_lcl
-            toPyArray(sigma)                        // sigma for ivcor=2
+            toPyArray(Array2D<double>()),                           // XXXX empty sigma_lcl
+            toPyArray(sigma),                                        // sigma for ivcor=2
+            toPyArray(cs),
+            toPyArray(dcs)
         );
     } else {
         throw std::runtime_error("Invalid vertical coordinate type");

@@ -2,10 +2,10 @@
 // XXX: Pure constants that are to be set before compiling the code
 constexpr int N_TRACERS = 2;
 
-constexpr int ivcor = 1; // Vertical coordinate system
+constexpr int ivcor = 2; // Vertical coordinate system
 constexpr int ics = 1; // 1: global, 2: local
 
-constexpr int nvrt = 10; // Number of vertical levels
+constexpr int nvrt = 54; // Number of vertical levels
 constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast to z levels)
 
@@ -113,20 +113,42 @@ struct Element {
       return res;
    }
 
-   __device double interpolate(double shapeCoords[4], double zAtNodes[4])
+   __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4])
    {
       // Interpolate the value at the point (xt,yt) using the shape coordinates and the values at the nodes
-      if (i34 == 3) {
-         return shapeCoords[0]*zAtNodes[0] + shapeCoords[1]*zAtNodes[1] + shapeCoords[2]*zAtNodes[2];
-      } else {
-         return shapeCoords[0]*zAtNodes[0] + shapeCoords[1]*zAtNodes[1] + shapeCoords[2]*zAtNodes[2] + shapeCoords[3]*zAtNodes[3];
-      }
+      // This function works for both triangular and quadrilateral elements, since shapeCoords[3] is always 0.0 for triangular elements
+      return shapeCoords[0]*zAtNodes[0] + shapeCoords[1]*zAtNodes[1] + shapeCoords[2]*zAtNodes[2] + shapeCoords[3]*zAtNodes[3];
+      
    }
    __device__ bool interpolateVelocities(double xt, double yt, double zt, 
                                          double& uuint, double& vvint, double& wwint);
 
 
-   __inline__ __device__ bool globalToLocal(double xt, double yt, double &xlocal, double &ylocal) const {
+   // template<typename T>
+   // __device__ T[4] getNodalValues(T Node::* field) const {
+   //    // Get the values of the field at the nodes of the element
+   //    T values[4];
+   //    values[0] = nodes[0]->*field;
+   //    values[1] = nodes[1]->*field;
+   //    values[2] = nodes[2]->*field;
+   //    if (isQuad()) values[3] = nodes[3]->*field;
+   //    else          values[3] = 0.0;
+
+   //    return values;
+   //  }
+
+   template<typename T>
+   __device__ void getNodalValues(int level, T (Node::* field)[nvrt], T *res) const {
+      // Get the values of the field at the nodes of the element
+      res[0] = (nodes[0]->*field)[level];
+      res[1] = (nodes[1]->*field)[level];
+      res[2] = (nodes[2]->*field)[level];
+      if (isQuad()) res[3] = (nodes[3]->*field)[level];
+      else          res[3] = 0.0;
+
+   }    
+
+   __device__ bool globalToLocal(double xt, double yt, double &xlocal, double &ylocal) const {
       // Convert global coordinates to local coordinates
       printf("NOT IMPLEMENTED: globalToLocal\n");
       return true;
@@ -234,7 +256,7 @@ struct Side {
    double depth;          // Depth at side center
 
    int bdysd;             // Boundary side flag
-   int kb;               // Bottom index of the side
+   int kb;                // Bottom index of the side
    bool idry;             // True if the side is dry
  
    double nx, ny;         // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
@@ -353,7 +375,6 @@ struct Node {
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
 
-
    __host__ __device__ double sigmaTransitionDepth(void) const;
 
 
@@ -434,10 +455,14 @@ class Mesh {
    // Sigma levels
    double h_s; 
    double h_c; 
-
-
-
-
+   int    kz;
+   double theta_b;
+   double theta_f, sinh_theta_f;
+   double *sigma_lcl;
+   double *sigma;
+   double *ztot;
+   double *cs;
+   double *dcs;
 
    // // Get's the pointer to the node using the array of global pointers to nodes
    // __device__ const Node *getGlobalNode(int jn) {
@@ -474,21 +499,26 @@ class Mesh {
 
    __device__ Mesh(int partNum,
                    int npgb, int negb, int nsgb, 
-                   int np, int ne, int ns, int nvrt,
+                   int np, int ne, int ns, int nvrt, int kz,
                    int max_np, int max_ne, int max_ns,
                    const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
-                   Element **localNodeNeighElemsMem
+                   Element **localNodeNeighElemsMem,
+                   double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
+                   double *cs, double *dcs
                    ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
                        np(np), ne(ne), ns(ns),
                        max_np(max_np), max_ne(max_ne), max_ns(max_ns),
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
-                       nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem)
+                       nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
+                       h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
+                       cs(cs), dcs(dcs)
    {
       printf("Mesh constructor for partition %d\n", partNum);
-
+      
+      sinh_theta_f = sinh(theta_f);
 
    }
 
@@ -502,13 +532,13 @@ class Mesh {
                    int *localNodePart,     int *localElemPart,     int *localSidePart);
 
 
-
-   __device__ ~Mesh()
+   __device__ ~Mesh(void)
    {
    }
 
    __device__ void test(double x, double y, double z)
    {
+      printf("Testing mesh for partition %d\n", partNum);
       for (int i = 0; i < ne; i++) {
          auto isInside = localElemData[i].containsPoint(x, y);
          if (isInside) {
@@ -518,8 +548,8 @@ class Mesh {
             int jlev = 0;
             Side *side = nullptr;
             
-            auto res = elem->trackThroughElementsAndLevels(x,y,z, x+0.01,y,z,
-                                                     0.1, 1.0, 1.0,0.0,0.0,jlev, side, elem);
+            auto res = elem->trackThroughElementsAndLevels(x,y,z, x+0.01,y+0.01,z,
+                                                           0.1, 1.0, 1.0,0.0,0.0,jlev, side, elem);
          }
       }
    } 

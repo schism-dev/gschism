@@ -161,9 +161,8 @@ if __name__ == "__main__":
     print(nodeNeighNodes)
 
 
-    [ivcor, nvrt, kz, nsiglev], ztot, [h_s, theta_b, theta_f], sigma_lcl, sigma = \
+    [ivcor, nvrt, kz, nsiglev], ztot, [h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
         module.readVGrid(vgrid_file, nodeCoords.shape[1])
-
 
     wind_rotate_angle = module.readWindRotationAngle(os.path.join(in_dir, 'windrot_geo2proj.gr3'), elnode.shape[1])
 
@@ -205,7 +204,14 @@ if __name__ == "__main__":
     nodeCoords           = cp.array(nodeCoords,        dtype=cp.float64, order='F')
     wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
 
-    if False:    
+    ztot                 = cp.array(ztot,              dtype=cp.float64, order='F')
+    sigma_lcl            = cp.array(sigma_lcl,         dtype=cp.float64, order='F')
+    sigma                = cp.array(sigma,             dtype=cp.float64, order='F')
+    cs                   = cp.array(cs,                dtype=cp.float64, order='F')
+    dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
+
+    if False:   
+
         plt.figure(figsize=(12, 8))
         plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.')
         for i in range(100):
@@ -216,7 +222,7 @@ if __name__ == "__main__":
                         fontsize=8)
             
         # Plot first 1000 triangles
-        for i in range(3000):
+        for i in range(500):
             pass
             # Get the three nodes of the triangle
             nodes = elnode[:3,i].get()
@@ -250,6 +256,21 @@ if __name__ == "__main__":
                            textcoords='offset points',
                            color='blue',
                            fontsize=8)
+                
+        segment1 = [[-2.213340, 0.760580], [-2.203340, 0.760580]]
+        intersection1 = [[-2.212069, 0.760580], [-2.210023, 0.760580], [-2.208977, 0.760580], [-2.207597, 0.760580], [-2.205915, 0.760580], [-2.204664, 0.760580]]
+        segment_array = np.array(segment1)
+        intersection_array = np.array(intersection1)
+        plt.plot(segment_array[:,0], segment_array[:,1], 'g--')
+        plt.plot(intersection_array[:,0], intersection_array[:,1], 'kx')  
+
+        segment2 = [[-2.213340, 0.760580], [-2.203340, 0.770580]]
+        intersection2 = [[-2.212657, 0.761263], [-2.212017, 0.761903], [-2.210810, 0.763110], [-2.209846, 0.764074], [-2.209348, 0.764572], [-2.207661, 0.766259], [-2.206123, 0.767797], [-2.205463, 0.768457], [-2.203933, 0.769987]]
+        segment_array = np.array(segment2)
+        intersection_array = np.array(intersection2)
+        plt.plot(segment_array[:,0], segment_array[:,1], 'g--')
+        plt.plot(intersection_array[:,0], intersection_array[:,1], 'kx')  
+         
             
         plt.show()
         plt.pause(0)
@@ -283,7 +304,7 @@ if __name__ == "__main__":
     print(f"Found {n_gpus} GPUs")
 
     # This list stores references to the device memory of the local arrays. This ensures that the memory is not freed until the mesh is destroyed.
-    deviceMemRef = []
+    deviceMemRef = [ztot, sigma_lcl, sigma, cs, dcs]
 
     numNodes = nodeCoords.shape[1]
     numElements = elnode.shape[1]
@@ -400,13 +421,24 @@ if __name__ == "__main__":
             nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
             windRotateAnglePart = wind_rotate_angle[maskElemsPart].copy(order='F')
 
+            # createMesh((1,), (1,),  
+            #            (ipart, numNodes, numElements, numSides, 
+            #             numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt,
+            #             max(numPartNodes), max(numPartElements), max(numPartSides),
+            #             nodesPtr, elemsPtr, sidesPtr,
+            #             nodesMem, elemsMem, sidesMem,
+            #             partNodeNeighNodesMem, partNodeNeighElemsMem,
+            #             h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs)
+            # )
+
             createMesh((1,), (1,),  
                        (ipart, numNodes, numElements, numSides, 
-                        numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt,
+                        numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt, kz,
                         max(numPartNodes), max(numPartElements), max(numPartSides),
                         nodesPtr, elemsPtr, sidesPtr,
                         nodesMem, elemsMem, sidesMem,
-                        partNodeNeighNodesMem, partNodeNeighElemsMem)
+                        partNodeNeighNodesMem, partNodeNeighElemsMem,
+                        h_s.item(), theta_b.item(), theta_f.item()  , sigma, sigma, ztot, cs, dcs)
             )
             
             # Given a local index, this array will return the global index
@@ -429,6 +461,8 @@ if __name__ == "__main__":
 
     # Launch kernel on each GPU
     launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)
+
+    print(len(deviceMemRef))
     
 
     # launch_kernel(checkMassConservation, sumtr, max(numPartSides), n_gpus, 256)
