@@ -19,18 +19,6 @@ constexpr int landNode = -2;
 
 constexpr double pi = 3.14159265358979323846;
 
-enum trackExitCodes {
-   tec_success = 0,
-   tec_dry_element = 1,
-   tec_zero_length_track = 2,
-   tec_iteration_limit = 3,
-   tec_no_intersection = 4,
-   tec_edge_boundary = 5,
-   tec_no_element = 6,
-   tec_failed_to_compute_area_coords = 7,
-   tec_failed_to_find_vertical_level = 8,
-   tec_failed_to_interpolate_velocities = 9
-};
 
 
 __inline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
@@ -60,7 +48,6 @@ struct Mesh;
 
 
 struct Element {
-   static Mesh* mesh;
 
    // Geometry information
    int idx;               // Index of the element
@@ -88,8 +75,6 @@ struct Element {
 
    // Physical information
    Tracers tracers[nvrt];  // Tracer values at each vertical level  
-
-    static __device__ void setMesh(Mesh* _mesh) { mesh = _mesh; }
 
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
@@ -120,33 +105,75 @@ struct Element {
       return shapeCoords[0]*zAtNodes[0] + shapeCoords[1]*zAtNodes[1] + shapeCoords[2]*zAtNodes[2] + shapeCoords[3]*zAtNodes[3];
       
    }
-   __device__ bool interpolateVelocities(double xt, double yt, double zt, 
+   __device__ void interpolateVelocities(double xt, double yt, double zt, 
                                          double& uuint, double& vvint, double& wwint);
 
 
-   // template<typename T>
-   // __device__ T[4] getNodalValues(T Node::* field) const {
-   //    // Get the values of the field at the nodes of the element
-   //    T values[4];
-   //    values[0] = nodes[0]->*field;
-   //    values[1] = nodes[1]->*field;
-   //    values[2] = nodes[2]->*field;
-   //    if (isQuad()) values[3] = nodes[3]->*field;
-   //    else          values[3] = 0.0;
-
-   //    return values;
-   //  }
+   // ------------------------------------------------------------------------------------------------
+   // These are functions that work on all nodes of the element.
+   // They use a standard, but not well known, way of accessing the fields of the nodes.
+   //
+   // An example of how to use these functions is:
+   //   
+   //    getNodalValues(L, &Node::compZCoord, zLAtNodes);
+   // 
+   // Where L is the level at which the field is to be interpolated. The field can be either
+   // a double (depth), an array (u[nvrt]), or a function that depends on the level (Node::compZCoord(int k)). 
+   // There are different versions of getNodalValues for each of these cases.
 
    template<typename T>
-   __device__ void getNodalValues(int level, T (Node::* field)[nvrt], T *res) const {
+   __device__ void getNodalValues(T Node::* field, T res[4]) const {
+      // Get the values of the field at the nodes of the element
+      res[0] = nodes[0]->*field;
+      res[1] = nodes[1]->*field;
+      res[2] = nodes[2]->*field;
+      if (isQuad()) res[3] = nodes[3]->*field;
+      else          res[3] = 0.0;
+   }
+
+   template<typename T>
+   __device__ void getNodalValues(int level, T (Node::* field)[nvrt], T res[4]) const {
       // Get the values of the field at the nodes of the element
       res[0] = (nodes[0]->*field)[level];
       res[1] = (nodes[1]->*field)[level];
       res[2] = (nodes[2]->*field)[level];
       if (isQuad()) res[3] = (nodes[3]->*field)[level];
       else          res[3] = 0.0;
-
    }    
+
+   template<typename T>
+   __device__ void getNodalValues(int level, T (Node::*func)(int) const, T res[4]) const {
+      // Get the values of the func at the nodes of the element
+      res[0] = (nodes[0]->*func)(level);
+      res[1] = (nodes[1]->*func)(level);
+      res[2] = (nodes[2]->*func)(level);
+      if (isQuad()) res[3] = (nodes[3]->*func)(level);
+      else          res[3] = 0.0;
+
+   }      
+
+
+   __device__ double interpolate(int level, const double shapeCoords[4], double (Node::*func)(int) const) const {
+      double values[4];
+      getNodalValues(level, func, values);
+      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
+   }
+
+   __device__ double interpolate(const double shapeCoords[4], double Node::* field) const {
+      double values[4];
+      getNodalValues(field, values);
+      
+      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
+   }
+
+   __device__ double interpolate(int level, const double shapeCoords[4], double (Node::* field)[nvrt]) const {
+      double values[4];
+      getNodalValues(level, field, values);
+      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
+   }
+
+   // ------------------------------------------------------------------------------------------------
+
 
    __device__ bool globalToLocal(double xt, double yt, double &xlocal, double &ylocal) const {
       // Convert global coordinates to local coordinates
@@ -162,24 +189,45 @@ struct Element {
 
 
     
-   __device__ trackExitCodes trackThroughElementsAndLevels(double x0, double y0, double z0,
-                                                           double xt, double yt, double zt, double dtb,
-                                                           double time,
-                                                           double uuint, double vvint, double wwint, 
-                                                           int& jlev, Side *side, Element *nextElem);
-   
-   
+   __device__ bool trackThroughElementsAndLevels(double x0, double y0, double z0,
+                                                 double xt, double yt, double zt,
+                                                 double &uuint, double &vvint, double &wwint, 
+                                                 Element *&nextElem);
+
 
 
 #ifdef BACKTRACKING
-   __inline__ __device__ bool btrack(double xt, double yt, double zt,
+   /**
+    * Backtracking function.
+    * 
+    * This function performs backtracking from the starting point (x0,y0,z0) until a time
+    * -dt back from the current time. The backtracking is performed using the velocities (u,v,w) at each
+    * intermediate point.
+    *
+    * We approximate the backtracking curve as a piecewise linear curve. Each segment has
+    * a length dtb*vel_step, where vel_step is the module of the velocity at that step and dtb is 
+    * the timestep (of the backtracking). dtb is computed as the minimum of dtbk and the 
+    * remaining time.
+    * 
+    * NOTE: Runge-Kutta is not implemented yet. XXX
+    * 
+    * @param x0, y0, z0: Starting point coordinates
+    * @param uuint, vvint, wwint: Velocities at the final point
+    * @param jlev: Level at which the backtracking is performed
+    * @param dt, dtbk: Tracking timesteps
+    * @param sclr: Array for backtracked values
+    * @return: True if the backtracking was successful, false otherwise
+    */
+   __inline__ __device__ bool btrack(double x0, double y0, double z0,
                                      double uuint, double vvint, double wwint,
                                      int jlev,
                                      double dt, double dtbk,  // Tracking timesteps
-                                     double time_rm,        // Remaining time
                                      double* sclr             // Array for backtracked values
    ) {
-      const Element* curElem = this;
+
+      XXXXXX
+      const Element* curElem = this; // Starting element
+      double time_rm = dt; // Remaining time
 
       // Initialize outputs
       for(int i = 0; i < 4 + N_TRACERS; i++) {
@@ -187,25 +235,23 @@ struct Element {
       }
         
       // Start Euler tracking
-      double x0 = xt;
-      double y0 = yt; 
-      double z0 = zt;
-
       while(true) {
          // Calculate timestep
          const double dtb = min(dtbk, time_rm);
 
          // Euler step
-         xt = x0 - dtb * uuint;
-         yt = y0 - dtb * vvint;
-         zt = z0 - dtb * wwint;
+         double xt = x0 - dtb * uuint;
+         double yt = y0 - dtb * vvint;
+         double zt = z0 - dtb * wwint;
+
+
 
          Element* nextElem = nullptr;
          // Find containing element and interpolate velocities
          if (!curElem->trackThroughElementsAndLevels(x0, y0, z0, 
-                                                     xt, yt, zt, dtb,
+                                                     xt, yt, zt,
                                                      uuint, vvint, wwint, 
-                                                     jlev, nextElem)) {
+                                                     nextElem)) {
             // Hit boundary or dry element
             time_rm = 0.0;
             break; // XXX This is not needed on GPU???
@@ -243,7 +289,6 @@ struct Element {
 
 
 struct Side {
-   static Mesh* mesh;
 
    // Geometry information
    int idx;               // Index of the side
@@ -267,26 +312,22 @@ struct Side {
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
-   static __device__ void setMesh(Mesh* _mesh) { mesh = _mesh; }
 
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {
       return elems[0] ? elems[0] : elems[1];
    }
 
-   __inline__ __device__ Element* findElementTowards(double xt, double yt) {
+   __inline__ __device__ Element* findElementTowards(double u, double v) const {
       // From the elements that share this side, find the one that is in the direction of the target point (xt,yt)
 
       // If one of the elements is null, return the other one
       if      (elems[0] == nullptr) return elems[1];
       else if (elems[1] == nullptr) return elems[0];
 
-      // Vector from side center to target point
-      const double vx = xt - xc;
-      const double vy = yt - yc;
 
-      // Dot product of the vector with the side normal vector
-      const double dot_prod1 = vx*nx + vy*ny;
+      // Dot product of the negative velocity vector with the side normal vector
+      const double dot_prod1 = -(u*nx + v*ny);
       
       // Vector from side center to element 0 centroid
       const double vx2 = elems[0]->xc - xc;
@@ -311,35 +352,10 @@ struct Side {
       return elems[0] == elem ? elems[1] : elems[0];
    }
 
-#ifdef BACKTRACKING
-   __inline__ __device__ bool btrack(
-         int jlev,
-         double dt,            // Tracking timestep
-         double* sclr         // Array for backtracked values
-   ) {
-      // Start from side center
-      double x0 = xc, y0 = yc, z0 = zc;
 
-      
-      Element* curElem = findElementTowards(xt, yt);
-      
-      // Initial velocities
-      double u0 = u2[jlev];
-      double v0 = v2[jlev];
-      double w0 = 0.5*(n1->w2[jlev] + n2->w2[jlev]);  // vertical velocity at the side center
-
-      Element* nextElem = curElem;
-      while(true) {
-         bool found = curElem->trackThroughElementsAndLevels(x0, y0, z0, xt, yt, zt, dt, u0, v0, w0, jlev, this, nextElem);
-         if (found) break;
  
-
-      }
-   }
-#endif
-
-
-
+   __inline__ __device__ bool btrack(int jlev, double dt, double dtbk, double* sclr,
+                                     double &uuint, double &vvint, double &wwint) const;
 
 
 
@@ -349,7 +365,6 @@ struct Side {
 
 
 struct Node {
-   static Mesh* mesh;
 
    // Geometry information
    int idx;        // Index of the node
@@ -545,11 +560,16 @@ class Mesh {
             printf("Point %f %f %f is inside element %d\n", x, y, z, i);
             Element *elem = &localElemData[i];
             
-            int jlev = 0;
-            Side *side = nullptr;
-            
-            auto res = elem->trackThroughElementsAndLevels(x,y,z, x+0.01,y+0.01,z,
-                                                           0.1, 1.0, 1.0,0.0,0.0,jlev, side, elem);
+            double uuint, vvint, wwint;
+            // auto res = elem->trackThroughElementsAndLevels(x,y,z, 
+            //                                                x+0.01,y+0.01,z,
+            //                                                uuint, vvint, wwint, elem);
+            // Choose the first side
+            Side *side = elem->sides[0];
+            int jlev = 5;
+
+            side->btrack(5, 0.1, 0.01, nullptr, uuint, vvint, wwint);
+
          }
       }
    } 

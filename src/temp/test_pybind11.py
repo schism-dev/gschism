@@ -10,15 +10,15 @@ import sys
 from matplotlib import pyplot as plt
 
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -356,6 +356,9 @@ if __name__ == "__main__":
             elemsMemList.append(elemsMem.data.ptr)
             sidesMemList.append(sidesMem.data.ptr)
 
+            # Add the arrays to the device memory reference list. This ensures that the memory is not freed until the mesh is destroyed.
+            deviceMemRef.append([i34_part, elnode_part, nodesMem, elemsMem, sidesMem])
+
     # Create the arrays of pointers to the start of the device memory
     nodesPtr = cp.array(nodesMemList, dtype=cp.uintp)
     elemsPtr = cp.array(elemsMemList, dtype=cp.uintp)
@@ -421,16 +424,8 @@ if __name__ == "__main__":
             nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
             windRotateAnglePart = wind_rotate_angle[maskElemsPart].copy(order='F')
 
-            # createMesh((1,), (1,),  
-            #            (ipart, numNodes, numElements, numSides, 
-            #             numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt,
-            #             max(numPartNodes), max(numPartElements), max(numPartSides),
-            #             nodesPtr, elemsPtr, sidesPtr,
-            #             nodesMem, elemsMem, sidesMem,
-            #             partNodeNeighNodesMem, partNodeNeighElemsMem,
-            #             h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs)
-            # )
-
+            # Creates the mesh object on each GPU. This function mostly deals with letting the GPU know
+            # which memory is being used by the mesh, both locally and in other GPUs.
             createMesh((1,), (1,),  
                        (ipart, numNodes, numElements, numSides, 
                         numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt, kz,
@@ -449,6 +444,8 @@ if __name__ == "__main__":
 
     for ipart in range(n_gpus):
         with cp.cuda.Device(ipart):
+            # Adds additional information to the mesh object. This function deals with the actual data
+            # of the mesh, including the nodes, elements, sides, and their neighbors.
             populateMesh((1,), (1,),  (i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
                                        isdel, isidenode, isbnd,
                                        nodeNeighNodesStart, nodeNeighNodes,
@@ -457,7 +454,7 @@ if __name__ == "__main__":
                                        localNodeIndices, localElemIndices, localSideIndices,
                                        localNodePart, localElemPart, localSidePart))
 
-            test((1,), (1,), (-2.21334,  0.76058, 1.0))
+            test((1,), (1,), (-2.21334,  0.76058, -1.0))
 
     # Launch kernel on each GPU
     launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)

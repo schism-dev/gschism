@@ -22,5 +22,16 @@
             },
             "console": "integratedTerminal"
         }
+        {
+            "name": "Debug test_pybind11 home.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/temp/test_pybind11.py",
+            "python": "/home/jmg/miniconda3/envs/gschism/bin/python",
+            "conda": {
+                "env": "gschism"
+            },
+            "console": "integratedTerminal"
+        }
     ]
 }

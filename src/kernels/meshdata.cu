@@ -183,7 +183,6 @@ double xIntersect, yIntersect;
  * @param xt,yt,zt     Target position coordinates
  * @param dtb          Time step for tracking
  * @param uuint,vvint,wwint Initial velocity components
- * @param jlev         Current/resulting vertical level
  * @param nextElem     Starting/resulting element index
  * 
  * @return Status code of type trackExitCodes
@@ -193,12 +192,16 @@ double xIntersect, yIntersect;
  * for GPU execution.
  * 
  * The main ideas here are:
- * - The starting point is guaranteed to be in the starting element.
- * - since it is inside the element, there are only two cases: (a) segment (x0,y0)-(xt,yt) intersects the element sides, or (b) it does not and (xt,yt) is in the same element.
- * - If it is not inside the element, we know that an interection must exist. We compute the intersection
+ * - The starting point is expected to be in the starting element.
+ * - The end point is guaranteed to be inside an element.
+ * - since the starting point is inside the element, there are only two cases: 
+ *     (a) segment (x0,y0)-(xt,yt) intersects the element sides, or 
+ *     (b) it does not and (xt,yt) is already in the starting element.
+ * - If (xt,yt) is not inside the element, we know that an interection must exist. We compute the intersection
  *   of the segment with the *lines* (infinite length) that form the element sides.
  * - The intersection is computed as the parametric value tt1 of the intersection point on the segment (x0,y0)-(xt,yt).
  * - tt1 can be positive or negative. We only consider the positive values.
+ * - tt2 is the parametric value of the intersection point on the element side segment.
  * - The next intersection will occur at the smallest positive tt1.
  * - This intersection will be the next (x0,y0) position.
  * - Proceeding this way it is guaranteed that we are always moving forward, so there is no chance
@@ -206,29 +209,24 @@ double xIntersect, yIntersect;
  * - Additionally, this function never finds intersections with the side segment where the last intersection
  *   was found.
  */
-__device__ trackExitCodes Element::trackThroughElementsAndLevels(double x0, double y0, double z0,
-                                                                  double xt, double yt, double zt, double dtb,
-                                                                  double time,
-                                                                  double uuint, double vvint, double wwint, 
-                                                                  int& jlev, Side *side, Element *nextElem)
-         {
+__device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, double z0,
+                                                       double xt, double yt, double zt, 
+                                                       double &uuint, double &vvint, double &wwint, 
+                                                       Element *&nextElem) {
    printf("trackThroughElementsAndLevels: x0=%f, y0=%f, xt=%f, yt=%f\n", x0, y0, xt, yt);
    // First thing is to check if the target point is inside the element. If it is there is nothing
    // else to do.
-   if (containsPoint(xt, yt)) return tec_success;
+   if (containsPoint(xt, yt)) return true;
+
+   Side *side = nullptr;
 
    // 1. Initial checks
    // Verify starting element is valid (wet)
-   if (nextElem->idry) return tec_dry_element;  // Error code for invalid starting conditions
+   assert(!nextElem->idry && "Starting element is dry");
 
    // Checks if track has a zero length.
-   double trm = time; //time remaining
-
-
-   double xcg = x0, ycg=y0;
-   double pathl2 = (xt - xcg)*(xt - xcg) + (yt - ycg)*(yt - ycg);
-   
-   if (pathl2==0.0 || trm==0.0)  return tec_zero_length_track; 
+   const double len2 = (xt - x0)*(xt - x0) + (yt - y0)*(yt - y0);   
+   assert(len2 > 0.0 && "Zero length track"); 
    
 
    const int MAX_ITERATIONS = 1000;
@@ -243,11 +241,7 @@ __device__ trackExitCodes Element::trackThroughElementsAndLevels(double x0, doub
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
    bool found_intersection = findNextIntersection(x0, y0, xt, yt, nextSide, nextElem, t, tIntersect);
-
-   if (!found_intersection) {
-      printf("Error: No intersection found\n");
-      return tec_no_intersection;
-   }
+   assert(found_intersection && "No intersection found");
 
    // Keeps searching for the next intersection until we find xt, yt inside nextElem.
    int iterations = 0;
@@ -266,7 +260,7 @@ __device__ trackExitCodes Element::trackThroughElementsAndLevels(double x0, doub
       if (nextElem->isEdgeBoundary(nextSide) || (nextElem->idry)) {
          printf("Tracking segment goes out of water\n");
          printf("Implement here the tangent velocity\n");
-         return tec_success;
+         return false;
       }
       
       // Update position and element for next iteration
@@ -274,27 +268,16 @@ __device__ trackExitCodes Element::trackThroughElementsAndLevels(double x0, doub
       // t = tIntersect;
    }
 
-   printf("EHREHREHREH iterations = %d\n", iterations);
-   printf("xt = %f, yt = %f\n", xt, yt);
-   printf("nextElem->Nodes[0]->x = %f, nextElem->Nodes[0]->y = %f\n", nextElem->nodes[0]->x, nextElem->nodes[0]->y);
-   printf("nextElem->Nodes[1]->x = %f, nextElem->Nodes[1]->y = %f\n", nextElem->nodes[1]->x, nextElem->nodes[1]->y);
-   printf("nextElem->Nodes[2]->x = %f, nextElem->Nodes[2]->y = %f\n", nextElem->nodes[2]->x, nextElem->nodes[2]->y);
 
-   printf("nextElem = %d, containsPoint = %d\n", nextElem->idx, nextElem->containsPoint(xt, yt));
-   if (iterations >= MAX_ITERATIONS) return tec_iteration_limit;  
+   assert(iterations < MAX_ITERATIONS && "Iteration limit reached");  
 
-   
+ 
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
-   if (!nextElem->interpolateVelocities(xt, yt, zt, uuint, vvint, wwint)) {
-      return tec_failed_to_interpolate_velocities;
-   }
-
-   side = nullptr;
-
-   return tec_success;
+   nextElem->interpolateVelocities(xt, yt, zt, uuint, vvint, wwint);
+printf("##!!!# Backtracking: uuint=%f, vvint=%f, wwint=%f\n", uuint, vvint, wwint);   
+   return true;
 }
-
 
 
 
@@ -329,11 +312,11 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    @param xt (input): x-coordinate of the point
    @param yt (input): y-coordinate of the point
    @param shpCoords (output): shape coordinates of the point
-   @param fixNegShapeCoords (input): if true, fix negative shape coordinates
+   @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
 __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCoords[4],
-                                            bool fixNegShapeCoords) const {
+                                            bool fixNegshpCoord) const {
 
    // Compute the shape coordinates of the point (xt,yt) in the element.
    if (i34==3) {
@@ -369,9 +352,9 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
       shpCoords[3] = 0.0;
       double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
 
-      // If at least one of the shape coordinates is negative, and we have the flag fixNegShapeCoords set,
+      // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
-      if (fixNegShapeCoords && tmpmin<=0.0) {
+      if (fixNegshpCoord && tmpmin<=0.0) {
 
          // NOTE: I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
          // keeping the sum of the shape coordinates equal to 1.
@@ -387,7 +370,7 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
 
          if (shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
              shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) {
-            Error("Negative shape coordinates in computeShapeCoords, when fixNegShapeCoords is true");
+            Error("Negative shape coordinates in computeshpCoord, when fixNegshpCoord is true");
          }
 
          // Update the point coordinates for the new shape coordinates
@@ -436,41 +419,44 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
    4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
       horizontally and vertically.
 **/
-__device__ bool Element::interpolateVelocities(double xt, double yt, double zt, 
+__device__ void Element::interpolateVelocities(double xt, double yt, double zt, 
                                                double& uuint, double& vvint, double& wwint) {
    // Interpolate the velocities at the point (xt,yt,zt). 
    // This function works the same for triangular and quadrilateral elements.
-   double shapeCoords[4];
-   printf("### interpolating Velocities, element = %d\n", idx);
+   double shpCoord[4];
 
    auto n0 = nodes[0];
    auto n1 = nodes[1];
    auto n2 = nodes[2];
    auto n3 = nodes[3];
-
-   printf("### interpolating Velocities: n0 = %p, n1 = %p, n2 = %p, n3 = %p\n", n0, n1, n2, n3);
    
    // First step is to compute the shape coordinates of (xt,yt)
-   // if (!computeShapeCoords(xt, yt, shapeCoords)) return tec_failed_to_compute_area_coords;
-   computeShapeCoords(xt, yt, shapeCoords, false);
-   printf("### interpolating Velocities: shapeCoords = %f %f %f %f\n", shapeCoords[0], shapeCoords[1], shapeCoords[2], shapeCoords[3]);
-
+   computeShapeCoords(xt, yt, shpCoord, false);
+   
+   assert(min(min(shpCoord[0], shpCoord[1]), shpCoord[2]) > -small);
 
    // Second step is to find the level that contains zt
    // Uses a binary search to find the level
-   // Note that the z coordinates need to be computed, they are not stored.
-   // Also, note that interpolate only takes into account 3 nodes for triangular elements and 4 nodes for quadrilateral elements.
+   // Note that z coordinates are interpolated from their values at the nodes of the element.
    int L = kbe;   // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
    int R = nvrt;
-   double zLAtNodes[4] = {n0->compZCoord(L), n1->compZCoord(L), n2->compZCoord(L), n3->compZCoord(L)};
-   double zRAtNodes[4] = {n0->compZCoord(R), n1->compZCoord(R), n2->compZCoord(R), n3->compZCoord(R)};
-   double zL = interpolate(shapeCoords, zLAtNodes);
-   double zR = interpolate(shapeCoords, zRAtNodes);
+
+   // Get the z coordinates at the nodes of the element at the levels L and R
+   double zLAtNodes[4], zRAtNodes[4];
+   getNodalValues(L, &Node::compZCoord, zLAtNodes);
+   getNodalValues(R, &Node::compZCoord, zRAtNodes);
+
+   double zL = interpolate(shpCoord, zLAtNodes);
+   double zR = interpolate(shpCoord, zRAtNodes);
+   
+   // Perform a binary search to find the levels between L and R that contain zt
+   assert(zL <= zt && zR >= zt);
    while (R - L > 1) {
       int M = (L + R) / 2;
 
-      double zMAtNodes[4] = {nodes[0]->compZCoord(M), nodes[1]->compZCoord(M), nodes[2]->compZCoord(M), nodes[3]->compZCoord(M)};
-      double zM = interpolate(shapeCoords, zMAtNodes);
+      double zMAtNodes[4];
+      getNodalValues(M, &Node::compZCoord, zMAtNodes);
+      double zM = interpolate(shpCoord, zMAtNodes);
       if (zM < zt) 
       {
          L = M;
@@ -482,41 +468,103 @@ __device__ bool Element::interpolateVelocities(double xt, double yt, double zt,
          zR = zM;
       }
    }
+   assert(L == R-1);
    // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
 
-   // Final step is the vertical interpolation
 
-   double uLAtNodes[4];
-   getNodalValues(L, &Node::u, uLAtNodes);
-   printf("### interpolating Velocities: uLAtNodes = %f %f %f %f\n", uLAtNodes[0], uLAtNodes[1], uLAtNodes[2], uLAtNodes[3]);
-#ifdef BACKTRACKING
-   // Interpolate horizontally the velocities at the two levels L, R
-   interpVel(L, shapeCoords, uLint, vLint, wLint);
-   interpVel(R, shapeCoords, uRint, vRint, wRint);
+   // Interpolate horizontally and vertically the velocities at the two levels L, R
+   const double wght2 = (zt - zL)/(zR - zL);
+   const double wght1 = 1.0 - wght2;
+   uuint = wght1*interpolate(L, shpCoord, &Node::u) + wght2*interpolate(R, shpCoord, &Node::u);
+   vvint = wght1*interpolate(L, shpCoord, &Node::v) + wght2*interpolate(R, shpCoord, &Node::v);
+   wwint = wght1*interpolate(L, shpCoord, &Node::w) + wght2*interpolate(R, shpCoord, &Node::w);
+
+   // Neither of the interpolated velocities should be NaN
+   assert(!isnan(uuint) && !isnan(vvint) && !isnan(wwint));
+
+}
+
+
+/**
+ * This method performs backtracking from the side center until a time -dt back in time 
+ * from the current time. The backtracking is performed using the velocities (u,v,w) at each
+ * intermediate point.
+ *
+ * We approximate the backtracking curve as a piecewise linear curve. Each segment has
+ * a length dtb*vel_step, where vel_step is the module of the velocity at that step and dtb is 
+ * the timestep (of the backtracking). dtb is computed as the minimum of dtbk and the 
+ * remaining time.
+ * 
+ * NOTE: Runge-Kutta is not implemented yet. XXX
+ * 
+ * @param uuint, vvint, wwint: Velocities at the final point
+ * @param jlev: Level at which the backtracking is performed
+ * @param dt, dtbk: Tracking timesteps
+ * @param sclr: Array for backtracked values
+ * @return: True if the backtracking was successful, false otherwise
+ */
+__inline__ __device__ bool Side::btrack(
+      int jlev,
+      double dt,            // Tracking time
+      double dtbk,          // Tracking timestep
+      double* sclr,         // Array for backtracked values
+      double &uuint, double &vvint, double &wwint
+) const {
+
+   // Start from side center
+   double x0 = xc;
+   double y0 = yc;
+   double z0 = zc[jlev];
+
+   double time_rm = dt; // Remaining time
 
    
+   // Initial velocities
+   uuint = u2[jlev];
+   vvint = v2[jlev];
+   wwint = 0.5*(n1->w[jlev] + n2->w[jlev]);  // vertical velocity at the side center  XXX why W in nodes and u2,v2 in sides?
 
-   const double uLAtNodes[4] = {nodes[0]->u[L], nodes[1]->u[L], nodes[2]->u[L], nodes[3]->u[L]};
-   const double vLAtNodes[4] = {nodes[0]->v[L], nodes[1]->v[L], nodes[2]->v[L], nodes[3]->v[L]};
-   const double wLAtNodes[4] = {nodes[0]->w[L], nodes[1]->w[L], nodes[2]->w[L], nodes[3]->w[L]};
-   const double uLint = interpolate(shapeCoords, uLAtNodes);
-   const double vLint = interpolate(shapeCoords, vLAtNodes);
-   const double wLint = interpolate(shapeCoords, wLAtNodes);
+printf(">>Backtracking: uuint=%f, vvint=%f, wwint=%f\n", uuint, vvint, wwint);
+printf("  time_rm=%f, dtbk=%f, dt=%f, jlev=%d\n", time_rm, dtbk, dt, jlev);
 
-   const double uRAtNodes[4] = {nodes[0]->u[R], nodes[1]->u[R], nodes[2]->u[R], nodes[3]->u[R]};
-   const double vRAtNodes[4] = {nodes[0]->v[R], nodes[1]->v[R], nodes[2]->v[R], nodes[3]->v[R]};
-   const double wRAtNodes[4] = {nodes[0]->w[R], nodes[1]->w[R], nodes[2]->w[R], nodes[3]->w[R]};
-   const double uRint = interpolate(shapeCoords, uRAtNodes);
-   const double vRint = interpolate(shapeCoords, vRAtNodes);
-   const double wRint = interpolate(shapeCoords, wRAtNodes);
+   // Find the element that is in the direction opposite to the velocity
+   Element* curElem = findElementTowards(uuint, vvint);
 
-   // Interpolate vertically the velocities at the level zt
-   const double ratio = (zt - zL)/(zR - zL);
-   uuint = (1-ratio)*uLint + ratio*uRint;
-   vvint = (1-ratio)*vLint + ratio*vRint;
-   wwint = (1-ratio)*wLint + ratio*wRint;
-#endif
+   const int MAX_ITERATIONS = 1000;
+   Element* nextElem = curElem;
+   int iter = 0;
+   while(true) {
+      // Calculate timestep
+      const double dtb = min(dtbk, time_rm);
+
+      // Next point in the backtracking curve
+      double xt = x0 - dtb*uuint;
+      double yt = y0 - dtb*vvint;
+      double zt = z0 - dtb*wwint;
+
+printf("@Backtracking: x0=%f, y0=%f, z0=%f, xt=%f, yt=%f, zt=%f, dtb=%f\n", x0, y0, z0, xt, yt, zt, dtb);
+printf("***elem=%d\n", curElem->idx);
+      bool found = curElem->trackThroughElementsAndLevels(x0, y0, z0, xt, yt, zt, uuint, vvint, wwint, nextElem);
+      assert(found && "Backtracking failed in btrack");
+printf("###Backtracking: uuint=%f, vvint=%f, wwint=%f\n", uuint, vvint, wwint);      
+      time_rm -= dtb; // from the definition of dtb, time_rm will reach exactly 0.0
+      if (time_rm == 0.0) break;
+
+      // The current point becomes the next segment's starting point.
+      x0 = xt;
+      y0 = yt;
+      z0 = zt;
+
+      curElem = nextElem;
+
+      iter++;
+      assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
+   }
+
+
 }
+
+
 
 // /**
 //    For a point (x1,y1) inside the element and a line segment (x1,y1)-(x2,y2), find the intersection point 
@@ -649,12 +697,11 @@ __device__ double Node::compZCoord(int k) const {
    // NOTE: Assumes that updateZCoordData() has been called before this function.
       
    if (idry) {
-      printf("compZCoord: dry location: %f %f\n", depth, eta2);
       return 0.0;
    }
 
    if constexpr(ivcor == 2) {
-      // Special levels
+
       const double hmod2 = sigmaTransitionDepth(); // Depth transition between z and sigma levels
       const int kz = mesh->kz;
 
@@ -662,7 +709,6 @@ __device__ double Node::compZCoord(int k) const {
       // The FORTAN code computes it every time this function is called, but it should be done only 
       // once per time step/node.
       // CHECK: updateZCoordData
-
       if (k == kz)               return -hmod2;
       else if (k == nvrt-1)      return eta2;
       else if (k == kb)          return -depth;
@@ -778,9 +824,11 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
       node.x = node_coords[i * 3];
       node.y = node_coords[i * 3 + 1];
-      node.z = node_coords[i * 3 + 2];
-   }
+      node.z = node_coords[i * 3 + 2];  // XXX this is probably wrong
+      node.depth = node_coords[i * 3 + 2];
 
+for (int k = 0; k < nvrt; k++) {node.w[k] = 0.1; node.u[k] = -0.2; node.v[k] = -0.3;}
+   }
 
    printf("Processing %d sides\n", ns);
    for (int i = 0; i < ns; i++)
@@ -821,7 +869,9 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
          side.elems[1] = nullptr;
       }
 
- 
+for (int k = 0; k < nvrt; k++) side.u2[k] = -0.2;
+for (int k = 0; k < nvrt; k++) side.v2[k] = -0.3;
+
       // Compute the center of the side
       side.xc = 0.5*(side.n1->x + side.n2->x);
       side.yc = 0.5*(side.n1->y + side.n2->y);
