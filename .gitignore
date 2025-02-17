@@ -14,8 +14,13 @@
 *.manifest
 *.log
 *.log.*
+*.so
 
 # Python
 *.pyc
 *.pyo
 *.pyd
+
+# vscode
+.vscode/launch.json
+
