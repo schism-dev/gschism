@@ -10,15 +10,15 @@ import sys
 from matplotlib import pyplot as plt
 
 
-# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
-# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux

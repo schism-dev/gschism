@@ -19,7 +19,7 @@ constexpr int landNode = -2;
 
 constexpr double pi = 3.14159265358979323846;
 
-
+constexpr double eps = 1.019e-2; // Nudging factor
 
 __inline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
   // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
@@ -85,11 +85,18 @@ struct Element {
 
    __inline__ __device__ double computeSignedArea(void) const;
 
+   __inline__ __device__ void nudgeToBarycenter(double x, double y, double &newx, double &newy) const {
+      // Nudges the point (x,y) to the barycenter of the element
+      newx = (1-eps)*x + eps*xc;
+      newy = (1-eps)*y + eps*yc;
+   }
+
    __device__ bool computeShapeCoords(double &xt, double &yt, double shpCoords[4], bool fixNegShapeCoords = false) const;
 
-   __device__ bool findNextIntersection(double x2, double y2, Side *&side, Element *&nextElement, double &t, double& tIntersect);
-   __device__ bool findNextIntersection(double x1, double y1, double x2, double y2, 
-                                        Side *&side, Element *&nextElement, double &t, double& tIntersect);
+   __device__ bool findNextIntersection(double x2, double y2, Side *&side, Element *&nextElement, double &t, 
+                                        double& tIntersect, double& zint);
+   __device__ bool findNextIntersection(double x1, double y1, double x2, double y2, Side *&side, Element *&nextElement, double &t, 
+                                        double& tIntersect, double& zint);
 
    __inline__ __device__ bool containsPoint(double xt, double yt) const { 
       // Check if the point (xt,yt) is inside the element
@@ -192,8 +199,7 @@ struct Element {
    __device__ bool trackThroughElementsAndLevels(double x0, double y0, double z0,
                                                  double xt, double yt, double zt,
                                                  double &uuint, double &vvint, double &wwint, 
-                                                 Element *&nextElem);
-
+                                                 Element *&nextElem, int &jlev);
 
 
 #ifdef BACKTRACKING
@@ -312,6 +318,8 @@ struct Side {
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
+   __inline__ __device__ double x(double t) const;
+   __inline__ __device__ double y(double t) const;
 
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {
@@ -375,7 +383,7 @@ struct Node {
    int numElements;   // number of elements that share this node
 
    double x, y, z;
-   double u[nvrt], v[nvrt], w[nvrt];
+   double u2[nvrt], v2[nvrt], w2[nvrt];
    double znl[nvrt];
    double lon, lat;
    double depth;
