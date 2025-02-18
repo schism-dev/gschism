@@ -94,9 +94,9 @@ struct Element {
    __device__ bool computeShapeCoords(double &xt, double &yt, double shpCoords[4], bool fixNegShapeCoords = false) const;
 
    __device__ bool findNextIntersection(double x2, double y2, Side *&side, Element *&nextElement, double &t, 
-                                        double& tIntersect, double& zint);
+                                        double& tIntersect);
    __device__ bool findNextIntersection(double x1, double y1, double x2, double y2, Side *&side, Element *&nextElement, double &t, 
-                                        double& tIntersect, double& zint);
+                                        double& tIntersect);
 
    __inline__ __device__ bool containsPoint(double xt, double yt) const { 
       // Check if the point (xt,yt) is inside the element
@@ -197,10 +197,9 @@ struct Element {
 
     
    __device__ bool trackThroughElementsAndLevels(double x0, double y0, double z0,
-                                                 double xt, double yt, double zt,
+                                                 double &xt, double &yt, double &zt,
                                                  double &uuint, double &vvint, double &wwint, 
-                                                 Element *&nextElem, int &jlev);
-
+                                                 Element *&nextElem, int &jlev, double &dt);
 
 #ifdef BACKTRACKING
    /**
@@ -306,6 +305,8 @@ struct Side {
    double zc[nvrt];       // Side center z-coord at each vertical level
    double depth;          // Depth at side center
 
+
+   int isbnd;             // Is this node on a boundary?
    int bdysd;             // Boundary side flag
    int kb;                // Bottom index of the side
    bool idry;             // True if the side is dry
@@ -391,6 +392,8 @@ struct Node {
    int kb;       // Bottom index of the node
 
    int idry;     // True if the node is dry
+
+   int isbnd;    // Is this node on a boundary?
 
    // Physical information
    Tracers tr_nd0[nvrt]; // Initial tracer conc. at nodes

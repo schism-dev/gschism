@@ -43,7 +43,7 @@ __device__ Mesh* mesh = nullptr;
    If the two segments are parallel, they do not intersect. This is checked by the determinant of the two vectors
    (Delta) being zero.
 
-   The intersection point happens when:
+   The intersection2 point happens when:
    tt1(x2-x1) - tt2(x4-x3) = x3-x1
    tt1(y2-y1) - tt2(y4-y3) = y3-y1
    
@@ -55,11 +55,11 @@ __device__ Mesh* mesh = nullptr;
 **/
 __device__ bool Element::findNextIntersection(double x2, double y2, 
                                               Side *&side, Element *&nextElement,
-                                              double &t, double& tIntersect, double& zint) {
+                                              double &t, double& tIntersect) {
 
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
-
+printf("HERE, side = %p\n", side);
    // (x1,y1)-(x2,y2) is the track line segment. Every step we move (x1,y1) to the next
    // intersection point, at position t on "side". The final position is (x2,y2)=(xt,yt).
    const double x1 = side->x(t);
@@ -108,7 +108,6 @@ printf("[%f, %f]\n", x1, y1);
             nextElement = nextSide->otherElement(this);
             tIntersect = max(small, min(tt1, 1.0-small));
             t = tt2;
-            zint = (1 - tIntersect)*zint + tIntersect*zt;
             // printf("### t = %f, tIntersect=%f\n", t , tIntersect);
             found_intersection = true;
          }
@@ -128,7 +127,7 @@ printf("[%f, %f]\n", x1, y1);
 
 __device__ bool Element::findNextIntersection(double x1, double y1, double x2, double y2, 
                                               Side *&side, Element *&nextElement,
-                                              double &t, double& tIntersect, double& zint) {
+                                              double &t, double& tIntersect) {
 
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
@@ -139,6 +138,8 @@ double xIntersect, yIntersect;
    for (int i = 0; i < i34; i++) {
 
       Side *side2 = sides[i];
+
+printf("findNextIntersection: side2 = %d, %p\n", side2->idx, side2);      
 
       // (x3,y3)-(x4,y4) is the element side line
       const double x3 = side2->n1->x;
@@ -161,10 +162,11 @@ double xIntersect, yIntersect;
          if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
+printf("findNextIntersection22: side = %d, %p\n", side->idx, side);            
             nextElement = side->otherElement(this);
+printf("findNextIntersection332: side = %d, %p\n", side->idx, side);                
             t = tt2;
             tIntersect = max(small, min(tt1, 1.0-small));
-            zint = (1 - tIntersect)*zint + tIntersect*zt;
             found_intersection = true;
          }
       
@@ -174,6 +176,7 @@ double xIntersect, yIntersect;
 
 
    // found_intersection should always be true, since we checked all the sides.  
+printf("findNextIntersection442: side = %d, %p\n", side->idx, side);   
    return found_intersection;
 }
 
@@ -212,10 +215,10 @@ double xIntersect, yIntersect;
  *   was found.
  */
 __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, double z0,
-                                                       double xt, double yt, double zt, 
+                                                       double &xt, double &yt, double &zt, 
                                                        double &uuint, double &vvint, double &wwint, 
                                                        Element *&nextElem,
-                                                       int &jlev) {
+                                                       int &jlev, double &dt) {
    printf("trackThroughElementsAndLevels: x0=%f, y0=%f, xt=%f, yt=%f\n", x0, y0, xt, yt);
    // First thing is to check if the target point is inside the element. If it is there is nothing
    // else to do.
@@ -244,7 +247,8 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
    // Horizontal tracking loop
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
-   bool found_intersection = findNextIntersection(x0, y0, xt, yt, nextSide, nextElem, t, tIntersect, zint);
+   bool found_intersection = findNextIntersection(x0, y0, xt, yt, nextSide, nextElem, t, tIntersect);
+printf("nextElem: nextElem = %p, t = %f, tIntersect = %f, found_intersection = %d\n", nextElem, t, tIntersect, found_intersection);   
    assert(found_intersection && "No intersection found");
 
    zint = (1 - tIntersect)*zint + tIntersect*zt;
@@ -254,10 +258,10 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
    while (iterations < MAX_ITERATIONS) {
       iterations++;
       
-      const Element *curElem = nextElem;
+      Element *curElem = nextElem;
 
-      bool found_intersection = curElem->findNextIntersection(xt, yt, curSide, nextElem, t, tIntersect, zint);
-
+      bool found_intersection = curElem->findNextIntersection(xt, yt, nextSide, nextElem, t, tIntersect);
+printf("**2*elem=%p %d\n", curElem, curElem->idx); 
       zint = (1 - tIntersect)*zint + tIntersect*zt;
 
       // If we are already in the target element, we are done.
@@ -265,12 +269,7 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
       if (!found_intersection) break;
 
 
-      // NOTE: What follows is the code for when the track crosses a boundary. I feel that the code can be 
-      // implemented in a more elegant way, by returning from trackThroughElementsAndLevels as if a segment
-      // had ended (we need to increase time_rm in the caller to take into account the remaining time). This
-      // Will have to be done *after* nudgeToBarycenter. This method will be better at computing the tangential
-      // velocity at the side.
-
+  
       // if the tracking segment goes out of water (either dry or edge boundary).
       if (curElem->isEdgeBoundary(nextSide) || (nextElem->idry)) {
          printf("Tracking segment goes out of water\n");
@@ -284,51 +283,59 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
          // And uses this velocity instead to continue the tracking.
 
          // computes the intersection point in cartesian coordinates
-         const double xint = side->x(t);
-         const double yint = side->y(t);
+         const double xint = nextSide->x(t);
+         const double yint = nextSide->y(t);
 
         
          // Nudges the point to the barycenter of the element. 
          // This ensures that the point is inside the element and hence, we will find an intersection if the
          // next segment intersects the element sides.         
          curElem->nudgeToBarycenter(xint, yint, x0, y0);
-
+printf("nudged to barycenter: xint = %f, yint = %f\n", xint, yint);         
 
          // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
          // of the intersection point. We are approximating it by the velocity at the side center at jlev.
-         const double tx = -side->ny;  // tangent unitary vector to the side
-         const double ty =  side->nx;
-         double vtan = side->u2[jlev]*tx + side->v2[jlev]*ty;
-
+         // NOTE: With the new code it will be easy to compute the tangential velocity at the intersection point.
+         const double tx = -nextSide->ny;  // tangent unitary vector to the side
+         const double ty =  nextSide->nx;
+         double vtan = nextSide->u2[jlev]*tx + nextSide->v2[jlev]*ty;
+printf("vtan = %f, nextSide->isbnd = %d, nextSide->u2[jlev] = %f, nextSide->v2[jlev] = %f\n", vtan, nextSide->isbnd, nextSide->u2[jlev], nextSide->v2[jlev]);
          // If the side is an open boundary, the tangential velocity is zero.
-         if (side->isbnd) vtan = 0.0;
+         if (nextSide->isbnd) vtan = 0.0;
 
-         // Tangential velocity components
+printf("nextSide->n1 = %p, nextSide->n2 = %p, jlev = %d\n", nextSide->n1, nextSide->n2, jlev);
+         // The new velocity components are computed from the tangential velocity and the tangent vector.
          const double us = vtan*tx;
          const double vs = vtan*ty;
-         const double ws = 0.5*(side->n1->w2[jlev] + side->n2->w2[jlev]);
+         const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);
 
-         // Compute the new remaining time based on the remaining segment length and the velocity.
-         const double len2 = (xint-x0)*(xint-x0) + (yint-y0)*(yint-y0);
-         const double vel2 = us*us + vs*vs;
+         // Compute the new "tracked" time based on the remaining segment length and the original velocity.
+         const double len2 = (xint - xt)*(xint - xt) + (yint - yt)*(yint - yt);
+         const double vel2 = uuint*uuint + vvint*vvint;
          assert(vel2 > 0.0 && "Zero velocity found");
-         const double trm = sqrt(len2/vel2);
+         dt = dt - sqrt(len2/vel2); 
 
          // Compute the new target based on the current position and the remaining time.
-         xt = xint - us*trm;
-         yt = yint - vs*trm;
-         zt = zint - ws*trm;
+         xt = xint - us*dt;
+         yt = yint - vs*dt;
+         zt = zint - ws*dt;
+         
+         uuint = us;
+         vvint = vs;
+         wwint = ws;
 
-         found_intersection = curElem->findNextIntersection(xn, yn, xt, yt, nextSide, nextElem, t, tIntersect, zint);
+         nextElem = curElem;
 
-         zint = (1 - tIntersect)*zint + tIntersect*zt;
+         // Returns "early", meaning that we stopped before we were able to reach the target point.
+         // In this case, the caller (btrack) needs to take into account the remaining time.
+         return true;
 
-         if (!found_intersection) break;
       }
       
       // Update position and element for next iteration
       side = nextSide;
-      // t = tIntersect;
+
+
    }
 
 
@@ -339,6 +346,8 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
    // but the function is not simple, because it has to search for the vertical level containing zt.
    nextElem->interpolateVelocities(xt, yt, zt, uuint, vvint, wwint);
 printf("##!!!# Backtracking: uuint=%f, vvint=%f, wwint=%f\n", uuint, vvint, wwint);   
+
+
    return true;
 }
 
@@ -589,7 +598,7 @@ __inline__ __device__ bool Side::btrack(
    // Initial velocities
    uuint = u2[jlev];
    vvint = v2[jlev];
-   wwint = 0.5*(n1->w[jlev] + n2->w[jlev]);  // vertical velocity at the side center  XXX why W in nodes and u2,v2 in sides?
+   wwint = 0.5*(n1->w2[jlev] + n2->w2[jlev]);  // vertical velocity at the side center  XXX why W in nodes and u2,v2 in sides?
 
 printf(">>Backtracking: uuint=%f, vvint=%f, wwint=%f\n", uuint, vvint, wwint);
 printf("  time_rm=%f, dtbk=%f, dt=%f, jlev=%d\n", time_rm, dtbk, dt, jlev);
@@ -602,7 +611,7 @@ printf("  time_rm=%f, dtbk=%f, dt=%f, jlev=%d\n", time_rm, dtbk, dt, jlev);
    int iter = 0;
    while(true) {
       // Calculate timestep
-      const double dtb = min(dtbk, time_rm);
+      double dtb = min(dtbk, time_rm);
 
       // Next point in the backtracking curve
       double xt = x0 - dtb*uuint;
@@ -610,16 +619,20 @@ printf("  time_rm=%f, dtbk=%f, dt=%f, jlev=%d\n", time_rm, dtbk, dt, jlev);
       double zt = z0 - dtb*wwint;
 
 printf("@Backtracking: x0=%f, y0=%f, z0=%f, xt=%f, yt=%f, zt=%f, dtb=%f\n", x0, y0, z0, xt, yt, zt, dtb);
-printf("***elem=%d\n", curElem->idx);
+printf("***elem=%p %d\n", curElem, curElem->idx);
 
-
-      bool found = curElem->trackThroughElementsAndLevels(x0, y0, z0, xt, yt, zt, uuint, vvint, wwint, nextElem, jlev);
+      bool found = curElem->trackThroughElementsAndLevels(x0, y0, z0, xt, yt, zt, uuint, vvint, wwint, nextElem, jlev, dtb);
       assert(found && "Backtracking failed in btrack");
 
+      time_rm += dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
+                      // then time_rm needs to be increased by the unused time.
 
-printf("###Backtracking: uuint=%f, vvint=%f, wwint=%f\n", uuint, vvint, wwint);      
-      time_rm -= dtb; // from the definition of dtb, time_rm will reach exactly 0.0
-      if (time_rm == 0.0) break;
+printf("###Backtracking: uuint=%f, vvint=%f, wwint=%f\n", uuint, vvint, wwint);     
+      // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
+      // then time_rm needs to be increased by the unused time.
+      time_rm -= dtb; 
+
+      if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0
 
       // The current point becomes the next segment's starting point.
       x0 = xt;
@@ -899,7 +912,8 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.depth = node_coords[i * 3 + 2];
       node.isbnd = isbnd[i];
 
-for (int k = 0; k < nvrt; k++) {node.w[k] = 0.1; node.u[k] = -0.2; node.v[k] = -0.3;}
+// XXXX
+for (int k = 0; k < nvrt; k++) {node.w2[k] = 0.1; node.u2[k] = -0.2; node.v2[k] = -0.3;}
    }
 
    printf("Processing %d sides\n", ns);
@@ -919,11 +933,19 @@ for (int k = 0; k < nvrt; k++) {node.w[k] = 0.1; node.u[k] = -0.2; node.v[k] = -
       side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
       side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
+      // Normal vector to the side
+      side.nx = - (side.n1->y - side.n2->y);
+      side.ny =   (side.n1->x - side.n2->x);
+      const double norm = sqrt(side.nx*side.nx + side.ny*side.ny);
+      side.nx /= norm;
+      side.ny /= norm;
+
       // Side boundary type
-      n1bnd = side.n1->isbnd;
-      n2bnd = side.n2->isbnd;
-      if (n1bnd == 1 || n2bnd == 1) XXXX
-      side.isbnd = isbnd[i];
+      const int n1bnd = side.n1->isbnd;
+      const int n2bnd = side.n2->isbnd;
+      // XXXX NOTE: I'm chosing the boundary type of the first node. This may not be correct.
+      if (n1bnd > 0 || n2bnd > 0) side.isbnd = n1bnd;
+      else side.isbnd = 0;
 
       // finding the pointer to the elements that share the side
       const int idx_e1 = isdel[globalSideIndices[i]*2];
@@ -947,6 +969,7 @@ for (int k = 0; k < nvrt; k++) {node.w[k] = 0.1; node.u[k] = -0.2; node.v[k] = -
          side.elems[1] = nullptr;
       }
 
+// XXXX
 for (int k = 0; k < nvrt; k++) side.u2[k] = -0.2;
 for (int k = 0; k < nvrt; k++) side.v2[k] = -0.3;
 

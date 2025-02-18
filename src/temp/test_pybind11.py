@@ -8,6 +8,7 @@ import numpy as np
 import timeit
 import sys
 from matplotlib import pyplot as plt
+from matplotlib.collections import LineCollection
 
 
 sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
@@ -210,68 +211,106 @@ if __name__ == "__main__":
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
     dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
 
-    if False:   
+    if True:   
 
-        plt.figure(figsize=(12, 8))
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        # Plot all nodes
         plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.')
-        for i in range(100):
-            plt.annotate(str(i), 
-                        (nodeCoords[0,i].get(), nodeCoords[1,i].get()),
-                        xytext=(2, 2),  # Small offset from the point
-                        textcoords='offset points',
-                        fontsize=8)
+
+        # Batch node labels
+        # x = nodeCoords[0,:].get()
+        # y = nodeCoords[1,:].get()
+        # texts = []
+
+        nodes = elnode[:3,:].get()
+        # Append the first node to close the triangle
+        closed_nodes = np.vstack((nodes, nodes[0,:]))
+        
+        # Get coordinates for all nodes
+        x1 = nodeCoords[0, nodes[0, :]].get()
+        y1 = nodeCoords[1, nodes[0, :]].get()
+        x2 = nodeCoords[0, nodes[1, :]].get()
+        y2 = nodeCoords[1, nodes[1, :]].get()
+        x3 = nodeCoords[0, nodes[2, :]].get()
+        y3 = nodeCoords[1, nodes[2, :]].get()
+        
+        
+        points = np.stack((np.column_stack((x1, y1)), np.column_stack((x2, y2))), axis=1)
+        lc = LineCollection(points, colors='r', alpha=0.3)
+        ax.add_collection(lc)
+        points = np.stack((np.column_stack((x2, y2)), np.column_stack((x3, y3))), axis=1)
+        lc = LineCollection(points, colors='r', alpha=0.3)
+        ax.add_collection(lc)
+        points = np.stack((np.column_stack((x3, y3)), np.column_stack((x1, y1))), axis=1)
+        lc = LineCollection(points, colors='r', alpha=0.3)
+        ax.add_collection(lc)
+
+        
+        # Function to display tooltip
+        def on_hover(event):
+            if event.inaxes == ax:
+                # Check if the mouse is over a line
+                cont, ind = lc.contains(event)
+                if cont:
+                    # Get the index of the line
+                    line_index = ind['ind'][0]
+                    # Display the tooltip
+                    ax.set_title(f'Line between Node {nodes[0, line_index]} and Node {nodes[1, line_index]}')
+                    fig.canvas.draw_idle()
+
+        # for i in range(x.size):
+        #     texts.append(plt.text(x[i] + 2, y[i] + 2, str(i), 
+        #                         fontsize=8))
             
-        # Plot first 1000 triangles
-        for i in range(500):
-            pass
-            # Get the three nodes of the triangle
-            nodes = elnode[:3,i].get()
-            # Add the first node again to close the triangle
-            nodes = np.append(nodes, nodes[0])
+        # # Batch triangle plotting
+        # nodes = elnode[:3,:].get()  # Get all triangle nodes at once
+        # for i in range(elnode.shape[1]):
+        #     # Get triangle nodes and close the triangle
+        #     tri_nodes = np.append(nodes[:,i], nodes[0,i])
             
-            # Get coordinates for these nodes
-            x = nodeCoords[0,nodes].get()
-            y = nodeCoords[1,nodes].get()
+        #     # Get coordinates
+        #     x = nodeCoords[0,tri_nodes].get()
+        #     y = nodeCoords[1,tri_nodes].get()
             
-            # Plot the triangle
-            plt.plot(x, y, 'r-', alpha=0.3)  # Red lines with transparency
+        #     # Plot triangle
+        #     plt.plot(x, y, 'r-', alpha=0.3)
             
-            # Optionally, add triangle index at centroid
-            centroid_x = np.mean(x[:-1])  # Exclude the repeated first node
-            centroid_y = np.mean(y[:-1])
-            plt.annotate(f'T{i}', 
-                        (centroid_x, centroid_y),
-                        color='red',
-                        fontsize=8)
+        #     # Triangle label at centroid
+        #     centroid_x = np.mean(x[:-1])
+        #     centroid_y = np.mean(y[:-1])
+        #     # texts.append(plt.text(centroid_x, centroid_y, f'T{i}', 
+        #     #                     color='red', fontsize=8))
             
-            # Add side indices
-            sides = elside[:3,i].get()  # Get the three sides of this triangle
-            for j in range(3):
-                # Get midpoint of each side to place the label
-                mid_x = (x[j] + x[j+1]) / 2
-                mid_y = (y[j] + y[j+1]) / 2
-                plt.annotate(f'S{sides[(j + 2) % 3]}',
-                           (mid_x, mid_y),
-                           xytext=(0, 3),  # Offset slightly above the line
-                           textcoords='offset points',
-                           color='blue',
-                           fontsize=8)
-                
+        #     # # Side labels
+        #     # sides = elside[:3,i].get()
+        #     # for j in range(3):
+        #     #     mid_x = (x[j] + x[j+1]) / 2
+        #     #     mid_y = (y[j] + y[j+1]) / 2
+        #     #     texts.append(plt.text(mid_x, mid_y + 3, f'S{sides[(j + 2) % 3]}',
+        #     #                         color='blue', fontsize=8))
+        
+        # Plot segments and intersections
         segment1 = [[-2.213340, 0.760580], [-2.203340, 0.760580]]
-        intersection1 = [[-2.212069, 0.760580], [-2.210023, 0.760580], [-2.208977, 0.760580], [-2.207597, 0.760580], [-2.205915, 0.760580], [-2.204664, 0.760580]]
-        segment_array = np.array(segment1)
-        intersection_array = np.array(intersection1)
-        plt.plot(segment_array[:,0], segment_array[:,1], 'g--')
-        plt.plot(intersection_array[:,0], intersection_array[:,1], 'kx')  
+        intersection1 = [[-2.212069, 0.760580], [-2.210023, 0.760580], 
+                        [-2.208977, 0.760580], [-2.207597, 0.760580], 
+                        [-2.205915, 0.760580], [-2.204664, 0.760580]]
+        plt.plot(np.array(segment1)[:,0], np.array(segment1)[:,1], 'g--')
+        plt.plot(np.array(intersection1)[:,0], np.array(intersection1)[:,1], 'kx')
 
         segment2 = [[-2.213340, 0.760580], [-2.203340, 0.770580]]
-        intersection2 = [[-2.212657, 0.761263], [-2.212017, 0.761903], [-2.210810, 0.763110], [-2.209846, 0.764074], [-2.209348, 0.764572], [-2.207661, 0.766259], [-2.206123, 0.767797], [-2.205463, 0.768457], [-2.203933, 0.769987]]
-        segment_array = np.array(segment2)
-        intersection_array = np.array(intersection2)
-        plt.plot(segment_array[:,0], segment_array[:,1], 'g--')
-        plt.plot(intersection_array[:,0], intersection_array[:,1], 'kx')  
-         
+        intersection2 = [[-2.212657, 0.761263], [-2.212017, 0.761903], 
+                        [-2.210810, 0.763110], [-2.209846, 0.764074], 
+                        [-2.209348, 0.764572], [-2.207661, 0.766259], 
+                        [-2.206123, 0.767797], [-2.205463, 0.768457], 
+                        [-2.203933, 0.769987]]
+        plt.plot(np.array(segment2)[:,0], np.array(segment2)[:,1], 'g--')
+        plt.plot(np.array(intersection2)[:,0], np.array(intersection2)[:,1], 'kx')
             
+
+        # Connect the hover event
+        fig.canvas.mpl_connect('motion_notify_event', on_hover)
+        
         plt.show()
         plt.pause(0)
 
