@@ -85,10 +85,10 @@ struct Element {
 
    __inline__ __device__ double computeSignedArea(void) const;
 
-   __inline__ __device__ void nudgeToBarycenter(double x, double y, double &newx, double &newy) const {
+   __inline__ __device__ void nudgeToBarycenter(double &x, double &y) const {
       // Nudges the point (x,y) to the barycenter of the element
-      newx = (1-eps)*x + eps*xc;
-      newy = (1-eps)*y + eps*yc;
+      x = (1-eps)*x + eps*xc;
+      y = (1-eps)*y + eps*yc;
    }
 
    __device__ bool computeShapeCoords(double &xt, double &yt, double shpCoords[4], bool fixNegShapeCoords = false) const;
@@ -194,10 +194,12 @@ struct Element {
       return true;
    }
 
-
+   __device__ void trackGoesOutOfWater(Side *nextSide, Element *curElem, double t, int jlev,
+                                       double &dt, double &xt, double &yt, double &zt, double zint,
+                                       double &uuint, double &vvint, double &wwint);
     
    __device__ bool trackThroughElementsAndLevels(double x0, double y0, double z0,
-                                                 double &xt, double &yt, double &zt,
+                                                 double &xt, double &yt, double &zt, 
                                                  double &uuint, double &vvint, double &wwint, 
                                                  Element *&nextElem, int &jlev, double &dt);
 
@@ -579,7 +581,7 @@ class Mesh {
             Side *side = elem->sides[0];
             int jlev = 5;
 
-            side->btrack(5, 0.1, 0.01, nullptr, uuint, vvint, wwint);
+            side->btrack(5, 0.3, 0.01, nullptr, uuint, vvint, wwint);
 
          }
       }

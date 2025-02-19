@@ -1,0 +1,351 @@
+Found 1 GPUs
+Partition 0 has [array(38960)] elements
+Partition 0 has [array(20641)] nodes
+Partition 0 has [array(59616)] sides
+Backend tkagg is interactive backend. Turning interactive mode on.
+Creating mesh for partition 0
+Mesh constructor for partition 0
+Populating mesh for partition 0
+Processing 20641 nodes
+Processing 59616 sides
+Processing 38960 elements
+Testing mesh for partition 0
+Point -2.213340 0.760580 -1.000000 is inside element 47
+$$$  47, 25, -2.21405, 0.75967
+trackThroughElementsAndLevels: x0=-2.214052, y0=0.759671, xt=-2.212052, yt=0.758671
+ttt xt = -2.212052, yt = 0.758671
+before findNextIntersection
+findNextIntersection22: side = 25, 0x78f07600b2e8
+findNextIntersection332: side = 25, 0x78f07600b2e8
+findNextIntersection442: t=0.500000, tIntersect=0.000000
+findNextIntersection22: side = 87, 0x78f076026e98
+findNextIntersection332: side = 87, 0x78f076026e98
+findNextIntersection442: t=0.936567, tIntersect=0.616617
+found_intersection side = 0x78f076026e98, nextElement = 0x78f080017c00
+$$$  64, 87, -2.21282, 0.75905
+after findNextIntersection 1
+$$$  9, 22, -2.21264, 0.75897
+zL = -100.000000, zR = 0.000000, zt = -0.001000
+<>T = 0.290000, -2.212052 0.758671 -0.001000
+trackThroughElementsAndLevels: x0=-2.212052, y0=0.758671, xt=-2.210052, yt=0.757671
+ttt xt = -2.210052, yt = 0.757671
+before findNextIntersection
+findNextIntersection22: side = 21, 0x78f076009648
+findNextIntersection332: side = 21, 0x78f076009648
+findNextIntersection442: t=0.824232, tIntersect=0.870403
+found_intersection side = 0x78f076009648, nextElement = 0x78f08000a050
+$$$  27, 21, -2.21031, 0.75780
+after findNextIntersection 1
+zL = -100.000000, zR = 0.000000, zt = -0.002000
+<>T = 0.280000, -2.210052 0.757671 -0.002000
+trackThroughElementsAndLevels: x0=-2.210052, y0=0.757671, xt=-2.208052, yt=0.756671
+ttt xt = -2.208052, yt = 0.756671
+before findNextIntersection
+findNextIntersection22: side = 44, 0x78f076013ae0
+findNextIntersection332: side = 44, 0x78f076013ae0
+findNextIntersection442: t=0.195156, tIntersect=0.108523
+found_intersection side = 0x78f076013ae0, nextElement = 0x78f0800076c0
+$$$  20, 44, -2.20983, 0.75756
+after findNextIntersection 1
+zL = -100.000000, zR = 0.000000, zt = -0.003000
+<>T = 0.270000, -2.208052 0.756671 -0.003000
+trackThroughElementsAndLevels: x0=-2.208052, y0=0.756671, xt=-2.206052, yt=0.755671
+ttt xt = -2.206052, yt = 0.755671
+before findNextIntersection
+findNextIntersection22: side = 43, 0x78f0760133b8
+findNextIntersection332: side = 43, 0x78f0760133b8
+findNextIntersection442: t=0.756332, tIntersect=0.126691
+found_intersection side = 0x78f0760133b8, nextElement = 0x78f080007cb0
+$$$  21, 43, -2.20780, 0.75654
+after findNextIntersection 1
+$$$  23, 45, -2.20719, 0.75624
+zL = -100.000000, zR = 0.000000, zt = -0.004000
+<>T = 0.260000, -2.206052 0.755671 -0.004000
+trackThroughElementsAndLevels: x0=-2.206052, y0=0.755671, xt=-2.204052, yt=0.754671
+ttt xt = -2.204052, yt = 0.754671
+before findNextIntersection
+findNextIntersection22: side = 42, 0x78f076012c90
+findNextIntersection332: side = 42, 0x78f076012c90
+findNextIntersection442: t=0.184584, tIntersect=0.213272
+found_intersection side = 0x78f076012c90, nextElement = 0x78f0800070d0
+$$$  19, 42, -2.20563, 0.75546
+after findNextIntersection 1
+$$$  18, 40, -2.20514, 0.75522
+zL = -100.000000, zR = 0.000000, zt = -0.005000
+<>T = 0.250000, -2.204052 0.754671 -0.005000
+trackThroughElementsAndLevels: x0=-2.204052, y0=0.754671, xt=-2.202052, yt=0.753671
+ttt xt = -2.202052, yt = 0.753671
+before findNextIntersection
+findNextIntersection22: side = 35, 0x78f07600fa78
+findNextIntersection332: side = 35, 0x78f07600fa78
+findNextIntersection442: t=0.441134, tIntersect=0.059980
+found_intersection side = 0x78f07600fa78, nextElement = 0x78f080005f00
+$$$  16, 35, -2.20393, 0.75461
+after findNextIntersection 1
+zL = -100.000000, zR = 0.000000, zt = -0.006000
+<>T = 0.240000, -2.202052 0.753671 -0.006000
+trackThroughElementsAndLevels: x0=-2.202052, y0=0.753671, xt=-2.200052, yt=0.752671
+ttt xt = -2.200052, yt = 0.752671
+before findNextIntersection
+findNextIntersection22: side = 36, 0x78f0760101a0
+findNextIntersection332: side = 36, 0x78f0760101a0
+findNextIntersection442: t=0.157654, tIntersect=0.160044
+found_intersection side = 0x78f0760101a0, nextElement = 0x78f083831730
+$$$  38765, 36, -2.20173, 0.75351
+after findNextIntersection 1
+$$$  38766, 59408, -2.20142, 0.75336
+$$$  38767, 59409, -2.20128, 0.75328
+$$$  38768, 59410, -2.20097, 0.75313
+zL = -100.000000, zR = 0.000000, zt = -0.007000
+<>T = 0.230000, -2.200052 0.752671 -0.007000
+trackThroughElementsAndLevels: x0=-2.200052, y0=0.752671, xt=-2.198052, yt=0.751671
+ttt xt = -2.198052, yt = 0.751671
+before findNextIntersection
+findNextIntersection22: side = 59411, 0x78f07c7cc7f8
+findNextIntersection332: side = 59411, 0x78f07c7cc7f8
+findNextIntersection442: t=0.592335, tIntersect=0.734006
+found_intersection side = 0x78f07c7cc7f8, nextElement = 0x78f083832ef0
+$$$  38769, 59411, -2.19858, 0.75194
+after findNextIntersection 1
+zL = -100.000000, zR = 0.000000, zt = -0.008000
+<>T = 0.220000, -2.198052 0.751671 -0.008000
+trackThroughElementsAndLevels: x0=-2.198052, y0=0.751671, xt=-2.196052, yt=0.750671
+ttt xt = -2.196052, yt = 0.750671
+before findNextIntersection
+findNextIntersection22: side = 59412, 0x78f07c7ccf20
+findNextIntersection332: side = 59412, 0x78f07c7ccf20
+findNextIntersection442: t=0.609977, tIntersect=0.398121
+found_intersection side = 0x78f07c7ccf20, nextElement = 0x78f0838334e0
+$$$  38770, 59412, -2.19726, 0.75127
+after findNextIntersection 1
+$$$  37909, 58147, -2.19614, 0.75072
+zL = -100.000000, zR = 0.000000, zt = -0.009000
+<>T = 0.210000, -2.196052 0.750671 -0.009000
+trackThroughElementsAndLevels: x0=-2.196052, y0=0.750671, xt=-2.194052, yt=0.749671
+ttt xt = -2.194052, yt = 0.749671
+before findNextIntersection
+findNextIntersection22: side = 58146, 0x78f07c596b50
+findNextIntersection332: side = 58146, 0x78f07c596b50
+findNextIntersection442: t=0.537129, tIntersect=0.668972
+found_intersection side = 0x78f07c596b50, nextElement = 0x78f0836f4890
+$$$  37911, 58146, -2.19471, 0.75000
+after findNextIntersection 1
+zL = -100.000000, zR = 0.000000, zt = -0.010000
+<>T = 0.200000, -2.194052 0.749671 -0.010000
+trackThroughElementsAndLevels: x0=-2.194052, y0=0.749671, xt=-2.192052, yt=0.748671
+ttt xt = -2.192052, yt = 0.748671
+before findNextIntersection
+findNextIntersection22: side = 58152, 0x78f07c599640
+findNextIntersection332: side = 58152, 0x78f07c599640
+findNextIntersection442: t=0.569184, tIntersect=0.109032
+found_intersection side = 0x78f07c599640, nextElement = 0x78f0836f95c0
+$$$  37924, 58152, -2.19383, 0.74956
+after findNextIntersection 1
+$$$  37915, 58157, -2.19253, 0.74891
+zL = -100.000000, zR = 0.000000, zt = -0.011000
+<>T = 0.190000, -2.192052 0.748671 -0.011000
+trackThroughElementsAndLevels: x0=-2.192052, y0=0.748671, xt=-2.190052, yt=0.747671
+ttt xt = -2.190052, yt = 0.747671
+before findNextIntersection
+findNextIntersection22: side = 58156, 0x78f07c59b2e0
+findNextIntersection332: side = 58156, 0x78f07c59b2e0
+findNextIntersection442: t=0.136870, tIntersect=0.006865
+found_intersection side = 0x78f07c59b2e0, nextElement = 0x78f0836f9bb0
+$$$  37925, 58156, -2.19204, 0.74866
+after findNextIntersection 1
+$$$  37918, 58162, -2.19106, 0.74817
+$$$  37922, 58163, -2.19027, 0.74778
+zL = -100.000000, zR = 0.000000, zt = -0.012000
+<>T = 0.180000, -2.190052 0.747671 -0.012000
+trackThroughElementsAndLevels: x0=-2.190052, y0=0.747671, xt=-2.188052, yt=0.746671
+ttt xt = -2.188052, yt = 0.746671
+before findNextIntersection
+findNextIntersection22: side = 58135, 0x78f07c591c98
+findNextIntersection332: side = 58135, 0x78f07c591c98
+findNextIntersection442: t=0.145645, tIntersect=0.005708
+found_intersection side = 0x78f07c591c98, nextElement = 0x78f0836f0740
+$$$  37900, 58135, -2.19004, 0.74767
+after findNextIntersection 1
+$$$  37899, 58133, -2.18926, 0.74728
+$$$  37897, 58131, -2.18864, 0.74697
+$$$  37943, 58130, -2.18826, 0.74678
+zL = -100.000000, zR = 0.000000, zt = -0.013000
+<>T = 0.170000, -2.188052 0.746671 -0.013000
+trackThroughElementsAndLevels: x0=-2.188052, y0=0.746671, xt=-2.186052, yt=0.745671
+ttt xt = -2.186052, yt = 0.745671
+before findNextIntersection
+findNextIntersection22: side = 58198, 0x78f07c5adf70
+findNextIntersection332: side = 58198, 0x78f07c5adf70
+findNextIntersection442: t=0.703207, tIntersect=0.411515
+found_intersection side = 0x78f07c5adf70, nextElement = 0x78f083703610
+$$$  37951, 58198, -2.18723, 0.74626
+after findNextIntersection 1
+$$$  37947, 58202, -2.18657, 0.74593
+zL = -100.000000, zR = 0.000000, zt = -0.014000
+<>T = 0.160000, -2.186052 0.745671 -0.014000
+trackThroughElementsAndLevels: x0=-2.186052, y0=0.745671, xt=-2.184052, yt=0.744671
+ttt xt = -2.184052, yt = 0.744671
+before findNextIntersection
+findNextIntersection22: side = 58203, 0x78f07c5b0338
+findNextIntersection332: side = 58203, 0x78f07c5b0338
+findNextIntersection442: t=0.559825, tIntersect=0.328005
+found_intersection side = 0x78f07c5b0338, nextElement = 0x78f08370acd0
+$$$  37971, 58203, -2.18540, 0.74534
+after findNextIntersection 1
+$$$  37972, 58242, -2.18443, 0.74486
+$$$  37978, 58244, -2.18410, 0.74469
+zL = -100.000000, zR = 0.000000, zt = -0.015000
+<>T = 0.150000, -2.184052 0.744671 -0.015000
+trackThroughElementsAndLevels: x0=-2.184052, y0=0.744671, xt=-2.182052, yt=0.743671
+ttt xt = -2.182052, yt = 0.743671
+before findNextIntersection
+findNextIntersection22: side = 58253, 0x78f07c5c6908
+findNextIntersection332: side = 58253, 0x78f07c5c6908
+findNextIntersection442: t=0.213523, tIntersect=0.573596
+found_intersection side = 0x78f07c5c6908, nextElement = 0x78f08370e830
+$$$  37981, 58253, -2.18290, 0.74410
+after findNextIntersection 1
+$$$  38425, 58258, -2.18256, 0.74392
+zL = -100.000000, zR = 0.000000, zt = -0.016000
+<>T = 0.140000, -2.182052 0.743671 -0.016000
+trackThroughElementsAndLevels: x0=-2.182052, y0=0.743671, xt=-2.180052, yt=0.742671
+ttt xt = -2.180052, yt = 0.742671
+before findNextIntersection
+findNextIntersection22: side = 58922, 0x78f07c6f1c90
+findNextIntersection332: side = 58922, 0x78f07c6f1c90
+findNextIntersection442: t=0.833267, tIntersect=0.580408
+found_intersection side = 0x78f07c6f1c90, nextElement = 0x78f0837b22a0
+$$$  38422, 58922, -2.18089, 0.74309
+after findNextIntersection 1
+$$$  38427, 58921, -2.18061, 0.74295
+$$$  38426, 58929, -2.18020, 0.74275
+zL = -100.000000, zR = 0.000000, zt = -0.017000
+<>T = 0.130000, -2.180052 0.742671 -0.017000
+trackThroughElementsAndLevels: x0=-2.180052, y0=0.742671, xt=-2.178052, yt=0.741671
+ttt xt = -2.178052, yt = 0.741671
+before findNextIntersection
+findNextIntersection22: side = 58927, 0x78f07c6f4058
+findNextIntersection332: side = 58927, 0x78f07c6f4058
+findNextIntersection442: t=0.603430, tIntersect=0.571460
+found_intersection side = 0x78f07c6f4058, nextElement = 0x78f0837b4640
+$$$  38428, 58927, -2.17891, 0.74210
+after findNextIntersection 1
+zL = -100.000000, zR = 0.000000, zt = -0.018000
+<>T = 0.120000, -2.178052 0.741671 -0.018000
+trackThroughElementsAndLevels: x0=-2.178052, y0=0.741671, xt=-2.176052, yt=0.740671
+ttt xt = -2.176052, yt = 0.740671
+before findNextIntersection
+findNextIntersection22: side = 58931, 0x78f07c6f5cf8
+findNextIntersection332: side = 58931, 0x78f07c6f5cf8
+findNextIntersection442: t=0.600763, tIntersect=0.082827
+found_intersection side = 0x78f07c6f5cf8, nextElement = 0x78f0837b7bb0
+$$$  38437, 58931, -2.17789, 0.74159
+after findNextIntersection 1
+$$$  38441, 58942, -2.17699, 0.74114
+zL = -98.987139, zR = 0.000000, zt = -0.019000
+<>T = 0.110000, -2.176052 0.740671 -0.019000
+trackThroughElementsAndLevels: x0=-2.176052, y0=0.740671, xt=-2.174052, yt=0.739671
+ttt xt = -2.174052, yt = 0.739671
+before findNextIntersection
+findNextIntersection22: side = 58952, 0x78f07c6ff340
+findNextIntersection332: side = 58952, 0x78f07c6ff340
+findNextIntersection442: t=0.484161, tIntersect=0.189483
+found_intersection side = 0x78f07c6ff340, nextElement = 0x78f0837bb120
+$$$  38446, 58952, -2.17567, 0.74048
+after findNextIntersection 1
+$$$  38452, 58957, -2.17421, 0.73975
+zL = -79.368957, zR = 0.000000, zt = -0.020000
+<>T = 0.100000, -2.174052 0.739671 -0.020000
+trackThroughElementsAndLevels: x0=-2.174052, y0=0.739671, xt=-2.172052, yt=0.738671
+ttt xt = -2.172052, yt = 0.738671
+before findNextIntersection
+findNextIntersection22: side = 58961, 0x78f07c7033a8
+findNextIntersection332: side = 58961, 0x78f07c7033a8
+findNextIntersection442: t=0.286179, tIntersect=0.286301
+found_intersection side = 0x78f07c7033a8, nextElement = 0x78f0837cfda0
+$$$  38502, 58961, -2.17348, 0.73938
+after findNextIntersection 1
+zL = -27.294283, zR = 0.000000, zt = -0.021000
+<>T = 0.090000, -2.172052 0.738671 -0.021000
+trackThroughElementsAndLevels: x0=-2.172052, y0=0.738671, xt=-2.170052, yt=0.737671
+ttt xt = -2.170052, yt = 0.737671
+before findNextIntersection
+findNextIntersection22: side = 59040, 0x78f07c726900
+findNextIntersection332: side = 59040, 0x78f07c726900
+findNextIntersection442: t=0.222987, tIntersect=0.057351
+found_intersection side = 0x78f07c726900, nextElement = 0x78f0837d7460
+$$$  38522, 59040, -2.17194, 0.73861
+after findNextIntersection 1
+$$$  0, 59070, -2.17138, 0.73834
+Tracking segment goes out of water at element 38522
+Implement here the tangent velocity
+vtan = 0.149718, nextSide->isbnd = 0, nextSide->u2[jlev] = -0.200000, nextSide->v2[jlev] = 0.100000
+dt = 0.010000
+dt2 = 0.003343
+<>T = 0.086657, -2.171386 0.738331 -0.021336
+trackThroughElementsAndLevels: x0=-2.171386, y0=0.738331, xt=-2.170987, yt=0.736888
+ttt xt = -2.170987, yt = 0.736888
+before findNextIntersection
+findNextIntersection22: side = 59044, 0x78f07c7285a0
+findNextIntersection332: side = 59044, 0x78f07c7285a0
+findNextIntersection442: t=0.996603, tIntersect=0.860014
+found_intersection side = 0x78f07c7285a0, nextElement = 0x78f0837d0980
+$$$  38504, 59044, -2.17104, 0.73709
+after findNextIntersection 1
+$$$  38505, 59045, -2.17104, 0.73708
+zL = -8.083593, zR = 0.000000, zt = -0.022336
+<>T = 0.076657, -2.170987 0.736888 -0.022336
+trackThroughElementsAndLevels: x0=-2.170987, y0=0.736888, xt=-2.168987, yt=0.735888
+ttt xt = -2.168987, yt = 0.735888
+before findNextIntersection
+findNextIntersection22: side = 59046, 0x78f07c7293f0
+findNextIntersection332: side = 59046, 0x78f07c7293f0
+findNextIntersection442: t=0.874540, tIntersect=0.013152
+found_intersection side = 0x78f07c7293f0, nextElement = (nil)
+$$$  0, 59046, -2.17096, 0.73688
+after findNextIntersection 1
+Tracking segment goes out of water at element 38505
+Implement here the tangent velocity
+vtan = 0.160327, nextSide->isbnd = 0, nextSide->u2[jlev] = -0.200000, nextSide->v2[jlev] = 0.100000
+dt = 0.010000
+dt2 = 0.000126
+<>T = 0.076530, -2.170966 0.736867 -0.022349
+trackThroughElementsAndLevels: x0=-2.170966, y0=0.736867, xt=-2.170437, yt=0.735354
+ttt xt = -2.170437, yt = 0.735354
+before findNextIntersection
+findNextIntersection22: side = 58972, 0x78f07c708260
+findNextIntersection332: side = 58972, 0x78f07c708260
+findNextIntersection442: t=0.996603, tIntersect=0.970792
+found_intersection side = 0x78f07c708260, nextElement = 0x78f0837bfe50
+$$$  38459, 58972, -2.17045, 0.73540
+after findNextIntersection 1
+$$$  38528, 58971, -2.17045, 0.73539
+zL = -2.918686, zR = 0.000000, zt = -0.023349
+<>T = 0.066530, -2.170437 0.735354 -0.023349
+trackThroughElementsAndLevels: x0=-2.170437, y0=0.735354, xt=-2.168437, yt=0.734354
+ttt xt = -2.168437, yt = 0.734354
+before findNextIntersection
+findNextIntersection22: side = 59077, 0x78f07c7371c8
+findNextIntersection332: side = 59077, 0x78f07c7371c8
+findNextIntersection442: t=0.950860, tIntersect=0.028611
+found_intersection side = 0x78f07c7371c8, nextElement = (nil)
+$$$  0, 59077, -2.17038, 0.73533
+after findNextIntersection 1
+Tracking segment goes out of water at element 38528
+Implement here the tangent velocity
+vtan = 0.208218, nextSide->isbnd = 0, nextSide->u2[jlev] = -0.200000, nextSide->v2[jlev] = 0.100000
+dt = 0.010000
+dt2 = 0.000301
+<>T = 0.066229, -2.170381 0.735315 -0.023378
+trackThroughElementsAndLevels: x0=-2.170381, y0=0.735315, xt=-2.168986, yt=0.733769
+ttt xt = -2.168986, yt = 0.733769
+before findNextIntersection
+findNextIntersection22: side = 59073, 0x78f07c735528
+findNextIntersection332: side = 59073, 0x78f07c735528
+findNextIntersection442: t=0.996603, tIntersect=0.885877
+found_intersection side = 0x78f07c735528, nextElement = 0x78f0837d8630
+$$$  38525, 59073, -2.16915, 0.73395
+after findNextIntersection 1
+$$$  38521, 59069, -2.16914, 0.73394
+zL = 2.288153, zR = 0.000000, zt = -0.024378
+/tmp/tmpc5co9fps/9beeb4bf2830dc2276894e21d848a1044707b2ae.cubin.cu:1246: void Element::interpolateVelocities(double, double, double, double &, double &, double &): block: [0,0,0], thread: [0,0,0] Assertion `zL <= zt && zR >= zt` failed.
