@@ -328,57 +328,6 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
   
       // if the tracking segment goes out of water (either dry or edge boundary).
       if (curElem->isEdgeBoundary(nextSide) || (nextElem->idry)) {
-         // printf("Tracking segment goes out of water at element %d\n", curElem->idx);
-         // printf("Implement here the tangent velocity\n");
-
-         // // When this happens, we stop our algorithm that usually assumes that we move to the next element.
-         // // Instead, we nudge the intersection point to the barycenter of the element, and nextElement becomes
-         // // curElement.
-
-         // // Then it finds the tangential velocity at the element side (the side where the intersection was found),
-         // // And uses this velocity instead to continue the tracking.
-
-         // // computes the intersection point in cartesian coordinates
-         // double xint = nextSide->x(t);
-         // double yint = nextSide->y(t);
-
-        
-         // // Nudges the point to the barycenter of the element. 
-         // // This ensures that the point is inside the element and hence, we will find an intersection if the
-         // // next segment intersects the element sides.  
-
-         // curElem->nudgeToBarycenter(xint, yint);
-
-         // // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
-         // // of the intersection point. We are approximating it by the velocity at the side center at jlev.
-         // // NOTE: With the new code it will be easy to compute the tangential velocity at the intersection point.
-         // const double tx = -nextSide->ny;  // tangent unitary vector to the side
-         // const double ty =  nextSide->nx;
-         // double vtan = nextSide->u2[jlev]*tx + nextSide->v2[jlev]*ty;
-
-         // // If the side is an open boundary, the tangential velocity is zero.
-         // if (nextSide->isbnd) vtan = 0.0;
-
-         // // The new velocity components are computed from the tangential velocity and the tangent vector.
-         // const double us = vtan*tx;
-         // const double vs = vtan*ty;
-         // const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);
-
-
-         // // Compute the new "tracked" time based on the remaining segment length and the original velocity.
-         // const double len2 = (xint - xt)*(xint - xt) + (yint - yt)*(yint - yt);
-         // const double vel2 = uuint*uuint + vvint*vvint;        
-         // assert(vel2 > 0.0 && "Zero velocity found");
-         // dt = dt - sqrt(len2/vel2); 
-
-         // // The end of this tracking segment is now the intersection point.
-         // xt = xint;
-         // yt = yint;
-         // zt = zint;
-         
-         // uuint = us;
-         // vvint = vs;
-         // wwint = ws;
 
          trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, yt, zt, zint, uuint, vvint, wwint);
 
@@ -387,12 +336,10 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
          // Returns "early", meaning that we stopped before we were able to reach the target point.
          // In this case, the caller (btrack) needs to take into account the remaining time.
          return true;
-
       }
       
       // Update position and element for next iteration
       side = nextSide;
-
 
    }
 
