@@ -1196,13 +1196,12 @@ readVGrid(const std::string& filename, int nNodes) {
         sigma[nsiglev] = 0.0; //surface
         
         std::getline(file, dummy);  // Skip "S levels" comment
-        std::getline(file, dummy); 
+        // std::getline(file, dummy); 
         
 
         // Read sigma level parameters
         file >> h_c >> theta_b >> theta_f >> dummy;
         std::getline(file, dummy); 
-
         if (h_c<5.0 || h_c>=h_s) {
             throw std::runtime_error("h_c needs to be larger to avoid 2nd type abnormaty: " + std::to_string(h_c));
         }

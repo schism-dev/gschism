@@ -203,94 +203,6 @@ struct Element {
                                                  double &uuint, double &vvint, double &wwint, 
                                                  Element *&nextElem, int &jlev, double &dt);
 
-#ifdef BACKTRACKING
-   /**
-    * Backtracking function.
-    * 
-    * This function performs backtracking from the starting point (x0,y0,z0) until a time
-    * -dt back from the current time. The backtracking is performed using the velocities (u,v,w) at each
-    * intermediate point.
-    *
-    * We approximate the backtracking curve as a piecewise linear curve. Each segment has
-    * a length dtb*vel_step, where vel_step is the module of the velocity at that step and dtb is 
-    * the timestep (of the backtracking). dtb is computed as the minimum of dtbk and the 
-    * remaining time.
-    * 
-    * NOTE: Runge-Kutta is not implemented yet. XXX
-    * 
-    * @param x0, y0, z0: Starting point coordinates
-    * @param uuint, vvint, wwint: Velocities at the final point
-    * @param jlev: Level at which the backtracking is performed
-    * @param dt, dtbk: Tracking timesteps
-    * @param sclr: Array for backtracked values
-    * @return: True if the backtracking was successful, false otherwise
-    */
-   __inline__ __device__ bool btrack(double x0, double y0, double z0,
-                                     double uuint, double vvint, double wwint,
-                                     int jlev,
-                                     double dt, double dtbk,  // Tracking timesteps
-                                     double* sclr             // Array for backtracked values
-   ) {
-
-      XXXXXX
-      const Element* curElem = this; // Starting element
-      double time_rm = dt; // Remaining time
-
-      // Initialize outputs
-      for(int i = 0; i < 4 + N_TRACERS; i++) {
-         sclr[i] = 0.0;
-      }
-        
-      // Start Euler tracking
-      while(true) {
-         // Calculate timestep
-         const double dtb = min(dtbk, time_rm);
-
-         // Euler step
-         double xt = x0 - dtb * uuint;
-         double yt = y0 - dtb * vvint;
-         double zt = z0 - dtb * wwint;
-
-
-
-         Element* nextElem = nullptr;
-         // Find containing element and interpolate velocities
-         if (!curElem->trackThroughElementsAndLevels(x0, y0, z0, 
-                                                     xt, yt, zt,
-                                                     uuint, vvint, wwint, 
-                                                     nextElem)) {
-            // Hit boundary or dry element
-            time_rm = 0.0;
-            break; // XXX This is not needed on GPU???
-         }
-
-         // Check if velocity too small to continue
-         const double vmag_2 = uuint*uuint + vvint*vvint;
-         if (vmag_2 <= VELMIN_BTRACK_2) {   // XXX I think this is not needed on GPU
-            time_rm = 0.0;
-            break;
-         }
-
-         // Update remaining time and position
-         time_rm -= dtb;
-         if (time_rm <= 1e-6*dt) break;
-
-         x0 = xt;
-         y0 = yt;
-         z0 = zt;
-      }
-
-      // Calculate final interpolated values for sclr array
-      // (Simplified for now - need to add proper interpolation)
-      interpolateTracers(sclr, xt, yt, zt, jlev);
-      
-      
-      return false; // Did not exit domain
-   
-      
-
-   }
-#endif
 
 };
 
@@ -566,9 +478,10 @@ class Mesh {
 
    __device__ void test(double x, double y, double z)
    {
-      printf("Testing mesh for partition %d\n", partNum);
+      printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
       for (int i = 0; i < ne; i++) {
          auto isInside = localElemData[i].containsPoint(x, y);
+         // printf("i = %d, isInside = %d, x = %f, y = %f\n", i, isInside, localElemData[i].xc, localElemData[i].yc);
          if (isInside) {
             printf("Point %f %f %f is inside element %d\n", x, y, z, i);
             Element *elem = &localElemData[i];
@@ -579,9 +492,11 @@ class Mesh {
             //                                                uuint, vvint, wwint, elem);
             // Choose the first side
             Side *side = elem->sides[0];
-            int jlev = 5;
-
-            side->btrack(5, 0.3, 0.01, nullptr, uuint, vvint, wwint);
+            int jlev = 5;  
+            RECORDAR:
+            - con y=0 no encuentra el triangulo
+            - jlev = 5, z = 0.1...
+            side->btrack(5, 3000.0, 10, nullptr, uuint, vvint, wwint);
 
          }
       }

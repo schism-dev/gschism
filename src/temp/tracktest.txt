@@ -1,351 +1,771 @@
-Found 1 GPUs
-Partition 0 has [array(38960)] elements
-Partition 0 has [array(20641)] nodes
-Partition 0 has [array(59616)] sides
-Backend tkagg is interactive backend. Turning interactive mode on.
-Creating mesh for partition 0
-Mesh constructor for partition 0
-Populating mesh for partition 0
-Processing 20641 nodes
-Processing 59616 sides
-Processing 38960 elements
-Testing mesh for partition 0
-Point -2.213340 0.760580 -1.000000 is inside element 47
-$$$  47, 25, -2.21405, 0.75967
-trackThroughElementsAndLevels: x0=-2.214052, y0=0.759671, xt=-2.212052, yt=0.758671
-ttt xt = -2.212052, yt = 0.758671
-before findNextIntersection
-findNextIntersection22: side = 25, 0x78f07600b2e8
-findNextIntersection332: side = 25, 0x78f07600b2e8
-findNextIntersection442: t=0.500000, tIntersect=0.000000
-findNextIntersection22: side = 87, 0x78f076026e98
-findNextIntersection332: side = 87, 0x78f076026e98
-findNextIntersection442: t=0.936567, tIntersect=0.616617
-found_intersection side = 0x78f076026e98, nextElement = 0x78f080017c00
-$$$  64, 87, -2.21282, 0.75905
-after findNextIntersection 1
-$$$  9, 22, -2.21264, 0.75897
-zL = -100.000000, zR = 0.000000, zt = -0.001000
-<>T = 0.290000, -2.212052 0.758671 -0.001000
-trackThroughElementsAndLevels: x0=-2.212052, y0=0.758671, xt=-2.210052, yt=0.757671
-ttt xt = -2.210052, yt = 0.757671
-before findNextIntersection
-findNextIntersection22: side = 21, 0x78f076009648
-findNextIntersection332: side = 21, 0x78f076009648
-findNextIntersection442: t=0.824232, tIntersect=0.870403
-found_intersection side = 0x78f076009648, nextElement = 0x78f08000a050
-$$$  27, 21, -2.21031, 0.75780
-after findNextIntersection 1
-zL = -100.000000, zR = 0.000000, zt = -0.002000
-<>T = 0.280000, -2.210052 0.757671 -0.002000
-trackThroughElementsAndLevels: x0=-2.210052, y0=0.757671, xt=-2.208052, yt=0.756671
-ttt xt = -2.208052, yt = 0.756671
-before findNextIntersection
-findNextIntersection22: side = 44, 0x78f076013ae0
-findNextIntersection332: side = 44, 0x78f076013ae0
-findNextIntersection442: t=0.195156, tIntersect=0.108523
-found_intersection side = 0x78f076013ae0, nextElement = 0x78f0800076c0
-$$$  20, 44, -2.20983, 0.75756
-after findNextIntersection 1
-zL = -100.000000, zR = 0.000000, zt = -0.003000
-<>T = 0.270000, -2.208052 0.756671 -0.003000
-trackThroughElementsAndLevels: x0=-2.208052, y0=0.756671, xt=-2.206052, yt=0.755671
-ttt xt = -2.206052, yt = 0.755671
-before findNextIntersection
-findNextIntersection22: side = 43, 0x78f0760133b8
-findNextIntersection332: side = 43, 0x78f0760133b8
-findNextIntersection442: t=0.756332, tIntersect=0.126691
-found_intersection side = 0x78f0760133b8, nextElement = 0x78f080007cb0
-$$$  21, 43, -2.20780, 0.75654
-after findNextIntersection 1
-$$$  23, 45, -2.20719, 0.75624
-zL = -100.000000, zR = 0.000000, zt = -0.004000
-<>T = 0.260000, -2.206052 0.755671 -0.004000
-trackThroughElementsAndLevels: x0=-2.206052, y0=0.755671, xt=-2.204052, yt=0.754671
-ttt xt = -2.204052, yt = 0.754671
-before findNextIntersection
-findNextIntersection22: side = 42, 0x78f076012c90
-findNextIntersection332: side = 42, 0x78f076012c90
-findNextIntersection442: t=0.184584, tIntersect=0.213272
-found_intersection side = 0x78f076012c90, nextElement = 0x78f0800070d0
-$$$  19, 42, -2.20563, 0.75546
-after findNextIntersection 1
-$$$  18, 40, -2.20514, 0.75522
-zL = -100.000000, zR = 0.000000, zt = -0.005000
-<>T = 0.250000, -2.204052 0.754671 -0.005000
-trackThroughElementsAndLevels: x0=-2.204052, y0=0.754671, xt=-2.202052, yt=0.753671
-ttt xt = -2.202052, yt = 0.753671
-before findNextIntersection
-findNextIntersection22: side = 35, 0x78f07600fa78
-findNextIntersection332: side = 35, 0x78f07600fa78
-findNextIntersection442: t=0.441134, tIntersect=0.059980
-found_intersection side = 0x78f07600fa78, nextElement = 0x78f080005f00
-$$$  16, 35, -2.20393, 0.75461
-after findNextIntersection 1
-zL = -100.000000, zR = 0.000000, zt = -0.006000
-<>T = 0.240000, -2.202052 0.753671 -0.006000
-trackThroughElementsAndLevels: x0=-2.202052, y0=0.753671, xt=-2.200052, yt=0.752671
-ttt xt = -2.200052, yt = 0.752671
-before findNextIntersection
-findNextIntersection22: side = 36, 0x78f0760101a0
-findNextIntersection332: side = 36, 0x78f0760101a0
-findNextIntersection442: t=0.157654, tIntersect=0.160044
-found_intersection side = 0x78f0760101a0, nextElement = 0x78f083831730
-$$$  38765, 36, -2.20173, 0.75351
-after findNextIntersection 1
-$$$  38766, 59408, -2.20142, 0.75336
-$$$  38767, 59409, -2.20128, 0.75328
-$$$  38768, 59410, -2.20097, 0.75313
-zL = -100.000000, zR = 0.000000, zt = -0.007000
-<>T = 0.230000, -2.200052 0.752671 -0.007000
-trackThroughElementsAndLevels: x0=-2.200052, y0=0.752671, xt=-2.198052, yt=0.751671
-ttt xt = -2.198052, yt = 0.751671
-before findNextIntersection
-findNextIntersection22: side = 59411, 0x78f07c7cc7f8
-findNextIntersection332: side = 59411, 0x78f07c7cc7f8
-findNextIntersection442: t=0.592335, tIntersect=0.734006
-found_intersection side = 0x78f07c7cc7f8, nextElement = 0x78f083832ef0
-$$$  38769, 59411, -2.19858, 0.75194
-after findNextIntersection 1
-zL = -100.000000, zR = 0.000000, zt = -0.008000
-<>T = 0.220000, -2.198052 0.751671 -0.008000
-trackThroughElementsAndLevels: x0=-2.198052, y0=0.751671, xt=-2.196052, yt=0.750671
-ttt xt = -2.196052, yt = 0.750671
-before findNextIntersection
-findNextIntersection22: side = 59412, 0x78f07c7ccf20
-findNextIntersection332: side = 59412, 0x78f07c7ccf20
-findNextIntersection442: t=0.609977, tIntersect=0.398121
-found_intersection side = 0x78f07c7ccf20, nextElement = 0x78f0838334e0
-$$$  38770, 59412, -2.19726, 0.75127
-after findNextIntersection 1
-$$$  37909, 58147, -2.19614, 0.75072
-zL = -100.000000, zR = 0.000000, zt = -0.009000
-<>T = 0.210000, -2.196052 0.750671 -0.009000
-trackThroughElementsAndLevels: x0=-2.196052, y0=0.750671, xt=-2.194052, yt=0.749671
-ttt xt = -2.194052, yt = 0.749671
-before findNextIntersection
-findNextIntersection22: side = 58146, 0x78f07c596b50
-findNextIntersection332: side = 58146, 0x78f07c596b50
-findNextIntersection442: t=0.537129, tIntersect=0.668972
-found_intersection side = 0x78f07c596b50, nextElement = 0x78f0836f4890
-$$$  37911, 58146, -2.19471, 0.75000
-after findNextIntersection 1
-zL = -100.000000, zR = 0.000000, zt = -0.010000
-<>T = 0.200000, -2.194052 0.749671 -0.010000
-trackThroughElementsAndLevels: x0=-2.194052, y0=0.749671, xt=-2.192052, yt=0.748671
-ttt xt = -2.192052, yt = 0.748671
-before findNextIntersection
-findNextIntersection22: side = 58152, 0x78f07c599640
-findNextIntersection332: side = 58152, 0x78f07c599640
-findNextIntersection442: t=0.569184, tIntersect=0.109032
-found_intersection side = 0x78f07c599640, nextElement = 0x78f0836f95c0
-$$$  37924, 58152, -2.19383, 0.74956
-after findNextIntersection 1
-$$$  37915, 58157, -2.19253, 0.74891
-zL = -100.000000, zR = 0.000000, zt = -0.011000
-<>T = 0.190000, -2.192052 0.748671 -0.011000
-trackThroughElementsAndLevels: x0=-2.192052, y0=0.748671, xt=-2.190052, yt=0.747671
-ttt xt = -2.190052, yt = 0.747671
-before findNextIntersection
-findNextIntersection22: side = 58156, 0x78f07c59b2e0
-findNextIntersection332: side = 58156, 0x78f07c59b2e0
-findNextIntersection442: t=0.136870, tIntersect=0.006865
-found_intersection side = 0x78f07c59b2e0, nextElement = 0x78f0836f9bb0
-$$$  37925, 58156, -2.19204, 0.74866
-after findNextIntersection 1
-$$$  37918, 58162, -2.19106, 0.74817
-$$$  37922, 58163, -2.19027, 0.74778
-zL = -100.000000, zR = 0.000000, zt = -0.012000
-<>T = 0.180000, -2.190052 0.747671 -0.012000
-trackThroughElementsAndLevels: x0=-2.190052, y0=0.747671, xt=-2.188052, yt=0.746671
-ttt xt = -2.188052, yt = 0.746671
-before findNextIntersection
-findNextIntersection22: side = 58135, 0x78f07c591c98
-findNextIntersection332: side = 58135, 0x78f07c591c98
-findNextIntersection442: t=0.145645, tIntersect=0.005708
-found_intersection side = 0x78f07c591c98, nextElement = 0x78f0836f0740
-$$$  37900, 58135, -2.19004, 0.74767
-after findNextIntersection 1
-$$$  37899, 58133, -2.18926, 0.74728
-$$$  37897, 58131, -2.18864, 0.74697
-$$$  37943, 58130, -2.18826, 0.74678
-zL = -100.000000, zR = 0.000000, zt = -0.013000
-<>T = 0.170000, -2.188052 0.746671 -0.013000
-trackThroughElementsAndLevels: x0=-2.188052, y0=0.746671, xt=-2.186052, yt=0.745671
-ttt xt = -2.186052, yt = 0.745671
-before findNextIntersection
-findNextIntersection22: side = 58198, 0x78f07c5adf70
-findNextIntersection332: side = 58198, 0x78f07c5adf70
-findNextIntersection442: t=0.703207, tIntersect=0.411515
-found_intersection side = 0x78f07c5adf70, nextElement = 0x78f083703610
-$$$  37951, 58198, -2.18723, 0.74626
-after findNextIntersection 1
-$$$  37947, 58202, -2.18657, 0.74593
-zL = -100.000000, zR = 0.000000, zt = -0.014000
-<>T = 0.160000, -2.186052 0.745671 -0.014000
-trackThroughElementsAndLevels: x0=-2.186052, y0=0.745671, xt=-2.184052, yt=0.744671
-ttt xt = -2.184052, yt = 0.744671
-before findNextIntersection
-findNextIntersection22: side = 58203, 0x78f07c5b0338
-findNextIntersection332: side = 58203, 0x78f07c5b0338
-findNextIntersection442: t=0.559825, tIntersect=0.328005
-found_intersection side = 0x78f07c5b0338, nextElement = 0x78f08370acd0
-$$$  37971, 58203, -2.18540, 0.74534
-after findNextIntersection 1
-$$$  37972, 58242, -2.18443, 0.74486
-$$$  37978, 58244, -2.18410, 0.74469
-zL = -100.000000, zR = 0.000000, zt = -0.015000
-<>T = 0.150000, -2.184052 0.744671 -0.015000
-trackThroughElementsAndLevels: x0=-2.184052, y0=0.744671, xt=-2.182052, yt=0.743671
-ttt xt = -2.182052, yt = 0.743671
-before findNextIntersection
-findNextIntersection22: side = 58253, 0x78f07c5c6908
-findNextIntersection332: side = 58253, 0x78f07c5c6908
-findNextIntersection442: t=0.213523, tIntersect=0.573596
-found_intersection side = 0x78f07c5c6908, nextElement = 0x78f08370e830
-$$$  37981, 58253, -2.18290, 0.74410
-after findNextIntersection 1
-$$$  38425, 58258, -2.18256, 0.74392
-zL = -100.000000, zR = 0.000000, zt = -0.016000
-<>T = 0.140000, -2.182052 0.743671 -0.016000
-trackThroughElementsAndLevels: x0=-2.182052, y0=0.743671, xt=-2.180052, yt=0.742671
-ttt xt = -2.180052, yt = 0.742671
-before findNextIntersection
-findNextIntersection22: side = 58922, 0x78f07c6f1c90
-findNextIntersection332: side = 58922, 0x78f07c6f1c90
-findNextIntersection442: t=0.833267, tIntersect=0.580408
-found_intersection side = 0x78f07c6f1c90, nextElement = 0x78f0837b22a0
-$$$  38422, 58922, -2.18089, 0.74309
-after findNextIntersection 1
-$$$  38427, 58921, -2.18061, 0.74295
-$$$  38426, 58929, -2.18020, 0.74275
-zL = -100.000000, zR = 0.000000, zt = -0.017000
-<>T = 0.130000, -2.180052 0.742671 -0.017000
-trackThroughElementsAndLevels: x0=-2.180052, y0=0.742671, xt=-2.178052, yt=0.741671
-ttt xt = -2.178052, yt = 0.741671
-before findNextIntersection
-findNextIntersection22: side = 58927, 0x78f07c6f4058
-findNextIntersection332: side = 58927, 0x78f07c6f4058
-findNextIntersection442: t=0.603430, tIntersect=0.571460
-found_intersection side = 0x78f07c6f4058, nextElement = 0x78f0837b4640
-$$$  38428, 58927, -2.17891, 0.74210
-after findNextIntersection 1
-zL = -100.000000, zR = 0.000000, zt = -0.018000
-<>T = 0.120000, -2.178052 0.741671 -0.018000
-trackThroughElementsAndLevels: x0=-2.178052, y0=0.741671, xt=-2.176052, yt=0.740671
-ttt xt = -2.176052, yt = 0.740671
-before findNextIntersection
-findNextIntersection22: side = 58931, 0x78f07c6f5cf8
-findNextIntersection332: side = 58931, 0x78f07c6f5cf8
-findNextIntersection442: t=0.600763, tIntersect=0.082827
-found_intersection side = 0x78f07c6f5cf8, nextElement = 0x78f0837b7bb0
-$$$  38437, 58931, -2.17789, 0.74159
-after findNextIntersection 1
-$$$  38441, 58942, -2.17699, 0.74114
-zL = -98.987139, zR = 0.000000, zt = -0.019000
-<>T = 0.110000, -2.176052 0.740671 -0.019000
-trackThroughElementsAndLevels: x0=-2.176052, y0=0.740671, xt=-2.174052, yt=0.739671
-ttt xt = -2.174052, yt = 0.739671
-before findNextIntersection
-findNextIntersection22: side = 58952, 0x78f07c6ff340
-findNextIntersection332: side = 58952, 0x78f07c6ff340
-findNextIntersection442: t=0.484161, tIntersect=0.189483
-found_intersection side = 0x78f07c6ff340, nextElement = 0x78f0837bb120
-$$$  38446, 58952, -2.17567, 0.74048
-after findNextIntersection 1
-$$$  38452, 58957, -2.17421, 0.73975
-zL = -79.368957, zR = 0.000000, zt = -0.020000
-<>T = 0.100000, -2.174052 0.739671 -0.020000
-trackThroughElementsAndLevels: x0=-2.174052, y0=0.739671, xt=-2.172052, yt=0.738671
-ttt xt = -2.172052, yt = 0.738671
-before findNextIntersection
-findNextIntersection22: side = 58961, 0x78f07c7033a8
-findNextIntersection332: side = 58961, 0x78f07c7033a8
-findNextIntersection442: t=0.286179, tIntersect=0.286301
-found_intersection side = 0x78f07c7033a8, nextElement = 0x78f0837cfda0
-$$$  38502, 58961, -2.17348, 0.73938
-after findNextIntersection 1
-zL = -27.294283, zR = 0.000000, zt = -0.021000
-<>T = 0.090000, -2.172052 0.738671 -0.021000
-trackThroughElementsAndLevels: x0=-2.172052, y0=0.738671, xt=-2.170052, yt=0.737671
-ttt xt = -2.170052, yt = 0.737671
-before findNextIntersection
-findNextIntersection22: side = 59040, 0x78f07c726900
-findNextIntersection332: side = 59040, 0x78f07c726900
-findNextIntersection442: t=0.222987, tIntersect=0.057351
-found_intersection side = 0x78f07c726900, nextElement = 0x78f0837d7460
-$$$  38522, 59040, -2.17194, 0.73861
-after findNextIntersection 1
-$$$  0, 59070, -2.17138, 0.73834
-Tracking segment goes out of water at element 38522
-Implement here the tangent velocity
-vtan = 0.149718, nextSide->isbnd = 0, nextSide->u2[jlev] = -0.200000, nextSide->v2[jlev] = 0.100000
-dt = 0.010000
-dt2 = 0.003343
-<>T = 0.086657, -2.171386 0.738331 -0.021336
-trackThroughElementsAndLevels: x0=-2.171386, y0=0.738331, xt=-2.170987, yt=0.736888
-ttt xt = -2.170987, yt = 0.736888
-before findNextIntersection
-findNextIntersection22: side = 59044, 0x78f07c7285a0
-findNextIntersection332: side = 59044, 0x78f07c7285a0
-findNextIntersection442: t=0.996603, tIntersect=0.860014
-found_intersection side = 0x78f07c7285a0, nextElement = 0x78f0837d0980
-$$$  38504, 59044, -2.17104, 0.73709
-after findNextIntersection 1
-$$$  38505, 59045, -2.17104, 0.73708
-zL = -8.083593, zR = 0.000000, zt = -0.022336
-<>T = 0.076657, -2.170987 0.736888 -0.022336
-trackThroughElementsAndLevels: x0=-2.170987, y0=0.736888, xt=-2.168987, yt=0.735888
-ttt xt = -2.168987, yt = 0.735888
-before findNextIntersection
-findNextIntersection22: side = 59046, 0x78f07c7293f0
-findNextIntersection332: side = 59046, 0x78f07c7293f0
-findNextIntersection442: t=0.874540, tIntersect=0.013152
-found_intersection side = 0x78f07c7293f0, nextElement = (nil)
-$$$  0, 59046, -2.17096, 0.73688
-after findNextIntersection 1
-Tracking segment goes out of water at element 38505
-Implement here the tangent velocity
-vtan = 0.160327, nextSide->isbnd = 0, nextSide->u2[jlev] = -0.200000, nextSide->v2[jlev] = 0.100000
-dt = 0.010000
-dt2 = 0.000126
-<>T = 0.076530, -2.170966 0.736867 -0.022349
-trackThroughElementsAndLevels: x0=-2.170966, y0=0.736867, xt=-2.170437, yt=0.735354
-ttt xt = -2.170437, yt = 0.735354
-before findNextIntersection
-findNextIntersection22: side = 58972, 0x78f07c708260
-findNextIntersection332: side = 58972, 0x78f07c708260
-findNextIntersection442: t=0.996603, tIntersect=0.970792
-found_intersection side = 0x78f07c708260, nextElement = 0x78f0837bfe50
-$$$  38459, 58972, -2.17045, 0.73540
-after findNextIntersection 1
-$$$  38528, 58971, -2.17045, 0.73539
-zL = -2.918686, zR = 0.000000, zt = -0.023349
-<>T = 0.066530, -2.170437 0.735354 -0.023349
-trackThroughElementsAndLevels: x0=-2.170437, y0=0.735354, xt=-2.168437, yt=0.734354
-ttt xt = -2.168437, yt = 0.734354
-before findNextIntersection
-findNextIntersection22: side = 59077, 0x78f07c7371c8
-findNextIntersection332: side = 59077, 0x78f07c7371c8
-findNextIntersection442: t=0.950860, tIntersect=0.028611
-found_intersection side = 0x78f07c7371c8, nextElement = (nil)
-$$$  0, 59077, -2.17038, 0.73533
-after findNextIntersection 1
-Tracking segment goes out of water at element 38528
-Implement here the tangent velocity
-vtan = 0.208218, nextSide->isbnd = 0, nextSide->u2[jlev] = -0.200000, nextSide->v2[jlev] = 0.100000
-dt = 0.010000
-dt2 = 0.000301
-<>T = 0.066229, -2.170381 0.735315 -0.023378
-trackThroughElementsAndLevels: x0=-2.170381, y0=0.735315, xt=-2.168986, yt=0.733769
-ttt xt = -2.168986, yt = 0.733769
-before findNextIntersection
-findNextIntersection22: side = 59073, 0x78f07c735528
-findNextIntersection332: side = 59073, 0x78f07c735528
-findNextIntersection442: t=0.996603, tIntersect=0.885877
-found_intersection side = 0x78f07c735528, nextElement = 0x78f0837d8630
-$$$  38525, 59073, -2.16915, 0.73395
-after findNextIntersection 1
-$$$  38521, 59069, -2.16914, 0.73394
-zL = 2.288153, zR = 0.000000, zt = -0.024378
-/tmp/tmpc5co9fps/9beeb4bf2830dc2276894e21d848a1044707b2ae.cubin.cu:1246: void Element::interpolateVelocities(double, double, double, double &, double &, double &): block: [0,0,0], thread: [0,0,0] Assertion `zL <= zt && zR >= zt` failed.
+Testing mesh for partition 0, x=22.000000, y=1.000000
+Point 22.000000 1.000000 -1.000000 is inside element 1168
+$$$  1168, 1807, 22.07397, 2.04574
+trackThroughElementsAndLevels: x0=22.073969, y0=2.045744, xt=22.116814, yt=1.583428
+<>T = 2990.000000, 22.116814 1.583428 0.000000
+trackThroughElementsAndLevels: x0=22.116814, y0=1.583428, xt=22.159660, yt=1.121112
+<>T = 2980.000000, 22.159660 1.121112 0.000000
+trackThroughElementsAndLevels: x0=22.159660, y0=1.121112, xt=22.202506, yt=0.658796
+<>T = 2970.000000, 22.202506 0.658796 0.000000
+trackThroughElementsAndLevels: x0=22.202506, y0=0.658796, xt=22.245352, yt=0.196480
+<>T = 2960.000000, 22.245352 0.196480 0.000000
+trackThroughElementsAndLevels: x0=22.245352, y0=0.196480, xt=22.288198, yt=-0.265836
+$$$  1134, 1757, 22.26356, 0.00000
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2950.000000, 22.288198 -0.265836 0.000000
+trackThroughElementsAndLevels: x0=22.288198, y0=-0.265836, xt=22.282631, yt=-0.732639
+<>T = 2940.000000, 22.282631 -0.732639 0.000000
+trackThroughElementsAndLevels: x0=22.282631, y0=-0.732639, xt=22.277063, yt=-1.199442
+<>T = 2930.000000, 22.277063 -1.199442 0.000000
+trackThroughElementsAndLevels: x0=22.277063, y0=-1.199442, xt=22.271495, yt=-1.666245
+<>T = 2920.000000, 22.271495 -1.666245 0.000000
+trackThroughElementsAndLevels: x0=22.271495, y0=-1.666245, xt=22.265928, yt=-2.133048
+<>T = 2910.000000, 22.265928 -2.133048 0.000000
+trackThroughElementsAndLevels: x0=22.265928, y0=-2.133048, xt=22.260360, yt=-2.599851
+$$$  1073, 1663, 22.26289, -2.38776
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2900.000000, 22.260360 -2.599851 0.000000
+trackThroughElementsAndLevels: x0=22.260360, y0=-2.599851, xt=22.205909, yt=-3.066071
+<>T = 2890.000000, 22.205909 -3.066071 0.000000
+trackThroughElementsAndLevels: x0=22.205909, y0=-3.066071, xt=22.151458, yt=-3.532291
+<>T = 2880.000000, 22.151458 -3.532291 0.000000
+trackThroughElementsAndLevels: x0=22.151458, y0=-3.532291, xt=22.097007, yt=-3.998511
+<>T = 2870.000000, 22.097007 -3.998511 0.000000
+trackThroughElementsAndLevels: x0=22.097007, y0=-3.998511, xt=22.042555, yt=-4.464730
+$$$  1040, 1612, 22.08642, -4.08917
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2860.000000, 22.042555 -4.464730 0.000000
+trackThroughElementsAndLevels: x0=22.042555, y0=-4.464730, xt=21.949046, yt=-4.926389
+<>T = 2850.000000, 21.949046 -4.926389 0.000000
+trackThroughElementsAndLevels: x0=21.949046, y0=-4.926389, xt=21.855537, yt=-5.388047
+<>T = 2840.000000, 21.855537 -5.388047 0.000000
+trackThroughElementsAndLevels: x0=21.855537, y0=-5.388047, xt=21.762028, yt=-5.849705
+<>T = 2830.000000, 21.762028 -5.849705 0.000000
+trackThroughElementsAndLevels: x0=21.762028, y0=-5.849705, xt=21.668519, yt=-6.311363
+<>T = 2820.000000, 21.668519 -6.311363 0.000000
+trackThroughElementsAndLevels: x0=21.668519, y0=-6.311363, xt=21.575010, yt=-6.773021
+$$$  971, 1502, 21.59120, -6.69311
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2810.000000, 21.575010 -6.773021 0.000000
+trackThroughElementsAndLevels: x0=21.575010, y0=-6.773021, xt=21.433156, yt=-7.224887
+<>T = 2800.000000, 21.433156 -7.224887 0.000000
+trackThroughElementsAndLevels: x0=21.433156, y0=-7.224887, xt=21.291302, yt=-7.676753
+<>T = 2790.000000, 21.291302 -7.676753 0.000000
+trackThroughElementsAndLevels: x0=21.291302, y0=-7.676753, xt=21.149449, yt=-8.128619
+$$$  946, 1466, 21.17616, -8.04354
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2780.000000, 21.149449 -8.128619 0.000000
+trackThroughElementsAndLevels: x0=21.149449, y0=-8.128619, xt=20.979203, yt=-8.571572
+<>T = 2770.000000, 20.979203 -8.571572 0.000000
+trackThroughElementsAndLevels: x0=20.979203, y0=-8.571572, xt=20.808958, yt=-9.014525
+<>T = 2760.000000, 20.808958 -9.014525 0.000000
+trackThroughElementsAndLevels: x0=20.808958, y0=-9.014525, xt=20.638712, yt=-9.457478
+<>T = 2750.000000, 20.638712 -9.457478 0.000000
+trackThroughElementsAndLevels: x0=20.638712, y0=-9.457478, xt=20.468467, yt=-9.900431
+<>T = 2740.000000, 20.468467 -9.900431 0.000000
+trackThroughElementsAndLevels: x0=20.468467, y0=-9.900431, xt=20.298221, yt=-10.343384
+<>T = 2730.000000, 20.298221 -10.343384 0.000000
+trackThroughElementsAndLevels: x0=20.298221, y0=-10.343384, xt=20.127976, yt=-10.786337
+<>T = 2720.000000, 20.127976 -10.786337 0.000000
+trackThroughElementsAndLevels: x0=20.127976, y0=-10.786337, xt=19.957731, yt=-11.229290
+$$$  911, 1425, 20.12710, -10.78861
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2710.000000, 19.957731 -11.229290 0.000000
+trackThroughElementsAndLevels: x0=19.957731, y0=-11.229290, xt=19.722545, yt=-11.647284
+<>T = 2700.000000, 19.722545 -11.647284 0.000000
+trackThroughElementsAndLevels: x0=19.722545, y0=-11.647284, xt=19.487359, yt=-12.065278
+$$$  862, 1337, 19.66747, -11.74517
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2690.000000, 19.487359 -12.065278 0.000000
+trackThroughElementsAndLevels: x0=19.487359, y0=-12.065278, xt=19.234665, yt=-12.473420
+<>T = 2680.000000, 19.234665 -12.473420 0.000000
+trackThroughElementsAndLevels: x0=19.234665, y0=-12.473420, xt=18.981970, yt=-12.881562
+<>T = 2670.000000, 18.981970 -12.881562 0.000000
+trackThroughElementsAndLevels: x0=18.981970, y0=-12.881562, xt=18.729276, yt=-13.289705
+<>T = 2660.000000, 18.729276 -13.289705 0.000000
+trackThroughElementsAndLevels: x0=18.729276, y0=-13.289705, xt=18.476581, yt=-13.697847
+<>T = 2650.000000, 18.476581 -13.697847 0.000000
+trackThroughElementsAndLevels: x0=18.476581, y0=-13.697847, xt=18.223886, yt=-14.105989
+<>T = 2640.000000, 18.223886 -14.105989 0.000000
+trackThroughElementsAndLevels: x0=18.223886, y0=-14.105989, xt=17.971192, yt=-14.514132
+<>T = 2630.000000, 17.971192 -14.514132 0.000000
+trackThroughElementsAndLevels: x0=17.971192, y0=-14.514132, xt=17.718497, yt=-14.922274
+$$$  853, 1326, 17.94338, -14.55905
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2620.000000, 17.718497 -14.922274 0.000000
+trackThroughElementsAndLevels: x0=17.718497, y0=-14.922274, xt=17.405966, yt=-15.293369
+$$$  782, 1214, 17.57229, -15.09588
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2610.000000, 17.405966 -15.293369 0.000000
+trackThroughElementsAndLevels: x0=17.405966, y0=-15.293369, xt=17.085662, yt=-15.657919
+<>T = 2600.000000, 17.085662 -15.657919 0.000000
+trackThroughElementsAndLevels: x0=17.085662, y0=-15.657919, xt=16.765359, yt=-16.022469
+<>T = 2590.000000, 16.765359 -16.022469 0.000000
+trackThroughElementsAndLevels: x0=16.765359, y0=-16.022469, xt=16.445055, yt=-16.387018
+<>T = 2580.000000, 16.445055 -16.387018 0.000000
+trackThroughElementsAndLevels: x0=16.445055, y0=-16.387018, xt=16.124751, yt=-16.751568
+<>T = 2570.000000, 16.124751 -16.751568 0.000000
+trackThroughElementsAndLevels: x0=16.124751, y0=-16.751568, xt=15.804448, yt=-17.116118
+<>T = 2560.000000, 15.804448 -17.116118 0.000000
+trackThroughElementsAndLevels: x0=15.804448, y0=-17.116118, xt=15.484144, yt=-17.480667
+<>T = 2550.000000, 15.484144 -17.480667 0.000000
+trackThroughElementsAndLevels: x0=15.484144, y0=-17.480667, xt=15.163841, yt=-17.845217
+<>T = 2540.000000, 15.163841 -17.845217 0.000000
+trackThroughElementsAndLevels: x0=15.163841, y0=-17.845217, xt=14.843537, yt=-18.209767
+$$$  777, 1207, 15.12834, -17.88562
+$$$  708, 1101, 15.00644, -18.02436
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2530.000000, 14.843537 -18.209767 0.000000
+trackThroughElementsAndLevels: x0=14.843537, y0=-18.209767, xt=14.462153, yt=-18.520649
+<>T = 2520.000000, 14.462153 -18.520649 0.000000
+trackThroughElementsAndLevels: x0=14.462153, y0=-18.520649, xt=14.080768, yt=-18.831531
+$$$  696, 1082, 14.39941, -18.57179
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2510.000000, 14.080768 -18.831531 0.000000
+trackThroughElementsAndLevels: x0=14.080768, y0=-18.831531, xt=13.686362, yt=-19.126438
+<>T = 2500.000000, 13.686362 -19.126438 0.000000
+trackThroughElementsAndLevels: x0=13.686362, y0=-19.126438, xt=13.291955, yt=-19.421345
+<>T = 2490.000000, 13.291955 -19.421345 0.000000
+trackThroughElementsAndLevels: x0=13.291955, y0=-19.421345, xt=12.897548, yt=-19.716252
+<>T = 2480.000000, 12.897548 -19.716252 0.000000
+trackThroughElementsAndLevels: x0=12.897548, y0=-19.716252, xt=12.503142, yt=-20.011159
+<>T = 2470.000000, 12.503142 -20.011159 0.000000
+trackThroughElementsAndLevels: x0=12.503142, y0=-20.011159, xt=12.108735, yt=-20.306066
+<>T = 2460.000000, 12.108735 -20.306066 0.000000
+trackThroughElementsAndLevels: x0=12.108735, y0=-20.306066, xt=11.714328, yt=-20.600973
+$$$  645, 1011, 11.93255, -20.43780
+$$$  642, 1007, 11.78605, -20.54734
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2450.000000, 11.714328 -20.600973 0.000000
+trackThroughElementsAndLevels: x0=11.714328, y0=-20.600973, xt=11.282862, yt=-20.846317
+<>T = 2440.000000, 11.282862 -20.846317 0.000000
+trackThroughElementsAndLevels: x0=11.282862, y0=-20.846317, xt=10.851397, yt=-21.091662
+<>T = 2430.000000, 10.851397 -21.091662 0.000000
+trackThroughElementsAndLevels: x0=10.851397, y0=-21.091662, xt=10.419931, yt=-21.337006
+<>T = 2420.000000, 10.419931 -21.337006 0.000000
+trackThroughElementsAndLevels: x0=10.419931, y0=-21.337006, xt=9.988465, yt=-21.582350
+<>T = 2410.000000, 9.988465 -21.582350 0.000000
+trackThroughElementsAndLevels: x0=9.988465, y0=-21.582350, xt=9.556999, yt=-21.827695
+<>T = 2400.000000, 9.556999 -21.827695 0.000000
+trackThroughElementsAndLevels: x0=9.556999, y0=-21.827695, xt=9.125534, yt=-22.073039
+<>T = 2390.000000, 9.125534 -22.073039 0.000000
+trackThroughElementsAndLevels: x0=9.125534, y0=-22.073039, xt=8.694068, yt=-22.318383
+<>T = 2380.000000, 8.694068 -22.318383 0.000000
+trackThroughElementsAndLevels: x0=8.694068, y0=-22.318383, xt=8.262602, yt=-22.563728
+$$$  615, 959, 8.67193, -22.33097
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2370.000000, 8.262602 -22.563728 0.000000
+trackThroughElementsAndLevels: x0=8.262602, y0=-22.563728, xt=7.790028, yt=-22.736779
+$$$  618, 960, 8.06430, -22.63634
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2360.000000, 7.790028 -22.736779 0.000000
+trackThroughElementsAndLevels: x0=7.790028, y0=-22.736779, xt=7.313830, yt=-22.899933
+<>T = 2350.000000, 7.313830 -22.899933 0.000000
+trackThroughElementsAndLevels: x0=7.313830, y0=-22.899933, xt=6.837632, yt=-23.063087
+<>T = 2340.000000, 6.837632 -23.063087 0.000000
+trackThroughElementsAndLevels: x0=6.837632, y0=-23.063087, xt=6.361434, yt=-23.226241
+<>T = 2330.000000, 6.361434 -23.226241 0.000000
+trackThroughElementsAndLevels: x0=6.361434, y0=-23.226241, xt=5.885236, yt=-23.389395
+<>T = 2320.000000, 5.885236 -23.389395 0.000000
+trackThroughElementsAndLevels: x0=5.885236, y0=-23.389395, xt=5.409038, yt=-23.552549
+<>T = 2310.000000, 5.409038 -23.552549 0.000000
+trackThroughElementsAndLevels: x0=5.409038, y0=-23.552549, xt=4.932841, yt=-23.715703
+$$$  601, 939, 5.13527, -23.64635
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2300.000000, 4.932841 -23.715703 0.000000
+trackThroughElementsAndLevels: x0=4.932841, y0=-23.715703, xt=4.436140, yt=-23.819016
+<>T = 2290.000000, 4.436140 -23.819016 0.000000
+trackThroughElementsAndLevels: x0=4.436140, y0=-23.819016, xt=3.939439, yt=-23.922329
+$$$  606, 940, 4.09251, -23.89049
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2280.000000, 3.939439 -23.922329 0.000000
+trackThroughElementsAndLevels: x0=3.939439, y0=-23.922329, xt=3.438411, yt=-24.004837
+<>T = 2270.000000, 3.438411 -24.004837 0.000000
+trackThroughElementsAndLevels: x0=3.438411, y0=-24.004837, xt=2.937383, yt=-24.087344
+<>T = 2260.000000, 2.937383 -24.087344 0.000000
+trackThroughElementsAndLevels: x0=2.937383, y0=-24.087344, xt=2.436355, yt=-24.169852
+<>T = 2250.000000, 2.436355 -24.169852 0.000000
+trackThroughElementsAndLevels: x0=2.436355, y0=-24.169852, xt=1.935327, yt=-24.252359
+<>T = 2240.000000, 1.935327 -24.252359 0.000000
+trackThroughElementsAndLevels: x0=1.935327, y0=-24.252359, xt=1.434299, yt=-24.334866
+<>T = 2230.000000, 1.434299 -24.334866 0.000000
+trackThroughElementsAndLevels: x0=1.434299, y0=-24.334866, xt=0.933271, yt=-24.417374
+$$$  599, 936, 1.39146, -24.34192
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2220.000000, 0.933271 -24.417374 0.000000
+trackThroughElementsAndLevels: x0=0.933271, y0=-24.417374, xt=0.421875, yt=-24.436920
+<>T = 2210.000000, 0.421875 -24.436920 0.000000
+trackThroughElementsAndLevels: x0=0.421875, y0=-24.436920, xt=-0.089522, yt=-24.456467
+$$$  598, 935, -0.00000, -24.45304
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2200.000000, -0.089522 -24.456467 0.000000
+trackThroughElementsAndLevels: x0=-0.089522, y0=-24.456467, xt=-0.601737, yt=-24.454592
+<>T = 2190.000000, -0.601737 -24.454592 0.000000
+trackThroughElementsAndLevels: x0=-0.601737, y0=-24.454592, xt=-1.113952, yt=-24.452717
+<>T = 2180.000000, -1.113952 -24.452717 0.000000
+trackThroughElementsAndLevels: x0=-1.113952, y0=-24.452717, xt=-1.626167, yt=-24.450842
+$$$  607, 934, -1.58604, -24.45099
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2170.000000, -1.626167 -24.450842 0.000000
+trackThroughElementsAndLevels: x0=-1.626167, y0=-24.450842, xt=-2.138264, yt=-24.416783
+<>T = 2160.000000, -2.138264 -24.416783 0.000000
+trackThroughElementsAndLevels: x0=-2.138264, y0=-24.416783, xt=-2.650361, yt=-24.382725
+<>T = 2150.000000, -2.650361 -24.382725 0.000000
+trackThroughElementsAndLevels: x0=-2.650361, y0=-24.382725, xt=-3.162458, yt=-24.348667
+<>T = 2140.000000, -3.162458 -24.348667 0.000000
+trackThroughElementsAndLevels: x0=-3.162458, y0=-24.348667, xt=-3.674556, yt=-24.314608
+<>T = 2130.000000, -3.674556 -24.314608 0.000000
+trackThroughElementsAndLevels: x0=-3.674556, y0=-24.314608, xt=-4.186653, yt=-24.280550
+$$$  600, 938, -4.09310, -24.28677
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2120.000000, -4.186653 -24.280550 0.000000
+trackThroughElementsAndLevels: x0=-4.186653, y0=-24.280550, xt=-4.695184, yt=-24.192865
+<>T = 2110.000000, -4.695184 -24.192865 0.000000
+trackThroughElementsAndLevels: x0=-4.695184, y0=-24.192865, xt=-5.203714, yt=-24.105180
+<>T = 2100.000000, -5.203714 -24.105180 0.000000
+trackThroughElementsAndLevels: x0=-5.203714, y0=-24.105180, xt=-5.712245, yt=-24.017495
+<>T = 2090.000000, -5.712245 -24.017495 0.000000
+trackThroughElementsAndLevels: x0=-5.712245, y0=-24.017495, xt=-6.220776, yt=-23.929810
+$$$  619, 937, -5.92461, -23.98088
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2080.000000, -6.220776 -23.929810 0.000000
+trackThroughElementsAndLevels: x0=-6.220776, y0=-23.929810, xt=-6.721960, yt=-23.799522
+<>T = 2070.000000, -6.721960 -23.799522 0.000000
+trackThroughElementsAndLevels: x0=-6.721960, y0=-23.799522, xt=-7.223145, yt=-23.669235
+<>T = 2060.000000, -7.223145 -23.669235 0.000000
+trackThroughElementsAndLevels: x0=-7.223145, y0=-23.669235, xt=-7.724330, yt=-23.538947
+<>T = 2050.000000, -7.724330 -23.538947 0.000000
+trackThroughElementsAndLevels: x0=-7.724330, y0=-23.538947, xt=-8.225515, yt=-23.408659
+$$$  614, 958, -8.07354, -23.44817
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2040.000000, -8.225515 -23.408659 0.000000
+trackThroughElementsAndLevels: x0=-8.225515, y0=-23.408659, xt=-8.715784, yt=-23.236385
+<>T = 2030.000000, -8.715784 -23.236385 0.000000
+trackThroughElementsAndLevels: x0=-8.715784, y0=-23.236385, xt=-9.206054, yt=-23.064110
+<>T = 2020.000000, -9.206054 -23.064110 0.000000
+trackThroughElementsAndLevels: x0=-9.206054, y0=-23.064110, xt=-9.696324, yt=-22.891835
+<>T = 2010.000000, -9.696324 -22.891835 0.000000
+trackThroughElementsAndLevels: x0=-9.696324, y0=-22.891835, xt=-10.186594, yt=-22.719560
+$$$  643, 957, -10.06462, -22.76242
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 2000.000000, -10.186594 -22.719560 0.000000
+trackThroughElementsAndLevels: x0=-10.186594, y0=-22.719560, xt=-10.662431, yt=-22.506213
+<>T = 1990.000000, -10.662431 -22.506213 0.000000
+trackThroughElementsAndLevels: x0=-10.662431, y0=-22.506213, xt=-11.138269, yt=-22.292865
+<>T = 1980.000000, -11.138269 -22.292865 0.000000
+trackThroughElementsAndLevels: x0=-11.138269, y0=-22.292865, xt=-11.614106, yt=-22.079518
+<>T = 1970.000000, -11.614106 -22.079518 0.000000
+trackThroughElementsAndLevels: x0=-11.614106, y0=-22.079518, xt=-12.089943, yt=-21.866170
+$$$  644, 1009, -11.83727, -21.97946
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1960.000000, -12.089943 -21.866170 0.000000
+trackThroughElementsAndLevels: x0=-12.089943, y0=-21.866170, xt=-12.547907, yt=-21.612959
+<>T = 1950.000000, -12.547907 -21.612959 0.000000
+trackThroughElementsAndLevels: x0=-12.547907, y0=-21.612959, xt=-13.005871, yt=-21.359748
+<>T = 1940.000000, -13.005871 -21.359748 0.000000
+trackThroughElementsAndLevels: x0=-13.005871, y0=-21.359748, xt=-13.463835, yt=-21.106537
+<>T = 1930.000000, -13.463835 -21.106537 0.000000
+trackThroughElementsAndLevels: x0=-13.463835, y0=-21.106537, xt=-13.921799, yt=-20.853325
+$$$  697, 1010, -13.90651, -20.86178
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1920.000000, -13.921799 -20.853325 0.000000
+trackThroughElementsAndLevels: x0=-13.921799, y0=-20.853325, xt=-14.358550, yt=-20.561748
+<>T = 1910.000000, -14.358550 -20.561748 0.000000
+trackThroughElementsAndLevels: x0=-14.358550, y0=-20.561748, xt=-14.795301, yt=-20.270170
+<>T = 1900.000000, -14.795301 -20.270170 0.000000
+trackThroughElementsAndLevels: x0=-14.795301, y0=-20.270170, xt=-15.232052, yt=-19.978593
+<>T = 1890.000000, -15.232052 -19.978593 0.000000
+trackThroughElementsAndLevels: x0=-15.232052, y0=-19.978593, xt=-15.668803, yt=-19.687015
+$$$  698, 1085, -15.29188, -19.93865
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1880.000000, -15.668803 -19.687015 0.000000
+trackThroughElementsAndLevels: x0=-15.668803, y0=-19.687015, xt=-16.081127, yt=-19.358849
+<>T = 1870.000000, -16.081127 -19.358849 0.000000
+trackThroughElementsAndLevels: x0=-16.081127, y0=-19.358849, xt=-16.493451, yt=-19.030682
+<>T = 1860.000000, -16.493451 -19.030682 0.000000
+trackThroughElementsAndLevels: x0=-16.493451, y0=-19.030682, xt=-16.905775, yt=-18.702516
+<>T = 1850.000000, -16.905775 -18.702516 0.000000
+trackThroughElementsAndLevels: x0=-16.905775, y0=-18.702516, xt=-17.318099, yt=-18.374349
+<>T = 1840.000000, -17.318099 -18.374349 0.000000
+trackThroughElementsAndLevels: x0=-17.318099, y0=-18.374349, xt=-17.730423, yt=-18.046182
+$$$  769, 1086, -17.34634, -18.35187
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1830.000000, -17.730423 -18.046182 0.000000
+trackThroughElementsAndLevels: x0=-17.730423, y0=-18.046182, xt=-18.108381, yt=-17.674837
+<>T = 1820.000000, -18.108381 -17.674837 0.000000
+trackThroughElementsAndLevels: x0=-18.108381, y0=-17.674837, xt=-18.486339, yt=-17.303492
+$$$  775, 1196, -18.36268, -17.42499
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1810.000000, -18.486339 -17.303492 0.000000
+trackThroughElementsAndLevels: x0=-18.486339, y0=-17.303492, xt=-18.848743, yt=-16.916315
+<>T = 1800.000000, -18.848743 -16.916315 0.000000
+trackThroughElementsAndLevels: x0=-18.848743, y0=-16.916315, xt=-19.211146, yt=-16.529138
+<>T = 1790.000000, -19.211146 -16.529138 0.000000
+trackThroughElementsAndLevels: x0=-19.211146, y0=-16.529138, xt=-19.573550, yt=-16.141961
+<>T = 1780.000000, -19.573550 -16.141961 0.000000
+trackThroughElementsAndLevels: x0=-19.573550, y0=-16.141961, xt=-19.935953, yt=-15.754784
+<>T = 1770.000000, -19.935953 -15.754784 0.000000
+trackThroughElementsAndLevels: x0=-19.935953, y0=-15.754784, xt=-20.298357, yt=-15.367607
+<>T = 1760.000000, -20.298357 -15.367607 0.000000
+trackThroughElementsAndLevels: x0=-20.298357, y0=-15.367607, xt=-20.660760, yt=-14.980430
+$$$  839, 1203, -20.34009, -15.32302
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1750.000000, -20.660760 -14.980430 0.000000
+trackThroughElementsAndLevels: x0=-20.660760, y0=-14.980430, xt=-20.974510, yt=-14.547712
+<>T = 1740.000000, -20.974510 -14.547712 0.000000
+trackThroughElementsAndLevels: x0=-20.974510, y0=-14.547712, xt=-21.288259, yt=-14.114994
+$$$  859, 1308, -20.99379, -14.52113
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1730.000000, -21.288259 -14.114994 0.000000
+trackThroughElementsAndLevels: x0=-21.288259, y0=-14.114994, xt=-21.583883, yt=-13.669134
+<>T = 1720.000000, -21.583883 -13.669134 0.000000
+trackThroughElementsAndLevels: x0=-21.583883, y0=-13.669134, xt=-21.879507, yt=-13.223274
+<>T = 1710.000000, -21.879507 -13.223274 0.000000
+trackThroughElementsAndLevels: x0=-21.879507, y0=-13.223274, xt=-22.175130, yt=-12.777413
+<>T = 1700.000000, -22.175130 -12.777413 0.000000
+trackThroughElementsAndLevels: x0=-22.175130, y0=-12.777413, xt=-22.470754, yt=-12.331553
+<>T = 1690.000000, -22.470754 -12.331553 0.000000
+trackThroughElementsAndLevels: x0=-22.470754, y0=-12.331553, xt=-22.766378, yt=-11.885693
+<>T = 1680.000000, -22.766378 -11.885693 0.000000
+trackThroughElementsAndLevels: x0=-22.766378, y0=-11.885693, xt=-23.062002, yt=-11.439833
+$$$  909, 1332, -22.77951, -11.86588
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1670.000000, -23.062002 -11.439833 0.000000
+trackThroughElementsAndLevels: x0=-23.062002, y0=-11.439833, xt=-23.301597, yt=-10.956823
+$$$  945, 1421, -23.13984, -11.28292
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1660.000000, -23.301597 -10.956823 0.000000
+trackThroughElementsAndLevels: x0=-23.301597, y0=-10.956823, xt=-23.531076, yt=-10.468796
+<>T = 1650.000000, -23.531076 -10.468796 0.000000
+trackThroughElementsAndLevels: x0=-23.531076, y0=-10.468796, xt=-23.760555, yt=-9.980768
+<>T = 1640.000000, -23.760555 -9.980768 0.000000
+trackThroughElementsAndLevels: x0=-23.760555, y0=-9.980768, xt=-23.990034, yt=-9.492741
+<>T = 1630.000000, -23.990034 -9.492741 0.000000
+trackThroughElementsAndLevels: x0=-23.990034, y0=-9.492741, xt=-24.219514, yt=-9.004713
+<>T = 1620.000000, -24.219514 -9.004713 0.000000
+trackThroughElementsAndLevels: x0=-24.219514, y0=-9.004713, xt=-24.448993, yt=-8.516686
+<>T = 1610.000000, -24.448993 -8.516686 0.000000
+trackThroughElementsAndLevels: x0=-24.448993, y0=-8.516686, xt=-24.678472, yt=-8.028658
+$$$  973, 1465, -24.65093, -8.08723
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1600.000000, -24.678472 -8.028658 0.000000
+trackThroughElementsAndLevels: x0=-24.678472, y0=-8.028658, xt=-24.846624, yt=-7.511793
+$$$  1039, 1506, -24.76277, -7.76954
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1590.000000, -24.846624 -7.511793 0.000000
+trackThroughElementsAndLevels: x0=-24.846624, y0=-7.511793, xt=-25.003950, yt=-6.991407
+<>T = 1580.000000, -25.003950 -6.991407 0.000000
+trackThroughElementsAndLevels: x0=-25.003950, y0=-6.991407, xt=-25.161277, yt=-6.471020
+<>T = 1570.000000, -25.161277 -6.471020 0.000000
+trackThroughElementsAndLevels: x0=-25.161277, y0=-6.471020, xt=-25.318604, yt=-5.950634
+<>T = 1560.000000, -25.318604 -5.950634 0.000000
+trackThroughElementsAndLevels: x0=-25.318604, y0=-5.950634, xt=-25.475930, yt=-5.430248
+<>T = 1550.000000, -25.475930 -5.430248 0.000000
+trackThroughElementsAndLevels: x0=-25.475930, y0=-5.430248, xt=-25.633257, yt=-4.909861
+<>T = 1540.000000, -25.633257 -4.909861 0.000000
+trackThroughElementsAndLevels: x0=-25.633257, y0=-4.909861, xt=-25.790584, yt=-4.389475
+$$$  976, 1513, -25.77332, -4.44656
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1530.000000, -25.790584 -4.389475 0.000000
+trackThroughElementsAndLevels: x0=-25.790584, y0=-4.389475, xt=-25.882517, yt=-3.849318
+$$$  1039, 1513, -25.79924, -4.33862
+$$$  1075, 1611, -25.84063, -4.09542
+$$$  1133, 1667, -25.84458, -4.07219
+$$$  1076, 1670, -25.87224, -3.90971
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1520.000000, -25.882517 -3.849318 0.000000
+trackThroughElementsAndLevels: x0=-25.882517, y0=-3.849318, xt=-25.963136, yt=-3.307236
+<>T = 1510.000000, -25.963136 -3.307236 0.000000
+trackThroughElementsAndLevels: x0=-25.963136, y0=-3.307236, xt=-26.043756, yt=-2.765154
+<>T = 1500.000000, -26.043756 -2.765154 0.000000
+trackThroughElementsAndLevels: x0=-26.043756, y0=-2.765154, xt=-26.124376, yt=-2.223071
+<>T = 1490.000000, -26.124376 -2.223071 0.000000
+trackThroughElementsAndLevels: x0=-26.124376, y0=-2.223071, xt=-26.204996, yt=-1.680989
+<>T = 1480.000000, -26.204996 -1.680989 0.000000
+trackThroughElementsAndLevels: x0=-26.204996, y0=-1.680989, xt=-26.285616, yt=-1.138907
+<>T = 1470.000000, -26.285616 -1.138907 0.000000
+trackThroughElementsAndLevels: x0=-26.285616, y0=-1.138907, xt=-26.366236, yt=-0.596825
+<>T = 1460.000000, -26.366236 -0.596825 0.000000
+trackThroughElementsAndLevels: x0=-26.366236, y0=-0.596825, xt=-26.446856, yt=-0.054743
+$$$  1131, 1669, -26.39786, -0.38417
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1450.000000, -26.446856 -0.054743 0.000000
+trackThroughElementsAndLevels: x0=-26.446856, y0=-0.054743, xt=-26.448003, yt=0.499159
+$$$  1173, 1754, -26.44697, 0.00000
+$$$  1241, 1817, -26.44795, 0.47246
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1440.000000, -26.448003 0.499159 0.000000
+trackThroughElementsAndLevels: x0=-26.448003, y0=0.499159, xt=-26.437548, yt=1.053085
+<>T = 1430.000000, -26.437548 1.053085 0.000000
+trackThroughElementsAndLevels: x0=-26.437548, y0=1.053085, xt=-26.427094, yt=1.607010
+<>T = 1420.000000, -26.427094 1.607010 0.000000
+trackThroughElementsAndLevels: x0=-26.427094, y0=1.607010, xt=-26.416639, yt=2.160936
+<>T = 1410.000000, -26.416639 2.160936 0.000000
+trackThroughElementsAndLevels: x0=-26.416639, y0=2.160936, xt=-26.406185, yt=2.714862
+<>T = 1400.000000, -26.406185 2.714862 0.000000
+trackThroughElementsAndLevels: x0=-26.406185, y0=2.714862, xt=-26.395731, yt=3.268787
+<>T = 1390.000000, -26.395731 3.268787 0.000000
+trackThroughElementsAndLevels: x0=-26.395731, y0=3.268787, xt=-26.385276, yt=3.822713
+<>T = 1380.000000, -26.385276 3.822713 0.000000
+trackThroughElementsAndLevels: x0=-26.385276, y0=3.822713, xt=-26.374822, yt=4.376639
+$$$  1269, 1912, -26.38012, 4.09602
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1370.000000, -26.374822 4.376639 0.000000
+trackThroughElementsAndLevels: x0=-26.374822, y0=4.376639, xt=-26.283158, yt=4.929032
+<>T = 1360.000000, -26.283158 4.929032 0.000000
+trackThroughElementsAndLevels: x0=-26.283158, y0=4.929032, xt=-26.191494, yt=5.481425
+$$$  1309, 1958, -26.26744, 5.02374
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1350.000000, -26.191494 5.481425 0.000000
+trackThroughElementsAndLevels: x0=-26.191494, y0=5.481425, xt=-26.076691, yt=6.029978
+<>T = 1340.000000, -26.076691 6.029978 0.000000
+trackThroughElementsAndLevels: x0=-26.076691, y0=6.029978, xt=-25.961888, yt=6.578531
+<>T = 1330.000000, -25.961888 6.578531 0.000000
+trackThroughElementsAndLevels: x0=-25.961888, y0=6.578531, xt=-25.847086, yt=7.127085
+<>T = 1320.000000, -25.847086 7.127085 0.000000
+trackThroughElementsAndLevels: x0=-25.847086, y0=7.127085, xt=-25.732283, yt=7.675638
+<>T = 1310.000000, -25.732283 7.675638 0.000000
+trackThroughElementsAndLevels: x0=-25.732283, y0=7.675638, xt=-25.617480, yt=8.224191
+$$$  1361, 2025, -25.64423, 8.09639
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1300.000000, -25.617480 8.224191 0.000000
+trackThroughElementsAndLevels: x0=-25.617480, y0=8.224191, xt=-25.445233, yt=8.760723
+<>T = 1290.000000, -25.445233 8.760723 0.000000
+trackThroughElementsAndLevels: x0=-25.445233, y0=8.760723, xt=-25.272986, yt=9.297254
+$$$  1397, 2095, -25.28760, 9.25173
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1280.000000, -25.272986 9.297254 0.000000
+trackThroughElementsAndLevels: x0=-25.272986, y0=9.297254, xt=-25.078265, yt=9.826570
+<>T = 1270.000000, -25.078265 9.826570 0.000000
+trackThroughElementsAndLevels: x0=-25.078265, y0=9.826570, xt=-24.883544, yt=10.355886
+<>T = 1260.000000, -24.883544 10.355886 0.000000
+trackThroughElementsAndLevels: x0=-24.883544, y0=10.355886, xt=-24.688823, yt=10.885202
+<>T = 1250.000000, -24.688823 10.885202 0.000000
+trackThroughElementsAndLevels: x0=-24.688823, y0=10.885202, xt=-24.494101, yt=11.414519
+<>T = 1240.000000, -24.494101 11.414519 0.000000
+trackThroughElementsAndLevels: x0=-24.494101, y0=11.414519, xt=-24.299380, yt=11.943835
+$$$  1447, 2157, -24.31106, 11.91209
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1230.000000, -24.299380 11.943835 0.000000
+trackThroughElementsAndLevels: x0=-24.299380, y0=11.943835, xt=-24.049229, yt=12.452760
+<>T = 1220.000000, -24.049229 12.452760 0.000000
+trackThroughElementsAndLevels: x0=-24.049229, y0=12.452760, xt=-23.799078, yt=12.961685
+<>T = 1210.000000, -23.799078 12.961685 0.000000
+trackThroughElementsAndLevels: x0=-23.799078, y0=12.961685, xt=-23.548927, yt=13.470610
+$$$  1467, 2222, -23.65900, 13.24666
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1200.000000, -23.548927 13.470610 0.000000
+trackThroughElementsAndLevels: x0=-23.548927, y0=13.470610, xt=-23.266799, yt=13.963817
+<>T = 1190.000000, -23.266799 13.963817 0.000000
+trackThroughElementsAndLevels: x0=-23.266799, y0=13.963817, xt=-22.984671, yt=14.457025
+<>T = 1180.000000, -22.984671 14.457025 0.000000
+trackThroughElementsAndLevels: x0=-22.984671, y0=14.457025, xt=-22.702543, yt=14.950233
+<>T = 1170.000000, -22.702543 14.950233 0.000000
+trackThroughElementsAndLevels: x0=-22.702543, y0=14.950233, xt=-22.420416, yt=15.443440
+<>T = 1160.000000, -22.420416 15.443440 0.000000
+trackThroughElementsAndLevels: x0=-22.420416, y0=15.443440, xt=-22.138288, yt=15.936648
+$$$  1531, 2256, -22.41018, 15.46134
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1150.000000, -22.138288 15.936648 0.000000
+trackThroughElementsAndLevels: x0=-22.138288, y0=15.936648, xt=-21.804512, yt=16.400311
+<>T = 1140.000000, -21.804512 16.400311 0.000000
+trackThroughElementsAndLevels: x0=-21.804512, y0=16.400311, xt=-21.470735, yt=16.863974
+<>T = 1130.000000, -21.470735 16.863974 0.000000
+trackThroughElementsAndLevels: x0=-21.470735, y0=16.863974, xt=-21.136959, yt=17.327637
+$$$  1541, 2347, -21.43639, 16.91168
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1120.000000, -21.136959 17.327637 0.000000
+trackThroughElementsAndLevels: x0=-21.136959, y0=17.327637, xt=-20.774050, yt=17.770329
+<>T = 1110.000000, -20.774050 17.770329 0.000000
+trackThroughElementsAndLevels: x0=-20.774050, y0=17.770329, xt=-20.411140, yt=18.213020
+<>T = 1100.000000, -20.411140 18.213020 0.000000
+trackThroughElementsAndLevels: x0=-20.411140, y0=18.213020, xt=-20.048231, yt=18.655712
+<>T = 1090.000000, -20.048231 18.655712 0.000000
+trackThroughElementsAndLevels: x0=-20.048231, y0=18.655712, xt=-19.685322, yt=19.098403
+$$$  1609, 2362, -20.03312, 18.67414
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1080.000000, -19.685322 19.098403 0.000000
+trackThroughElementsAndLevels: x0=-19.685322, y0=19.098403, xt=-19.285326, yt=19.510692
+<>T = 1070.000000, -19.285326 19.510692 0.000000
+trackThroughElementsAndLevels: x0=-19.285326, y0=19.510692, xt=-18.885330, yt=19.922980
+<>T = 1060.000000, -18.885330 19.922980 0.000000
+trackThroughElementsAndLevels: x0=-18.885330, y0=19.922980, xt=-18.485334, yt=20.335268
+$$$  1611, 2463, -18.68447, 20.13001
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1050.000000, -18.485334 20.335268 0.000000
+trackThroughElementsAndLevels: x0=-18.485334, y0=20.335268, xt=-18.059433, yt=20.722424
+<>T = 1040.000000, -18.059433 20.722424 0.000000
+trackThroughElementsAndLevels: x0=-18.059433, y0=20.722424, xt=-17.633532, yt=21.109580
+<>T = 1030.000000, -17.633532 21.109580 0.000000
+trackThroughElementsAndLevels: x0=-17.633532, y0=21.109580, xt=-17.207631, yt=21.496736
+$$$  1679, 2465, -17.21742, 21.48784
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 1020.000000, -17.207631 21.496736 0.000000
+trackThroughElementsAndLevels: x0=-17.207631, y0=21.496736, xt=-16.757405, yt=21.857132
+<>T = 1010.000000, -16.757405 21.857132 0.000000
+trackThroughElementsAndLevels: x0=-16.757405, y0=21.857132, xt=-16.307178, yt=22.217528
+<>T = 1000.000000, -16.307178 22.217528 0.000000
+trackThroughElementsAndLevels: x0=-16.307178, y0=22.217528, xt=-15.856952, yt=22.577924
+<>T = 990.000000, -15.856952 22.577924 0.000000
+trackThroughElementsAndLevels: x0=-15.856952, y0=22.577924, xt=-15.406725, yt=22.938319
+$$$  1680, 2568, -15.48883, 22.87259
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 980.000000, -15.406725 22.938319 0.000000
+trackThroughElementsAndLevels: x0=-15.406725, y0=22.938319, xt=-14.926306, yt=23.260997
+<>T = 970.000000, -14.926306 23.260997 0.000000
+trackThroughElementsAndLevels: x0=-14.926306, y0=23.260997, xt=-14.445887, yt=23.583675
+<>T = 960.000000, -14.445887 23.583675 0.000000
+trackThroughElementsAndLevels: x0=-14.445887, y0=23.583675, xt=-13.965468, yt=23.906352
+$$$  1705, 2569, -14.04382, 23.85372
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 950.000000, -13.965468 23.906352 0.000000
+trackThroughElementsAndLevels: x0=-13.965468, y0=23.906352, xt=-13.464774, yt=24.198844
+<>T = 940.000000, -13.464774 24.198844 0.000000
+trackThroughElementsAndLevels: x0=-13.464774, y0=24.198844, xt=-12.964081, yt=24.491337
+<>T = 930.000000, -12.964081 24.491337 0.000000
+trackThroughElementsAndLevels: x0=-12.964081, y0=24.491337, xt=-12.463387, yt=24.783829
+<>T = 920.000000, -12.463387 24.783829 0.000000
+trackThroughElementsAndLevels: x0=-12.463387, y0=24.783829, xt=-11.962694, yt=25.076321
+<>T = 910.000000, -11.962694 25.076321 0.000000
+trackThroughElementsAndLevels: x0=-11.962694, y0=25.076321, xt=-11.462001, yt=25.368813
+$$$  1712, 2610, -11.93327, 25.09351
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 900.000000, -11.462001 25.368813 0.000000
+trackThroughElementsAndLevels: x0=-11.462001, y0=25.368813, xt=-10.930677, yt=25.608872
+<>T = 890.000000, -10.930677 25.608872 0.000000
+trackThroughElementsAndLevels: x0=-10.930677, y0=25.608872, xt=-10.399354, yt=25.848932
+$$$  1753, 2619, -10.62440, 25.74725
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 880.000000, -10.399354 25.848932 0.000000
+trackThroughElementsAndLevels: x0=-10.399354, y0=25.848932, xt=-9.857975, yt=26.066735
+<>T = 870.000000, -9.857975 26.066735 0.000000
+trackThroughElementsAndLevels: x0=-9.857975, y0=26.066735, xt=-9.316597, yt=26.284539
+<>T = 860.000000, -9.316597 26.284539 0.000000
+trackThroughElementsAndLevels: x0=-9.316597, y0=26.284539, xt=-8.775218, yt=26.502343
+<>T = 850.000000, -8.775218 26.502343 0.000000
+trackThroughElementsAndLevels: x0=-8.775218, y0=26.502343, xt=-8.233839, yt=26.720146
+<>T = 840.000000, -8.233839 26.720146 0.000000
+trackThroughElementsAndLevels: x0=-8.233839, y0=26.720146, xt=-7.692460, yt=26.937950
+$$$  1756, 2679, -8.10599, 26.77158
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 830.000000, -7.692460 26.937950 0.000000
+trackThroughElementsAndLevels: x0=-7.692460, y0=26.937950, xt=-7.128273, yt=27.099060
+<>T = 820.000000, -7.128273 27.099060 0.000000
+trackThroughElementsAndLevels: x0=-7.128273, y0=27.099060, xt=-6.564086, yt=27.260171
+$$$  1765, 2684, -6.99419, 27.13735
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 810.000000, -6.564086 27.260171 0.000000
+trackThroughElementsAndLevels: x0=-6.564086, y0=27.260171, xt=-5.993150, yt=27.397649
+<>T = 800.000000, -5.993150 27.397649 0.000000
+trackThroughElementsAndLevels: x0=-5.993150, y0=27.397649, xt=-5.422215, yt=27.535127
+<>T = 790.000000, -5.422215 27.535127 0.000000
+trackThroughElementsAndLevels: x0=-5.422215, y0=27.535127, xt=-4.851279, yt=27.672604
+<>T = 780.000000, -4.851279 27.672604 0.000000
+trackThroughElementsAndLevels: x0=-4.851279, y0=27.672604, xt=-4.280343, yt=27.810082
+<>T = 770.000000, -4.280343 27.810082 0.000000
+trackThroughElementsAndLevels: x0=-4.280343, y0=27.810082, xt=-3.709408, yt=27.947560
+$$$  1768, 2697, -4.09765, 27.85407
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 760.000000, -3.709408 27.947560 0.000000
+trackThroughElementsAndLevels: x0=-3.709408, y0=27.947560, xt=-3.124075, yt=28.025250
+$$$  1777, 2702, -3.22854, 28.01138
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 750.000000, -3.124075 28.025250 0.000000
+trackThroughElementsAndLevels: x0=-3.124075, y0=28.025250, xt=-2.537116, yt=28.090680
+<>T = 740.000000, -2.537116 28.090680 0.000000
+trackThroughElementsAndLevels: x0=-2.537116, y0=28.090680, xt=-1.950156, yt=28.156111
+<>T = 730.000000, -1.950156 28.156111 0.000000
+trackThroughElementsAndLevels: x0=-1.950156, y0=28.156111, xt=-1.363197, yt=28.221541
+<>T = 720.000000, -1.363197 28.221541 0.000000
+trackThroughElementsAndLevels: x0=-1.363197, y0=28.221541, xt=-0.776238, yt=28.286972
+<>T = 710.000000, -0.776238 28.286972 0.000000
+trackThroughElementsAndLevels: x0=-0.776238, y0=28.286972, xt=-0.189278, yt=28.352402
+<>T = 700.000000, -0.189278 28.352402 0.000000
+trackThroughElementsAndLevels: x0=-0.189278, y0=28.352402, xt=0.397681, yt=28.417833
+$$$  1776, 2713, 0.00000, 28.37350
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 690.000000, 0.397681 28.417833 0.000000
+trackThroughElementsAndLevels: x0=0.397681, y0=28.417833, xt=0.992863, yt=28.409504
+<>T = 680.000000, 0.992863 28.409504 0.000000
+trackThroughElementsAndLevels: x0=0.992863, y0=28.409504, xt=1.588045, yt=28.401175
+<>T = 670.000000, 1.588045 28.401175 0.000000
+trackThroughElementsAndLevels: x0=1.588045, y0=28.401175, xt=2.183226, yt=28.392846
+<>T = 660.000000, 2.183226 28.392846 0.000000
+trackThroughElementsAndLevels: x0=2.183226, y0=28.392846, xt=2.778408, yt=28.384517
+<>T = 650.000000, 2.778408 28.384517 0.000000
+trackThroughElementsAndLevels: x0=2.778408, y0=28.384517, xt=3.373590, yt=28.376188
+<>T = 640.000000, 3.373590 28.376188 0.000000
+trackThroughElementsAndLevels: x0=3.373590, y0=28.376188, xt=3.968772, yt=28.367859
+$$$  1769, 2703, 3.85964, 28.36939
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 630.000000, 3.968772 28.367859 0.000000
+trackThroughElementsAndLevels: x0=3.968772, y0=28.367859, xt=4.562907, yt=28.284737
+$$$  1764, 2695, 4.09820, 28.34975
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 620.000000, 4.562907 28.284737 0.000000
+trackThroughElementsAndLevels: x0=4.562907, y0=28.284737, xt=5.155301, yt=28.189172
+<>T = 610.000000, 5.155301 28.189172 0.000000
+trackThroughElementsAndLevels: x0=5.155301, y0=28.189172, xt=5.747695, yt=28.093606
+<>T = 600.000000, 5.747695 28.093606 0.000000
+trackThroughElementsAndLevels: x0=5.747695, y0=28.093606, xt=6.340089, yt=27.998041
+<>T = 590.000000, 6.340089 27.998041 0.000000
+trackThroughElementsAndLevels: x0=6.340089, y0=27.998041, xt=6.932483, yt=27.902476
+$$$  1806, 2694, 6.68011, 27.94319
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 580.000000, 6.932483 27.902476 0.000000
+trackThroughElementsAndLevels: x0=6.932483, y0=27.902476, xt=7.516871, yt=27.757282
+$$$  1764, 2694, 7.39137, 27.78846
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 570.000000, 7.516871 27.757282 0.000000
+trackThroughElementsAndLevels: x0=7.516871, y0=27.757282, xt=8.098218, yt=27.599849
+$$$  1757, 2685, 8.06326, 27.60932
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 560.000000, 8.098218 27.599849 0.000000
+trackThroughElementsAndLevels: x0=8.098218, y0=27.599849, xt=8.676268, yt=27.430241
+$$$  1752, 2677, 8.11301, 27.59551
+$$$  1774, 2676, 8.56570, 27.46268
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 550.000000, 8.676268 27.430241 0.000000
+trackThroughElementsAndLevels: x0=8.676268, y0=27.430241, xt=9.250766, yt=27.248525
+<>T = 540.000000, 9.250766 27.248525 0.000000
+trackThroughElementsAndLevels: x0=9.250766, y0=27.248525, xt=9.825264, yt=27.066810
+<>T = 530.000000, 9.825264 27.066810 0.000000
+trackThroughElementsAndLevels: x0=9.825264, y0=27.066810, xt=10.399761, yt=26.885095
+<>T = 520.000000, 10.399761 26.885095 0.000000
+trackThroughElementsAndLevels: x0=10.399761, y0=26.885095, xt=10.974259, yt=26.703379
+<>T = 510.000000, 10.974259 26.703379 0.000000
+trackThroughElementsAndLevels: x0=10.974259, y0=26.703379, xt=11.548756, yt=26.521664
+<>T = 500.000000, 11.548756 26.521664 0.000000
+trackThroughElementsAndLevels: x0=11.548756, y0=26.521664, xt=12.123254, yt=26.339948
+$$$  1771, 2707, 11.96715, 26.38932
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 490.000000, 12.123254 26.339948 0.000000
+trackThroughElementsAndLevels: x0=12.123254, y0=26.339948, xt=12.674917, yt=26.086040
+$$$  1742, 2666, 12.26177, 26.27619
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 480.000000, 12.674917 26.086040 0.000000
+trackThroughElementsAndLevels: x0=12.674917, y0=26.086040, xt=13.221261, yt=25.820577
+<>T = 470.000000, 13.221261 25.820577 0.000000
+trackThroughElementsAndLevels: x0=13.221261, y0=25.820577, xt=13.767606, yt=25.555114
+<>T = 460.000000, 13.767606 25.555114 0.000000
+trackThroughElementsAndLevels: x0=13.767606, y0=25.555114, xt=14.313951, yt=25.289651
+<>T = 450.000000, 14.313951 25.289651 0.000000
+trackThroughElementsAndLevels: x0=14.313951, y0=25.289651, xt=14.860296, yt=25.024188
+<>T = 440.000000, 14.860296 25.024188 0.000000
+trackThroughElementsAndLevels: x0=14.860296, y0=25.024188, xt=15.406640, yt=24.758725
+<>T = 430.000000, 15.406640 24.758725 0.000000
+trackThroughElementsAndLevels: x0=15.406640, y0=24.758725, xt=15.952985, yt=24.493263
+$$$  1737, 2659, 15.58995, 24.66965
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 420.000000, 15.952985 24.493263 0.000000
+trackThroughElementsAndLevels: x0=15.952985, y0=24.493263, xt=16.465971, yt=24.159144
+$$$  1684, 2575, 16.17909, 24.34599
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 410.000000, 16.465971 24.159144 0.000000
+trackThroughElementsAndLevels: x0=16.465971, y0=24.159144, xt=16.971959, yt=23.814282
+<>T = 400.000000, 16.971959 23.814282 0.000000
+trackThroughElementsAndLevels: x0=16.971959, y0=23.814282, xt=17.477947, yt=23.469419
+<>T = 390.000000, 17.477947 23.469419 0.000000
+trackThroughElementsAndLevels: x0=17.477947, y0=23.469419, xt=17.983934, yt=23.124557
+<>T = 380.000000, 17.983934 23.124557 0.000000
+trackThroughElementsAndLevels: x0=17.983934, y0=23.124557, xt=18.489922, yt=22.779694
+<>T = 370.000000, 18.489922 22.779694 0.000000
+trackThroughElementsAndLevels: x0=18.489922, y0=22.779694, xt=18.995910, yt=22.434832
+$$$  1682, 2572, 18.91952, 22.48689
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 360.000000, 18.995910 22.434832 0.000000
+trackThroughElementsAndLevels: x0=18.995910, y0=22.434832, xt=19.465784, yt=22.036982
+<>T = 350.000000, 19.465784 22.036982 0.000000
+trackThroughElementsAndLevels: x0=19.465784, y0=22.036982, xt=19.935658, yt=21.639133
+$$$  1616, 2474, 19.66098, 21.87171
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 340.000000, 19.935658 21.639133 0.000000
+trackThroughElementsAndLevels: x0=19.935658, y0=21.639133, xt=20.388867, yt=21.221601
+<>T = 330.000000, 20.388867 21.221601 0.000000
+trackThroughElementsAndLevels: x0=20.388867, y0=21.221601, xt=20.842076, yt=20.804070
+<>T = 320.000000, 20.842076 20.804070 0.000000
+trackThroughElementsAndLevels: x0=20.842076, y0=20.804070, xt=21.295285, yt=20.386539
+<>T = 310.000000, 21.295285 20.386539 0.000000
+trackThroughElementsAndLevels: x0=21.295285, y0=20.386539, xt=21.748494, yt=19.969007
+<>T = 300.000000, 21.748494 19.969007 0.000000
+trackThroughElementsAndLevels: x0=21.748494, y0=19.969007, xt=22.201703, yt=19.551476
+$$$  1612, 2467, 21.89494, 19.83409
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 290.000000, 22.201703 19.551476 0.000000
+trackThroughElementsAndLevels: x0=22.201703, y0=19.551476, xt=22.611188, yt=19.086484
+<>T = 280.000000, 22.611188 19.086484 0.000000
+trackThroughElementsAndLevels: x0=22.611188, y0=19.086484, xt=23.020673, yt=18.621493
+$$$  1546, 2371, 22.73948, 18.94080
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 270.000000, 23.020673 18.621493 0.000000
+trackThroughElementsAndLevels: x0=23.020673, y0=18.621493, xt=23.410681, yt=18.139349
+<>T = 260.000000, 23.410681 18.139349 0.000000
+trackThroughElementsAndLevels: x0=23.410681, y0=18.139349, xt=23.800689, yt=17.657205
+<>T = 250.000000, 23.800689 17.657205 0.000000
+trackThroughElementsAndLevels: x0=23.800689, y0=17.657205, xt=24.190696, yt=17.175061
+<>T = 240.000000, 24.190696 17.175061 0.000000
+trackThroughElementsAndLevels: x0=24.190696, y0=17.175061, xt=24.580704, yt=16.692917
+$$$  1534, 2351, 24.47294, 16.82614
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 230.000000, 24.580704 16.692917 0.000000
+trackThroughElementsAndLevels: x0=24.580704, y0=16.692917, xt=24.930320, yt=16.178100
+<>T = 220.000000, 24.930320 16.178100 0.000000
+trackThroughElementsAndLevels: x0=24.930320, y0=16.178100, xt=25.279935, yt=15.663283
+<>T = 210.000000, 25.279935 15.663283 0.000000
+trackThroughElementsAndLevels: x0=25.279935, y0=15.663283, xt=25.629551, yt=15.148466
+$$$  1478, 2275, 25.30952, 15.61971
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 200.000000, 25.629551 15.148466 0.000000
+trackThroughElementsAndLevels: x0=25.629551, y0=15.148466, xt=25.946820, yt=14.611682
+<>T = 190.000000, 25.946820 14.611682 0.000000
+trackThroughElementsAndLevels: x0=25.946820, y0=14.611682, xt=26.264088, yt=14.074898
+<>T = 180.000000, 26.264088 14.074898 0.000000
+trackThroughElementsAndLevels: x0=26.264088, y0=14.074898, xt=26.581357, yt=13.538114
+<>T = 170.000000, 26.581357 13.538114 0.000000
+trackThroughElementsAndLevels: x0=26.581357, y0=13.538114, xt=26.898626, yt=13.001330
+$$$  1450, 2226, 26.60852, 13.49217
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 160.000000, 26.898626 13.001330 0.000000
+trackThroughElementsAndLevels: x0=26.898626, y0=13.001330, xt=27.170925, yt=12.437967
+<>T = 150.000000, 27.170925 12.437967 0.000000
+trackThroughElementsAndLevels: x0=27.170925, y0=12.437967, xt=27.443224, yt=11.874603
+$$$  1398, 2158, 27.38838, 11.98808
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 140.000000, 27.443224 11.874603 0.000000
+trackThroughElementsAndLevels: x0=27.443224, y0=11.874603, xt=27.691925, yt=11.299833
+<>T = 130.000000, 27.691925 11.299833 0.000000
+trackThroughElementsAndLevels: x0=27.691925, y0=11.299833, xt=27.940626, yt=10.725064
+<>T = 120.000000, 27.940626 10.725064 0.000000
+trackThroughElementsAndLevels: x0=27.940626, y0=10.725064, xt=28.189328, yt=10.150294
+<>T = 110.000000, 28.189328 10.150294 0.000000
+trackThroughElementsAndLevels: x0=28.189328, y0=10.150294, xt=28.438029, yt=9.575525
+$$$  1364, 2098, 28.28147, 9.93735
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 100.000000, 28.438029 9.575525 0.000000
+trackThroughElementsAndLevels: x0=28.438029, y0=9.575525, xt=28.638578, yt=8.979920
+<>T = 90.000000, 28.638578 8.979920 0.000000
+trackThroughElementsAndLevels: x0=28.638578, y0=8.979920, xt=28.839127, yt=8.384315
+<>T = 80.000000, 28.839127 8.384315 0.000000
+trackThroughElementsAndLevels: x0=28.839127, y0=8.384315, xt=29.039677, yt=7.788711
+$$$  1310, 2026, 28.92753, 8.12178
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 70.000000, 29.039677 7.788711 0.000000
+trackThroughElementsAndLevels: x0=29.039677, y0=7.788711, xt=29.202803, yt=7.180505
+<>T = 60.000000, 29.202803 7.180505 0.000000
+trackThroughElementsAndLevels: x0=29.202803, y0=7.180505, xt=29.365929, yt=6.572300
+<>T = 50.000000, 29.365929 6.572300 0.000000
+trackThroughElementsAndLevels: x0=29.365929, y0=6.572300, xt=29.529056, yt=5.964094
+$$$  1270, 1960, 29.46515, 6.20237
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 40.000000, 29.529056 5.964094 0.000000
+trackThroughElementsAndLevels: x0=29.529056, y0=5.964094, xt=29.653967, yt=5.345639
+<>T = 30.000000, 29.653967 5.345639 0.000000
+trackThroughElementsAndLevels: x0=29.653967, y0=5.345639, xt=29.778879, yt=4.727184
+<>T = 20.000000, 29.778879 4.727184 0.000000
+trackThroughElementsAndLevels: x0=29.778879, y0=4.727184, xt=29.903791, yt=4.108729
+<>T = 10.000000, 29.903791 4.108729 0.000000
+trackThroughElementsAndLevels: x0=29.903791, y0=4.108729, xt=30.028703, yt=3.490274
+$$$  1236, 1907, 29.90564, 4.09955
+$$$ wght1 = 0.000000, wght2 = 1.000000, zt = 0.000000, zL = -50.000000, zR = 0.000000
+<>T = 0.000000, 30.028703 3.490274 0.000000
+essie-coa-11702:~/src/gschism> 

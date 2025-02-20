@@ -500,21 +500,16 @@ __device__ void Element::interpolateVelocities(double xt, double yt, double zt,
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
 
-   auto n0 = nodes[0];
-   auto n1 = nodes[1];
-   auto n2 = nodes[2];
-   auto n3 = nodes[3];
-   
+
    // First step is to compute the shape coordinates of (xt,yt)
    computeShapeCoords(xt, yt, shpCoord, false);
-   
-   assert(min(min(shpCoord[0], shpCoord[1]), shpCoord[2]) > -small);
+   assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
    // Second step is to find the level that contains zt
    // Uses a binary search to find the level
    // Note that z coordinates are interpolated from their values at the nodes of the element.
    int L = kbe;   // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
-   int R = nvrt;
+   int R = nvrt - 1;
 
    // Get the z coordinates at the nodes of the element at the levels L and R
    double zLAtNodes[4], zRAtNodes[4];
@@ -524,38 +519,49 @@ __device__ void Element::interpolateVelocities(double xt, double yt, double zt,
    double zL = interpolate(shpCoord, zLAtNodes);
    double zR = interpolate(shpCoord, zRAtNodes);
    
-   // Perform a binary search to find the levels between L and R that contain zt
-   assert(zL <= zt && zR >= zt);
-   while (R - L > 1) {
-      int M = (L + R) / 2;
-
-      double zMAtNodes[4];
-      getNodalValues(M, &Node::compZCoord, zMAtNodes);
-      double zM = interpolate(shpCoord, zMAtNodes);
-      if (zM < zt) 
-      {
-         L = M;
-         zL = zM;
-      }
-      else 
-      {
-         R = M;
-         zR = zM;
-      }
+   // Interpolates vertically the velocities
+   double wght1, wght2;
+   if (zt<=zL) {
+      wght1 = 1.0;
+      wght2 = 0.0;
    }
-   assert(L == R-1);
-   // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
+   else if (zt>=zR) {
+      wght1 = 0.0;
+      wght2 = 1.0;
+   }
+   else {
+      // Perform a binary search to find the levels between L and R that contain zt
+      while (R - L > 1) {
+         int M = (L + R) / 2;
 
+         double zMAtNodes[4];
+         getNodalValues(M, &Node::compZCoord, zMAtNodes);
+         double zM = interpolate(shpCoord, zMAtNodes);
+         if (zM < zt) 
+         {
+            L = M;
+            zL = zM;
+         }
+         else 
+         {
+            R = M;
+            zR = zM;
+         }
+      }
+      assert(L == R-1);
+      // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
 
+      wght2 = (zt - zL)/(zR - zL);
+      wght1 = 1.0 - wght2;
+   }
+   printf("$$$ wght1 = %f, wght2 = %f, zt = %f, zL = %f, zR = %f\n", wght1, wght2, zt, zL, zR);
    // Interpolate horizontally and vertically the velocities at the two levels L, R
-   const double wght2 = (zt - zL)/(zR - zL);
-   const double wght1 = 1.0 - wght2;
    uuint = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
    vvint = wght1*interpolate(L, shpCoord, &Node::v2) + wght2*interpolate(R, shpCoord, &Node::v2);
-   wwint = wght1*interpolate(L, shpCoord, &Node::w2) + wght2*interpolate(R, shpCoord, &Node::w2);
+   wwint = wght1*interpolate(L, shpCoord, &Node::w2) + wght2*interpolate(R, shpCoord, &Node::w2);   
 
    // Neither of the interpolated velocities should be NaN
-   assert(!isnan(uuint) && !isnan(vvint) && !isnan(wwint));
+   assert(!isnan(uuint) && !isnan(vvint) && !isnan(wwint) && "NaN velocities in interpolateVelocities");
 
 }
 
@@ -598,10 +604,16 @@ __inline__ __device__ bool Side::btrack(
    double time_rm = dt; // Remaining time
 
 
+   // // Initialize outputs
+   // for(int i = 0; i < 4 + N_TRACERS; i++) {
+   //    sclr[i] = 0.0;
+   // }
+
+
    // Initial velocities
    uuint = u2[jlev];
    vvint = v2[jlev];
-   wwint = 0.5*(n1->w2[jlev] + n2->w2[jlev]);  // vertical velocity at the side center  XXX why W in nodes and u2,v2 in sides?
+   wwint = 0.5*(n1->w2[jlev] + n2->w2[jlev]);  // vertical velocity at the side center  
 
 
    // Find the element that is in the direction opposite to the velocity
@@ -908,8 +920,10 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.isbnd = isbnd[i];
 
 // XXXX
-for (int k = 0; k < nvrt; k++) {node.w2[k] = 0.1; node.u2[k] = -0.2 ; node.v2[k] = 0.1 ;}
-
+constexpr double rot_per=3000.0;
+constexpr double rot_f=2.0*pi/rot_per;
+for (int k = 0; k < nvrt; k++) {node.w2[k] = 0.0; node.u2[k] = -node.y*rot_f; node.v2[k] = node.x*rot_f ;}
+// XXXXX
    }
 
    printf("Processing %d sides\n", ns);
@@ -965,13 +979,18 @@ for (int k = 0; k < nvrt; k++) {node.w2[k] = 0.1; node.u2[k] = -0.2 ; node.v2[k]
          side.elems[1] = nullptr;
       }
 
-// XXXX
-for (int k = 0; k < nvrt; k++) side.u2[k] = -0.2 ;
-for (int k = 0; k < nvrt; k++) side.v2[k] = 0.1 ;
+
 
       // Compute the center of the side
       side.xc = 0.5*(side.n1->x + side.n2->x);
       side.yc = 0.5*(side.n1->y + side.n2->y);
+
+// XXXX
+constexpr double rot_per=3000.0;
+constexpr double rot_f=2.0*pi/rot_per;
+for (int k = 0; k < nvrt; k++) side.u2[k] = -side.yc*rot_f ;
+for (int k = 0; k < nvrt; k++) side.v2[k] =  side.xc*rot_f ;
+// XXXXX      
 
       // Compute the z level at the center of the side
       for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->znl[k] + side.n2->znl[k]);
