@@ -266,11 +266,13 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
                                                        double &uuint, double &vvint, double &wwint, 
                                                        Element *&nextElem,
                                                        int &jlev, double &dt) {
-   printf("trackThroughElementsAndLevels: x0=%f, y0=%f, xt=%f, yt=%f\n", x0, y0, xt, yt);
+// printf("trackThroughElementsAndLevels: x0=%f, y0=%f, xt=%f, yt=%f\n", x0, y0, xt, yt);
    // First thing is to check if the target point is inside the element. If it is there is nothing
    // else to do.
-   if (containsPoint(xt, yt)) return true;
-
+   if (containsPoint(xt, yt)) {
+      nextElem->interpolateVelocities(xt, yt, zt, uuint, vvint, wwint);
+      return true;
+   }
 
    Side *side = nullptr;
 
@@ -554,7 +556,8 @@ __device__ void Element::interpolateVelocities(double xt, double yt, double zt,
       wght2 = (zt - zL)/(zR - zL);
       wght1 = 1.0 - wght2;
    }
-   printf("$$$ wght1 = %f, wght2 = %f, zt = %f, zL = %f, zR = %f\n", wght1, wght2, zt, zL, zR);
+// printf("$$$ wght1 = %f, wght2 = %f, zt = %f, zL = %f, zR = %f\n", wght1, wght2, zt, zL, zR);
+// printf("$$$ shpCoord = %f, %f, %f, %f\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    uuint = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
    vvint = wght1*interpolate(L, shpCoord, &Node::v2) + wght2*interpolate(R, shpCoord, &Node::v2);
@@ -620,7 +623,7 @@ __inline__ __device__ bool Side::btrack(
    Element* curElem = findElementTowards(uuint, vvint);
 
 printf("$$$  %d, %d, %.5f, %.5f\n",  curElem->idx,idx, x0, y0)   ;
-   const int MAX_ITERATIONS = 1000;
+   const int MAX_ITERATIONS = 100000; // XXX 1000
    Element* nextElem = curElem;
    int iter = 0;
    while(true) {
@@ -631,6 +634,7 @@ printf("$$$  %d, %d, %.5f, %.5f\n",  curElem->idx,idx, x0, y0)   ;
       double xt = x0 - dtb*uuint;
       double yt = y0 - dtb*vvint;
       double zt = z0 - dtb*wwint;
+
 
       bool found = curElem->trackThroughElementsAndLevels(x0, y0, z0, xt, yt, zt, uuint, vvint, wwint, nextElem, jlev, dtb);
       assert(found && "Backtracking failed in btrack");

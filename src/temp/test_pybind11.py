@@ -13,11 +13,11 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
-# tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
-tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -27,6 +27,7 @@ tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -329,14 +330,14 @@ if __name__ == "__main__":
             
                 # Add time points and labels
         plt.plot(time_points[:,0], time_points[:,1], 'r.', markersize=8)
-        for i, (x, y) in enumerate(time_points):
-            plt.annotate(f't={times[i]:.3f}', 
-                    (x, y),
-                    xytext=(5, 5),
-                    textcoords='offset points',
-                    color='red',
-                    fontsize=8,
-                    alpha=0.5)
+        # for i, (x, y) in enumerate(time_points):
+        #     plt.annotate(f't={times[i]:.3f}', 
+        #             (x, y),
+        #             xytext=(5, 5),
+        #             textcoords='offset points',
+        #             color='red',
+        #             fontsize=8,
+        #             alpha=0.5)
         
  
         
@@ -526,7 +527,7 @@ if __name__ == "__main__":
                                        localNodePart, localElemPart, localSidePart))
 
             # test((1,), (1,), (-2.21334,  0.76058, -1.0))
-            test((1,), (1,), (52.0,  1.0, -1.0))
+            test((1,), (1,), (12.0,  1.0, -1.0))
 
     # Launch kernel on each GPU
     launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)

@@ -176,6 +176,7 @@ struct Element {
    __device__ double interpolate(int level, const double shapeCoords[4], double (Node::* field)[nvrt]) const {
       double values[4];
       getNodalValues(level, field, values);
+// printf("R$$ shapeCoords = %f, %f, %f, %f, values = %f, %f, %f, %f, res = %f\n", shapeCoords[0], shapeCoords[1], shapeCoords[2], shapeCoords[3], values[0], values[1], values[2], values[3], shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3]);
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
    }
 
@@ -493,10 +494,10 @@ class Mesh {
             // Choose the first side
             Side *side = elem->sides[0];
             int jlev = 5;  
-            RECORDAR:
-            - con y=0 no encuentra el triangulo
-            - jlev = 5, z = 0.1...
-            side->btrack(5, 3000.0, 10, nullptr, uuint, vvint, wwint);
+            // RECORDAR:
+            // - con y=0 no encuentra el triangulo
+            // - jlev = 5, z = 0.1...
+            side->btrack(5, 3000.0, 3.1, nullptr, uuint, vvint, wwint);
 
          }
       }
