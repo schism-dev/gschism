@@ -19,11 +19,21 @@ constexpr int landNode = -2;
 
 constexpr double pi = 3.14159265358979323846;
 
+constexpr double rearth_eq   = 6378206.4; //[m] XXX THESE should be in param.nml
+constexpr double rearth_pole = 6378206.4; //[m]
+
 constexpr double eps = 1.019e-2; // Nudging factor
 
-__inline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
+__forceinline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
   // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
   return 0.5*((x1-x3)*(y2-y3) - (x2-x3)*(y1-y3));
+}
+
+
+__forceinline__ __device__ void crossProduct(double x1, double y1, double z1, double x2, double y2, double z2, double &x3, double &y3, double &z3) {
+   x3 = y1*z2 - y2*z1;
+   y3 = x2*z1 - x1*z2;
+   z3 = x1*y2 - x2*y1;
 }
 
 __inline__ __device__ void Error(const char* msg) {
@@ -35,9 +45,130 @@ struct Tracers {
     double tracer[N_TRACERS];
 };
 
+// VECTOR/POINT operations ---------------------------------------------------------------------------
+
+typedef double2 Vector2;
+typedef double3 Vector3;
+
+__device__ __host__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
+    return make_double2(a.x + b.x, a.y + b.y);
+}
+
+__device__ __host__ __forceinline__ double2 operator-(const double2& a, const double2& b) {
+    return make_double2(a.x - b.x, a.y - b.y);
+}
+
+__device__ __host__ __forceinline__ double2 operator*(const double2& v, double s) {
+    return make_double2(v.x * s, v.y * s);
+}
+
+__device__ __host__ __forceinline__ double2 operator*(double s, const double2& v) {
+    return v * s;  // reuse the previous operator
+}
+
+__device__ __host__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
+    return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+__device__ __host__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
+    return make_double3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+__device__ __host__ __forceinline__ double3 operator*(const double3& v, double s) {
+    return make_double3(v.x * s, v.y * s, v.z * s);
+}
+
+__device__ __host__ __forceinline__ double3 operator*(double s, const double3& v) {
+    return v * s;
+}
+
+// ------------------------------------------------------------------------------------------------
+
 
 struct Frame {
-}; 
+   double _t[9]; // t stands for tensor.
+
+   // Access the tensor in Fortran order
+   __device__ __forceinline__ double& t(int i, int j) { return _t[i + 3*j]; }
+
+   __device__ __forceinline__ double t(int i, int j) const { return _t[i + 3*j]; }
+
+   __device__ void update(double ar1, double ar2) { // XXX use lat, lon instead of ar1, ar2?
+
+      double sin_ar1, cos_ar1, sin_ar2, cos_ar2;
+      sincos(ar1, &sin_ar1, &cos_ar1); // These functions are faster than sin(ar1) and cos(ar1).
+      sincos(ar2, &sin_ar2, &cos_ar2);
+
+      t(0,0) = -sin_ar1;
+      t(1,0) =  cos_ar1;
+      t(2,0) =  0.0;
+      t(0,1) = -cos_ar1*sin_ar2;
+      t(1,1) = -sin_ar1*sin_ar2;
+
+      t(2,1) = (rearth_pole/rearth_eq)*cos_ar2;
+
+      const double ar4 = sqrt(t(0,1)*t(0,1) + t(1,1)*t(1,1) + t(2,1)*t(2,1));
+      assert (ar4!=0.0 && "GRID: ar4=0");
+
+      const double ar4_inv = 1.0/ar4;
+      t(0,1) = t(0,1)*ar4_inv;
+      t(1,1) = t(1,1)*ar4_inv;
+      t(2,1) = t(2,1)*ar4_inv;
+
+      // The third vector is the cross product of the first two
+      crossProduct(t(0,0), t(1,0), t(2,0), 
+                   t(0,1), t(1,1), t(2,1), 
+                   t(0,2), t(1,2), t(2,2));
+   }
+
+
+   __forceinline__ __device__ void project_hvec(Vector2 const &vec0, Frame const &frameout, Vector2 &vec1) const {
+   // Do plane rotation of a vector (i.e., assuming z-axes are same)
+   // Inputs:
+   //        vec0: vel. in this frame;
+   //        frameout: Output frame;
+   // Output: 
+   //        vec1: vel. in new frame  
+    
+   auto const fo = frameout;
+
+   // Since frame tensors are orthogonal, the transpose is the inverse. That's why the indices
+   // of t and fo.t are the same.
+   vec1.x = vec0.x*(t(0,0)*fo.t(0,0) + t(1,0)*fo.t(1,0) + t(2,0)*fo.t(2,0)) +
+            vec0.y*(t(0,1)*fo.t(0,0) + t(1,1)*fo.t(1,0) + t(2,1)*fo.t(2,0));
+
+   vec1.y = vec0.x*(t(0,0)*fo.t(0,1) + t(1,0)*fo.t(1,1) + t(2,0)*fo.t(2,1)) +
+            vec0.y*(t(0,1)*fo.t(0,1) + t(1,1)*fo.t(1,1) + t(2,1)*fo.t(2,1));
+   }
+
+   __forceinline__ __device__ void G2L(Vector3 const &vi, Vector3 &vo) const {
+      // Transform a vector from global to local frame
+      vo.x = vi.x*t(0,0) + vi.y*t(1,0) + vi.z*t(2,0);
+      vo.y = vi.x*t(0,1) + vi.y*t(1,1) + vi.z*t(2,1);
+      vo.z = vi.x*t(0,2) + vi.y*t(1,2) + vi.z*t(2,2);
+   }
+
+   __forceinline__ __device__ void L2G(Vector3 const &vi, Vector3 &vo) const {
+      // Transform a vector from local to global frame
+      vo.x = vi.x*t(0,0) + vi.y*t(0,1) + vi.z*t(0,2);
+      vo.y = vi.x*t(1,0) + vi.y*t(1,1) + vi.z*t(1,2);
+      vo.z = vi.x*t(2,0) + vi.y*t(2,1) + vi.z*t(2,2);
+   }   
+
+   __forceinline__ __device__ void G2L(Point3 const &pi, Point3 const &origin0, Point3 &po) const {
+   // Tranformation a point from global to local frame     
+
+      G2L(pi - origin0, po);
+   }
+
+   __forceinline__ __device__ void L2G(Point3 const &pi, Point3 const &origin0, Point3 &po) const {
+   // Tranformation a point from local to global frame      
+
+      L2G(pi, po);
+      po = po + origin0;
+   }
+
+};
 
 
 // Forward declarations
@@ -92,6 +223,15 @@ struct Element {
    }
 
    __device__ bool computeShapeCoords(double &xt, double &yt, double shpCoords[4], bool fixNegShapeCoords = false) const;
+
+   __device__ void setFrame(void) {
+
+      double ar1, ar2;
+      compute_ll(xc,yc,zc,ar1,ar2)
+
+      frame.update(ar1, ar2);
+        
+    }
 
    __device__ bool findNextIntersection(double x2, double y2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
@@ -163,6 +303,7 @@ struct Element {
    __device__ double interpolate(int level, const double shapeCoords[4], double (Node::*func)(int) const) const {
       double values[4];
       getNodalValues(level, func, values);
+
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
    }
 
@@ -176,12 +317,17 @@ struct Element {
    __device__ double interpolate(int level, const double shapeCoords[4], double (Node::* field)[nvrt]) const {
       double values[4];
       getNodalValues(level, field, values);
-// printf("R$$ shapeCoords = %f, %f, %f, %f, values = %f, %f, %f, %f, res = %f\n", shapeCoords[0], shapeCoords[1], shapeCoords[2], shapeCoords[3], values[0], values[1], values[2], values[3], shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3]);
+
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
    }
 
-   // ------------------------------------------------------------------------------------------------
 
+   // __device__ double mean(double (Node::*func)(int) const) const {
+   //    double values[4];
+   //    getNodalValues(level, func, values);
+   //    return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
+   // }
+   // ------------------------------------------------------------------------------------------------
 
    __device__ bool globalToLocal(double xt, double yt, double &xlocal, double &ylocal) const {
       // Convert global coordinates to local coordinates
@@ -208,6 +354,12 @@ struct Element {
 };
 
 
+struct SideBoundary {
+   int isbnd;             // Is this a boundary side? Which segment?
+   int bdysd;             // Boundary side flag
+};
+
+
 struct Side {
 
    // Geometry information
@@ -220,17 +372,20 @@ struct Side {
    double zc[nvrt];       // Side center z-coord at each vertical level
    double depth;          // Depth at side center
 
+   SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
+                          // this is nullptr
 
-   int isbnd;             // Is this node on a boundary?
-   int bdysd;             // Boundary side flag
+   int isbnd XXX;             // Is this a boundary side? Which segment?
+   int bdysd XXX???;             // Boundary side flag
    int kb;                // Bottom index of the side
    bool idry;             // True if the side is dry
  
-   double nx, ny;         // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
+   Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
 
    // Physical information
-   double u2[nvrt], v2[nvrt]; // Horizontal velocity
+   Vector2 u2;                // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
+   double u2[nvrt], v2[nvrt]; XXXX // Horizontal velocity
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
@@ -266,17 +421,18 @@ struct Side {
       if (dot_prod1*dot_prod2 > 0.0) return elems[0];
       else                           return elems[1];
 
-  
-  
-  
+ 
    }
 
-   __inline__ __device__ Element* otherElement(Element* elem) {
+   __forceinline__ __device__ Element* otherElement(Element* elem) {
       // Given an element, returns the other element that shares this side
-      return elems[0] == elem ? elems[1] : elems[0];
+      return (elems[0] == elem) ? elems[1] : elems[0];
    }
 
-
+   __forceinline__ __device__ Node* otherNode(Node* node) {
+      // Given a node, returns the other node that shares this side
+      return (n1 == node) ? n2 : n1;
+   }
  
    __inline__ __device__ bool btrack(int jlev, double dt, double dtbk, double* sclr,
                                      double &uuint, double &vvint, double &wwint) const;
@@ -308,7 +464,7 @@ struct Node {
 
    int idry;     // True if the node is dry
 
-   int isbnd;    // Is this node on a boundary?
+   int isbnd;    // Is this node on a boundary? Which segment?
 
    // Physical information
    Tracers tr_nd0[nvrt]; // Initial tracer conc. at nodes

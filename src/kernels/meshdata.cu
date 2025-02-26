@@ -203,7 +203,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    double vtan = nextSide->u2[jlev]*tx + nextSide->v2[jlev]*ty;
 
    // If the side is an open boundary, the tangential velocity is zero.
-   if (nextSide->isbnd) vtan = 0.0;
+   if (nextSide->isbnd > 0) vtan = 0.0;
 
    // The new velocity components are computed from the tangential velocity and the tangent vector.
    const double us = vtan*tx;
@@ -1069,6 +1069,274 @@ for (int k = 0; k < nvrt; k++) side.v2[k] =  side.xc*rot_f ;
 }
 
 
+__global__ void setupCoefficientMatrix(void) {
+// Setup coefficient matrix, sparsem, for the shallow water wave equation
+// No elevation essential b.c. are imposed yet but other b.c. is imposed
+// 
+// This kernel is called for all nodes.
+
+   int in = //blockIdx.x * blockDim.x + threadIdx.x;
+
+   Node *node1 = &(mesh->localNodeData[in]);
+
+   node1->clearMatrixRow();
+   node1->qel = 0.0;
+
+   // THIS IS FOR STRUCTURES XXX
+   // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
+
+
+   for (int j=0; j<node1->numElements; j++) {
+      // For each element connected to the node...
+
+      Element *elem = node1->elements[j];
+
+      const int idxNode = elem->nodeIdx(node1); // XXX IMPLEMENT THIS
+
+      // Compute the average gravity
+      const double grav3 = elem->mean(elem::grav2);
+
+      // Look at the documentation for the description of the terms
+      // I_1 
+      // \bar{\breve{H}} 
+      const double hhatb = elem->mean(elem::hhat);
+
+      assert((hhatb >= 0.0 || ihh != 1) && "Invalid hhat");
+
+
+      if (isTri()) {
+
+         // To clarify the notation in this section: i stands for the node under consideration, j and k are the other nodes of the triangle.
+         // Node i is related to local index idxNode, nodes j and k are related to local indices idxNode + 1 and idxNode + 2.
+         
+         Node *node2 = elem->nodes[nxq(1,id1)];
+         Node *node3 = elem->nodes[nxq(2,id1)];
+
+         const double x1 = node1->x;
+         const double y1 = node1->y;
+         const double x2 = node2->x;
+         const double y2 = node2->y;
+         const double x3 = node3->x;
+         const double y3 = node3->y;
+
+         // integral of phi_i*phi_j
+         const double ipp_ii = (1.0/6.0 )*area;
+         const double ipp_ij = (1.0/12.0)*area;
+         const double ipp_ik = (1.0/12.0)*area;
+
+         // integral of [(grad phi_i) * (grad phi_j)]
+         const double igpgp_ii = (1.0/4.0)/area*((x3-x2)*(x3-x2) + (y3-y2)*(y3-y2));
+         const double igpgp_ij = (1.0/4.0)/area*((x3-x2)*(x1-x3) + (y3-y2)*(y1-y3));
+         const double igpgp_ik = - igpgp_ii - igpgp_ij; // This comes from the fact that if a,b,c are vectors forming a triangle (in order), then a+b+c = 0, hence: -a*c = a*(a+b+c-c) = a*a + a*b.
+
+         // Computes the different components of integral I_1 of each node with respect to node i.
+         const double I1_ii = ipp_ii + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ii;
+         const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
+         const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
+
+         sparsem(0,i) +=  I1_ii;
+         sparsem(0,j) +=  I1_ij; // XXX j and k here are just pseudo-indices
+         sparsem(0,k) +=  I1_ik;
+     
+      }
+      else { // Quad
+         // XXX IMPLEMENT THIS
+      } 
+
+
+      // Integral I_4
+      // I_4 = \int_\Omega \left[ \phi_i\eta^n + \theta\Delta t \nabla\phi_i\cdot\pmb{E} + (1-\theta)\Delta t \nabla\phi_i \cdot\pmb{U}^n \right]d\Omega
+      // Where
+      // U is pmb{U}^{n+1} = \pmb{E} - g\theta\breve{H}\Delta t\nabla\eta^{n+1}
+
+      // Since \nabla\phi_i is constant over the element, for the integral of U we can compute the mean value
+      // of U over the element.
+      Vector2 Umean = {0.0, 0.0};
+      for (int m=0; m<elem->i34; m++) {      
+         const Side *side = elem->sides[m];
+
+         if constexpr(ics == 1) Umean += side->U; // XXXXX IS THIS JUST ONE VALUE OR TWO????
+         else                   Umean += side->frame2.project_hvec(side->U, elem->frame);
+      }
+      Umean = Umean/elem->i34;
+
+
+      // Integral of \nabla\phi_i \cdot \pmb{U}^n
+      const double I_4_1 = dot_product(elem->grad_phi[id], Umean);
+
+      // Integral of \nabla\phi_i \cdot \pmb{E}
+      const double I_4_2 = dot_product(elem->grad_phi[id], elem->ghat1);
+     
+      node1->qel += dt*elem->area*((1 - thetai)*I_4_1 + thetai*I_4_2);
+      
+
+      // Additional terms 
+      if (imm == 2)  { //pre-compute vnorm on elem ie
+         update_bdef(time, elem->xc, elem->yc, elem->depth, swild);
+
+         ubed=swild(1); vbed=swild(2); wbed=swild(3);
+         Vector2 gradP(0.0, 0.0);
+         for (int m=0; m < elem->i34; m++) {
+           gradP += elem->nodes[m]->depth*elem->dldxy[m]; //XXXXXX
+         }   
+         vnorm=(ubed*dpdx + vbed*dpdy + wbed)/sqrt(dpdx*dpdx + dpdy*dpdy+1)
+      } // imm==2
+
+      if (elem->isTri()) {
+         for (int l=0; l<3; l++) {
+           double fac;
+           (id==l)? fac=2.0 : fac=1.0;
+           
+           const Node *node = elem->nodes[l];
+
+           if (imm==2) node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm)
+           else        node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1)
+           
+         }
+
+         if(elem->idry==0) {
+           detadx=dot_product(eta2(elnode(1:3,ie)),dldxy(1:3,1,ie))
+           detady=dot_product(eta2(elnode(1:3,ie)),dldxy(1:3,2,ie))
+
+           tmp = elem->dldxy(id,1)*detadx + elem->dldxy(id,2)*detady;
+
+           node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*tmp
+         }
+
+      } // isTri
+      else { // isQuad
+         for (int l=0; l<4; l++) {
+           const Node *node = elem->nodes[l];
+
+           if (imm==2) tmp2 = dt*vnorm; // b_t*dt
+           else        tmp2 = node->bdef2 - node->bdef1;
+
+           node1->qel += (node->eta2 + tmp2)*swild10(1,l) - node->eta2*grav3*thetai*(1.0 - thetai)*dt*dt*hhatb*swild10(2,l)
+         }
+
+      } // isQuad
+
+
+
+      node1->qel += (dt/elem->i34)*elem->vsource;
+
+   } // for j
+   
+
+
+   // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
+   // I_2,6 are not needed if essential b.c. are enforced by elminating rows and columns
+   if(node1->isbnd(1)>0)  { 
+      // If it is an open boundary node...
+
+      // At least one open bnd side, maybe two
+      for (int l=1; l<=2; l++) { // Two open bnd sides
+
+         // Gets each of the sides. 
+         // CONSIDER HAVING A LIST OF SIDES PER OPEN NODE
+         Side *side = node1->sides[l];
+
+         if (side == nullptr) continue; // Skip if no boundary side
+
+         const Node *node2 = side->otherNode(node1); // Other node of the side
+
+         // if (l==1) then
+         //   ie=indel(1,i)
+         //   id=iself(1,i)
+         //   isd=elside(nxq(i34(ie)-1,id,i34(ie)),ie)
+         //   nj=elnode(nxq(1,id,i34(ie)),ie)
+         //   ind=1
+         // else
+         //   ie=indel(nne(i),i)
+         //   id=iself(nne(i),i)
+         //   isd=elside(nxq(i34(ie)-2,id,i34(ie)),ie)
+         //   nj=elnode(nxq(i34(ie)-1,id,i34(ie)),ie)
+         //   ind=nnp(i)
+         // endif
+
+
+         // JUST FOR CHECKING. CONSIDER REMOVING
+         // nd=isidenode(1,isd)+isidenode(2,isd)-i
+         // if(nd/=nj) then
+         //   write(errmsg,*)'Impossible 79'
+         //   call parallel_abort(errmsg)
+         // endif
+
+
+         // Integral I_3
+         if (side->isbnd > 0 && ifltype(max(1,side->isbnd))!=0) {
+         // Natural or Flather b.c.
+
+            // Calculate I_3 even if i is on essential b.c. so as to check symmetry later
+            // especially for Flather b.c.
+            double ri3 = 0.0;
+            if(side->idry != 1) {
+               // If the side is not dry
+               
+               // Computes the side flux of (uth, vth)
+               double Vn=0.d0;
+               for (int k = side->kb; k<nvrt-1; k++) {
+                  // uth, vth in lat/lon frame if ics=2
+                  // XXX Are uth,vth really necessary? Why not just store the normal component?
+                  const double vn1 = dot(side->uth[k  ], side->n); // outer normal
+                  const double vn2 = dot(side->uth[k+1], side->n);
+
+                  Vn += 0.5*(side->zs[k+1] - side->zs[k])*(vn1 + vn2);
+               }
+
+               ri3 = 0.5*side->length*Vn;
+            }
+
+            if (ifltype(side->isbnd)==-1) { // Flather 1
+
+               assert(node1->eta2 >= -98.0 && node2->eta2 >= -98.0 && "Mismatch 1") ;
+               assert(side->depth > 0.0 && "Negative depth at Flather boundary");
+
+               const double con0 = (1.0/6.0)*side->length*sqrt(grav*side->depth); // For coefficient matrix
+               ri3 -= con0*(2.0*node1->eta2 + node2->eta2);
+               
+               sparsem(  0,i) += (thetai*dt*con0)*2.0;
+               sparsem(ind,i) += (thetai*dt*con0);
+
+            } 
+            else if (ifltype(side->isbnd) == -2) { // Discharge relation (outgoing only)
+               // Reset ri3
+               ri3 = 0.0;
+                   
+               const double etam = 0.5*(node1->eta2 + node2->eta2);
+
+               tmp2 = polyEval(disch_coef, eta)/clen(side->isbnd); // XXXX IMPLEMENT Poly. It may need the grade (4 in this case)
+               assert(tmp2>=0.0 && "bar{f}<0 at discharge bnd");
+
+               const double con0 = side->length/6.0*tmp2*thetai*dt;
+               sparsem(  0,i) += con0*2.0;
+               sparsem(ind,i) += con0;
+
+            } // if Flather or Discharge
+
+            node1->qel -= thetai*dt*ri3;
+
+         } // I_3
+       
+
+
+         // Integral I_5
+         if(side->isbnd > 0 && side->idry != 1) {
+
+            const double Unbar = dot(side->U, side->n);
+
+            node1->qel -= 0.5*(1.0 - thetai)*dt*side->length*Unbar;
+         } // I_5
+        
+
+      } // for l
+
+   } // if isbnd
+
+
+   
+
+}
 
 #ifdef DONTCOMPILE
 __global__ void checkMassConservation(Tracers* sumtr) {
