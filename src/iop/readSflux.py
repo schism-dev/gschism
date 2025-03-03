@@ -652,12 +652,12 @@ class SFlux:
                 raise ValueError(f'Error combining sflux data from two datasets: {e}')
 
 
-    def rotate_winds (self, u, v):
+    def rotate_winds(self, u, v):
 
  
         pass
 
-
+        print('IMPLEMENT THIS!!!!')
         # # XXX TODO: Do this using a rotation matrix (or complex numbers) instead of trigonometric functions
         # # calculate speed and direction (geographic)
         # dir = np.arctan2(-u,-v)

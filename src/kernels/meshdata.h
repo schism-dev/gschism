@@ -19,10 +19,10 @@ constexpr int landNode = -2;
 
 constexpr double pi = 3.14159265358979323846;
 
-constexpr double rearth_eq   = 6378206.4; //[m] XXX THESE should be in param.nml
+constexpr double rearth_eq   = 6378206.4; //[m] 
 constexpr double rearth_pole = 6378206.4; //[m]
 
-constexpr double eps = 1.019e-2; // Nudging factor
+constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
 __forceinline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
   // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
@@ -36,6 +36,24 @@ __forceinline__ __device__ void crossProduct(double x1, double y1, double z1, do
    z3 = x1*y2 - x2*y1;
 }
 
+
+__forceinline__ __device__ void computeLonLat(Point3 const &p, double &rlon, double &rlat) {
+// Given a 3D global point (may not be on surface of earth), find its longitude and latitude in radians
+
+   const double radius2 = dot(p, p);
+   assert(radius2 != 0.0     && "computeLonLat: radius = 0");
+   assert(p.z*p.z <= radius2 && "computeLonLat: p.z <= radius");
+
+   const double rlon = atan2(p.y, p.x) // (-pi,pi]
+
+   if (abs(rearth_pole - rearth_eq) < 1.0e-2) { // for backward compatibility
+      rlat = asin(p.z/sqrt(radius2));
+   } else {
+      rlat = asin(p.z/rearth_pole);
+   }
+  
+}
+
 __inline__ __device__ void Error(const char* msg) {
    printf("Error: %s\n", msg);
    assert(false);
@@ -47,8 +65,10 @@ struct Tracers {
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
-typedef double2 Vector2;
-typedef double3 Vector3;
+using Vector2 = double2;
+using Vector3 = double3;
+using Point2  = double2;
+using Point3  = double3;
 
 __device__ __host__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
     return make_double2(a.x + b.x, a.y + b.y);
@@ -129,16 +149,16 @@ struct Frame {
    //        frameout: Output frame;
    // Output: 
    //        vec1: vel. in new frame  
-    
-   auto const fo = frameout;
 
-   // Since frame tensors are orthogonal, the transpose is the inverse. That's why the indices
-   // of t and fo.t are the same.
-   vec1.x = vec0.x*(t(0,0)*fo.t(0,0) + t(1,0)*fo.t(1,0) + t(2,0)*fo.t(2,0)) +
-            vec0.y*(t(0,1)*fo.t(0,0) + t(1,1)*fo.t(1,0) + t(2,1)*fo.t(2,0));
+      auto const fo = frameout;
 
-   vec1.y = vec0.x*(t(0,0)*fo.t(0,1) + t(1,0)*fo.t(1,1) + t(2,0)*fo.t(2,1)) +
-            vec0.y*(t(0,1)*fo.t(0,1) + t(1,1)*fo.t(1,1) + t(2,1)*fo.t(2,1));
+      // Since frame tensors are orthogonal, the transpose is the inverse. That's why the indices
+      // of t and fo.t are the same.
+      vec1.x = vec0.x*(t(0,0)*fo.t(0,0) + t(1,0)*fo.t(1,0) + t(2,0)*fo.t(2,0)) +
+               vec0.y*(t(0,1)*fo.t(0,0) + t(1,1)*fo.t(1,0) + t(2,1)*fo.t(2,0));
+
+      vec1.y = vec0.x*(t(0,0)*fo.t(0,1) + t(1,0)*fo.t(1,1) + t(2,0)*fo.t(2,1)) +
+               vec0.y*(t(0,1)*fo.t(0,1) + t(1,1)*fo.t(1,1) + t(2,1)*fo.t(2,1));
    }
 
    __forceinline__ __device__ void G2L(Vector3 const &vi, Vector3 &vo) const {
@@ -156,14 +176,12 @@ struct Frame {
    }   
 
    __forceinline__ __device__ void G2L(Point3 const &pi, Point3 const &origin0, Point3 &po) const {
-   // Tranformation a point from global to local frame     
-
+   // Tranforms a point from global to local frame     
       G2L(pi - origin0, po);
    }
 
    __forceinline__ __device__ void L2G(Point3 const &pi, Point3 const &origin0, Point3 &po) const {
-   // Tranformation a point from local to global frame      
-
+   // Transforms a point from local to global frame      
       L2G(pi, po);
       po = po + origin0;
    }
@@ -227,10 +245,9 @@ struct Element {
    __device__ void setFrame(void) {
 
       double ar1, ar2;
-      compute_ll(xc,yc,zc,ar1,ar2)
+      computeLonLat({xc, yc, zc}, ar1, ar2);
 
-      frame.update(ar1, ar2);
-        
+      frame.update(ar1, ar2);        
     }
 
    __device__ bool findNextIntersection(double x2, double y2, Side *&side, Element *&nextElement, double &t, 
@@ -252,8 +269,10 @@ struct Element {
       return shapeCoords[0]*zAtNodes[0] + shapeCoords[1]*zAtNodes[1] + shapeCoords[2]*zAtNodes[2] + shapeCoords[3]*zAtNodes[3];
       
    }
+
    __device__ void interpolateVelocities(double xt, double yt, double zt, 
                                          double& uuint, double& vvint, double& wwint);
+
 
 
    // ------------------------------------------------------------------------------------------------
@@ -354,9 +373,14 @@ struct Element {
 };
 
 
+struct BoundarySegment {
+   int ifltype; // Type of boundary condition
+   
+};
+
 struct SideBoundary {
-   int isbnd;             // Is this a boundary side? Which segment?
-   int bdysd;             // Boundary side flag
+   BoundarySegment *segment; // Pointer to the boundary segment
+  
 };
 
 
@@ -444,6 +468,16 @@ struct Side {
 };
 
 
+struct NodeBoundary {
+   SideBoundary *side1; // Pointer to the boundary segment (can be nullptr)
+   SideBoundary *side2; // Pointer to the boundary segment (can be nullptr)
+
+   __forceinline__ __device__ SideBoundary *side(int index) { 
+      assert(index == 0 || index == 1); 
+      return (index == 0) ? side1 : side2; 
+   }
+};
+
 struct Node {
 
    // Geometry information
@@ -464,7 +498,8 @@ struct Node {
 
    int idry;     // True if the node is dry
 
-   int isbnd;    // Is this node on a boundary? Which segment?
+   int isbnd XXX;    // Is this node on a boundary? Which segment?
+   NodeBoundary *nodeBnd; // Pointer to additional boundary information. For non-boundary nodes, 
 
    // Physical information
    Tracers tr_nd0[nvrt]; // Initial tracer conc. at nodes

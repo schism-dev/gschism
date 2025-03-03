@@ -1069,7 +1069,7 @@ for (int k = 0; k < nvrt; k++) side.v2[k] =  side.xc*rot_f ;
 }
 
 
-__global__ void setupCoefficientMatrix(void) {
+__global__ void setupCoefficientMatrixAndRHS(void) {
 // Setup coefficient matrix, sparsem, for the shallow water wave equation
 // No elevation essential b.c. are imposed yet but other b.c. is imposed
 // 
@@ -1094,21 +1094,24 @@ __global__ void setupCoefficientMatrix(void) {
       const int idxNode = elem->nodeIdx(node1); // XXX IMPLEMENT THIS
 
       // Compute the average gravity
-      const double grav3 = elem->mean(elem::grav2);
+      const double grav3 = elem->mean(&Node::grav2);
 
-      // Look at the documentation for the description of the terms
-      // I_1 
+      // Look at the documentation for the description of the terms in the following integrals
+
+      // Integral I_1 
       // \bar{\breve{H}} 
-      const double hhatb = elem->mean(elem::hhat);
+      const double hhatb = elem->mean(&Node::hhat);         XXX hhat is an element field
 
       assert((hhatb >= 0.0 || ihh != 1) && "Invalid hhat");
 
 
       if (isTri()) {
 
-         // To clarify the notation in this section: i stands for the node under consideration, j and k are the other nodes of the triangle.
-         // Node i is related to local index idxNode, nodes j and k are related to local indices idxNode + 1 and idxNode + 2.
+         // To clarify the notation in this section: 
+         //   i stands for the node under consideration (node1)
+         //   j (node2) and k (node3) are the other nodes of the triangle.
          
+         const int id1 = elem->nodeLocalIdx(node1); // IMPLEMENT nodeLocalIdx
          Node *node2 = elem->nodes[nxq(1,id1)];
          Node *node3 = elem->nodes[nxq(2,id1)];
 
@@ -1134,15 +1137,15 @@ __global__ void setupCoefficientMatrix(void) {
          const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
          const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
 
-         sparsem(0,i) +=  I1_ii;
-         sparsem(0,j) +=  I1_ij; // XXX j and k here are just pseudo-indices
-         sparsem(0,k) +=  I1_ik;
+         node1->sparsem(node1) +=  I1_ii;
+         node1->sparsem(node2) +=  I1_ij; 
+         node1->sparsem(node3) +=  I1_ik;
      
       }
       else { // Quad
          // XXX IMPLEMENT THIS
+         assert(false && "Quad not implemented in setupCoefficientMatrix");
       } 
-
 
       // Integral I_4
       // I_4 = \int_\Omega \left[ \phi_i\eta^n + \theta\Delta t \nabla\phi_i\cdot\pmb{E} + (1-\theta)\Delta t \nabla\phi_i \cdot\pmb{U}^n \right]d\Omega
@@ -1171,15 +1174,15 @@ __global__ void setupCoefficientMatrix(void) {
       
 
       // Additional terms 
-      if (imm == 2)  { //pre-compute vnorm on elem ie
-         update_bdef(time, elem->xc, elem->yc, elem->depth, swild);
+      if (imm == 2)  { // Pre-compute vnorm on the element
+         Vector3 ubed;
+         update_bdef(time, elem->xc, elem->yc, elem->depth, ubed);
 
-         ubed=swild(1); vbed=swild(2); wbed=swild(3);
-         Vector2 gradP(0.0, 0.0);
+         Vector3 gradP(0.0, 0.0, 1.0);
          for (int m=0; m < elem->i34; m++) {
-           gradP += elem->nodes[m]->depth*elem->dldxy[m]; //XXXXXX
+           Vector2(gradP) += elem->nodes[m]->depth*elem->dldxy[m]; //XXXXXX IMPLEMENT Vector2 as a cast
          }   
-         vnorm=(ubed*dpdx + vbed*dpdy + wbed)/sqrt(dpdx*dpdx + dpdy*dpdy+1)
+         vnorm=dot(ubed, gradP)/sqrt(dot(gradP, gradP));
       } // imm==2
 
       if (elem->isTri()) {
@@ -1205,14 +1208,16 @@ __global__ void setupCoefficientMatrix(void) {
 
       } // isTri
       else { // isQuad
-         for (int l=0; l<4; l++) {
-           const Node *node = elem->nodes[l];
+         assert(false && "Quad not implemented in setupCoefficientMatrix");
+         // for (int l=0; l<4; l++) {
+         //   const Node *node = elem->nodes[l];
 
-           if (imm==2) tmp2 = dt*vnorm; // b_t*dt
-           else        tmp2 = node->bdef2 - node->bdef1;
+         //   if (imm==2) tmp2 = dt*vnorm; // b_t*dt
+         //   else        tmp2 = node->bdef2 - node->bdef1;
 
-           node1->qel += (node->eta2 + tmp2)*swild10(1,l) - node->eta2*grav3*thetai*(1.0 - thetai)*dt*dt*hhatb*swild10(2,l)
-         }
+         //   node1->qel += (node->eta2 + tmp2)*quad_int(1,ie,id,l) - 
+         //                  node->eta2*grav3*thetai*(1.0 - thetai)*dt*dt*hhatb*quad_int(2,ie,id,l)
+         // }
 
       } // isQuad
 
@@ -1220,26 +1225,27 @@ __global__ void setupCoefficientMatrix(void) {
 
       node1->qel += (dt/elem->i34)*elem->vsource;
 
-   } // for j
+   } // for all elements connected to the node
    
 
 
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2,6 are not needed if essential b.c. are enforced by elminating rows and columns
-   if(node1->isbnd(1)>0)  { 
+   NodeBoundary *nodeBnd = node1->nodeBnd;
+   if (nodeBnd != nullptr)  { 
       // If it is an open boundary node...
 
       // At least one open bnd side, maybe two
-      for (int l=1; l<=2; l++) { // Two open bnd sides
+      for (int l=1; l<=2; l++) { 
 
-         // Gets each of the sides. 
-         // CONSIDER HAVING A LIST OF SIDES PER OPEN NODE
-         Side *side = node1->sides[l];
+         // Gets each of the sides sharing the node. 
+         Side *side = nodeBnd->side(l);
 
          if (side == nullptr) continue; // Skip if no boundary side
 
          const Node *node2 = side->otherNode(node1); // Other node of the side
 
+         XXXX REMEMBER TO IMPLEMENT THIS IN nodeBoundary
          // if (l==1) then
          //   ie=indel(1,i)
          //   id=iself(1,i)
@@ -1254,80 +1260,87 @@ __global__ void setupCoefficientMatrix(void) {
          //   ind=nnp(i)
          // endif
 
-
-         // JUST FOR CHECKING. CONSIDER REMOVING
          // nd=isidenode(1,isd)+isidenode(2,isd)-i
          // if(nd/=nj) then
          //   write(errmsg,*)'Impossible 79'
          //   call parallel_abort(errmsg)
          // endif
 
+         SideBoundary *sideBnd = side->sideBnd;
 
-         // Integral I_3
-         if (side->isbnd > 0 && ifltype(max(1,side->isbnd))!=0) {
-         // Natural or Flather b.c.
+         if (sideBnd != nullptr) {
+            // If the side is on a boundary...
 
-            // Calculate I_3 even if i is on essential b.c. so as to check symmetry later
-            // especially for Flather b.c.
-            double ri3 = 0.0;
-            if(side->idry != 1) {
-               // If the side is not dry
-               
-               // Computes the side flux of (uth, vth)
-               double Vn=0.d0;
-               for (int k = side->kb; k<nvrt-1; k++) {
-                  // uth, vth in lat/lon frame if ics=2
-                  // XXX Are uth,vth really necessary? Why not just store the normal component?
-                  const double vn1 = dot(side->uth[k  ], side->n); // outer normal
-                  const double vn2 = dot(side->uth[k+1], side->n);
+            // Get the boundary segment
+            BoundarySegment *sideSegment = sideBnd->sideSegment;
 
-                  Vn += 0.5*(side->zs[k+1] - side->zs[k])*(vn1 + vn2);
+            // Integral I_3
+            if (sideSegment->ifltype != 0) {
+            // Natural or Flather b.c.
+
+               // Calculate I_3 even if i is on essential b.c. so as to check symmetry later
+               // especially for Flather b.c.
+               double ri3 = 0.0;
+               if(side->idry != 1) {
+                  // If the side is not dry
+                  
+                  // Computes the side flux of (uth, vth)
+                  double Vn = 0.d0;
+                  for (int k = side->kb; k<nvrt-1; k++) {
+                     // uth, vth in lat/lon frame if ics=2
+                     // XXX Are uth,vth really necessary? Why not just store the normal component?
+                     const double vn1 = dot(side->uth[k  ], side->n); // outer normal
+                     const double vn2 = dot(side->uth[k+1], side->n);
+
+                     Vn += 0.5*(side->zs[k+1] - side->zs[k])*(vn1 + vn2);
+                  }
+
+                  ri3 = 0.5*side->length*Vn;
                }
 
-               ri3 = 0.5*side->length*Vn;
-            }
+               if (sideSegment->ifltype == -1) { // Flather 1
 
-            if (ifltype(side->isbnd)==-1) { // Flather 1
+                  assert(node1->eta2 >= -98.0 && node2->eta2 >= -98.0 && "Mismatch 1") ;
+                  assert(side->depth > 0.0 && "Negative depth at Flather boundary");
 
-               assert(node1->eta2 >= -98.0 && node2->eta2 >= -98.0 && "Mismatch 1") ;
-               assert(side->depth > 0.0 && "Negative depth at Flather boundary");
+                  const double con0 = (1.0/6.0)*side->length*sqrt(grav*side->depth); // For coefficient matrix
+                  ri3 -= con0*(2.0*node1->eta2 + node2->eta2);
+                  
+                  node1->sparsem(node1) += (thetai*dt*con0)*2.0;
+                  node1->sparsem(node2) += (thetai*dt*con0);
 
-               const double con0 = (1.0/6.0)*side->length*sqrt(grav*side->depth); // For coefficient matrix
-               ri3 -= con0*(2.0*node1->eta2 + node2->eta2);
+               } 
+               else if (sideSegment->ifltype == -2) { // Discharge relation (outgoing only)
+                  // Reset ri3
+                  ri3 = 0.0;
+                      
+                  const double etam = 0.5*(node1->eta2 + node2->eta2);
+
+                  tmp2 = polyEval(disch_coef, eta)/sideSegment->clen; // XXXX IMPLEMENT Poly. It may need the grade (4 in this case)
+                  assert(tmp2 >= 0.0 && "bar{f} < 0 at discharge boundary");
+
+                  const double con0 = (1.0/6.0)*side->length*tmp2*thetai*dt;
+                  node1->sparsem(node1) += con0*2.0;
+                  node1->sparsem(node2) += con0;
+
+               } // if Flather or Discharge
+
+               node1->qel -= thetai*dt*ri3;
+
+            } // I_3
+          
+
+
+            // Integral I_5
+            if(side->idry != 1) {
+
+               const double Unbar = dot(side->U, side->n);
+
+               node1->qel -= 0.5*(1.0 - thetai)*dt*side->length*Unbar;
                
-               sparsem(  0,i) += (thetai*dt*con0)*2.0;
-               sparsem(ind,i) += (thetai*dt*con0);
+            } // I_5
 
-            } 
-            else if (ifltype(side->isbnd) == -2) { // Discharge relation (outgoing only)
-               // Reset ri3
-               ri3 = 0.0;
-                   
-               const double etam = 0.5*(node1->eta2 + node2->eta2);
-
-               tmp2 = polyEval(disch_coef, eta)/clen(side->isbnd); // XXXX IMPLEMENT Poly. It may need the grade (4 in this case)
-               assert(tmp2>=0.0 && "bar{f}<0 at discharge bnd");
-
-               const double con0 = side->length/6.0*tmp2*thetai*dt;
-               sparsem(  0,i) += con0*2.0;
-               sparsem(ind,i) += con0;
-
-            } // if Flather or Discharge
-
-            node1->qel -= thetai*dt*ri3;
-
-         } // I_3
-       
-
-
-         // Integral I_5
-         if(side->isbnd > 0 && side->idry != 1) {
-
-            const double Unbar = dot(side->U, side->n);
-
-            node1->qel -= 0.5*(1.0 - thetai)*dt*side->length*Unbar;
-         } // I_5
-        
+         } // if is boundary side
 
       } // for l
 
