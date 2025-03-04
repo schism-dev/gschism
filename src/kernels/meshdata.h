@@ -49,8 +49,16 @@ __device__ __host__ __forceinline__ double2 operator*(double s, const double2& v
     return v * s;  // reuse the previous operator
 }
 
+__device__ __host__ __forceinline__ double2 operator/(const double2& v, double s) {
+    return make_double2(v.x / s, v.y / s);
+}
+
 __device__ __host__ __forceinline__ double dot(const double2& v, const double2& w) {
     return v.x*w.x + v.y*w.y;
+}
+
+__device__ __host__ __forceinline__ double cross(const double2& v, const double2& w) {
+    return v.x*w.y - v.y*w.x;
 }
 
 __device__ __host__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
@@ -69,6 +77,10 @@ __device__ __host__ __forceinline__ double3 operator*(double s, const double3& v
     return v * s;
 }
 
+__device__ __host__ __forceinline__ double3 operator/(const double3& v, double s) {
+    return make_double3(v.x / s, v.y / s, v.z / s);
+}
+
 __device__ __host__ __forceinline__ double dot(const double3& v, const double3& w) {
     return v.x*w.x + v.y*w.y + v.z*w.z;
 }
@@ -77,8 +89,8 @@ __device__ __host__ __forceinline__ Vector2 toVector2(const double3& v) {
     return make_double2(v.x, v.y);
 }
 
-__device__ __host__ __forceinline__ Point2 toPoint2(const double3& v) {
-    return make_double2(v.x, v.y);
+__device__ __host__ __forceinline__ Point2 toPoint2(const double3& p) {
+    return make_double2(p.x, p.y);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -89,6 +101,11 @@ __device__ __host__ __forceinline__ Point2 toPoint2(const double3& v) {
 __forceinline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
   // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
   return 0.5*((x1-x3)*(y2-y3) - (x2-x3)*(y1-y3));
+}
+
+__forceinline__ __device__ double signedArea(Point2 p1, Point2 p2, Point2 p3) {
+  // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
+  return 0.5*((p1.x-p3.x)*(p2.y-p3.y) - (p2.x-p3.x)*(p1.y-p3.y));
 }
 
 
@@ -272,9 +289,9 @@ struct Element {
       frame.update(ar1, ar2);        
     }
 
-   __device__ bool findNextIntersection(double x2, double y2, Side *&side, Element *&nextElement, double &t, 
+   __device__ bool findNextIntersection(Point2 x2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
-   __device__ bool findNextIntersection(double x1, double y1, double x2, double y2, Side *&side, Element *&nextElement, double &t, 
+   __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
 
    __inline__ __device__ bool containsPoint(Vector2 xt) const { 
@@ -431,6 +448,8 @@ struct Side {
 
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
+   __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
+   __inline__ __device__ Point2 center(void) const { return {xc, yc}; }
 
    __forceinline__ __device__ Vector2 t(void) const {
       return {-n.y, n.x};
@@ -491,7 +510,9 @@ struct Side {
 
 
 // This struct is used to store the boundary information for a node.
-struct NodeBoundary {
+struct NodeBoundary {   
+   int type;
+   
    SideBoundary *sideBnd1; // Pointer to the boundary segment (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary segment (can be nullptr)
 
@@ -528,6 +549,8 @@ struct Node {
 
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
+
+   __forceinline__ __device__ Point2 point2(void) const { return {x, y}; }
 
    __host__ __device__ double sigmaTransitionDepth(void) const;
 
@@ -659,6 +682,9 @@ class Mesh {
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
                    Element **localNodeNeighElemsMem,
+                   NodeBoundary *localNodeBoundaryMem,
+                   SideBoundary *localSideBoundaryMem,
+                   BoundarySegment *localSegmentMem,
                    double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
                    double *cs, double *dcs
                    ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
@@ -667,6 +693,8 @@ class Mesh {
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
                        nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
+                       localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
+                       localSegmentMem(localSegmentMem),
                        h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs)
    {
@@ -679,6 +707,7 @@ class Mesh {
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
+                   int *nond, int *nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
@@ -757,5 +786,8 @@ extern "C" {
        sizes[0] = (int)sizeof(Node);
        sizes[1] = (int)sizeof(Element);
        sizes[2] = (int)sizeof(Side);
+       sizes[3] = (int)sizeof(NodeBoundary);
+       sizes[4] = (int)sizeof(SideBoundary);
+       sizes[5] = (int)sizeof(BoundarySegment);
    }
 }

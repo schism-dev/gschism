@@ -61,8 +61,8 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
 
    // (x1,y1)-(x2,y2) is the track line segment. Every step we move (x1,y1) to the next
    // intersection point, at position t on "side". The final position is (x2,y2)=(xt,yt).
-   const double x1 = side->x(t);
-   const double y1 = side->y(t);
+   const Point2 x1 = side->point(t);
+   
 
    Side *nextSide = nullptr;
 
@@ -75,19 +75,16 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
       if (side2 == side) continue;
 
       // (x3,y3)-(x4,y4) is the element side line
-      const double x3 = side2->n1->x;
-      const double y3 = side2->n1->y;
-      const double x4 = side2->n2->x;
-      const double y4 = side2->n2->y;
+      const Point2 x3 = side2->n1->point2();
+      const Point2 x4 = side2->n2->point2();
 
       // delta is 0 if the two lines are parallel. In this case, they do not intersect.
-      const double delta = (x2-x1)*(y3-y4) - (y2-y1)*(x3-x4);
-
+      const double delta = cross(x2 - x1, x3 - x4);
 
       if (delta != 0.0) {
 
-         const double delta1 = (x3-x1)*(y3-y4) - (y3-y1)*(x3-x4);
-         const double delta2 = (x2-x1)*(y3-y1) - (y2-y1)*(x3-x1); 
+         const double delta1 = cross(x3 - x1, x3 - x4);
+         const double delta2 = cross(x2 - x1, x3 - x1); 
 
          // Solves the two linear equations for tt1 and tt2
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
@@ -111,18 +108,17 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
 
    // found_intersection should always be true, since we checked all the sides.  
    side = nextSide;
-if (found_intersection) {
-if (nextElement == nullptr)  printf("$$$  0, %d, %.5f, %.5f\n",  side->idx, side->x(t), side->y(t));
-else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(t), side->y(t));
-}   
+// if (found_intersection) {
+// if (nextElement == nullptr)  printf("$$$  0, %d, %.5f, %.5f\n",  side->idx, side->x(t), side->y(t));
+// else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(t), side->y(t));
+// }   
    return found_intersection;
 }
 
 
 
 
-__device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, 
-                                              Side *&side, Element *&nextElement,
+__device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement,
                                               double &t, double& tIntersect) {
 
    double closest_intersect_t = 1e10;
@@ -133,18 +129,16 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2,
       Side *side2 = sides[i];
 
       // (x3,y3)-(x4,y4) is the element side line
-      const double x3 = side2->n1->x;
-      const double y3 = side2->n1->y;
-      const double x4 = side2->n2->x;
-      const double y4 = side2->n2->y;
+      const Point2 x3 = side2->n1->point2();
+      const Point2 x4 = side2->n2->point2();
 
       // delta is 0 if the two lines are parallel. In this case, they do not intersect.
-      const double delta = (x2-x1)*(y3-y4) - (y2-y1)*(x3-x4);
+      const double delta = cross(x2 - x1, x3 - x4);
 
       if (delta != 0.0) {
 
-         const double delta1 = (x3-x1)*(y3-y4) - (y3-y1)*(x3-x4);
-         const double delta2 = (x2-x1)*(y3-y1) - (y2-y1)*(x3-x1); 
+         const double delta1 = cross(x3 - x1, x3 - x4);
+         const double delta2 = cross(x2 - x1, x3 - x1); 
 
          // Solves the two linear equations for tt1 and tt2
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
@@ -163,10 +157,11 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2,
 
    }
 
-if (found_intersection) {
-if (nextElement == nullptr)  printf("$$$  0, %d, %.5f, %.5f\n",  side->idx, side->x(t), side->y(t));
-else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(t), side->y(t));
-}
+// if (found_intersection) {
+// if (nextElement == nullptr)  printf("$$$  0, %d, %.5f, %.5f\n",  side->idx, side->x(t), side->y(t));
+// else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(t), side->y(t));
+// }
+
    // found_intersection should always be true, since we checked all the sides.  
    return found_intersection;
 }
@@ -283,10 +278,10 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // Horizontal tracking loop
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
-   bool found_intersection = findNextIntersection(x0, y0, xt, yt, nextSide, nextElem, t, tIntersect);
+   bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
    assert(found_intersection && "No intersection found");
 
-   zint = (1 - tIntersect)*zint + tIntersect*zt;
+   zint = (1 - tIntersect)*zint + tIntersect*xt.z;
 
    // if the tracking segment goes out of water (either dry or edge boundary)
    if (isEdgeBoundary(nextSide) || (nextElem->idry)) {
@@ -305,8 +300,8 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
       
       Element *curElem = nextElem;
 
-      bool found_intersection = curElem->findNextIntersection(xt, yt, nextSide, nextElem, t, tIntersect);
-      zint = (1 - tIntersect)*zint + tIntersect*zt;
+      bool found_intersection = curElem->findNextIntersection(toPoint2(xt), nextSide, nextElem, t, tIntersect);
+      zint = (1 - tIntersect)*zint + tIntersect*xt.z;
 
       // If we are already in the target element, we are done.
       // Remember that, if we are here, the point (xt,yt) is inside curElem.
@@ -349,13 +344,13 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 __inline__ __device__ double Element::computeSignedArea(void) const {
    // Compute the area of the element
 
-   double res = signedArea(nodes[0]->x, nodes[1]->x, nodes[2]->x, nodes[0]->y, nodes[1]->y, nodes[2]->y);
+   double res = signedArea(nodes[0]->point2(), nodes[1]->point2(), nodes[2]->point2());
 
    // In the quad case we need to add the area of the other triangle.
    if (isQuad()) {
-      double ar1 = signedArea(nodes[0]->x, nodes[2]->x, nodes[3]->x, nodes[0]->y, nodes[2]->y, nodes[3]->y);
-      double ar2 = signedArea(nodes[0]->x, nodes[1]->x, nodes[3]->x, nodes[0]->y, nodes[1]->y, nodes[3]->y);
-      double ar3 = signedArea(nodes[1]->x, nodes[2]->x, nodes[3]->x, nodes[1]->y, nodes[2]->y, nodes[3]->y);
+      double ar1 = signedArea(nodes[0]->point2(), nodes[2]->point2(), nodes[3]->point2());
+      double ar2 = signedArea(nodes[0]->point2(), nodes[1]->point2(), nodes[3]->point2());
+      double ar3 = signedArea(nodes[1]->point2(), nodes[2]->point2(), nodes[3]->point2());
       if (ar1 < 0.0 || ar2 < 0.0 || ar3 < 0.0) {
          // XXX Aren't we computing a signed area? why is it not allowed to be negative?
          Error("Negative area found in quad element");
@@ -374,15 +369,14 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
 /**
    Compute the shape coordinates of the point (xt,yt) in the element.
    @param xt (input): x-coordinate of the point
-   @param yt (input): y-coordinate of the point
    @param shpCoords (output): shape coordinates of the point
    @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
-__device__ bool Element::computeShapeCoords(Vector2 xt, double shpCoords[4],
+__device__ bool Element::computeShapeCoords(Point2 xt, double shpCoords[4],
                                             bool fixNegshpCoord) const {
 
-   // Compute the shape coordinates of the point (xt,yt) in the element.
+   // Compute the shape coordinates of the point xt in the element.
    if (i34==3) {
       // Compute area coordinates for a given pt w.r.t. to a triangular element
       // If ifl=1, will fix 0 or negative area coord. (assuming it's not too negative)
@@ -390,15 +384,12 @@ __device__ bool Element::computeShapeCoords(Vector2 xt, double shpCoords[4],
       // It's not reliable to use the area coord for ics=2 when the pt is far away
       // from the local frame, so use additional check.
 
-      double x0, y0, x1, y1, x2, y2;
+      Point2 x0, x1, x2;
 
       if constexpr(ics==1) {
-         x0 = nodes[0]->x;
-         y0 = nodes[0]->y;
-         x1 = nodes[1]->x;
-         y1 = nodes[1]->y;
-         x2 = nodes[2]->x;
-         y2 = nodes[2]->y;
+         x0 = nodes[0]->point2();
+         x1 = nodes[1]->point2();
+         x2 = nodes[2]->point2();
       }
       else // lat/lon
       {
@@ -410,8 +401,8 @@ __device__ bool Element::computeShapeCoords(Vector2 xt, double shpCoords[4],
 #endif
       }
 
-      shpCoords[0] = signedArea(xt.x,x1,x2,yt.x,y1,y2)/area;
-      shpCoords[1] = signedArea(x0,xt.x,x2,y0,yt.x,y2)/area; 
+      shpCoords[0] = signedArea(xt,x1,x2)/area;
+      shpCoords[1] = signedArea(x0,xt,x2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       shpCoords[3] = 0.0;
       double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
@@ -438,10 +429,9 @@ __device__ bool Element::computeShapeCoords(Vector2 xt, double shpCoords[4],
          }
 
          // Update the point coordinates for the new shape coordinates
-         double xcoords[3] = {x0, x1, x2};
-         double ycoords[3] = {y0, y1, y2};
-         xt = dotprod3(xcoords, shpCoords);
-         yt = dotprod3(ycoords, shpCoords);
+         double xcoords[3] = {x0.x, x1.x, x2.x};
+         double ycoords[3] = {x0.y, x1.y, x2.y};
+         xt = {dotprod3(xcoords, shpCoords), dotprod3(ycoords, shpCoords)};
 
       }
 
@@ -482,7 +472,7 @@ __device__ bool Element::computeShapeCoords(Vector2 xt, double shpCoords[4],
    4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
       horizontally and vertically.
 **/
-__device__ void Element::interpolateVelocities(Point3 xt, Vector3& uuint) {
+__device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) {
    // Interpolate the velocities at the point xt. 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
@@ -508,23 +498,23 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& uuint) {
    
    // Interpolates vertically the velocities
    double wght1, wght2;
-   if (zt<=zL) {
+   if (xt.z<=zL) {
       wght1 = 1.0;
       wght2 = 0.0;
    }
-   else if (zt>=zR) {
+   else if (xt.z>=zR) {
       wght1 = 0.0;
       wght2 = 1.0;
    }
    else {
-      // Perform a binary search to find the levels between L and R that contain zt
+      // Perform a binary search to find the levels between L and R that contain xt.z
       while (R - L > 1) {
          int M = (L + R) / 2;
 
          double zMAtNodes[4];
          getNodalValues(M, &Node::compZCoord, zMAtNodes);
          double zM = interpolate(shpCoord, zMAtNodes);
-         if (zM < zt) 
+         if (zM < xt.z) 
          {
             L = M;
             zL = zM;
@@ -538,18 +528,16 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& uuint) {
       assert(L == R-1);
       // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
 
-      wght2 = (zt - zL)/(zR - zL);
+      wght2 = (xt.z - zL)/(zR - zL);
       wght1 = 1.0 - wght2;
    }
 // printf("$$$ wght1 = %f, wght2 = %f, zt = %f, zL = %f, zR = %f\n", wght1, wght2, zt, zL, zR);
 // printf("$$$ shpCoord = %f, %f, %f, %f\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
    // Interpolate horizontally and vertically the velocities at the two levels L, R
-   uuint = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
-   // vvint = wght1*interpolate(L, shpCoord, &Node::u2.y) + wght2*interpolate(R, shpCoord, &Node::u2.y);
-   // wwint = wght1*interpolate(L, shpCoord, &Node::u2.z) + wght2*interpolate(R, shpCoord, &Node::u2.z);   
+   u_int = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
 
    // Neither of the interpolated velocities should be NaN
-   assert(!isnan(uuint.x) && !isnan(uuint.y) && !isnan(uuint.z) && "NaN velocities in interpolateVelocities");
+   assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
 
 }
 
@@ -616,7 +604,7 @@ printf("$$$  %d, %d, %.5f, %.5f\n",  curElem->idx,idx, x0.x, x0.y)   ;
 
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb);
       assert(found && "Backtracking failed in btrack");
-printf("<>T = %f, %f %f %f\n", time_rm - dtb, xt, yt, zt);
+// printf("<>T = %f, %f %f %f\n", time_rm - dtb, xt, yt, zt);
       time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
                       // then time_rm needs to be increased by the unused time.
 
@@ -816,7 +804,7 @@ __device__ double Node::compZCoord(int k) const {
    return 0.0;
 }
 
-
+#ifdef TESTING
 extern "C" { 
    __global__ void computeFluxAdvHface(void) {
       // Get global thread ID
@@ -843,8 +831,8 @@ extern "C" {
 
           } else {
               // Calculate normal component of the velocity at current and previous levels
-              const double vnor1 = side->u2[k  ]*side->nx + side->v2[k  ]*side->ny;
-              const double vnor2 = side->u2[k-1]*side->nx + side->v2[k-1]*side->ny;
+              const double vnor1 = dot(side->u2[k  ], side->n);
+              const double vnor2 = dot(side->u2[k-1], side->n);
               
               // Calculate flux (normal * area in local x-direction)
               const double height = side->zc[k] - side->zc[k-1]; // Vertical distance between the two side centers
@@ -857,11 +845,12 @@ extern "C" {
    }
 }
 
-
+#endif 
 
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 double *node_coords, double *wind_rotate_angle, 
                 int *isdel, int *isidenode, int *isbnd,
+                int *nond, int *nlnd, int *iond, int *ilnd,
                 int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                 int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                 int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
@@ -897,12 +886,23 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.y = node_coords[i * 3 + 1];
       node.z = node_coords[i * 3 + 2];  // XXX this is probably wrong
       node.depth = node_coords[i * 3 + 2];
-      node.isbnd = isbnd[i];
+
+      // Links the node to the boundary information
+      int idxNodeBoundary = 0;
+      if (isbnd[i] >= 0) {
+         node.nodeBnd = localNodeBoundaryMem + idxNodeBoundary*sizeof(NodeBoundary);
+         node.nodeBnd->type = isbnd[i];
+         
+         idxNodeBoundary++;
+      }
+      else {
+         node.nodeBnd = nullptr;
+      }
 
 // XXXX
 constexpr double rot_per=3000.0;
 constexpr double rot_f=2.0*pi/rot_per;
-for (int k = 0; k < nvrt; k++) {node.w2[k] = 0.0; node.u2[k] = -node.y*rot_f; node.v2[k] = node.x*rot_f ;}
+for (int k = 0; k < nvrt; k++) {node.u2[k] = {0.0, -node.y*rot_f, node.x*rot_f};}
 // XXXXX
    }
 
@@ -924,15 +924,13 @@ for (int k = 0; k < nvrt; k++) {node.w2[k] = 0.0; node.u2[k] = -node.y*rot_f; no
       side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
       // Normal vector to the side
-      side.nx = - (side.n1->y - side.n2->y);
-      side.ny =   (side.n1->x - side.n2->x);
-      const double norm = sqrt(side.nx*side.nx + side.ny*side.ny);
-      side.nx /= norm;
-      side.ny /= norm;
+      side.n = {- (side.n1->y - side.n2->y), (side.n1->x - side.n2->x)};
+      const double norm = sqrt(dot(side.n, side.n));
+      side.n = side.n/norm;
 
       // Side boundary type
-      const int n1bnd = side.n1->isbnd;
-      const int n2bnd = side.n2->isbnd;
+      const int n1bnd = side.n1->nodeBnd->type;
+      const int n2bnd = side.n2->nodeBnd->type;
       // XXXX NOTE: I'm chosing the boundary type of the first node. This may not be correct.
       if (n1bnd > 0 || n2bnd > 0) side.isbnd = n1bnd;
       else side.isbnd = 0;
@@ -968,16 +966,15 @@ for (int k = 0; k < nvrt; k++) {node.w2[k] = 0.0; node.u2[k] = -node.y*rot_f; no
 // XXXX
 constexpr double rot_per=3000.0;
 constexpr double rot_f=2.0*pi/rot_per;
-for (int k = 0; k < nvrt; k++) side.u2[k] = -side.yc*rot_f ;
-for (int k = 0; k < nvrt; k++) side.v2[k] =  side.xc*rot_f ;
+for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.yc*rot_f , side.xc*rot_f};
 // XXXXX      
 
       // Compute the z level at the center of the side
       for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->znl[k] + side.n2->znl[k]);
 
       // Compute the length of the side
-      side.length = sqrt((side.n2->x - side.n1->x)*(side.n2->x - side.n1->x) + 
-                         (side.n2->y - side.n1->y)*(side.n2->y - side.n1->y));
+      const Vector2 vLen = side.n2->point2() - side.n1->point2();
+      side.length = sqrt(dot(vLen, vLen));
 
    }
 
@@ -1051,10 +1048,11 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
 // 
 // This kernel is called for all nodes.
 
-   int in = //blockIdx.x * blockDim.x + threadIdx.x;
+   int in = 1; //XXX blockIdx.x * blockDim.x + threadIdx.x;
 
    Node *node1 = &(mesh->localNodeData[in]);
 
+#ifdef popo
    node1->clearMatrixRow();
    node1->qel = 0.0;
 
@@ -1323,7 +1321,7 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
    } // if isbnd
 
 
-   
+#endif 
 
 }
 
@@ -1706,6 +1704,7 @@ __global__ void createMesh(int partNum,
                            const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
+                           NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
                            double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
                            double *ztot, double *cs, double *dcs) {
 
@@ -1719,6 +1718,7 @@ __global__ void createMesh(int partNum,
    mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, kz, np, ne, ns, max_np, max_ne, max_ns,
                    nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
+                   localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
                    h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
    
 }
@@ -1727,6 +1727,7 @@ extern "C"
   __global__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
+                   int *nond, int *nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
@@ -1735,6 +1736,7 @@ extern "C"
 
     mesh->populateMesh(i34, elnode, elside, node_coords, wind_rotate_angle, 
                        isdel, isidenode, isbnd,
+                       nond, nlnd, iond, ilnd,
                        nodeNeighNodesStart, nodeNeighNodesIndices,
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        globalNodeIndices, globalElemIndices, globalSideIndices,

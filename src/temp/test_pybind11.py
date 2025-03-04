@@ -13,11 +13,11 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
-tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
-# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
+tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -27,7 +27,7 @@ tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
 in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -151,19 +151,20 @@ if __name__ == "__main__":
     # Test the module
     import cupy as cp
 
-    # Create the kernel module TESTING!!
-    cuda_source = ""
-    source_files = [
-        os.path.join(project_root, "kernels", "meshdata.h"),
-        os.path.join(project_root, "kernels", "meshdata.cu")
-    ]
-    for file in source_files:
-        with open(file, 'r') as f:
-            cuda_source += f.read()
-    mod = cp.RawModule(code=cuda_source, 
-                       options=("-std=c++20", '-diag-suppress=64,1055')) # the diag-suppress is to suppress the warning about the anonymous union
+    if False:
+        # Create the kernel module TESTING!!
+        cuda_source = ""
+        source_files = [
+            os.path.join(project_root, "kernels", "meshdata.h"),
+            os.path.join(project_root, "kernels", "meshdata.cu")
+        ]
+        for file in source_files:
+            with open(file, 'r') as f:
+                cuda_source += f.read()
+        mod = cp.RawModule(code=cuda_source, 
+                        options=("-std=c++20", '-diag-suppress=64,1055')) # the diag-suppress is to suppress the warning about the anonymous union
 
-    createMesh          = ¿
+        createMesh          = mod.get_function('createMesh')
 
 
 
@@ -181,7 +182,7 @@ if __name__ == "__main__":
 
     numPartitions = 1
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
-        ic3, isdel, isidenode,isbnd, nodeNeighElems, nodeNeighNodes = \
+        ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
             module.readHGrid(hgrid_file, numPartitions)
     
     print(nodeCoords.shape)
@@ -226,6 +227,10 @@ if __name__ == "__main__":
     isdel                = cp.array(isdel,             dtype=cp.int32, order='F')
     isidenode            = cp.array(isidenode,         dtype=cp.int32, order='F')
     isbnd                = cp.array(isbnd,             dtype=cp.int32, order='F')
+    nond                 = cp.array(nond,             dtype=cp.int32, order='F')
+    nlnd                 = cp.array(nlnd,             dtype=cp.int32, order='F')
+    iond                 = cp.array(iond,             dtype=cp.int32, order='F')
+    ilnd                 = cp.array(ilnd,             dtype=cp.int32, order='F')
     nodeNeighNodesStart  = cp.array(nodeNeighNodes[1], dtype=cp.int32, order='F')
     nodeNeighNodes       = cp.array(nodeNeighNodes[0], dtype=cp.int32, order='F')
     nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32, order='F')
@@ -239,7 +244,7 @@ if __name__ == "__main__":
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
     dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
 
-    if True:   
+    if False:   
 
         fig, ax = plt.subplots(figsize=(12, 8))
         
@@ -384,7 +389,7 @@ if __name__ == "__main__":
     createMesh          = mod.get_function('createMesh')
     populateMesh        = mod.get_function('populateMesh')
     getStructSizes      = mod.get_function('getStructSizes')
-    computeFluxAdvHface = mod.get_function('computeFluxAdvHface')
+    # computeFluxAdvHface = mod.get_function('computeFluxAdvHface')
     test                = mod.get_function('test')
     # destroy_mesh = mod.get_function('destroyMeshCPU')
 
@@ -404,14 +409,15 @@ if __name__ == "__main__":
 
    
     # Get the struct sizes
-    sizes = cp.zeros(3, dtype=cp.int32)
+    sizes = cp.zeros(6, dtype=cp.int32)
     getStructSizes((1,), (1,), sizes)
-    [nodesSize, elemsSize, sidesSize] = sizes.tolist()
+    [nodesSize, elemsSize, sidesSize, boundaryNodesSize, sideBoundarySize, segmentSize] = sizes.tolist()
 
     # Compute the maximum number of nodes, elements, and sides per partition
     numPartElements = []
     numPartNodes = []
     numPartSides = []
+    numPartBoundaryNodes = []
     for ipart, device_id in enumerate(range(n_gpus)):
 
         # Count the number of elements in the partition
@@ -426,6 +432,14 @@ if __name__ == "__main__":
         numPartSides.append((partSides == ipart).sum().get())
         print(f"Partition {ipart} has {numPartSides} sides")
        
+        # Count the number of boundary nodes in the partition
+        numPartBoundaryNodes.append((partNodes[cp.unique(ilnd)] == ipart).sum().get())
+        print(f"Partition {ipart} has {numPartBoundaryNodes} boundary nodes")
+       
+        # # Count the number of boundary sides in the partition
+        # numPartBoundarySides.append((partSides[cp.unique(ilnd)] == ipart).sum().get())
+        # print(f"Partition {ipart} has {numPartBoundarySides} boundary sides")
+       
     nodesMemList = []
     elemsMemList = []
     sidesMemList = []
@@ -436,10 +450,18 @@ if __name__ == "__main__":
             i34_part    = cp.array(i34[partElements == ipart])
             elnode_part = cp.array(elnode[:, partElements == ipart])
 
-            # Reserves CPU memory for the structs
+            # Reserves GPU memory for the structs
             nodesMem = cp.zeros(max(numPartNodes)   *nodesSize, dtype=cp.int8)
             elemsMem = cp.zeros(max(numPartElements)*elemsSize, dtype=cp.int8)
             sidesMem = cp.zeros(max(numPartSides)   *sidesSize, dtype=cp.int8)
+
+            # Memory for boundary nodes objects in each partition (We store in each device the BoundaryNodes objects 
+            # corresponding to the nodes in the partition)
+            boundaryNodesMem = cp.zeros(max(numPartBoundaryNodes)*boundaryNodesSize, dtype=cp.int8)
+
+            # We save all the segment info in all partitions.
+            segmentMem = cp.zeros(ilnd.shape[1]*segmentSize, dtype=cp.int8)
+            
 
             nodesMemList.append(nodesMem.data.ptr)
             elemsMemList.append(elemsMem.data.ptr)
@@ -521,6 +543,7 @@ if __name__ == "__main__":
                         max(numPartNodes), max(numPartElements), max(numPartSides),
                         nodesPtr, elemsPtr, sidesPtr,
                         nodesMem, elemsMem, sidesMem,
+                        boundaryNodesMem, boundarySidesMem, segmentMem,
                         partNodeNeighNodesMem, partNodeNeighElemsMem,
                         h_s.item(), theta_b.item(), theta_f.item()  , sigma, sigma, ztot, cs, dcs)
             )
@@ -537,6 +560,7 @@ if __name__ == "__main__":
             # of the mesh, including the nodes, elements, sides, and their neighbors.
             populateMesh((1,), (1,),  (i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
                                        isdel, isidenode, isbnd,
+                                       nond, nlnd, iond, ilnd,
                                        nodeNeighNodesStart, nodeNeighNodes,
                                        nodeNeighElemsStart, nodeNeighElems,
                                        globalNodeIndices, globalElemIndices, globalSideIndices,

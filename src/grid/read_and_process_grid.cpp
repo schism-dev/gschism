@@ -737,6 +737,10 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>,    // isdel
            py::array_t<int32_t>,    // isidenode
            py::array_t<int32_t>,    // isbnd
+           py::array_t<int32_t>,    // nond
+           py::array_t<int32_t>,    // nlnd
+           py::array_t<int32_t>,    // iond
+           py::array_t<int32_t>,    // ilnd
            py::tuple,               // nodeNeighElems
            py::tuple                // nodeNeighNodes
            >
@@ -852,7 +856,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
 
     // Allocate arrays for open boundary segments
     std::vector<int> nond(nope, 0);                    // nodes per segment
-    Array2D<int> iond(nope, mnond);                    // node indices for each segment
+    Array2D<int> iond(nope, mnond, -1);                    // node indices for each segment
     std::vector<int> isbnd(nNodes, internalNode);      // is boundary 
 
     // Fill the arrays using stored segment_nodes
@@ -933,7 +937,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
 
     // Allocate arrays for land boundary segments
     std::vector<int> nlnd(nland, 0);      // nodes per segment
-    std::vector<std::vector<int>> ilnd(nland, std::vector<int>(mnlnd, 0));  // node indices for each segment
+    Array2D<int> ilnd(nland, mnlnd, -1);
 
     // Fill the arrays using stored segment_nodes
     for (size_t k = 0; k < segmentNodes.size(); k++) {
@@ -943,7 +947,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
         
         // Copy node indices
         for (int i = 0; i < nn; i++) {
-            ilnd[k][i] = nodes[i];
+            ilnd(k, i) = nodes[i];
         }
 
         // Mark boundary nodes and check for overlap with open boundaries
@@ -1051,6 +1055,10 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
         toPyArray(isdel),
         toPyArray(isidenode),
         toPyArray(isbnd),
+        toPyArray(nond),
+        toPyArray(nlnd),
+        toPyArray(iond),
+        toPyArray(ilnd),
         toPyArray(nodeNeighElems),
         toPyArray(nodeNeighNodes)
 
