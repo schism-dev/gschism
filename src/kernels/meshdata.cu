@@ -53,8 +53,7 @@ __device__ Mesh* mesh = nullptr;
    If true, (xIntersect,yIntersect) is the intersection.				
    Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
 **/
-__device__ bool Element::findNextIntersection(double x2, double y2, 
-                                              Side *&side, Element *&nextElement,
+__device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&nextElement,
                                               double &t, double& tIntersect) {
 
    double closest_intersect_t = 1e10;
@@ -122,7 +121,7 @@ else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(
 
 
 
-__device__ bool Element::findNextIntersection(double x1, double y1, double x2, double y2, 
+__device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, 
                                               Side *&side, Element *&nextElement,
                                               double &t, double& tIntersect) {
 
@@ -173,9 +172,8 @@ else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(
 }
 
 
-__device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, double t, int jlev,
-                                             double &dt, double &xt, double &yt, double &zt, double zint,
-                                             double &uuint, double &vvint, double &wwint) {
+__device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
+                                             double &dt, Point3 &xt, double zint, Vector3 &u_int) {
 
    printf("Tracking segment goes out of water at element %d\n", curElem->idx);
 
@@ -187,8 +185,8 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // And uses this velocity instead to continue the tracking.
 
    // computes the intersection point in cartesian coordinates
-   double xint = nextSide->x(t);
-   double yint = nextSide->y(t);
+   double xint = nextSide->x(tt);
+   double yint = nextSide->y(tt);
   
    // Nudges the point to the barycenter of the element. 
    // This ensures that the point is inside the element and hence, we will find an intersection if the
@@ -198,34 +196,27 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
    // of the intersection point. We are approximating it by the velocity at the side center at jlev.
    // NOTE: With the new code it will be easy to compute the tangential velocity at the intersection point.
-   const double tx = -nextSide->ny;  // tangent unitary vector to the side
-   const double ty =  nextSide->nx;
-   double vtan = nextSide->u2[jlev]*tx + nextSide->v2[jlev]*ty;
+   double vtan = dot(nextSide->t(), nextSide->u2[jlev]);
 
    // If the side is an open boundary, the tangential velocity is zero.
-   if (nextSide->isbnd > 0) vtan = 0.0;
+   if (nextSide->isBnd()) vtan = 0.0;
 
    // The new velocity components are computed from the tangential velocity and the tangent vector.
-   const double us = vtan*tx;
-   const double vs = vtan*ty;
-   const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);
-
+   const double us = vtan*nextSide->t().x;
+   const double vs = vtan*nextSide->t().y;
+   const double ws = 0.5*(nextSide->n1->u2[jlev].z + nextSide->n2->u2[jlev].z);
 
    // Compute the new "tracked" time based on the remaining segment length and the original velocity.
-   const double len2 = (xint - xt)*(xint - xt) + (yint - yt)*(yint - yt);
-   const double vel2 = uuint*uuint + vvint*vvint;        
+   const double len2 = (xint - xt.x)*(xint - xt.x) + (yint - xt.y)*(yint - xt.y);
+   const double vel2 = u_int.x*u_int.x + u_int.y*u_int.y;        
    assert(vel2 > 0.0 && "Zero velocity found");
    dt = dt - sqrt(len2/vel2); 
 
    // The end of this tracking segment is now the intersection point.
-   xt = xint;
-   yt = yint;
-   zt = zint;
+   xt = {xint, yint, zint};
    
-   uuint = us;
-   vvint = vs;
-   wwint = ws;
-
+   u_int = {us, vs, ws};
+   
 }
 
 /**
@@ -261,16 +252,13 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
  * - Additionally, this function never finds intersections with the side segment where the last intersection
  *   was found.
  */
-__device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, double z0,
-                                                       double &xt, double &yt, double &zt, 
-                                                       double &uuint, double &vvint, double &wwint, 
-                                                       Element *&nextElem,
-                                                       int &jlev, double &dt) {
+__device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
+                                                       Element *&nextElem, int &jlev, double &dt) {
 // printf("trackThroughElementsAndLevels: x0=%f, y0=%f, xt=%f, yt=%f\n", x0, y0, xt, yt);
    // First thing is to check if the target point is inside the element. If it is there is nothing
    // else to do.
-   if (containsPoint(xt, yt)) {
-      nextElem->interpolateVelocities(xt, yt, zt, uuint, vvint, wwint);
+   if (containsPoint(toPoint2(xt))) {
+      nextElem->interpolateVelocities(xt, u_int);
       return true;
    }
 
@@ -281,18 +269,16 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
    assert(!nextElem->idry && "Starting element is dry");
 
    // Checks if track has a zero length.
-   const double len2 = (xt - x0)*(xt - x0) + (yt - y0)*(yt - y0);   
+   const double len2 = (xt.x - x0.x)*(xt.x - x0.x) + (xt.y - x0.y)*(xt.y - x0.y);   
    assert(len2 > 0.0 && "Zero length track"); 
    
 
    const int MAX_ITERATIONS = 1000;
-   double xCur = x0, yCur = y0;        // Cur means current
-   // double xInt = -1e10, yInt = -1e10;  // Int means intersection
    
    double t;
    Side *nextSide = nullptr;
    double tIntersect = 1e10;
-   double zint = z0;
+   double zint = x0.z;
 
    // Horizontal tracking loop
    // Finds the first intersection with the element sides. It is guaranteed to exist because
@@ -304,7 +290,7 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
 
    // if the tracking segment goes out of water (either dry or edge boundary)
    if (isEdgeBoundary(nextSide) || (nextElem->idry)) {
-      trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, yt, zt, zint, uuint, vvint, wwint);
+      trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
       nextElem = this;
       
       // Returns "early", meaning that we stopped before we were able to reach the target point.
@@ -331,7 +317,7 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
       // if the tracking segment goes out of water (either dry or edge boundary).
       if (curElem->isEdgeBoundary(nextSide) || (nextElem->idry)) {
 
-         trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, yt, zt, zint, uuint, vvint, wwint);
+         trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
 
          nextElem = curElem;
 
@@ -351,7 +337,7 @@ __device__ bool Element::trackThroughElementsAndLevels(double x0, double y0, dou
  
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
-   nextElem->interpolateVelocities(xt, yt, zt, uuint, vvint, wwint);
+   nextElem->interpolateVelocities(xt, u_int);
 
 
    return true;
@@ -393,7 +379,7 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
-__device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCoords[4],
+__device__ bool Element::computeShapeCoords(Vector2 xt, double shpCoords[4],
                                             bool fixNegshpCoord) const {
 
    // Compute the shape coordinates of the point (xt,yt) in the element.
@@ -424,8 +410,8 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
 #endif
       }
 
-      shpCoords[0] = signedArea(xt,x1,x2,yt,y1,y2)/area;
-      shpCoords[1] = signedArea(x0,xt,x2,y0,yt,y2)/area; 
+      shpCoords[0] = signedArea(xt.x,x1,x2,yt.x,y1,y2)/area;
+      shpCoords[1] = signedArea(x0,xt.x,x2,y0,yt.x,y2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       shpCoords[3] = 0.0;
       double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
@@ -485,7 +471,7 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
 /**  Interpolate velocities at a given point (xt,yt,zt)
 
    @param xt, yt, zt: coordinates of the point to interpolate
-   @param uuint, vvint, wwint: velocities interpolated at the final position (xt,yt,zt)
+   @param uuint: velocity interpolated at the final position (xt,yt,zt)
 
    This is done in four steps:
 
@@ -496,15 +482,14 @@ __device__ bool Element::computeShapeCoords(double &xt, double &yt, double shpCo
    4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
       horizontally and vertically.
 **/
-__device__ void Element::interpolateVelocities(double xt, double yt, double zt, 
-                                               double& uuint, double& vvint, double& wwint) {
-   // Interpolate the velocities at the point (xt,yt,zt). 
+__device__ void Element::interpolateVelocities(Point3 xt, Vector3& uuint) {
+   // Interpolate the velocities at the point xt. 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
 
 
    // First step is to compute the shape coordinates of (xt,yt)
-   computeShapeCoords(xt, yt, shpCoord, false);
+   computeShapeCoords(toVector2(xt), shpCoord, false);
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
    // Second step is to find the level that contains zt
@@ -560,11 +545,11 @@ __device__ void Element::interpolateVelocities(double xt, double yt, double zt,
 // printf("$$$ shpCoord = %f, %f, %f, %f\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    uuint = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
-   vvint = wght1*interpolate(L, shpCoord, &Node::v2) + wght2*interpolate(R, shpCoord, &Node::v2);
-   wwint = wght1*interpolate(L, shpCoord, &Node::w2) + wght2*interpolate(R, shpCoord, &Node::w2);   
+   // vvint = wght1*interpolate(L, shpCoord, &Node::u2.y) + wght2*interpolate(R, shpCoord, &Node::u2.y);
+   // wwint = wght1*interpolate(L, shpCoord, &Node::u2.z) + wght2*interpolate(R, shpCoord, &Node::u2.z);   
 
    // Neither of the interpolated velocities should be NaN
-   assert(!isnan(uuint) && !isnan(vvint) && !isnan(wwint) && "NaN velocities in interpolateVelocities");
+   assert(!isnan(uuint.x) && !isnan(uuint.y) && !isnan(uuint.z) && "NaN velocities in interpolateVelocities");
 
 }
 
@@ -596,13 +581,12 @@ __inline__ __device__ bool Side::btrack(
       double dt,            // Tracking time
       double dtbk,          // Tracking timestep
       double* sclr,         // Array for backtracked values
-      double &uuint, double &vvint, double &wwint
+      Vector3 &u_int
 ) const {
 
    // Start from side center
-   double x0 = xc;
-   double y0 = yc;
-   double z0 = zc[jlev];
+   Point3 x0 = {xc, yc, zc[jlev]};
+ 
 
    double time_rm = dt; // Remaining time
 
@@ -614,15 +598,12 @@ __inline__ __device__ bool Side::btrack(
 
 
    // Initial velocities
-   uuint = u2[jlev];
-   vvint = v2[jlev];
-   wwint = 0.5*(n1->w2[jlev] + n2->w2[jlev]);  // vertical velocity at the side center  
-
+   u_int = {u2[jlev].x, u2[jlev].y, 0.5*(n1->u2[jlev].z + n2->u2[jlev].z)};
 
    // Find the element that is in the direction opposite to the velocity
-   Element* curElem = findElementTowards(uuint, vvint);
+   Element* curElem = findElementTowards({u_int.x, u_int.y});
 
-printf("$$$  %d, %d, %.5f, %.5f\n",  curElem->idx,idx, x0, y0)   ;
+printf("$$$  %d, %d, %.5f, %.5f\n",  curElem->idx,idx, x0.x, x0.y)   ;
    const int MAX_ITERATIONS = 100000; // XXX 1000
    Element* nextElem = curElem;
    int iter = 0;
@@ -631,12 +612,9 @@ printf("$$$  %d, %d, %.5f, %.5f\n",  curElem->idx,idx, x0, y0)   ;
       double dtb = min(dtbk, time_rm);
 
       // Next point in the backtracking curve
-      double xt = x0 - dtb*uuint;
-      double yt = y0 - dtb*vvint;
-      double zt = z0 - dtb*wwint;
+      Point3 xt = x0 - dtb*u_int;
 
-
-      bool found = curElem->trackThroughElementsAndLevels(x0, y0, z0, xt, yt, zt, uuint, vvint, wwint, nextElem, jlev, dtb);
+      bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb);
       assert(found && "Backtracking failed in btrack");
 printf("<>T = %f, %f %f %f\n", time_rm - dtb, xt, yt, zt);
       time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
@@ -647,9 +625,7 @@ printf("<>T = %f, %f %f %f\n", time_rm - dtb, xt, yt, zt);
 
       // The current point becomes the next segment's starting point.
       x0 = xt;
-      y0 = yt;
-      z0 = zt;
-
+ 
       curElem = nextElem;
 
       iter++;

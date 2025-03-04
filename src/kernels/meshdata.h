@@ -24,44 +24,7 @@ constexpr double rearth_pole = 6378206.4; //[m]
 
 constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
-__forceinline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
-  // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
-  return 0.5*((x1-x3)*(y2-y3) - (x2-x3)*(y1-y3));
-}
 
-
-__forceinline__ __device__ void crossProduct(double x1, double y1, double z1, double x2, double y2, double z2, double &x3, double &y3, double &z3) {
-   x3 = y1*z2 - y2*z1;
-   y3 = x2*z1 - x1*z2;
-   z3 = x1*y2 - x2*y1;
-}
-
-
-__forceinline__ __device__ void computeLonLat(Point3 const &p, double &rlon, double &rlat) {
-// Given a 3D global point (may not be on surface of earth), find its longitude and latitude in radians
-
-   const double radius2 = dot(p, p);
-   assert(radius2 != 0.0     && "computeLonLat: radius = 0");
-   assert(p.z*p.z <= radius2 && "computeLonLat: p.z <= radius");
-
-   const double rlon = atan2(p.y, p.x) // (-pi,pi]
-
-   if (abs(rearth_pole - rearth_eq) < 1.0e-2) { // for backward compatibility
-      rlat = asin(p.z/sqrt(radius2));
-   } else {
-      rlat = asin(p.z/rearth_pole);
-   }
-  
-}
-
-__inline__ __device__ void Error(const char* msg) {
-   printf("Error: %s\n", msg);
-   assert(false);
-}
-
-struct Tracers {
-    double tracer[N_TRACERS];
-};
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
@@ -86,6 +49,10 @@ __device__ __host__ __forceinline__ double2 operator*(double s, const double2& v
     return v * s;  // reuse the previous operator
 }
 
+__device__ __host__ __forceinline__ double dot(const double2& v, const double2& w) {
+    return v.x*w.x + v.y*w.y;
+}
+
 __device__ __host__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
     return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
@@ -102,7 +69,62 @@ __device__ __host__ __forceinline__ double3 operator*(double s, const double3& v
     return v * s;
 }
 
+__device__ __host__ __forceinline__ double dot(const double3& v, const double3& w) {
+    return v.x*w.x + v.y*w.y + v.z*w.z;
+}
+
+__device__ __host__ __forceinline__ Vector2 toVector2(const double3& v) {
+    return make_double2(v.x, v.y);
+}
+
+__device__ __host__ __forceinline__ Point2 toPoint2(const double3& v) {
+    return make_double2(v.x, v.y);
+}
+
 // ------------------------------------------------------------------------------------------------
+
+
+
+
+__forceinline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
+  // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
+  return 0.5*((x1-x3)*(y2-y3) - (x2-x3)*(y1-y3));
+}
+
+
+__forceinline__ __device__ void crossProduct(double x1, double y1, double z1, double x2, double y2, double z2, double &x3, double &y3, double &z3) {
+   x3 = y1*z2 - y2*z1;
+   y3 = x2*z1 - x1*z2;
+   z3 = x1*y2 - x2*y1;
+}
+
+
+__forceinline__ __device__ void computeLonLat(Point3 const &p, double &rlon, double &rlat) {
+// Given a 3D global point (may not be on surface of earth), find its longitude and latitude in radians
+
+   const double radius2 = dot(p, p);
+   assert(radius2 != 0.0     && "computeLonLat: radius = 0");
+   assert(p.z*p.z <= radius2 && "computeLonLat: p.z <= radius");
+
+   rlon = atan2(p.y, p.x); // (-pi,pi]
+
+   if (abs(rearth_pole - rearth_eq) < 1.0e-2) { // for backward compatibility
+      rlat = asin(p.z/sqrt(radius2));
+   } else {
+      rlat = asin(p.z/rearth_pole);
+   }
+  
+}
+
+__inline__ __device__ void Error(const char* msg) {
+   printf("Error: %s\n", msg);
+   assert(false);
+}
+
+struct Tracers {
+    double tracer[N_TRACERS];
+};
+
 
 
 struct Frame {
@@ -240,7 +262,7 @@ struct Element {
       y = (1-eps)*y + eps*yc;
    }
 
-   __device__ bool computeShapeCoords(double &xt, double &yt, double shpCoords[4], bool fixNegShapeCoords = false) const;
+   __device__ bool computeShapeCoords(Vector2 xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
 
    __device__ void setFrame(void) {
 
@@ -255,10 +277,10 @@ struct Element {
    __device__ bool findNextIntersection(double x1, double y1, double x2, double y2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
 
-   __inline__ __device__ bool containsPoint(double xt, double yt) const { 
+   __inline__ __device__ bool containsPoint(Vector2 xt) const { 
       // Check if the point (xt,yt) is inside the element
       double shpCoords[4];
-      bool res = computeShapeCoords(xt, yt, shpCoords, false);
+      bool res = computeShapeCoords(xt, shpCoords, false);
       return res;
    }
 
@@ -270,10 +292,7 @@ struct Element {
       
    }
 
-   __device__ void interpolateVelocities(double xt, double yt, double zt, 
-                                         double& uuint, double& vvint, double& wwint);
-
-
+   __device__ void interpolateVelocities(Point3 xt, Vector3& u_int);
 
    // ------------------------------------------------------------------------------------------------
    // These are functions that work on all nodes of the element.
@@ -294,7 +313,7 @@ struct Element {
       res[1] = nodes[1]->*field;
       res[2] = nodes[2]->*field;
       if (isQuad()) res[3] = nodes[3]->*field;
-      else          res[3] = 0.0;
+      else          res[3] = T();
    }
 
    template<typename T>
@@ -304,7 +323,7 @@ struct Element {
       res[1] = (nodes[1]->*field)[level];
       res[2] = (nodes[2]->*field)[level];
       if (isQuad()) res[3] = (nodes[3]->*field)[level];
-      else          res[3] = 0.0;
+      else          res[3] = T();
    }    
 
    template<typename T>
@@ -314,7 +333,7 @@ struct Element {
       res[1] = (nodes[1]->*func)(level);
       res[2] = (nodes[2]->*func)(level);
       if (isQuad()) res[3] = (nodes[3]->*func)(level);
-      else          res[3] = 0.0;
+      else          res[3] = T();  // This is 0.0 or a zero vector
 
    }      
 
@@ -326,15 +345,18 @@ struct Element {
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
    }
 
-   __device__ double interpolate(const double shapeCoords[4], double Node::* field) const {
-      double values[4];
+   template<typename T>
+   __device__ T interpolate(const double shapeCoords[4], T Node::* field) const {
+      T values[4];
       getNodalValues(field, values);
       
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
    }
 
-   __device__ double interpolate(int level, const double shapeCoords[4], double (Node::* field)[nvrt]) const {
-      double values[4];
+
+   template<typename T>
+   __device__ T interpolate(int level, const double shapeCoords[4], T (Node::* field)[nvrt]) const {
+      T values[4];
       getNodalValues(level, field, values);
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -360,15 +382,11 @@ struct Element {
       return true;
    }
 
-   __device__ void trackGoesOutOfWater(Side *nextSide, Element *curElem, double t, int jlev,
-                                       double &dt, double &xt, double &yt, double &zt, double zint,
-                                       double &uuint, double &vvint, double &wwint);
+   __device__ void trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
+                                       double &dt, Point3 &xt, double zint, Vector3 &u_int);
     
-   __device__ bool trackThroughElementsAndLevels(double x0, double y0, double z0,
-                                                 double &xt, double &yt, double &zt, 
-                                                 double &uuint, double &vvint, double &wwint, 
+   __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
                                                  Element *&nextElem, int &jlev, double &dt);
-
 
 };
 
@@ -379,6 +397,7 @@ struct BoundarySegment {
 };
 
 struct SideBoundary {
+   Side *side; // Pointer to the side that this boundary segment belongs to
    BoundarySegment *segment; // Pointer to the boundary segment
   
 };
@@ -399,29 +418,34 @@ struct Side {
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
 
-   int isbnd XXX;             // Is this a boundary side? Which segment?
-   int bdysd XXX???;             // Boundary side flag
+   
    int kb;                // Bottom index of the side
    bool idry;             // True if the side is dry
  
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
-
    // Physical information
-   Vector2 u2;                // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
-   double u2[nvrt], v2[nvrt]; XXXX // Horizontal velocity
+   Vector2 u2[nvrt];            // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
 
+   __forceinline__ __device__ Vector2 t(void) const {
+      return {-n.y, n.x};
+   }
+
+   __inline__ __device__ bool isBnd(void) const {
+      return sideBnd != nullptr;
+   }
+
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {
       return elems[0] ? elems[0] : elems[1];
    }
 
-   __inline__ __device__ Element* findElementTowards(double u, double v) const {
+   __inline__ __device__ Element* findElementTowards(Vector2 u) const {
       // From the elements that share this side, find the one that is in the direction of the target point (xt,yt)
 
       // If one of the elements is null, return the other one
@@ -430,14 +454,13 @@ struct Side {
 
 
       // Dot product of the negative velocity vector with the side normal vector
-      const double dot_prod1 = -(u*nx + v*ny);
+      const double dot_prod1 = -dot(u, n);
       
       // Vector from side center to element 0 centroid
-      const double vx2 = elems[0]->xc - xc;
-      const double vy2 = elems[0]->yc - yc;
+      const Vector2 v2 = {elems[0]->xc - xc, elems[0]->yc - yc};
 
       // Dot product of the vector with the side normal vector
-      const double dot_prod2 = vx2*nx + vy2*ny;
+      const double dot_prod2 = dot(v2, n);
 
       // If the dot product is positive, returns the element whose vector to the centroid is in the same direction as the target point
       // Otherwise, returns the other element (otherwise includes dot_prod1 == 0)
@@ -459,8 +482,7 @@ struct Side {
    }
  
    __inline__ __device__ bool btrack(int jlev, double dt, double dtbk, double* sclr,
-                                     double &uuint, double &vvint, double &wwint) const;
-
+                                     Vector3 &u_int) const;
 
 
 
@@ -468,13 +490,14 @@ struct Side {
 };
 
 
+// This struct is used to store the boundary information for a node.
 struct NodeBoundary {
-   SideBoundary *side1; // Pointer to the boundary segment (can be nullptr)
-   SideBoundary *side2; // Pointer to the boundary segment (can be nullptr)
+   SideBoundary *sideBnd1; // Pointer to the boundary segment (can be nullptr)
+   SideBoundary *sideBnd2; // Pointer to the boundary segment (can be nullptr)
 
-   __forceinline__ __device__ SideBoundary *side(int index) { 
+   __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
-      return (index == 0) ? side1 : side2; 
+      return (index == 0) ? sideBnd1 : sideBnd2; 
    }
 };
 
@@ -489,7 +512,7 @@ struct Node {
    int numElements;   // number of elements that share this node
 
    double x, y, z;
-   double u2[nvrt], v2[nvrt], w2[nvrt];
+   Vector3 u2[nvrt];
    double znl[nvrt];
    double lon, lat;
    double depth;
@@ -498,7 +521,6 @@ struct Node {
 
    int idry;     // True if the node is dry
 
-   int isbnd XXX;    // Is this node on a boundary? Which segment?
    NodeBoundary *nodeBnd; // Pointer to additional boundary information. For non-boundary nodes, 
 
    // Physical information
@@ -672,13 +694,13 @@ class Mesh {
    {
       printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
       for (int i = 0; i < ne; i++) {
-         auto isInside = localElemData[i].containsPoint(x, y);
+         auto isInside = localElemData[i].containsPoint({x, y});
          // printf("i = %d, isInside = %d, x = %f, y = %f\n", i, isInside, localElemData[i].xc, localElemData[i].yc);
          if (isInside) {
             printf("Point %f %f %f is inside element %d\n", x, y, z, i);
             Element *elem = &localElemData[i];
             
-            double uuint, vvint, wwint;
+            Vector3 u_int;
             // auto res = elem->trackThroughElementsAndLevels(x,y,z, 
             //                                                x+0.01,y+0.01,z,
             //                                                uuint, vvint, wwint, elem);
@@ -688,7 +710,7 @@ class Mesh {
             // RECORDAR:
             // - con y=0 no encuentra el triangulo
             // - jlev = 5, z = 0.1...
-            side->btrack(5, 3000.0, 3.1, nullptr, uuint, vvint, wwint);
+            side->btrack(5, 3000.0, 3.1, nullptr, u_int);
 
          }
       }

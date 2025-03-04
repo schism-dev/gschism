@@ -151,6 +151,23 @@ if __name__ == "__main__":
     # Test the module
     import cupy as cp
 
+    # Create the kernel module TESTING!!
+    cuda_source = ""
+    source_files = [
+        os.path.join(project_root, "kernels", "meshdata.h"),
+        os.path.join(project_root, "kernels", "meshdata.cu")
+    ]
+    for file in source_files:
+        with open(file, 'r') as f:
+            cuda_source += f.read()
+    mod = cp.RawModule(code=cuda_source, 
+                       options=("-std=c++20", '-diag-suppress=64,1055')) # the diag-suppress is to suppress the warning about the anonymous union
+
+    createMesh          = ¿
+
+
+
+
     # mesh_file = "/media/jmg/New450/src/gschism/test/hgrid2.gr3"
     # mesh_file = "/home/jo.gonzalez/src/gschism/test/hgrid.gr3"
     # mesh_file = "/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
