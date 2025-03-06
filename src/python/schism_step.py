@@ -3,8 +3,10 @@
 
 def schism_step(it: int):
 
-    print('SAL option: scale gravity [NOT IMPLEMENTED]')
-    grav2=grav
+
+    # SAL option: scale gravity
+    scale_gravity()
+
 
     time = it*dt
 
@@ -12,46 +14,41 @@ def schism_step(it: int):
     # time_stamp=time; it_main=it
 
     # Define ramp function for boundary elevation forcing, wind and pressure forcing and tidal potential forcing
-    # XXX IMPLEMENT THIS
-    # if ibc == 0:
-    #     if drampbc > 0.0:
-    #         rampbc = cp.tanh(2.0*time/86400.0/drampbc)
-    #     else:
-    #         rampbc=1.0
+    if ibc == 0:
+        if drampbc > 0.0:
+            rampbc = cp.tanh(2.0*time/86400.0/drampbc)
+        else:
+            rampbc=1.0
 
-    #       if(nws/=0.and.drampwind>0.d0) then
-    #     rampwind=tanh(2.d0*time/86400.d0/drampwind)
-    #   else
-    #     rampwind=1.d0
-    #   endif
+        if nws != 0 and drampwind > 0.0:
+            rampwind = cp.tanh(2.0*time/86400.0/drampwind)
+        else:
+            rampwind = 1.0
 
-    #   if(drampwafo>0.d0) then
-    #     rampwafo=tanh(2.d0*time/86400.d0/drampwafo)
-    #   else
-    #     rampwafo=1.d0
-    #   endif
 
-    #   !For source/sinks
-    #   if(if_source/=0) then
-    #     if(dramp_ss>0.d0) then
-    #       ramp_ss=tanh(2.d0*time/86400.d0/dramp_ss)
-    #     else
-    #       ramp_ss=1.d0
-    #     endif
-    #   endif
+    if drampwafo > 0.0:
+        rampwafo = cp.tanh(2.0*time/86400.0/drampwafo)
+    else:
+        rampwafo = 1.0
 
-    #   if(dramp>0.d0) then
-    #     ramp=tanh(2.d0*time/86400.d0/dramp)
-    #   else
-    #     ramp=1.d0
-    #   endif
 
+    # For source/sinks
+    if if_source != 0:
+        if dramp_ss > 0.0:
+            ramp_ss = cp.tanh(2.0*time/86400.0/dramp_ss)
+        else:
+            ramp_ss = 1.0
+
+
+    if dramp > 0.0:
+        ramp = cp.tanh(2.0*time/86400.0/dramp)
+    else:
+        ramp = 1.0
 
 
     #  Compute new bed deformation
-    #   do i=1,npa
-    #     bdef2(i)=bdef(i)/real(ibdef,rkind)*real(min0(it,ibdef),rkind)
-    #   enddo !i
+    bdef2[:] = bdef[:]/real(ibdef,rkind)*real(min0(it,ibdef),rkind)
+
 
 
 

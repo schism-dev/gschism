@@ -6,6 +6,20 @@ __device__ Mesh* mesh = nullptr;
 
 
 
+Polynomial<4> polyDischarge(0.0, 0.0, 0.0, 0.0, 0.0); // XXX read from file
+
+//===============================================================================
+//     
+//===============================================================================
+__device__ __forceinline__ void update_bdef(double time, double x0, double y0, double &dep, Vector3 &vel) {
+   // For imm=2, user needs to update bottom depth and velocity
+
+   dep = min(1.0, 7.0 - (x0 + time));
+   vel = { -1.0, 0.0, 0.0 };
+
+}
+
+
 /**
    For a point on a side of an element and a line segment starting at that point and ending at (x2,y2), 
    find the intersection point (given by parameter tIntersect) and the side (intersectingSide) that it intersects.
@@ -1081,7 +1095,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.yc*rot_f , side.xc*rot_f};
 }
 
 
-__global__ void setupCoefficientMatrixAndRHS(void) {
+__global__ void setupCoefficientMatrixAndRHS(double time) {
 // Setup coefficient matrix, sparsem, for the shallow water wave equation
 // No elevation essential b.c. are imposed yet but other b.c. is imposed
 // 
@@ -1122,7 +1136,7 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
       if (elem->isTri()) {
 
          // To clarify the notation in this section: 
-         //   i stands for the node under consideration (node1)
+         //   i standtimes for the node under consideration (node1)
          //   j (node2) and k (node3) are the other nodes of the triangle.
          const int id2 = elem->nxq(1 + id1);
          const int id3 = elem->nxq(2 + id1);
@@ -1175,47 +1189,51 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
       }
       Umean = Umean/elem->i34;
 
+      const Vector2 gradPhi_1 = elem->gradPhi[id1];
 
       // Integral of \nabla\phi_i \cdot \pmb{U}^n
-      const double I_4_1 = dot(elem->gradPhi[id1], Umean);
+      const double I_4_1 = dot(gradPhi_1, Umean);
 
       // Integral of \nabla\phi_i \cdot \pmb{E}
-      const double I_4_2 = dot(elem->gradPhi[id1], elem->ghat1);
+      const double I_4_2 = dot(gradPhi_1, elem->ghat1);
      
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);
       
-#ifdef popo
+
       // Additional terms 
+      double vnorm = 0.0;
       if (imm == 2)  { // Pre-compute vnorm on the element
          Vector3 ubed;
          update_bdef(time, elem->xc, elem->yc, elem->depth, ubed);
 
          Vector3 gradP(0.0, 0.0, 1.0);
          for (int m=0; m < elem->i34; m++) {
-           Vector2(gradP) += elem->nodes[m]->depth*elem->dldxy[m]; //XXXXXX IMPLEMENT Vector2 as a cast
+           const Vector2 gradP_2D = elem->nodes[m]->depth*elem->gradPhi[m];
+           gradP.x += gradP_2D.x;
+           gradP.y += gradP_2D.y;
          }   
-         vnorm=dot(ubed, gradP)/sqrt(dot(gradP, gradP));
+         vnorm = dot(ubed, gradP)/sqrt(dot(gradP, gradP));
       } // imm==2
 
       if (elem->isTri()) {
          for (int l=0; l<3; l++) {
            double fac;
-           (id==l)? fac=2.0 : fac=1.0;
-           
-           const Node *node = elem->nodes[l];
 
-           if (imm==2) node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm)
-           else        node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1)
+           Node *node = elem->nodes[l];
+
+           (node == node1)? fac=2.0 : fac=1.0;
+
+           if (imm==2) node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
+           else        node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
            
          }
 
-         if(elem->idry==0) {
-           detadx=dot_product(eta2(elnode(1:3,ie)),dldxy(1:3,1,ie))
-           detady=dot_product(eta2(elnode(1:3,ie)),dldxy(1:3,2,ie))
+         if (elem->idry == 0) {
+           const Vector2 gradEta = elem->nodes[0]->eta2*elem->gradPhi[0] +
+                                   elem->nodes[1]->eta2*elem->gradPhi[1] +
+                                   elem->nodes[2]->eta2*elem->gradPhi[2];
 
-           tmp = elem->dldxy(id,1)*detadx + elem->dldxy(id,2)*detady;
-
-           node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*tmp
+           node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
          }
 
       } // isTri
@@ -1236,10 +1254,10 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
 
 
       node1->qel += (dt/elem->i34)*elem->vsource;
-#endif
+
    } // for all elements connected to the node
    
-#ifdef popo
+
 
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2,6 are not needed if essential b.c. are enforced by elminating rows and columns
@@ -1248,43 +1266,22 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
       // If it is an open boundary node...
 
       // At least one open bnd side, maybe two
-      for (int l=1; l<=2; l++) { 
+      for (int l=0; l<2; l++) { 
 
          // Gets each of the sides sharing the node. 
-         Side *side = nodeBnd->side(l);
+         SideBoundary *sideBnd = nodeBnd->sideBnd(l);
 
-         if (side == nullptr) continue; // Skip if no boundary side
+         if (sideBnd == nullptr) continue; // Skip if no boundary side
 
-         const Node *node2 = side->otherNode(node1); // Other node of the side
+         const Node *node2 = sideBnd->side->otherNode(node1); // Other node of the side
 
-         XXXX REMEMBER TO IMPLEMENT THIS IN nodeBoundary
-         // if (l==1) then
-         //   ie=indel(1,i)
-         //   id=iself(1,i)
-         //   isd=elside(nxq(i34(ie)-1,id,i34(ie)),ie)
-         //   nj=elnode(nxq(1,id,i34(ie)),ie)
-         //   ind=1
-         // else
-         //   ie=indel(nne(i),i)
-         //   id=iself(nne(i),i)
-         //   isd=elside(nxq(i34(ie)-2,id,i34(ie)),ie)
-         //   nj=elnode(nxq(i34(ie)-1,id,i34(ie)),ie)
-         //   ind=nnp(i)
-         // endif
-
-         // nd=isidenode(1,isd)+isidenode(2,isd)-i
-         // if(nd/=nj) then
-         //   write(errmsg,*)'Impossible 79'
-         //   call parallel_abort(errmsg)
-         // endif
-
-         SideBoundary *sideBnd = side->sideBnd;
 
          if (sideBnd != nullptr) {
             // If the side is on a boundary...
 
             // Get the boundary segment
-            BoundarySegment *sideSegment = sideBnd->sideSegment;
+            const BoundarySegment *sideSegment = sideBnd->segment;
+            const Side *side = sideBnd->side;
 
             // Integral I_3
             if (sideSegment->ifltype != 0) {
@@ -1293,18 +1290,18 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
                // Calculate I_3 even if i is on essential b.c. so as to check symmetry later
                // especially for Flather b.c.
                double ri3 = 0.0;
-               if(side->idry != 1) {
+               if (side->idry != 1) {
                   // If the side is not dry
                   
                   // Computes the side flux of (uth, vth)
-                  double Vn = 0.d0;
+                  double Vn = 0.0;
                   for (int k = side->kb; k<nvrt-1; k++) {
                      // uth, vth in lat/lon frame if ics=2
                      // XXX Are uth,vth really necessary? Why not just store the normal component?
                      const double vn1 = dot(side->uth[k  ], side->n); // outer normal
                      const double vn2 = dot(side->uth[k+1], side->n);
 
-                     Vn += 0.5*(side->zs[k+1] - side->zs[k])*(vn1 + vn2);
+                     Vn += 0.5*(side->zc[k+1] - side->zc[k])*(vn1 + vn2);
                   }
 
                   ri3 = 0.5*side->length*Vn;
@@ -1318,8 +1315,8 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
                   const double con0 = (1.0/6.0)*side->length*sqrt(grav*side->depth); // For coefficient matrix
                   ri3 -= con0*(2.0*node1->eta2 + node2->eta2);
                   
-                  node1->sparsem(node1) += (thetai*dt*con0)*2.0;
-                  node1->sparsem(node2) += (thetai*dt*con0);
+                  node1->addToSparseMatrix(node1, (thetai*dt*con0)*2.0);
+                  node1->addToSparseMatrix(node2, (thetai*dt*con0));
 
                } 
                else if (sideSegment->ifltype == -2) { // Discharge relation (outgoing only)
@@ -1328,12 +1325,12 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
                       
                   const double etam = 0.5*(node1->eta2 + node2->eta2);
 
-                  tmp2 = polyEval(disch_coef, eta)/sideSegment->clen; // XXXX IMPLEMENT Poly. It may need the grade (4 in this case)
-                  assert(tmp2 >= 0.0 && "bar{f} < 0 at discharge boundary");
+                  const double tmp = polyDischarge.eval(etam)/sideSegment->clen; // XXXX IMPLEMENT Poly. It may need the grade (4 in this case)
+                  assert(tmp >= 0.0 && "bar{f} < 0 at discharge boundary");
 
-                  const double con0 = (1.0/6.0)*side->length*tmp2*thetai*dt;
-                  node1->sparsem(node1) += con0*2.0;
-                  node1->sparsem(node2) += con0;
+                  const double con0 = (1.0/6.0)*side->length*tmp*thetai*dt;
+                  node1->addToSparseMatrix(node1, con0*2.0);
+                  node1->addToSparseMatrix(node2, con0);
 
                } // if Flather or Discharge
 
@@ -1341,7 +1338,6 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
 
             } // I_3
           
-
 
             // Integral I_5
             if(side->idry != 1) {
@@ -1357,9 +1353,6 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
       } // for l
 
    } // if isbnd
-
-
-#endif 
 
 }
 
@@ -1536,7 +1529,7 @@ __global__ void transport(void) {
 
 //             !This obtains final values for interface sides
 //             trsd_tmp(:,:,iside_table)= trsd_tmp(:,:,iside_table)+trsd_tmp0(:,:,iside_table)
-//           endif !nproc>1
+//       :    endif !nproc>1
 //           !message passing end
 // !$OMP     end master
 // !$OMP     barrier

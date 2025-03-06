@@ -5,6 +5,10 @@ constexpr int N_TRACERS = 2;
 constexpr int ivcor = 2; // Vertical coordinate system
 constexpr int ics = 1;   // 1: global, 2: local
 constexpr int ihh = 1;   // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int imm = 0;   // Option to pre-compute vnorm on the element
+
+constexpr int    iloadtide = 0;       // Option to use polynomial for discharge boundary
+constexpr double loadtide_coef = 0.1; // Load tide coefficient
 
 constexpr int nvrt = 54; // Number of vertical levels
 constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
@@ -19,8 +23,10 @@ constexpr int landNode = -2;
 
 constexpr double pi = 3.14159265358979323846;
 
-constexpr double rearth_eq   = 6378206.4; //[m] 
-constexpr double rearth_pole = 6378206.4; //[m]
+constexpr double rearth_eq   = 6378206.4; // [m] 
+constexpr double rearth_pole = 6378206.4; // [m]
+constexpr double grav        = 9.81;      // [m/s^2]
+constexpr double omega_e     = 7.292e-5;  // [1/s]
 
 constexpr double thetai = 0.6;
 
@@ -30,7 +36,7 @@ constexpr double dt = -1e10;  // Time step  XXX
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
-using Vector2 = double2;
+using Vector2 = double2; 
 using Vector3 = double3;
 using Point2  = double2;
 using Point3  = double3;
@@ -110,7 +116,28 @@ __device__ __host__ __forceinline__ Point2 toPoint2(const double3& p) {
 
 // ------------------------------------------------------------------------------------------------
 
+// Polynomial class
+template<int grade>
+struct Polynomial {
+    // Static assertion to give a clear error message at compile time
+    static_assert(grade == 4, "Only 4th order polynomials are implemented");
+};
 
+
+// Explicit specialization for grade 4
+template<>
+struct Polynomial<4> {
+   double a0, a1, a2, a3, a4; // Coefficients a0, a1, a2, a3, a4 for a4*x^4 + a3*x^3 + a2*x^2 + a1*x + a0
+
+   // Constructor from coefficients
+   __device__ __host__ __forceinline__ Polynomial(double a0, double a1, double a2, double a3, double a4) : a0(a0), a1(a1), a2(a2), a3(a3), a4(a4) {}
+
+   __device__ __host__ __forceinline__ double eval(double x) const {
+      return a0 + x*(a1 + x*(a2 + x*(a3 + x*a4)));
+   }
+};
+
+// ------------------------------------------------------------------------------------------------
 
 
 __forceinline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
@@ -285,6 +312,8 @@ struct Element {
    Tracers tracers[nvrt];     // Tracer values at each vertical level  
 
    Vector2 ghat1;             // Element averaged ghat (\breve{G} in notes)
+
+   double vsource;             // Volumetric source/sink term [m^3/s]
 
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
@@ -478,8 +507,9 @@ struct Side {
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
    // Physical information
-   Vector2 u2[nvrt];            // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
-   Vector2 U;                   // Side vertically averaged velocity vector
+   Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
+   Vector2 uth[nvrt];           // "Time history" velocity
+   Vector2 U;                   // Vertically averaged velocity vector   
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
@@ -590,6 +620,9 @@ struct Node {
    double grav2; // Gravity 
    double hhat;  // \breve{H} in notes
 
+   double bdef1; // Bottom deformation at previous timestep
+   double bdef2; // Bottom deformation at current timestep
+
    double qel; // RHS
 
    __forceinline__ __device__ Point2 point2(void) const { return {x, y}; }
@@ -601,7 +634,7 @@ struct Node {
       printf("NOT IMPLEMENTED: clearMatrixRow\n");
    }
 
-   __device__ void addToSparseMatrix(Node *node, double value) {
+   __device__ void addToSparseMatrix(Node const *node, double value) {
       // Add the value to the sparse matrix for this node
       printf("NOT IMPLEMENTED: addToSparseMatrix\n");
    }
