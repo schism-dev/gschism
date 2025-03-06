@@ -143,13 +143,13 @@ void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const std::vector<int
 
             // Add nodes counter-clockwise around this node
             for (int k = 1; k < i34[ie] - 1; k++) {
-                nodeNeighNodes(i, currentCount[i]) = elnode(nqx(k, ii, i34[ie]), ie);
+                nodeNeighNodes(i, currentCount[i]) = elnode(nxq(k, ii, i34[ie]), ie);
                 currentCount[i]++;
             }
             
             // For the last element in the ball around node i
             if (j == nodeNeighElems.rowSize(i) - 1) {  // Last element
-                int lastNode = elnode(nqx(i34[ie] - 1, ii, i34[ie]), ie);
+                int lastNode = elnode(nxq(i34[ie] - 1, ii, i34[ie]), ie);
   
                 
                 if (isbnd[i] == internalNode) {  // Internal node 
@@ -283,8 +283,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         for (int k = 0; k < i34[ie]; k++) {
             ic3(k, ie) = -1;
             // Get nodes for this side
-            const int loc_n1 = nqx(1, k, i34[ie]);
-            const int loc_n2 = nqx(2, k, i34[ie]); 
+            const int loc_n1 = nxq(1, k, i34[ie]);
+            const int loc_n2 = nxq(2, k, i34[ie]); 
 
             const int n1 = elnode(loc_n1, ie);
             const int n2 = elnode(loc_n2, ie);
@@ -316,8 +316,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
             int je = ic3(k, ie);
             if (je != -1) {
                 for (int l = 0; l < i34[je]; l++) {
-                    int n1_je = nqx(0, l, i34[je]);
-                    int n2_je = nqx(1, l, i34[je]);
+                    int n1_je = nxq(0, l, i34[je]);
+                    int n2_je = nxq(1, l, i34[je]);
 
                     if (elnode(n1_je, je) == n1 && elnode(n2_je, je) == n2) {
                         throw std::runtime_error("Elem " + std::to_string(ie+1) + 
@@ -401,8 +401,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                 break;
             }
 
-            const int n1 = elnode(nqx(1, j, i34[ie]), ie);
-            const int n2 = elnode(nqx(2, j, i34[ie]), ie);
+            const int n1 = elnode(nxq(1, j, i34[ie]), ie);
+            const int n2 = elnode(nxq(2, j, i34[ie]), ie);
 
             if (n1==-1) {
                 printFormatted(ansi::red("n1==-1"));
@@ -436,8 +436,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         
 //         for (int j = 0; j < i34[ie]; j++) {
 //             int jsj = elside(j, ie);  // Side index
-//             int n1 = elnode(nqx(0, j, i34[ie]), ie);  // First node of side
-//             int n2 = elnode(nqx(1, j, i34[ie]), ie);  // Second node of side
+//             int n1 = elnode(nxq(0, j, i34[ie]), ie);  // First node of side
+//             int n2 = elnode(nxq(1, j, i34[ie]), ie);  // Second node of side
             
 //             // Check if this is a new local side
 //             if (ic3(j, ie) == 0 || 
@@ -510,7 +510,7 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
                 }
 
                 // If ilocal is a boundary node and ilocal-1 is too, then this is a boundary element
-                if (ic3(nqx(-1, ilocal, i34[ie]), ie) == -1) {
+                if (ic3(nxq(-1, ilocal, i34[ie]), ie) == -1) {
                     icount++;
                     nodeNeighElems(i, 0) = ie;
                 }
@@ -543,7 +543,7 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
             }
 
             // Find next element by going two sides back counter-clockwise
-            const int newElement = ic3(nqx(-2, ilocal, i34[ie]), ie);
+            const int newElement = ic3(nxq(-2, ilocal, i34[ie]), ie);
 
             if (newElement == -1) {
                 throw std::runtime_error("Incomplete ball around node " + 

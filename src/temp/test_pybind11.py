@@ -13,21 +13,21 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
-# tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
-tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
+# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     # Test the module
     import cupy as cp
 
-    if False:
+    if True:
         # Create the kernel module TESTING!!
         cuda_source = ""
         source_files = [
@@ -459,6 +459,9 @@ if __name__ == "__main__":
             # corresponding to the nodes in the partition)
             boundaryNodesMem = cp.zeros(max(numPartBoundaryNodes)*boundaryNodesSize, dtype=cp.int8)
 
+            # We don't know the number of boundary sides in each partition, so we reserve as much as the number of boundary nodes.
+            boundarySidesMem  = cp.zeros(max(numPartBoundaryNodes)*sideBoundarySize,  dtype=cp.int8)
+
             # We save all the segment info in all partitions.
             segmentMem = cp.zeros(ilnd.shape[1]*segmentSize, dtype=cp.int8)
             
@@ -468,7 +471,7 @@ if __name__ == "__main__":
             sidesMemList.append(sidesMem.data.ptr)
 
             # Add the arrays to the device memory reference list. This ensures that the memory is not freed until the mesh is destroyed.
-            deviceMemRef.append([i34_part, elnode_part, nodesMem, elemsMem, sidesMem])
+            deviceMemRef.append([i34_part, elnode_part, nodesMem, elemsMem, sidesMem, boundaryNodesMem, boundarySidesMem, segmentMem])
 
     # Create the arrays of pointers to the start of the device memory
     nodesPtr = cp.array(nodesMemList, dtype=cp.uintp)

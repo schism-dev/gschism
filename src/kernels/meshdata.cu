@@ -661,8 +661,8 @@ printf("$$$  %d, %d, %.5f, %.5f\n",  curElem->idx,idx, x0.x, x0.y)   ;
 //    for (int i = 0; i < i34; i++) {
 //       const double x3 = nodes[i]->x;
 //       const double y3 = nodes[i]->y;
-//       const double x4 = nodes[nqx(i+1)]->x;
-//       const double y4 = nodes[nqx(i+1)]->y;
+//       const double x4 = nodes[nxq(i+1)]->x;
+//       const double y4 = nodes[nxq(i+1)]->y;
 
 //       const Side& side = sides[i];
 
@@ -890,8 +890,13 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       // Links the node to the boundary information
       int idxNodeBoundary = 0;
       if (isbnd[i] >= 0) {
-         node.nodeBnd = localNodeBoundaryMem + idxNodeBoundary*sizeof(NodeBoundary);
-         node.nodeBnd->type = isbnd[i];
+         node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
+         if (isbnd[i]>0) {
+            node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
+         }
+         else {
+            node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]);
+         }
          
          idxNodeBoundary++;
       }
@@ -907,6 +912,7 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {0.0, -node.y*rot_f, node.x*rot_f};
    }
 
    printf("Processing %d sides\n", ns);
+   int idxSideBoundary = 0;
    for (int i = 0; i < ns; i++)
    {
       Side &side = localSideData[i];
@@ -929,11 +935,19 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {0.0, -node.y*rot_f, node.x*rot_f};
       side.n = side.n/norm;
 
       // Side boundary type
-      const int n1bnd = side.n1->nodeBnd->type;
-      const int n2bnd = side.n2->nodeBnd->type;
+      const NodeBoundary *n1bnd = side.n1->nodeBnd;
+      const NodeBoundary *n2bnd = side.n2->nodeBnd;
       // XXXX NOTE: I'm chosing the boundary type of the first node. This may not be correct.
-      if (n1bnd > 0 || n2bnd > 0) side.isbnd = n1bnd;
-      else side.isbnd = 0;
+      
+      if (n1bnd != nullptr || n2bnd != nullptr) 
+      {
+         side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+         if (n1bnd != nullptr) side.sideBnd->segment = n1bnd->segment;
+         else                  side.sideBnd->segment = n2bnd->segment;
+         side.sideBnd->side = &side;
+         idxSideBoundary++;
+      }
+      else side.sideBnd = nullptr;
 
       // finding the pointer to the elements that share the side
       const int idx_e1 = isdel[globalSideIndices[i]*2];
@@ -1034,9 +1048,34 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.yc*rot_f , side.xc*rot_f};
 
       }
 
+      // Derivatives of shape functions
+      //  For ics=2, this is done inside element/ll frame XXX
+      //  For quads, the derivative is evaluated at centroid
+      const int i34 = elem.i34;
+      for (int j = 0; j < i34; j++) {
+         const double area = elem.area;
+         const int id2 = elem.nxq(1 + j);
+         const int id3 = elem.nxq(2 + j);
+         const int id4 = elem.nxq(3 + j);
+         if (elem.isTri()) {
+            // This expression can be derived from the derivatives of the shape functions in area coordinates.
+            // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
+            // da1/dx = (y1 - y2)/(2*area)
+            const double dPhi_j_dx = (elem.nodes[id2]->y - elem.nodes[id3]->y)/(2*area); 
+            const double dPhi_j_dy = (elem.nodes[id3]->x - elem.nodes[id2]->x)/(2*area); 
+            elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
+         }
+         else  { // Quad; evaluate at centroid
+            const double dPhi_j_dx = (elem.nodes[id2]->y - elem.nodes[id4]->y)/(2*area); 
+            const double dPhi_j_dy = (elem.nodes[id4]->x - elem.nodes[id2]->x)/(2*area); 
+            elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
+         } // if Tri
+
+      } // for j
+
    }
 
- 
+
 
    
 }
@@ -1052,7 +1091,7 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
 
    Node *node1 = &(mesh->localNodeData[in]);
 
-#ifdef popo
+
    node1->clearMatrixRow();
    node1->qel = 0.0;
 
@@ -1065,7 +1104,6 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
 
       Element *elem = node1->elements[j];
 
-      const int idxNode = elem->nodeIdx(node1); // XXX IMPLEMENT THIS
 
       // Compute the average gravity
       const double grav3 = elem->mean(&Node::grav2);
@@ -1074,27 +1112,26 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
 
       // Integral I_1 
       // \bar{\breve{H}} 
-      const double hhatb = elem->mean(&Node::hhat);         XXX hhat is an element field
+      const double hhatb = elem->mean(&Node::hhat);        
 
       assert((hhatb >= 0.0 || ihh != 1) && "Invalid hhat");
 
+      const int id1 = elem->nodeLocalIdx(node1); 
+      const double area = elem->area;
 
-      if (isTri()) {
+      if (elem->isTri()) {
 
          // To clarify the notation in this section: 
          //   i stands for the node under consideration (node1)
          //   j (node2) and k (node3) are the other nodes of the triangle.
-         
-         const int id1 = elem->nodeLocalIdx(node1); // IMPLEMENT nodeLocalIdx
-         Node *node2 = elem->nodes[nxq(1,id1)];
-         Node *node3 = elem->nodes[nxq(2,id1)];
+         const int id2 = elem->nxq(1 + id1);
+         const int id3 = elem->nxq(2 + id1);
+         Node *node2 = elem->nodes[id2];
+         Node *node3 = elem->nodes[id3];
 
-         const double x1 = node1->x;
-         const double y1 = node1->y;
-         const double x2 = node2->x;
-         const double y2 = node2->y;
-         const double x3 = node3->x;
-         const double y3 = node3->y;
+         const Point2 x1 = node1->point2();
+         const Point2 x2 = node2->point2();
+         const Point2 x3 = node3->point2();
 
          // integral of phi_i*phi_j
          const double ipp_ii = (1.0/6.0 )*area;
@@ -1102,8 +1139,8 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
          const double ipp_ik = (1.0/12.0)*area;
 
          // integral of [(grad phi_i) * (grad phi_j)]
-         const double igpgp_ii = (1.0/4.0)/area*((x3-x2)*(x3-x2) + (y3-y2)*(y3-y2));
-         const double igpgp_ij = (1.0/4.0)/area*((x3-x2)*(x1-x3) + (y3-y2)*(y1-y3));
+         const double igpgp_ii = ((1.0/4.0)/area)*dot(x3-x2, x3-x2);
+         const double igpgp_ij = ((1.0/4.0)/area)*dot(x3-x2, x1-x3);
          const double igpgp_ik = - igpgp_ii - igpgp_ij; // This comes from the fact that if a,b,c are vectors forming a triangle (in order), then a+b+c = 0, hence: -a*c = a*(a+b+c-c) = a*a + a*b.
 
          // Computes the different components of integral I_1 of each node with respect to node i.
@@ -1111,9 +1148,9 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
          const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
          const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
 
-         node1->sparsem(node1) +=  I1_ii;
-         node1->sparsem(node2) +=  I1_ij; 
-         node1->sparsem(node3) +=  I1_ik;
+         node1->addToSparseMatrix(node1, I1_ii);
+         node1->addToSparseMatrix(node2, I1_ij); 
+         node1->addToSparseMatrix(node3, I1_ik);
      
       }
       else { // Quad
@@ -1121,6 +1158,7 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
          assert(false && "Quad not implemented in setupCoefficientMatrix");
       } 
 
+ 
       // Integral I_4
       // I_4 = \int_\Omega \left[ \phi_i\eta^n + \theta\Delta t \nabla\phi_i\cdot\pmb{E} + (1-\theta)\Delta t \nabla\phi_i \cdot\pmb{U}^n \right]d\Omega
       // Where
@@ -1133,20 +1171,20 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
          const Side *side = elem->sides[m];
 
          if constexpr(ics == 1) Umean += side->U; // XXXXX IS THIS JUST ONE VALUE OR TWO????
-         else                   Umean += side->frame2.project_hvec(side->U, elem->frame);
+         else                   Umean += side->frame.project_hvec(side->U, elem->frame);
       }
       Umean = Umean/elem->i34;
 
 
       // Integral of \nabla\phi_i \cdot \pmb{U}^n
-      const double I_4_1 = dot_product(elem->grad_phi[id], Umean);
+      const double I_4_1 = dot(elem->gradPhi[id1], Umean);
 
       // Integral of \nabla\phi_i \cdot \pmb{E}
-      const double I_4_2 = dot_product(elem->grad_phi[id], elem->ghat1);
+      const double I_4_2 = dot(elem->gradPhi[id1], elem->ghat1);
      
-      node1->qel += dt*elem->area*((1 - thetai)*I_4_1 + thetai*I_4_2);
+      node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);
       
-
+#ifdef popo
       // Additional terms 
       if (imm == 2)  { // Pre-compute vnorm on the element
          Vector3 ubed;
@@ -1198,10 +1236,10 @@ __global__ void setupCoefficientMatrixAndRHS(void) {
 
 
       node1->qel += (dt/elem->i34)*elem->vsource;
-
+#endif
    } // for all elements connected to the node
    
-
+#ifdef popo
 
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2,6 are not needed if essential b.c. are enforced by elminating rows and columns

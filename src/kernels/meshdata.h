@@ -3,12 +3,12 @@
 constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 2; // Vertical coordinate system
-constexpr int ics = 1; // 1: global, 2: local
+constexpr int ics = 1;   // 1: global, 2: local
+constexpr int ihh = 1;   // Option to limit \hat{H} to enhance stability for large friction in shallow area
 
 constexpr int nvrt = 54; // Number of vertical levels
 constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast to z levels)
-
 
 constexpr double small1 = 1.0e-10;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
@@ -22,9 +22,11 @@ constexpr double pi = 3.14159265358979323846;
 constexpr double rearth_eq   = 6378206.4; //[m] 
 constexpr double rearth_pole = 6378206.4; //[m]
 
+constexpr double thetai = 0.6;
+
 constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
-
+constexpr double dt = -1e10;  // Time step  XXX
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
@@ -35,6 +37,12 @@ using Point3  = double3;
 
 __device__ __host__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
     return make_double2(a.x + b.x, a.y + b.y);
+}
+
+__device__ __host__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
+    a.x += b.x;
+    a.y += b.y;
+    return a;
 }
 
 __device__ __host__ __forceinline__ double2 operator-(const double2& a, const double2& b) {
@@ -63,6 +71,13 @@ __device__ __host__ __forceinline__ double cross(const double2& v, const double2
 
 __device__ __host__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
     return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+__device__ __host__ __forceinline__ double3 operator+=(double3& a, const double3& b) {
+    a.x += b.x;
+    a.y += b.y;
+    a.z += b.z;
+    return a;
 }
 
 __device__ __host__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
@@ -181,7 +196,7 @@ struct Frame {
    }
 
 
-   __forceinline__ __device__ void project_hvec(Vector2 const &vec0, Frame const &frameout, Vector2 &vec1) const {
+   __forceinline__ __device__ Vector2 project_hvec(Vector2 const &vec0, Frame const &frameout) const {
    // Do plane rotation of a vector (i.e., assuming z-axes are same)
    // Inputs:
    //        vec0: vel. in this frame;
@@ -190,6 +205,7 @@ struct Frame {
    //        vec1: vel. in new frame  
 
       auto const fo = frameout;
+      Vector2 vec1;
 
       // Since frame tensors are orthogonal, the transpose is the inverse. That's why the indices
       // of t and fo.t are the same.
@@ -198,6 +214,8 @@ struct Frame {
 
       vec1.y = vec0.x*(t(0,0)*fo.t(0,1) + t(1,0)*fo.t(1,1) + t(2,0)*fo.t(2,1)) +
                vec0.y*(t(0,1)*fo.t(0,1) + t(1,1)*fo.t(1,1) + t(2,1)*fo.t(2,1));
+
+      return vec1;
    }
 
    __forceinline__ __device__ void G2L(Vector3 const &vi, Vector3 &vo) const {
@@ -253,6 +271,8 @@ struct Element {
 
    Frame frame;
 
+   Vector2 gradPhi[4];       // Derivatives of shape functions
+
    int idry;                  // True if the element is dry
    int kbe;                   // Bottom index of the element
 
@@ -262,12 +282,19 @@ struct Element {
    double z[nvrt];            // z-coord  (local frame - vertical up)
 
    // Physical information
-   Tracers tracers[nvrt];  // Tracer values at each vertical level  
+   Tracers tracers[nvrt];     // Tracer values at each vertical level  
+
+   Vector2 ghat1;             // Element averaged ghat (\breve{G} in notes)
 
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
 
-   __inline__ __device__ int nqx(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
+   __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
+   __inline__ __device__ int nodeLocalIdx(Node *node) const { 
+      int res = (nodes[0] == node) ? 0 : ((nodes[1] == node) ? 1 : ((nodes[2] == node) ? 2 : 3)); 
+      assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
+      return res;
+   }
 
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
@@ -379,6 +406,13 @@ struct Element {
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
    }
 
+   template<typename T>
+   __device__ T mean(T Node::* field) const {
+      T values[4];
+      getNodalValues(field, values);
+      
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }
 
    // __device__ double mean(double (Node::*func)(int) const) const {
    //    double values[4];
@@ -432,6 +466,8 @@ struct Side {
    double zc[nvrt];       // Side center z-coord at each vertical level
    double depth;          // Depth at side center
 
+   Frame frame;
+
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
 
@@ -443,6 +479,7 @@ struct Side {
 
    // Physical information
    Vector2 u2[nvrt];            // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
+   Vector2 U;                   // Side vertically averaged velocity vector
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
@@ -511,10 +548,10 @@ struct Side {
 
 // This struct is used to store the boundary information for a node.
 struct NodeBoundary {   
-   int type;
+   BoundarySegment *segment;
    
-   SideBoundary *sideBnd1; // Pointer to the boundary segment (can be nullptr)
-   SideBoundary *sideBnd2; // Pointer to the boundary segment (can be nullptr)
+   SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
+   SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
 
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
@@ -550,11 +587,24 @@ struct Node {
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
 
+   double grav2; // Gravity 
+   double hhat;  // \breve{H} in notes
+
+   double qel; // RHS
+
    __forceinline__ __device__ Point2 point2(void) const { return {x, y}; }
 
    __host__ __device__ double sigmaTransitionDepth(void) const;
 
+   __device__ void clearMatrixRow(void) {
+      // Clear the matrix row for this node
+      printf("NOT IMPLEMENTED: clearMatrixRow\n");
+   }
 
+   __device__ void addToSparseMatrix(Node *node, double value) {
+      // Add the value to the sparse matrix for this node
+      printf("NOT IMPLEMENTED: addToSparseMatrix\n");
+   }
 
 #ifdef BACKTRACKING
    __device__ void updateZCoordData() {
@@ -610,6 +660,10 @@ class Mesh {
    Node*    localNodeData; 
    Element* localElemData;
    Side*    localSideData; 
+
+   NodeBoundary *localNodeBoundaryMem; // Array of objects with the boundary information of each node
+   SideBoundary *localSideBoundaryMem; // Array of objects with the boundary information of each side
+   BoundarySegment *localSegmentMem;   // Array of objects with the boundary segments
    
    const int npgb;  // Global number of horizontal nodes
    const int negb;  // Global number of elements
@@ -627,6 +681,8 @@ class Mesh {
    // Additional topology information
    Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
    Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
+
+
 
    // Vertical coordinate system
    // Sigma levels
@@ -765,14 +821,14 @@ __device__ __inline__ double min4(double a, double b, double c, double d) {
 
 
 // Helper functions for computing the local node index at a given offset from another.
-__device__ __inline__ int nqx(int offset, int index, int size) {
+__device__ __inline__ int nxq(int offset, int index, int size) {
    // In c++, the % operator can return negative numbers, for this reason we add 16*size 
    // to the index to make it positive
    assert(index + offset + 16*size >= 0);
    return (index + offset + 16*size) % size;  
 }
 
-__device__ __inline__ int nqx(int index, int size) {
+__device__ __inline__ int nxq(int index, int size) {
    // In c++, the % operator can return negative numbers, for this reason we add 16*size 
    // to the index to make it positive
    assert(index + 16*size >= 0);
