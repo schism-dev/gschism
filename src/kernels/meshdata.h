@@ -6,6 +6,7 @@ constexpr int ivcor = 2; // Vertical coordinate system
 constexpr int ics = 1;   // 1: global, 2: local
 constexpr int ihh = 1;   // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int imm = 0;   // Option to pre-compute vnorm on the element
+constexpr int iveg = 0;  // Vegetation option, 0: no vegetation, 1: vegetation
 
 constexpr int    iloadtide = 0;       // Option to use polynomial for discharge boundary
 constexpr double loadtide_coef = 0.1; // Load tide coefficient

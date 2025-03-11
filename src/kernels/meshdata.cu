@@ -1519,11 +1519,69 @@ __device__ void backtrackAllNodes(void) {
 
 }
 
-__device__ void cubicSpline(int n, double *x, double *y, double *y_top, double *y_bot, double *yp_out, double *ypp_out) {
-// Generate coefficients (2nd derivatives) for cubic spline for interpolation later
+template<int nc>
+__device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
+
+// Solves a tridiagonal system. It was adapted from "Numerical Recipes in FORTRAN (pp.43 ).
+//
+// a,b,c,r: input vectors and are not modified by this program.
+// b is the main diagonal, a below and c above. a(1) and c(n) are not used.
+// r is the r.h.s.
+// n: actual rank of the system.
+// rows in u() and r();
+// u: output with nc columns (transposed to rows)
+// gam: a working array.
+//
+// NOTES:
+// This is a template function that allows for different numbers of columns in the rhs vector.
+// [n, nc] is the shape of Fortran-type arrays rhs and u.
+
+   assert(n >= 1       && "TRIDAG: n must be >= 1");
+   assert(nc <= nvec   && "TRIDAG: Increase number of columns");
+   assert(b[0] != 0.d0 && "TRIDAG: b[0]=0");
+
+   double bet = b[0];
+   if constexpr (nc == 1) {
+      u[0] = rhs[0]/bet;
+   } else {
+      for (int k = 0; k < nc; k++) u[k*nc] = rhs[k*nc]/bet;
+   }
+
+   for (int j = 1; j < n; j++) {
+      gam[j] = c[j-1]/bet;
+      bet = b[j] - a[j]*gam[j];
+
+      assert (bet!=0.d0 && "TRIDIAGONAL SOLVER: bet=0");
+
+      if constexpr (nc == 1) {
+         u[j] = (rhs[j] - a[j]*u[j - 1])/bet;
+      } else {
+         for (int k = 0; k < nc; k++) {
+            u[j + k*nc] = (rhs[j + k*nc] - a[j]*u[j - 1 + k*nc])/bet;
+         }
+      }
+   }
+
+   // Back-substitution
+   for (int j=n-1; j>=1; j--) {
+      if constexpr (nc == 1) {
+         u[j] = u[j] - gam[j+1]*u[j-1];
+      } else {
+         for (int k = 0; k < nc; k++) {
+            u[j + k*nc] = u[j + k*nc] - gam[j + 1]*u[j-1 + k*nc];
+         }
+      }
+   }
+}
+
+
+__device__ void cubicSplineDerivatives(int n, double *x, double *y, double *y_top, double *y_bot, double *yp_out, double *ypp_out) {
+// Compute the 1st and 2nd derivatives of y = f(x) using continuous cubic splines.
 // 
 // This function uses the General expression for a C2 interpolating cubic spline (search for "C2 interpolating cubic spline" in Wikipedia)
 // This method uses the 2nd derivatives and the y values at the endpoints to generate the polynomial coefficients for each level.
+//
+// NOTE: (x,y) here are just any function y=f(x). In fact we use these splines for vertical interpolation.
 // 
 // Inputs: 
 //            n: dimesion for x etc; # of data pts (>=2);
@@ -1531,49 +1589,223 @@ __device__ void cubicSpline(int n, double *x, double *y, double *y_top, double *
 //            y[n]: functional values; 
 //            y_top and y_bot: 1st derivatives at x[0] and x[n-1];
 //     Output: 
-//            ypp(npts): 2nd deriavtives used in interpolation.
-//            yp(npts): 1st deriavtives 
+//            ypp[n]: 2nd derivatives used in interpolation.
+//             yp[n]: 1st derivatives 
 
-   assert(npts >= 2 && "CUBIC SPLINE: n < 2");
+   assert(n >= 2 && "CUBIC SPLINE: n < 2");
 
-   for (int k=0; k<npts; k++) {
+   double a[n];   // Lower diagonal
+   double b[n];   // Diagonal
+   double c[n];   // Upper diagonal
+   double gam[n]; // Gamma, used by the tridiagonal solver
+   double rhs[n]; // Right-hand side
+
+   for (int k=0; k<n; k++) {
 
       if (k == 0) {
          // Bottom level
-         bdia(k)=(x[k+1]-x[k])/3.0;
-         
-         assert(bdia(k) != 0.0 && "CUBIC SPLINE: bottom problem");
+         assert(x[k+1] - x[k] != 0.0 && "CUBIC SPLINE: bottom problem");
 
-         cupp(k)=bdia(k)/2.0;
-         rrhs(k)=(yy(k+1)-yy(k))/(xcor(k+1)-xcor(k))-yp1
+         b[k] = (x[k+1] - x[k])/3.0;
+         c[k] = b[k]/2.0;
+         rhs[k] = (y[k+1] - y[k])/(x[k+1] - x[k]) - yp1;
+         
       } else if (k == npts - 1) {
-         // Top level
-         bdia(k)=(x[k]-x[k-1])/3.0;
-         assert(bdia(k) != 0.0 && "CUBIC SPLINE: surface problem");
-         alow(k)=bdia(k)/2.0;
-         rrhs(k)=-(yy(k)-yy(k-1))/(xcor(k)-xcor(k-1))+yp2
+         // Top level (surface)
+         assert(x[k] - x[k-1] != 0.0 && "CUBIC SPLINE: surface problem");
+
+         b[k] = (x[k] - x[k-1])/3.0;
+         a[k] = b[k]/2.0;
+         rhs[k] = -(y[k] - y[k-1])/(x[k] - x[k-1]) + yp2;
+        
       } else {
          // Intermediate levels
-          bdia(k)=(x[k+1] - x[k-1])/3.0;
-          alow(k)=(x[k  ] - x[k-1])/6.0;
-          cupp(k)=(x[k+1] - x[k  ])/6.0;
+         assert(x[k] - x[k-1] != 0.0 && x[k+1] - x[k] != 0.0 && "CUBIC SPLINE: middle problem");
 
-          assert(alow(k) != 0.0 && cupp(k) != 0.0 && "CUBIC SPLINE: middle problem");
+         b[k] = (x[k+1] - x[k-1])/3.0;
+         a[k] = (x[k  ] - x[k-1])/6.0;
+         c[k] = (x[k+1] - x[k  ])/6.0;
 
-          rrhs(k)=(yy(k+1)-yy(k))/(xcor(k+1)-xcor(k))-(yy(k)-yy(k-1))/(xcor(k)-xcor(k-1))
-          rrhs(k)=(yy(k+1)-yy(k))/(xcor(k+1)-xcor(k))-(yy(k)-yy(k-1))/(xcor(k)-xcor(k-1))
-        endif
-      enddo !k
+         rhs[k] = (y[k+1] - y[k])/(x[k+1] - x[k]) - (y[k] - y[k-1])/(x[k] - x[k-1]);
 
-      call tridag_sch(npts,1,npts,1,alow,bdia,cupp,rrhs,ypp,gam)
+      }
+   }
+
+   // Solve the tridiagonal system
+   tridag_sch<1>(n, 1, a, b, c, rhs, ypp, gam)
     
-      yp(1)=yp1; yp(npts)=yp2
-      do k=2,npts-1
-        yp(k)=(yy(k+1)-yy(k))/(xcor(k+1)-xcor(k))-(xcor(k+1)-xcor(k))/6._rkind*(2._rkind*ypp(k)+ypp(k+1))
-      enddo !k
+   yp[    0] = yp1; 
+   yp[n - 1] = yp2;
+
+   // Compute rest of 1st derivatives using the splines
+   for (int k=1; k < n - 1; k++) {
+      yp[k] = (y[k+1] - y[k])/(x[k+1] - x[k]) - (x[k+1] - x[k])/6.0*(2.0*ypp[k] + ypp[k+1]);
+   } 
 }
 
+
+
+__device__ void computeContinuityEquation(void) {
+// Continuity equation: preparation of matrix
+
+   // Compute elevation essential boundary conditions
+   // In case of border node on >1 bnd with imposed elevation, the bnd with largest segment # prevails.
+   double elbc[nope_global]; // flags
+   for (int i=0; i < nope_global; i++) {
+      // For all boundary segments...
+
+      for (int j=0; j < nond_global(i); j++) {
+         // For all nodes in the segment...
+
+         const Node *node = iond_global(i,j); //global
+
+         if (ipgl(nd)%rank==myrank) then
+
+            ip=ipgl(nd)%id
+            if(nramp_elev==1) then
+              eic=etaic(ip)
+            else
+              eic=0.d0
+            endif
+
+            // Prep tide
+            if (iettype(i)==3.or.iettype(i)==5) then
+              eta1_bar=(1.d0-ramp)*eic !etaic(ip) !initialize
+              do jfr=1,nbfr
+                ncyc=int(amig(jfr)*time/2.d0/pi)
+                arg=amig(jfr)*time-real(ncyc,rkind)*2.d0*pi+face(jfr)-efa(i,j,jfr)
+                eta1_bar=eta1_bar+ramp*ff(jfr)*emo(i,j,jfr)*cos(arg)
+              enddo !jfr=1,nbfr
+            endif
+
+            if(iettype(i)==1.or.iettype(i)==2) then
+              elbc(ip)=ramp*eth(1,i)+(1.d0-ramp)*eic
+            else if(iettype(i)==3) then
+              elbc(ip)=eta1_bar
+            else if(iettype(i)==4) then
+              elbc(ip)=ramp*eth(j,i)+(1.d0-ramp)*eic !etaic(ip)
+            else if(iettype(i)==5) then
+              elbc(ip)=ramp*eth(j,i)+eta1_bar
+            endif
+
+            !Add inverse barometric effects
+            if(iettype(i)/=0.and.inv_atm_bnd==1) elbc(ip)=elbc(ip)+ramp*(prmsl_ref-pr(ip))/grav/rho0
+
+          endif !ipgl(nd)%rank==myrank
+        enddo !j
+      enddo !i=1,nope_global
+
+
+   // Pre-compute some arrays: chi,hhat,bigu,ghat1
+   chi=0.d0; chi2=0.d0; hhat=0.d0; bigu=0.d0; hhat2=0
+   veg_c2=0.d0; veg_beta=0.d0
+
+
+
+   side = FROM kernel;
+      
+         if(side->idry) cycle
+
+
+         const Node *node1 = side->n1;
+         const Node *node2 = side->n2;
+
+         // XXX create side->eta2()?
+         const double htot = 0.5*(node1->eta2 + node2->eta2) + side->depth;
+
+         
+         assert(htot > 0.0 && "STEP: htot(9.1)");
+
+         veg_h_sd  = sum(veg_h(isidenode(1:2,i)))/2.d0
+         veg_nv_sd = sum(veg_nv(isidenode(1:2,i)))/2.d0
+
+         // Average velocity U (in ll if ics=2)
+         bigu(1,i)=0.d0 !U^n_x
+         bigu(2,i)=0.d0 !U^n_y
+         do k=kbs(i),nvrt-1
+            bigu(1,i)=bigu(1,i)+(zs(k+1,i)-zs(k,i))*(su2(k,i)+su2(k+1,i))/2.d0
+            bigu(2,i)=bigu(2,i)+(zs(k+1,i)-zs(k,i))*(sv2(k,i)+sv2(k+1,i))/2.d0
+         enddo !k
+
+         // chi's
+         vmag1=sqrt(sdbt(1,kbs(i)+1,i)**2.d0+sdbt(2,kbs(i)+1,i)**2.d0)
+         chi2(i)=Cd(i)*vmag1 !sqrt(sdbt(1,kbs(i)+1,i)**2+sdbt(2,kbs(i)+1,i)**2)
+         chi(i)=chi2(i)
+         if (iveg != 0) {
+            veg_alpha_sd=sum(veg_alpha_vert_mean(isidenode(1:2,i)))/2.d0
+            veg_alpha_sd_bot=(veg_alpha3D(kbp(n1),n1)+veg_alpha3D(kbp(n2),n2))/2.d0
+            chi(i)=chi(i)/(1.d0+veg_alpha_sd_bot*vmag1*dt)
+         }
+
+         // Calc consts in SAV model; make sure veg_[c2,beta]=0 at 2D, dry side, and emergent side
+         // uuint=0.d0 !\int_{-h}^{z_v} |u|dz / H^\alpha = \bar{|u|}^\alpha
+         if (iveg != 0 && nvrt - kbs(i) > 1 && veg_h_sd > 0.0) {
+            // 3D wet side with veg
+            zctr2 = zs(kbs(i),i) + veg_h_sd; // top of canopy
+            do k = kbs(i), nvrt - 1
+            if(zctr2>zs(k,i)) then !partial or full SAV layer
+              zz1=min(zctr2,zs(k+1,i))
+              zrat=(zz1-zs(k,i))/(zs(k+1,i)-zs(k,i)) !\in (0,1]
+              !if(zrat<=0.or.zrat>1) call parallel_abort('STEP: WOW2')
+              ub2=(1.d0-zrat)*su2(k,i)+zrat*su2(k+1,i) !@upper level
+              vb2=(1.d0-zrat)*sv2(k,i)+zrat*sv2(k+1,i) 
+!              bigu1=bigu1+(zz1-zs(k,i))*(su2(k,i)+ub2)/2
+!              bigv1=bigv1+(zz1-zs(k,i))*(sv2(k,i)+vb2)/2
+              ubar1=sqrt(su2(k,i)*su2(k,i)+sv2(k,i)*sv2(k,i))
+              ubar2=sqrt(ub2*ub2+vb2*vb2)
+              uuint=uuint+(zz1-zs(k,i))*(ubar1+ubar2)/2.d0
+         } // if
+      } // for
+      uuint=uuint/min(htot,veg_h_sd) !>=0
+
+
+      veg_c2(i)=veg_alpha_sd*dt*uuint !>=0
+      if(veg_h_sd<0.99d0*htot) then !3D wet submergent side with veg
+      tmpx2=max(1.d-5,chi2(i)*vmag1/grav/htot) !energy gradient
+      !\beta_2; arguments checked
+      tmpy2=sqrt(sqrt(veg_nv_sd)/veg_h_sd)*(-0.32d0-0.85d0*log10((htot-veg_h_sd)/veg_h_sd*tmpx2))
+      veg_beta(i)=exp(tmpy2*(zctr2-zs(kbs(i)+1,i)))-1.d0 !\beta
+      veg_beta(i)=min(10.d0,max(veg_beta(i),0.d0))
+      endif !veg_h_sd
+   endif !iveg
+
+      // hhat is \breve{H} in notes
+      if (nvrt - side->kbs == 1) { // 2D
+
+         double tmp = htot + side->chi2*dt;
+         if (iveg != 0) tmp = tmp + veg_alpha_sd*vmag1*htot*dt;
+
+         assert(tmp > 0.0 && "COMPUTE CONTINUITY EQUATION: Impossible dry 53");
+
+         hhat(i) = htot*htot/tmp; 
+
+      else { // 3D
+         side->hhat = htot - side->chi*dt;
+!          hhat(i)=hhat2(i)
+
+         if(iveg/=0) then
+         if(veg_h_sd<0.99d0*htot) then !submergent
+            veg_c=veg_c2(i)/(1.d0+veg_c2(i))
+            hhat(i)=hhat(i)-veg_c*(veg_h_sd+veg_beta(i)*chi(i)*dt)
+         else !emergent
+            hhat(i)=hhat(i)/(1.d0+veg_c2(i)) !veg_alpha_sd*uuint*dt)
+         endif !veg_h_sd
+         endif !iveg
+
+         // Enforce positivity for 3D model
+         if (ihhat == 1) side->hhat = max(0.0, side->hhat)
+      } // if 3D
+
+        
+!...  Baroclinic force at side and whole levels
+
+      bcc=0 !init for 2D cases
+
+}
+
+#ifdef DONTCOMPILE
 __device__ void computeVerticalAdvection(void) {
+   // Compute the vertical advection term d(uw)/dz and d(vw)/dz, using cubic splines.
 
    sdbt(1:2,:,:)=0.d0
 
@@ -1583,36 +1815,38 @@ __device__ void computeVerticalAdvection(void) {
 
    // If side is wet...
 
+
    // Computes the vertical velocity at the side using the average of the velocities at the element centers
-   // XXX WHY DOES IT USE THIS METHOD?
-   double alow[nvrt] = {} // w @ side
+   // XXX WHY DOES IT USE THIS METHOD? IN OTHER PLACES, IT INTERPOLATES FROM W AT THE NODES
+   double ws[nvrt] = {} // w @ side
    int icount = 0;
    for (int j=0; j<2; j++) {
       const Element *elem = side->elements[j];
        
       if(elem != nullptr) {
          icount++;
-         alow(1:nvrt) = alow(1:nvrt) + elem->w[:];
+         for (int k=0; k<nvrt; k++) {
+            ws[k] = ws[k] + elem->w[k];
+         }
       }
    }  // for j
 
-   assert(icount > 0 && "STEP: icount (9)");
-   alow = alow/icount;
+   assert(icount > 0 && "STEP: Wet side has no wet elements");
+   ws = ws/icount;
 
    // Computes the vertical advection term d(uw)/dz, using cubic splines.
    // Splines allow for a smooth transition between vertical levels.
+   // Splines have continuity restrictions at the internal knots, but
+   // we have to provide the 1st derivatives at the endpoints.
    const int kbs = side->kbs; 
-   top_duw_dz=(alow[nvrt - 1]*side->u2[nvrt] - alow[nvrt - 1]*side->u2[nvrt - 1])/(side->z[nvrt] - side->z[nvrt - 1])
-   bot_duw_dz=(alow[kbs     ]*side->u2[kbs ] - alow[kbs     ]*side->u2[kbs     - 1])/(side->z[kbs ] - side->z[kbs     - 1])
-   cubicSpline
+   
+   double top_duw_dz = (ws[nvrt - 1]*side->u2[nvrt] - ws[nvrt - 1]*side->u2[nvrt - 1])/(side->z[nvrt - 1] - side->z[nvrt - 2])
+   double bot_duw_dz = (ws[kbs     ]*side->u2[kbs ] - ws[kbs     ]*side->u2[kbs  - 1])/(side->z[kbs ] - side->z[kbs  - 1])
+   cubicSplineDerivatives(kbs, nvrt, side, ws, up)
 
-   tmp1=(alow(nvrt    )*su2(nvrt,    i) - alow(nvrt-1)*su2(nvrt-1,i))/(zs(nvrt,i    )-zs(nvrt-1,i))
-   tmp2=(alow(kbs(i)+1)*su2(kbs(i)+1,i) - alow(kbs(i))*su2(kbs(i),i))/(zs(kbs(i)+1,i)-zs(kbs(i),i))
-   call cubic_spline(nvrt-kbs(i)+1,zs(kbs(i):nvrt,i),alow(kbs(i):nvrt)*su2(kbs(i):nvrt,i), tmp2,tmp1,swild(kbs(i):nvrt),swild2(kbs(i):nvrt,1))
-
-   tmp1=(alow(nvrt    )*sv2(nvrt,    i)-alow(nvrt-1)*sv2(nvrt-1,i))/(zs(nvrt,    i)-zs(nvrt-1,i))
-   tmp2=(alow(kbs(i)+1)*sv2(kbs(i)+1,i)-alow(kbs(i))*sv2(kbs(i),i))/(zs(kbs(i)+1,i)-zs(kbs(i),i))
-   call cubic_spline(nvrt-kbs(i)+1,zs(kbs(i):nvrt,i),alow(kbs(i):nvrt)*sv2(kbs(i):nvrt,i),  tmp2,tmp1,swild(kbs(i):nvrt),swild2(kbs(i):nvrt,2))
+   double top_dvw_dz = (ws[nvrt - 1]*side->v2[nvrt] - ws[nvrt - 1]*side->v2[nvrt - 1])/(side->z[nvrt - 1] - side->z[nvrt - 2])
+   double bot_dvw_dz = (ws[kbs     ]*side->v2[kbs ] - ws[kbs     ]*side->v2[kbs  - 1])/(side->z[kbs ] - side->z[kbs  - 1])
+   cubicSplineDerivatives(kbs, nvrt, side, ws, vp)
 
    // Total advection (average onto side)
    const Node *node1 = side->nodes[0];
@@ -1620,8 +1854,8 @@ __device__ void computeVerticalAdvection(void) {
    for (int k=kbs(i); k<nvrt; k++) {
 
       if constexpr(ics==1) {
-         sdbt(1,k,i)=su2(k,i)-dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1)
-         sdbt(2,k,i)=sv2(k,i)-dt*(bcc(2,k,n1)+bcc(2,k,n2))/2.d0-dt*swild2(k,2)
+         sdbt(1,k,i) = side->u2[k] - dt*(node1->bcc[1][k] + node2->bcc[1][k])/2.d0 - dt*side->u2p[k]
+         sdbt(2,k,i) = side->v2[k] - dt*(node1->bcc[2][k] + node2->bcc[2][k])/2.d0 - dt*side->v2p[k]
       } else {
          // XXX IMPLEMENT THIS
          // call project_hvec(bcc(1,k,n1),bcc(2,k,n1),pframe(:,:,n1),sframe2(:,:,i),vn1,vn2)
@@ -1633,34 +1867,10 @@ __device__ void computeVerticalAdvection(void) {
 
    }
 }
-
-#ifdef INCLUDE_TIMING
-      cwtmp=mpi_wtime()
-#endif
-!      call exchange_s3d_4(sdbt)
-      allocate(swild96(2,nvrt,nsa),stat=istat)
-      if(istat/=0) call parallel_abort('MAIN: fail to allocate swild96 (3.4)')
-      swild96=sdbt(1:2,:,:)
-      call exchange_s3d_2(swild96)
-      sdbt(1:2,:,:)=swild96
-      deallocate(swild96)
-
-#ifdef INCLUDE_TIMING
-      wtimer(4,2)=wtimer(4,2)+mpi_wtime()-cwtmp
 #endif
 
-!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-      endif !ELM or upwind
 
-#ifdef TIMER2
-      tmp=mpi_wtime()
-      write(12,*)'Time taken for mom advection=',tmp-cwtmp3,it
-      cwtmp3=tmp !reset
-#endif
 
-      if(itransport_only==0) then
-
-}
 #ifdef DONTCOMPILE
 __global__ void checkMassConservation(Tracers* sumtr) {
 
