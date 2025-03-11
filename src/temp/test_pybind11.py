@@ -13,11 +13,11 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
-# tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
-tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -25,9 +25,9 @@ tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
+# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -227,10 +227,10 @@ if __name__ == "__main__":
     isdel                = cp.array(isdel,             dtype=cp.int32, order='F')
     isidenode            = cp.array(isidenode,         dtype=cp.int32, order='F')
     isbnd                = cp.array(isbnd,             dtype=cp.int32, order='F')
-    nond                 = cp.array(nond,             dtype=cp.int32, order='F')
-    nlnd                 = cp.array(nlnd,             dtype=cp.int32, order='F')
-    iond                 = cp.array(iond,             dtype=cp.int32, order='F')
-    ilnd                 = cp.array(ilnd,             dtype=cp.int32, order='F')
+    nond                 = cp.array(nond,              dtype=cp.int32, order='F')
+    nlnd                 = cp.array(nlnd,              dtype=cp.int32, order='F')
+    iond                 = cp.array(iond,              dtype=cp.int32, order='F')
+    ilnd                 = cp.array(ilnd,              dtype=cp.int32, order='F')
     nodeNeighNodesStart  = cp.array(nodeNeighNodes[1], dtype=cp.int32, order='F')
     nodeNeighNodes       = cp.array(nodeNeighNodes[0], dtype=cp.int32, order='F')
     nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32, order='F')
@@ -443,6 +443,9 @@ if __name__ == "__main__":
     nodesMemList = []
     elemsMemList = []
     sidesMemList = []
+    boundaryNodesMemList = []
+    boundarySidesMemList = []
+    segmentMemList       = []
     for ipart, device_id in enumerate(range(n_gpus)):
         with cp.cuda.Device(device_id):
 
@@ -460,11 +463,15 @@ if __name__ == "__main__":
             boundaryNodesMem = cp.zeros(max(numPartBoundaryNodes)*boundaryNodesSize, dtype=cp.int8)
 
             # We don't know the number of boundary sides in each partition, so we reserve as much as the number of boundary nodes.
-            boundarySidesMem  = cp.zeros(max(numPartBoundaryNodes)*sideBoundarySize,  dtype=cp.int8)
+            boundarySidesMem  = cp.zeros((max(numPartBoundaryNodes)+1)*sideBoundarySize,  dtype=cp.int8)
 
             # We save all the segment info in all partitions.
-            segmentMem = cp.zeros(ilnd.shape[1]*segmentSize, dtype=cp.int8)
-            
+            segmentMem = cp.zeros(ilnd.shape[0]*segmentSize, dtype=cp.int8)
+
+            # Need to store the pointers to be used later in createMesh and populateMesh
+            boundaryNodesMemList.append(boundaryNodesMem.data.ptr)
+            boundarySidesMemList.append(boundarySidesMem.data.ptr)
+            segmentMemList      .append(segmentMem.data.ptr)
 
             nodesMemList.append(nodesMem.data.ptr)
             elemsMemList.append(elemsMem.data.ptr)
@@ -538,15 +545,17 @@ if __name__ == "__main__":
             nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
             windRotateAnglePart = wind_rotate_angle[maskElemsPart].copy(order='F')
 
+            numSegments = ilnd.shape[0]
+
             # Creates the mesh object on each GPU. This function mostly deals with letting the GPU know
             # which memory is being used by the mesh, both locally and in other GPUs.
             createMesh((1,), (1,),  
-                       (ipart, numNodes, numElements, numSides, 
+                       (ipart, numNodes, numElements, numSides, numSegments,
                         numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt, kz,
                         max(numPartNodes), max(numPartElements), max(numPartSides),
                         nodesPtr, elemsPtr, sidesPtr,
-                        nodesMem, elemsMem, sidesMem,
-                        boundaryNodesMem, boundarySidesMem, segmentMem,
+                        nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
+                        boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
                         partNodeNeighNodesMem, partNodeNeighElemsMem,
                         h_s.item(), theta_b.item(), theta_f.item()  , sigma, sigma, ztot, cs, dcs)
             )

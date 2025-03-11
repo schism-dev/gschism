@@ -311,6 +311,9 @@ struct Element {
    // Physical information
    Tracers tracers[nvrt];     // Tracer values at each vertical level  
 
+   double w[nvrt];            // Vertical velocity at element centers & whole levels, calculated using F.V.M. 
+                              // For hydrostatic model, this is the same as we(); for non-hydrostatic model, this is only used in upwind transport
+
    Vector2 ghat1;             // Element averaged ghat (\breve{G} in notes)
 
    double vsource;             // Volumetric source/sink term [m^3/s]
@@ -472,7 +475,9 @@ struct Element {
 
 
 struct BoundarySegment {
-   int ifltype; // Type of boundary condition
+   int ifltype;  // Type of boundary condition
+   double clen;  // Length of the boundary segment
+   double carea; // Area of the boundary segment
    
 };
 
@@ -766,7 +771,7 @@ class Mesh {
    __device__ Mesh(int partNum,
                    int npgb, int negb, int nsgb, 
                    int np, int ne, int ns, int nvrt, int kz,
-                   int max_np, int max_ne, int max_ns,
+                   int max_np, int max_ne, int max_ns, int nseg,
                    const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,

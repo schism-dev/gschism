@@ -6,7 +6,7 @@ __device__ Mesh* mesh = nullptr;
 
 
 
-Polynomial<4> polyDischarge(0.0, 0.0, 0.0, 0.0, 0.0); // XXX read from file
+Polynomial<4> *polyDischarge; // XXX read from file
 
 //===============================================================================
 //     
@@ -871,7 +871,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                 int *localNodePart,     int *localElemPart,     int *localSidePart) {
 
-   printf("Populating mesh for partition %d\n", partNum);
+   printf("Populating mesh for partition %d, %d, %d\n", partNum, nond, nlnd);
 
    // Horizontal grid
    printf("Processing %d nodes\n", np);      
@@ -906,10 +906,17 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       if (isbnd[i] >= 0) {
          node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
          if (isbnd[i]>0) {
+
             node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
+            node.nodeBnd->segment->ifltype = isbnd[i];
+
+            // Initialize the length and area of the segment to nan to indicate that they are not yet computed
+            node.nodeBnd->segment->clen  = nan("1");
+            node.nodeBnd->segment->carea = nan("1");
+
          }
          else {
-            node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]);
+            node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
          }
          
          idxNodeBoundary++;
@@ -1322,10 +1329,12 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
                else if (sideSegment->ifltype == -2) { // Discharge relation (outgoing only)
                   // Reset ri3
                   ri3 = 0.0;
-                      
+
+                  assert(polyDischarge != nullptr && "polyDischarge is not initialized. This part might not even be implemented.");
+
                   const double etam = 0.5*(node1->eta2 + node2->eta2);
 
-                  const double tmp = polyDischarge.eval(etam)/sideSegment->clen; // XXXX IMPLEMENT Poly. It may need the grade (4 in this case)
+                  const double tmp = polyDischarge->eval(etam)/sideSegment->clen; // XXXX IMPLEMENT Poly. It may need the grade (4 in this case)
                   assert(tmp >= 0.0 && "bar{f} < 0 at discharge boundary");
 
                   const double con0 = (1.0/6.0)*side->length*tmp*thetai*dt;
@@ -1356,6 +1365,302 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
 
 }
 
+
+
+__device__ void backtrackAllNodes(void) {
+
+   // max/min # of sub-divisions
+   const double ndelt_max = max(1.0, dt/dtb_min);
+   const double ndelt_min = max(1.0, dt/dtb_max); 
+
+
+   swild98=0.d0 !init
+
+   do i=1,ns
+        sdbt(1,:,i)=su2(:,i)
+        sdbt(2,:,i)=sv2(:,i)
+   enddo !i
+
+   side = FROM kernel
+
+   if (side->idry == 1) return;
+
+   isd0=i
+   jmin=kbs(isd0)
+   ie0=0
+
+   // Checks that at least one element is not dry
+   const Element *elem1 = side->elements[0];
+   const Element *elem2 = side->elements[1];
+   assert ((elem1 != nullptr && !(elem1->idry)) || (elem2 != nullptr && !(elem2->idry)) && "backtrackAllNodes: non dry side without two dry elements.");
+
+
+   !swild_tmp to store global coord. of the starting side
+   swild_tmp(1)=xcj(isd0); swild_tmp(2)=ycj(isd0); swild_tmp(3)=zcj(isd0)
+   !swild10_tmp to store frame at starting pt for ics=2 (not used for ics=1)
+   !Use sframe2 
+   swild10_tmp(1:3,1:3)=sframe2(:,:,i) !pframe(:,:,isidenode(1,isd0)) 
+
+
+   for (int j = jmin; j < nvrt; j++) {
+   //  Initialize (xt,yt,zt), nnel and vel.
+   //  For ics=2, the coordinates are in local frames
+   //  Caution! nnel must be initialized inside this loop as it is updated inside.
+
+      ipsgb=islg(isd0)
+
+      Node *node1 = side->nodes[0];
+      Node *node2 = side->nodes[1];
+
+      iadvf = min(iadv(n1),iadv(n2))
+
+      Point3 xt;
+      if constexpr(ics==1) {
+         xt = side->center(j); 
+      }
+      else // lat/lon; in side lat/lon frame
+      {
+      // XXX IMPLEMENT THIS
+   //          xt=0.d0
+   //          yt=0.d0
+   //          !centroid coord. for nudging
+   //          call project_pt('g2l',xctr(ie0),yctr(ie0),zctr(ie0), &
+   //   &(/xcj(isd0),ycj(isd0),zcj(isd0)/),swild10_tmp,xctr2,yctr2,tmp)
+      }  // ics
+
+
+      // Velocity at the side (in ll frame for ics, same vertical direction)
+      // XXX IS THIS NECESSARY?
+      Vector3 u_int = side->velocity(j); //{side->u2[j].x, side->u2[j].y, 0.5*(side->w2[j] + side->w2[j+1])};
+
+      // If on land or open boundary...
+      const bool ifl_bnd =  (side->sideBnd != nullptr);
+      
+      const double vmag = length(toVector2(u_int));
+
+      nnel = ie0;
+
+      vis_coe = 0.0;
+
+      if (vmag <= velmin_btrack) {
+         // No activity 
+         // XXX IS THIS NECESSARY? 
+
+         sdbt(1,j,isd0)=su2(j,isd0)
+         sdbt(2,j,isd0)=sv2(j,isd0)
+         if(ielm_transport/=0) sdbt(3:2+ntracers,j,isd0)=(tr_nd(1:ntracers,j,n1)+tr_nd(1:ntracers,j,n2))*0.5d0
+         swild98(1:2,j,isd0)=su2(j,isd0) !max/min
+         swild98(3:4,j,isd0)=sv2(j,isd0)
+
+
+      } else {  // do btrack
+
+         // Compute number of sub-divisions based on local gradients 
+         // XXX IS THIS NECESSARY?
+         double suma = 0.0;
+         int icount = 0;
+         for (int ii=0; ii<2; ii++) {
+
+            const Element *elem = side->elements[ii];
+              
+            if (elem == nullptr) continue;
+
+            icount=icount+1
+
+            // Not strictly along z; in ll frame for ics=2
+
+            for (int jj = 0; jj < elem->i34; jj++) {
+
+               const Node *node = elem->nodes[jj];
+
+               if constexpr(ics==1) {
+                  Vector2 u_node = {node->u2[j].x, node->u2[j].y};
+               } else {
+                  // XXX IMPLEMENT THIS
+                  // call project_hvec(uu2(j,nd0),vv2(j,nd0),pframe(:,:,nd0),eframe(:,:,ie),utmp0(jj),vtmp0(jj))
+               }
+            } // for jj
+
+            const Vector2 grad_u = elem->grad(u_int.x); // XXX IMPLEMENT THIS
+            const Vector2 grad_v = elem->grad(u_int.y);
+            // dudx = dot_product(utmp0(1:i34(ie)),dldxy(1:i34(ie),1,ie))
+            // dudy = dot_product(utmp0(1:i34(ie)),dldxy(1:i34(ie),2,ie))
+            // dvdx = dot_product(vtmp0(1:i34(ie)),dldxy(1:i34(ie),1,ie))
+            // dvdy = dot_product(vtmp0(1:i34(ie)),dldxy(1:i34(ie),2,ie))
+
+            suma += dt*sqrt(dot(grad_u, grad_u) + dot(grad_v, grad_v));
+         } // for ii
+
+         assert(icount > 0 && "Impossible 77");
+
+         // '4' is somewhat arbitrary
+         ndelt = max0(ndelt_min,min0(ndelt_max,int(suma/icount)*4)) // >=1
+         dtbk=dt/ndelt // Target btrack step; may be smaller sometimes
+
+         // Perturb starting pt to avoid underflow 
+         // XXX I don't think this is needed with the current implementation
+         // eps=btrack_nudge
+         // if constexpr(ics==1) {
+         //    xt=(1.d0-eps)*xt+eps*xctr(nnel)
+         //    yt=(1.d0-eps)*yt+eps*yctr(nnel)
+         // } else { //lat/lon
+         //    xt=(1.d0-eps)*xt+eps*xctr2
+         //    yt=(1.d0-eps)*yt+eps*yctr2
+         // } // ics
+
+         time_rm=dt
+         
+         // call btrack(l,ipsgb,ifl_bnd,j,iadvf,swild_tmp,swild10_tmp, dtbk,vis_coe,time_rm,time_rm2,uuint,vvint,wwint,nnel,jlev,xt,yt,zt,swild3,ltmp)
+
+            
+      } // if vmag (do backtrack)
+
+   } // for j=jmin,nvrt-1
+
+}
+
+__device__ void cubicSpline(int n, double *x, double *y, double *y_top, double *y_bot, double *yp_out, double *ypp_out) {
+// Generate coefficients (2nd derivatives) for cubic spline for interpolation later
+// 
+// This function uses the General expression for a C2 interpolating cubic spline (search for "C2 interpolating cubic spline" in Wikipedia)
+// This method uses the 2nd derivatives and the y values at the endpoints to generate the polynomial coefficients for each level.
+// 
+// Inputs: 
+//            n: dimesion for x etc; # of data pts (>=2);
+//            x[n]: x coordinates; must be in ascending order (and distinctive);
+//            y[n]: functional values; 
+//            y_top and y_bot: 1st derivatives at x[0] and x[n-1];
+//     Output: 
+//            ypp(npts): 2nd deriavtives used in interpolation.
+//            yp(npts): 1st deriavtives 
+
+   assert(npts >= 2 && "CUBIC SPLINE: n < 2");
+
+   for (int k=0; k<npts; k++) {
+
+      if (k == 0) {
+         // Bottom level
+         bdia(k)=(x[k+1]-x[k])/3.0;
+         
+         assert(bdia(k) != 0.0 && "CUBIC SPLINE: bottom problem");
+
+         cupp(k)=bdia(k)/2.0;
+         rrhs(k)=(yy(k+1)-yy(k))/(xcor(k+1)-xcor(k))-yp1
+      } else if (k == npts - 1) {
+         // Top level
+         bdia(k)=(x[k]-x[k-1])/3.0;
+         assert(bdia(k) != 0.0 && "CUBIC SPLINE: surface problem");
+         alow(k)=bdia(k)/2.0;
+         rrhs(k)=-(yy(k)-yy(k-1))/(xcor(k)-xcor(k-1))+yp2
+      } else {
+         // Intermediate levels
+          bdia(k)=(x[k+1] - x[k-1])/3.0;
+          alow(k)=(x[k  ] - x[k-1])/6.0;
+          cupp(k)=(x[k+1] - x[k  ])/6.0;
+
+          assert(alow(k) != 0.0 && cupp(k) != 0.0 && "CUBIC SPLINE: middle problem");
+
+          rrhs(k)=(yy(k+1)-yy(k))/(xcor(k+1)-xcor(k))-(yy(k)-yy(k-1))/(xcor(k)-xcor(k-1))
+          rrhs(k)=(yy(k+1)-yy(k))/(xcor(k+1)-xcor(k))-(yy(k)-yy(k-1))/(xcor(k)-xcor(k-1))
+        endif
+      enddo !k
+
+      call tridag_sch(npts,1,npts,1,alow,bdia,cupp,rrhs,ypp,gam)
+    
+      yp(1)=yp1; yp(npts)=yp2
+      do k=2,npts-1
+        yp(k)=(yy(k+1)-yy(k))/(xcor(k+1)-xcor(k))-(xcor(k+1)-xcor(k))/6._rkind*(2._rkind*ypp(k)+ypp(k+1))
+      enddo !k
+}
+
+__device__ void computeVerticalAdvection(void) {
+
+   sdbt(1:2,:,:)=0.d0
+
+   const Side *side = FROM kernel;
+
+   if(side->idry) return;
+
+   // If side is wet...
+
+   // Computes the vertical velocity at the side using the average of the velocities at the element centers
+   // XXX WHY DOES IT USE THIS METHOD?
+   double alow[nvrt] = {} // w @ side
+   int icount = 0;
+   for (int j=0; j<2; j++) {
+      const Element *elem = side->elements[j];
+       
+      if(elem != nullptr) {
+         icount++;
+         alow(1:nvrt) = alow(1:nvrt) + elem->w[:];
+      }
+   }  // for j
+
+   assert(icount > 0 && "STEP: icount (9)");
+   alow = alow/icount;
+
+   // Computes the vertical advection term d(uw)/dz, using cubic splines.
+   // Splines allow for a smooth transition between vertical levels.
+   const int kbs = side->kbs; 
+   top_duw_dz=(alow[nvrt - 1]*side->u2[nvrt] - alow[nvrt - 1]*side->u2[nvrt - 1])/(side->z[nvrt] - side->z[nvrt - 1])
+   bot_duw_dz=(alow[kbs     ]*side->u2[kbs ] - alow[kbs     ]*side->u2[kbs     - 1])/(side->z[kbs ] - side->z[kbs     - 1])
+   cubicSpline
+
+   tmp1=(alow(nvrt    )*su2(nvrt,    i) - alow(nvrt-1)*su2(nvrt-1,i))/(zs(nvrt,i    )-zs(nvrt-1,i))
+   tmp2=(alow(kbs(i)+1)*su2(kbs(i)+1,i) - alow(kbs(i))*su2(kbs(i),i))/(zs(kbs(i)+1,i)-zs(kbs(i),i))
+   call cubic_spline(nvrt-kbs(i)+1,zs(kbs(i):nvrt,i),alow(kbs(i):nvrt)*su2(kbs(i):nvrt,i), tmp2,tmp1,swild(kbs(i):nvrt),swild2(kbs(i):nvrt,1))
+
+   tmp1=(alow(nvrt    )*sv2(nvrt,    i)-alow(nvrt-1)*sv2(nvrt-1,i))/(zs(nvrt,    i)-zs(nvrt-1,i))
+   tmp2=(alow(kbs(i)+1)*sv2(kbs(i)+1,i)-alow(kbs(i))*sv2(kbs(i),i))/(zs(kbs(i)+1,i)-zs(kbs(i),i))
+   call cubic_spline(nvrt-kbs(i)+1,zs(kbs(i):nvrt,i),alow(kbs(i):nvrt)*sv2(kbs(i):nvrt,i),  tmp2,tmp1,swild(kbs(i):nvrt),swild2(kbs(i):nvrt,2))
+
+   // Total advection (average onto side)
+   const Node *node1 = side->nodes[0];
+   const Node *node2 = side->nodes[1];
+   for (int k=kbs(i); k<nvrt; k++) {
+
+      if constexpr(ics==1) {
+         sdbt(1,k,i)=su2(k,i)-dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1)
+         sdbt(2,k,i)=sv2(k,i)-dt*(bcc(2,k,n1)+bcc(2,k,n2))/2.d0-dt*swild2(k,2)
+      } else {
+         // XXX IMPLEMENT THIS
+         // call project_hvec(bcc(1,k,n1),bcc(2,k,n1),pframe(:,:,n1),sframe2(:,:,i),vn1,vn2)
+         // call project_hvec(bcc(1,k,n2),bcc(2,k,n2),pframe(:,:,n2),sframe2(:,:,i),tt1,ss1)
+         // sdbt(1,k,i)=su2(k,i)-dt*(vn1+tt1)/2.d0-dt*swild2(k,1)
+         // sdbt(2,k,i)=sv2(k,i)-dt*(vn2+ss1)/2.d0-dt*swild2(k,2)
+      }  // if ics
+
+
+   }
+}
+
+#ifdef INCLUDE_TIMING
+      cwtmp=mpi_wtime()
+#endif
+!      call exchange_s3d_4(sdbt)
+      allocate(swild96(2,nvrt,nsa),stat=istat)
+      if(istat/=0) call parallel_abort('MAIN: fail to allocate swild96 (3.4)')
+      swild96=sdbt(1:2,:,:)
+      call exchange_s3d_2(swild96)
+      sdbt(1:2,:,:)=swild96
+      deallocate(swild96)
+
+#ifdef INCLUDE_TIMING
+      wtimer(4,2)=wtimer(4,2)+mpi_wtime()-cwtmp
+#endif
+
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+      endif !ELM or upwind
+
+#ifdef TIMER2
+      tmp=mpi_wtime()
+      write(12,*)'Time taken for mom advection=',tmp-cwtmp3,it
+      cwtmp3=tmp !reset
+#endif
+
+      if(itransport_only==0) then
+
+}
 #ifdef DONTCOMPILE
 __global__ void checkMassConservation(Tracers* sumtr) {
 
@@ -1725,12 +2030,10 @@ __global__ void transport(void) {
 #endif
 
 
-
-// factory functions
 extern "C" 
 __global__ void createMesh(int partNum, 
-                           int npgb, int negb, int nsgb, int nvrt, int kz,
-                           int np, int ne, int ns, 
+                           int npgb, int negb, int nsgb, int nseg,
+                           int np, int ne, int ns, int nvrt, int kz,
                            int max_np, int max_ne, int max_ns,
                            const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
@@ -1746,11 +2049,14 @@ __global__ void createMesh(int partNum,
    };
 
    printf("Creating mesh for partition %d\n", partNum);
-   mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, kz, np, ne, ns, max_np, max_ne, max_ns,
+   mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, kz, np, ne, ns, nseg, max_np, max_ne, max_ns,
                    nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
                    h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
+
+   // XXX read from file
+   polyDischarge = new Polynomial<4>(0.0, 0.0, 0.0, 0.0, 0.0);                   
    
 }
 
