@@ -317,7 +317,7 @@ struct Element {
 
    Vector2 ghat1;             // Element averaged ghat (\breve{G} in notes)
 
-   double vsource;             // Volumetric source/sink term [m^3/s]
+   double vsource;            // Volumetric source/sink term [m^3/s]
 
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
@@ -523,6 +523,7 @@ struct Side {
    __inline__ __device__ double y(double t) const;
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
    __inline__ __device__ Point2 center(void) const { return {xc, yc}; }
+   __inline__ __device__ double Dz(int k) const { return zc[k] - zc[k-1]; }
 
    __forceinline__ __device__ Vector2 t(void) const {
       return {-n.y, n.x};
@@ -531,6 +532,18 @@ struct Side {
    __inline__ __device__ bool isBnd(void) const {
       return sideBnd != nullptr;
    }
+
+   __inline__ __device__ double eta2(void) const {
+      return 0.5*(n1->eta2 + n2->eta2);
+   }
+
+   __inline__ __device__ double veg_h(void) const {
+      return 0.5*(n1->veg_h + n2->veg_h);
+   }   
+
+   __inline__ __device__ double zb(void) const {
+      return zc[kb];
+   }   
 
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {
