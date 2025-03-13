@@ -1661,6 +1661,237 @@ __device__ void computeVerticalAdvection(void) {
       if(itransport_only==0) then
 
 }
+
+
+
+__device__ void computeElemAverageGhat1(void) {
+// Element average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimension: m^2/s.
+
+   Element *elem = FROM kernel;
+   
+   elem->ghat1= {0.0, 0.0};  // Init
+
+   if constexpr(ihydraulics != 0) {
+      if (nhtblocks > 0 && (elem->isblock > 0)) return;
+   }
+
+   if (elem->idry == 1) return;
+
+   // Wet elements.
+   // Warning: ghat1=elem average of \breve{G} must include all: Coriolis, atmo. pressure, 
+   // tidal potential, horizontal diffusion, and baroclinic etc
+   // Remember to update both f (botf) and F (bigf)
+   // If ics=2, ghat1 are in eframe (ll)
+   // cff1-3: coefficients for 2D/3D
+   Vector2 gradEta = {0.0, 0.0};  // \nabla \eta
+   Vector2 gradPr  = {0.0, 0.0};  // \nabla pressure
+   Vector2 gradEtp = {0.0, 0.0};  // \nabla etp
+
+   double av_cff1 = 0.0;  // av. for cff1
+   double av_cff2 = 0.0;  // av. for cff2
+   double av_cff3 = 0.0;  // av. for cff3
+   double av_df = 0.0;  // av. for H^\alpha / H
+   double av_cff2_chi = 0.0;  // av. for cff2*chi
+   double av_cff3_chi = 0.0;  // av. for cff3*chi
+
+   const int i34 = elem->i34;
+
+   for (int j=1; j<i34; j++) {
+      // For each node and side in the element...
+
+      const Node *node = elem->nodes[j];
+      const Side *side = elem->sides[j];
+
+      // Node - const in elem
+      gradEta += node->eta2*elem->gradPhi[j];  // in eframe if ics=2
+      gradPr  += node->pr  *elem->gradPhi[j];
+
+      if (elem->depth >= tip_dp) {
+        gradEtp += node->etp*elem->gradPhi[j];
+      }
+
+      
+      const double htot = side->depth + side->eta2();  // Total depth of the side
+      const double zctr2 = side->zb() + side->veg_h()  // top of canopy
+
+      double cff1; 
+      double cff2; 
+      double cff3;   
+      if (nvrt==side->kb) {  // XXX Check indices, it used to have a +1
+      // coefficients applied to 2D/3D case 
+         cff1 = side->hhat/htot;
+         cff2 = 0.0;
+         cff3 = 0.0;
+      } else { //3D
+         //Init for no-veg case
+         cff1 = 1.0;
+         cff2 = 1.0;
+         cff3 = 0.0;
+
+         if(iveg/=0) {
+            // Computes coefficients for vegetation terms G1, G2
+            if(side->veg_h() < 0.99*htot) { // submergent vegetation
+               cff1=1;
+               veg_c = side->veg_c2/(1.0 + side->veg_c2);  // veg_c2 = \alpha*abs(u)*dt
+               cff2 = 1.0 + side->veg_beta*veg_c;          // Term (1 + beta*c) in G2.
+               cff3 = veg_c;
+            } else { // emergent vegetation
+               cff1 = 1.0/(1.0 + side->veg_c2);
+               cff2 = cff1;
+               cff3 = 0.0;
+            }
+         } // if iveg
+      } //  2D/3D
+
+      av_cff1 += cff1/i34;
+      av_cff2 += cff2/i34;
+      av_cff3 += cff3/i34;
+      av_cff2_chi += cff2*side->chi/i34;
+      av_cff3_chi += cff3*side->chi/i34;
+      av_df += min(htot, side->veg_h())/(htot*i34);
+
+
+      // btrack values: U^\star, U^{\star\alpha}
+      Vector2 tmp  = {0.0, 0.0}; // U^\star
+      Vector2 xtmp = {0.0, 0.0}; // U^{\star\alpha}
+      for (int k = side->kb; k < nvrt; k++) {
+         if (nvrt==side->kb) {  //2D; no need to compute U^{\star\alpha}
+            tmp += side->bt[nvrt]*side->Dz(k);
+         } else { //3D
+            Vector2 w2 = (side->bt[k] + side->bt[k-1])/2.0*side->Dz(k);
+            tmp += w2;
+
+            if (iveg!=0 && zctr2 > side->zc[k-1]) {  // XXX CHECK INDICES!!! 
+                const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k));
+                xtmp += zrat*w2; // XXXX
+            }
+         }  //2/3D
+      } //k
+
+      // Add btrack & surface stress terms to \breve{G} first
+      if constexpr(ics==1) {
+         elem->ghat1 += cff1*tmp - cff3*xtmp;
+      } else {
+         // XXX IMPLEMENT THIS
+         // call project_hvec(xtmp,ytmp,sframe2(:,:,isd),eframe(:,:,i),tt1,ss1)
+         // elem->ghat1[0] += cff1*vn1 - cff3*tt1;
+         // elem->ghat1[1] += cff1*vn2 - cff3*ss1;
+      }  // if ics
+
+      if constexpr(ics==1) {
+         tau_x = sum(tau(1,isidenode(1:2,isd)))/2.d0
+         tau_y = sum(tau(2,isidenode(1:2,isd)))/2.d0
+         ubstar = side->sdbt[side->kb+1]; // XXX CHECK INDICES
+      } else {
+         // XXX IMPLEMENT THIS
+         // n1=isidenode(1,isd); n2=isidenode(2,isd)
+         // call project_hvec(tau(1,n1),tau(2,n1),pframe(:,:,n1),eframe(:,:,i),vn1,vn2)
+         // call project_hvec(tau(1,n2),tau(2,n2),pframe(:,:,n2),eframe(:,:,i),tt1,ss1)
+         // tau_x=(vn1+tt1)/2.d0
+         // tau_y=(vn2+ss1)/2.d0
+         // call project_hvec(sdbt(1,kbs(isd)+1,isd),sdbt(2,kbs(isd)+1,isd),sframe2(:,:,isd),eframe(:,:,i),ubstar,vbstar)
+      }  // if ics
+
+      elem->ghat1 -= side->chi*dt*cff2*ubstar + dt*cff1*tau_x;
+
+      // All terms in F,F^\alpha,f_b except baroclinic
+      // F, f_b: all explicit terms excluding vegetation 
+      // F^\alpha=\int_{-h}^z_v f dz (f ncludes all explicit terms except for vegetation)
+      // Only need to calculate F^\alpha for 3D sides (but init=0) 
+      const double coriolis = side->cori;
+      const Vector2 F    =  coriolis*side->U;  // F_x
+      const Vector2 botf =  coriolis*side->u2;  // f_b_x
+      Vector2 Fa = {0.0, 0.0};  // F^\alpha, vertically forcing terms baroclinic gradient, horizontal viscosity, Coriolis, earth tidal potential, atmospheric pressure, radiation stress)
+
+      if (iveg != 0 && nvrt > side->kb) {  // 3D
+         
+         for (int k = side->kb; k < nvrt; k++) {
+            if (zctr2 > side->z[k-1]) {
+                const Vector2 w2 = side->Dz[k]*(side->u2[k] + side->u2[k-1])/2.0;
+                const double zrat = min(1.0, (zctr2-side->z[k-1])/side->Dz[k]);
+                Fa +=  coriolis*w2*zrat;
+            } // if zctr2
+         } // k
+      } // iveg
+
+      // Integrate horizontal viscosity vertically
+      for (int k=side->kb; k<nvrt; k++) {
+         const Vector2 levelHorVisc = side->Dz(k)*(side->d2uv[k] + side->d2uv[k-1])/2.d0 // (d2uv(1,k,isd)+d2uv(1,k-1,isd))/2
+
+         F += w2;
+
+         // Vegetation term
+         if constexpr(iveg!=0) {
+            if (nvrt > side->kbs + 1 && zctr2 > side->z[k-1]) { // 3D
+               const double zrat = min(1.0, (zctr2 - side->z[k-1])/side->Dz(k));
+               Fa += w2*zrat;
+            } 
+         } // if iveg
+      } // for k
+
+      botf += side->d2uv[side->kb];
+
+
+      // Add to ghat1
+      if constexpr(ics==2) {
+         // XXX IMPLEMENT THIS
+         // call project_hvec(bigf1,bigf2,sframe2(:,:,isd),eframe(:,:,i),vn1,vn2)
+         // bigf1=vn1; bigf2=vn2
+         // call project_hvec(botf1,botf2,sframe2(:,:,isd),eframe(:,:,i),vn1,vn2)
+         // botf1=vn1; botf2=vn2
+         // call project_hvec(bigfa1,bigfa2,sframe2(:,:,isd),eframe(:,:,i),vn1,vn2)
+         // bigfa1=vn1; bigfa2=vn2
+      } // if ics
+
+      elem->ghat1 += cff1*dt*F - cff2*side->chi*dt*dt*botf - cff3*dt*Fa;
+   } // for j (nodes and sides)
+
+   elem->ghat1 = (1.0/i34)*elem->ghat1;
+      
+   // Finish off terms in F, F^\alpha and f_b
+   const double grav3 = elem->mean(Element::grav2)
+   const Vector2 botf = grav3*gradP - gradPr/rho0 //const in each elem
+
+
+   tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
+   for (int j=1; j<i34; j++) { 
+      // For each side in the element...
+      Side *side = elem->sides[j];
+
+      const double htot = side->depth + side->eta2();
+      const double bigF = htot*botf;
+      const double tmph = min(htot, side->veg_h());
+      const double Fa = {tmph*botf.x, tmph*botf.y};
+
+      tmp += av_cff1*dt*bigF - av_cff2*side->chi*dt*dt*botf - av_cff3*dt*Fa;
+   } // for j
+
+   //botf1 etc are already in elem frame
+   elem->ghat1 += tmp/i34;
+
+   // Baroclinic force
+   if constexpr(ibc==0) {
+      assert(prho(1,elnode(1,i))>= -98.d0 && prho(1,elnode(2,i))>= -98.d0 && prho(1,elnode(3,i))>= -98.d0 && "Impossible dry 5");
+      
+      // swild2(k,:) = \sum_{l=k}^N dr*dz; whole level (and eframe if ics=2)
+      swild2[nvrt-1,1:2]=0.d0
+      for (int k=nvrt-2; k>elem->kbe; k--) { /// XXXX CHECK INDICES
+         swild2(k,1:2)=swild2(k+1,1:2)+dr_dxy(1:2,k+1,i)*(ze(k+1,i)-ze(k,i))
+      }
+      swild(1:2)=0.d0 !\in F [m^2/s/s]
+      for (int k=side->kb; k<nvrt; k++) {
+         swild(1:2) -= grav3/rho0*(side->Dz(k)*(2.d0*swild2(k,1:2)+dr_dxy(1:2,k,i)*side->Dz(k))
+      }
+      botf = -grav3/rho0*swild2(kbe(i)+1,1:2) //[m/s/s]; elem average
+      Fa = av_df*swild(1:2) //approx
+      elem->ghat1 += rampbc*dt*av_cff1*swild(1) - rampbc*dt*dt*av_cff2_chi*botf- rampbc*av_cff3*dt*Fa;
+
+   } // if ibc
+
+}
+
+
+
 #ifdef DONTCOMPILE
 __global__ void checkMassConservation(Tracers* sumtr) {
 
