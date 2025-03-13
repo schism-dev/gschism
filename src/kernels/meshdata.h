@@ -522,28 +522,28 @@ struct Side {
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
-   __inline__ __device__ Point2 center(void) const { return {xc, yc}; }
-   __inline__ __device__ double Dz(int k) const { return zc[k] - zc[k-1]; }
+   __inline__ __device__ Point2 center(void)    const { return {xc, yc}; }
+   __inline__ __device__ double Dz(int k)       const { return zc[k] - zc[k-1]; }
 
-   __forceinline__ __device__ Vector2 t(void) const {
-      return {-n.y, n.x};
-   }
+   __forceinline__ __device__ Vector2 t(void) const { return {-n.y, n.x}; } // Tangent vector
 
-   __inline__ __device__ bool isBnd(void) const {
-      return sideBnd != nullptr;
-   }
+   __inline__ __device__ bool isBnd(void) const { return sideBnd != nullptr; } // True if the side is a boundary side
 
-   __inline__ __device__ double eta2(void) const {
-      return 0.5*(n1->eta2 + n2->eta2);
-   }
+   __inline__ __device__ double eta2(void)   const { return 0.5*(n1->eta2 + n2->eta2); }
+   __inline__ __device__ double htot(void)   const { return eta2() + depth; }
 
-   __inline__ __device__ double veg_h(void) const {
-      return 0.5*(n1->veg_h + n2->veg_h);
-   }   
+   __inline__ __device__ double veg_h(void)  const { return 0.5*(n1->veg_h  + n2->veg_h); }
+   __inline__ __device__ double veg_nv(void) const { return 0.5*(n1->veg_nv + n2->veg_nv); }
+   __inline__ __device__ double veg_c(void)  const { return veg_c2/(1.0 + veg_c2); }
 
-   __inline__ __device__ double zb(void) const {
-      return zc[kb];
-   }   
+   __inline__ __device__ Vector2 tau(void)   const { return 0.5*(n1->tau(kb) + n2->tau(kb)); }
+
+   __inline__ __device__ double zb(void) const { return zc[kb]; }
+   
+
+   __inline__ __device__ double zTopCanopy(void) const { return zc[kb] + veg_h(); } 
+
+   __inline__ __device__ bool is2D(void) const { return kb == nvrt - 1; }
 
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {

@@ -114,7 +114,11 @@ def schism_step(it: int):
 
 
     # continuity equation: preparation of matrix
-    computeContinuityEquation()       # Lines 5122-5320
+    computeContinuityEquationRHS()       # Lines 5122-5320
+
+
+    # compute vegetation model parameters
+    computeVegetationModelParameters()
 
 
     # Density Interpolation and Gradient Calculation

@@ -1223,7 +1223,7 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
       } // imm==2
 
       if (elem->isTri()) {
-         for (int l=0; l<3; l++) {
+         for (thenint l=0; l<3; l++) {
            double fac;
 
            Node *node = elem->nodes[l];
@@ -1645,7 +1645,7 @@ __device__ void cubicSplineDerivatives(int n, double *x, double *y, double *y_to
 
 
 
-__device__ void computeContinuityEquation(void) {
+__device__ void computeContinuityEquationRHS(void) {
 // Continuity equation: preparation of matrix
 
    // Compute elevation essential boundary conditions
@@ -1669,7 +1669,7 @@ __device__ void computeContinuityEquation(void) {
             endif
 
             // Prep tide
-            if (iettype(i)==3.or.iettype(i)==5) then
+            if (iettype(i)==3 || iettype(i)==5) then
               eta1_bar=(1.d0-ramp)*eic !etaic(ip) !initialize
               do jfr=1,nbfr
                 ncyc=int(amig(jfr)*time/2.d0/pi)
@@ -1693,76 +1693,83 @@ __device__ void computeContinuityEquation(void) {
 
           endif !ipgl(nd)%rank==myrank
         enddo !j
-      enddo !i=1,nope_global
+   } // for i
 
 
-   // Pre-compute some arrays: chi,hhat,bigu,ghat1
-   chi=0.d0; chi2=0.d0; hhat=0.d0; bigu=0.d0; hhat2=0
+   side->U=0.d0; 
+
+   // Computes the vertically integrated velocity U.
+   Side *side = FROM kernel;
+      
+   if(side->idry) return;
+
+
+   const Node *node1 = side->n1;
+   const Node *node2 = side->n2;
+
+
+   // Vertically integrated velocity U (in ll if ics=2)
+   side->U = {0.0, 0.0};
+   for (int k=side->kbs; k<nvrt-1; k++) { /// XXX CHECK INDICES
+      side->U += side->Dz(k+1)*0.5*(side->u2[k] + side->u2[k+1]);  // CHECK INDICES!!!!
+   }
+
+}
+
+
+__device__ void computeVegetationModelParameters(void) {
+   
+   Side *side = FROM kernel;
+
+      
+   chi=0.d0; chi2=0.d0; hhat=0.d0; 
+   hhat2=0
    veg_c2=0.d0; veg_beta=0.d0
 
 
+   const double htot = side->htot();
 
-   side = FROM kernel;
-      
-         if(side->idry) cycle
+   assert(htot > 0.0 && "computeVegetationModelParameters: htot <= 0");
+
+   const double veg_h  = side->veg_h();
+   const double veg_nv = side->veg_nv();
 
 
-         const Node *node1 = side->n1;
-         const Node *node2 = side->n2;
+   // Compute the drag coefficients chi2 and chi (\tilde\chi in notes)
+   const double vmag1 = module(side->u2[side->kbs + 1])
+   side->chi2 = side->Cd*vmag1 
+   side->chi  = side->chi2
+   if constexpr(iveg != 0) {
+      veg_alpha_bot = (veg_alpha3D(kbp(n1),n1)+veg_alpha3D(kbp(n2),n2))/2.d0
+      side->chi = side->chi/(1.0 + veg_alpha_sd_bot*vmag1*dt)
+   }
 
-         // XXX create side->eta2()?
-         const double htot = 0.5*(node1->eta2 + node2->eta2) + side->depth;
-
-         
-         assert(htot > 0.0 && "STEP: htot(9.1)");
-
-         veg_h_sd  = sum(veg_h(isidenode(1:2,i)))/2.d0
-         veg_nv_sd = sum(veg_nv(isidenode(1:2,i)))/2.d0
-
-         // Average velocity U (in ll if ics=2)
-         bigu(1,i)=0.d0 !U^n_x
-         bigu(2,i)=0.d0 !U^n_y
-         do k=kbs(i),nvrt-1
-            bigu(1,i)=bigu(1,i)+(zs(k+1,i)-zs(k,i))*(su2(k,i)+su2(k+1,i))/2.d0
-            bigu(2,i)=bigu(2,i)+(zs(k+1,i)-zs(k,i))*(sv2(k,i)+sv2(k+1,i))/2.d0
-         enddo !k
-
-         // chi's
-         vmag1=sqrt(sdbt(1,kbs(i)+1,i)**2.d0+sdbt(2,kbs(i)+1,i)**2.d0)
-         chi2(i)=Cd(i)*vmag1 !sqrt(sdbt(1,kbs(i)+1,i)**2+sdbt(2,kbs(i)+1,i)**2)
-         chi(i)=chi2(i)
-         if (iveg != 0) {
-            veg_alpha_sd=sum(veg_alpha_vert_mean(isidenode(1:2,i)))/2.d0
-            veg_alpha_sd_bot=(veg_alpha3D(kbp(n1),n1)+veg_alpha3D(kbp(n2),n2))/2.d0
-            chi(i)=chi(i)/(1.d0+veg_alpha_sd_bot*vmag1*dt)
-         }
-
-         // Calc consts in SAV model; make sure veg_[c2,beta]=0 at 2D, dry side, and emergent side
-         // uuint=0.d0 !\int_{-h}^{z_v} |u|dz / H^\alpha = \bar{|u|}^\alpha
+   // Calc consts in SAV model; make sure veg_[c2,beta]=0 at 2D, dry side, and emergent side
+   // uuint=0.00 !\int_{-h}^{z_v} |u|dz / H^\alpha = \bar{|u|}^\alpha
          if (iveg != 0 && nvrt - kbs(i) > 1 && veg_h_sd > 0.0) {
             // 3D wet side with veg
-            zctr2 = zs(kbs(i),i) + veg_h_sd; // top of canopy
-            do k = kbs(i), nvrt - 1
-            if(zctr2>zs(k,i)) then !partial or full SAV layer
-              zz1=min(zctr2,zs(k+1,i))
-              zrat=(zz1-zs(k,i))/(zs(k+1,i)-zs(k,i)) !\in (0,1]
-              !if(zrat<=0.or.zrat>1) call parallel_abort('STEP: WOW2')
-              ub2=(1.d0-zrat)*su2(k,i)+zrat*su2(k+1,i) !@upper level
-              vb2=(1.d0-zrat)*sv2(k,i)+zrat*sv2(k+1,i) 
-!              bigu1=bigu1+(zz1-zs(k,i))*(su2(k,i)+ub2)/2
-!              bigv1=bigv1+(zz1-zs(k,i))*(sv2(k,i)+vb2)/2
-              ubar1=sqrt(su2(k,i)*su2(k,i)+sv2(k,i)*sv2(k,i))
-              ubar2=sqrt(ub2*ub2+vb2*vb2)
-              uuint=uuint+(zz1-zs(k,i))*(ubar1+ubar2)/2.d0
-         } // if
-      } // for
+            const double zctr2 = side->zTopCanopy(); // top of canopy
+            for (int k = side->kbs; k < nvrt - 1; k++) {
+               if(zctr2>zs(k,i)) then !partial or full SAV layer
+               zz1=min(zctr2,zs(k+1,i))
+               zrat=(zz1-zs(k,i))/(zs(k+1,i)-zs(k,i)) !\in (0,1]
+               !if(zrat<=0.or.zrat>1) call parallel_abort('STEP: WOW2')
+               ub2=(1.d0-zrat)*su2(k,i)+zrat*su2(k+1,i) !@upper level
+               vb2=(1.d0-zrat)*sv2(k,i)+zrat*sv2(k+1,i) 
+   !              bigu1=bigu1+(zz1-zs(k,i))*(su2(k,i)+ub2)/2
+   !              bigv1=bigv1+(zz1-zs(k,i))*(sv2(k,i)+vb2)/2
+               ubar1=sqrt(su2(k,i)*su2(k,i)+sv2(k,i)*sv2(k,i))
+               ubar2=sqrt(ub2*ub2+vb2*vb2)
+               uuint=uuint+(zz1-zs(k,i))*(ubar1+ubar2)/2.d0
+               } // if
+            } // for
       uuint=uuint/min(htot,veg_h_sd) !>=0
 
-
-      veg_c2(i)=veg_alpha_sd*dt*uuint !>=0
-      if(veg_h_sd<0.99d0*htot) then !3D wet submergent side with veg
-      tmpx2=max(1.d-5,chi2(i)*vmag1/grav/htot) !energy gradient
-      !\beta_2; arguments checked
+      veg_alpha     = sum(veg_alpha_vert_mean(isidenode(1:2,i)))/2.d0
+      side->veg_c2 = side->veg_alpha*dt*uuint; // >=0
+      if(side->veg_h < 0.99*htot) { // 3D wet submergent side with vegetation
+      tmpx2 = max(1.0e-5, chi2(i)*vmag1/grav/htot) // Energy gradient
+      // \beta_2; arguments checked
       tmpy2=sqrt(sqrt(veg_nv_sd)/veg_h_sd)*(-0.32d0-0.85d0*log10((htot-veg_h_sd)/veg_h_sd*tmpx2))
       veg_beta(i)=exp(tmpy2*(zctr2-zs(kbs(i)+1,i)))-1.d0 !\beta
       veg_beta(i)=min(10.d0,max(veg_beta(i),0.d0))
@@ -1770,7 +1777,7 @@ __device__ void computeContinuityEquation(void) {
    endif !iveg
 
       // hhat is \breve{H} in notes
-      if (nvrt - side->kbs == 1) { // 2D
+      if (side->is2D()) { // 2D
 
          double tmp = htot + side->chi2*dt;
          if (iveg != 0) tmp = tmp + veg_alpha_sd*vmag1*htot*dt;
@@ -1781,23 +1788,26 @@ __device__ void computeContinuityEquation(void) {
 
       else { // 3D
          side->hhat = htot - side->chi*dt;
-!          hhat(i)=hhat2(i)
+!        hhat(i)=hhat2(i)
 
-         if(iveg/=0) then
-         if(veg_h_sd<0.99d0*htot) then !submergent
-            veg_c=veg_c2(i)/(1.d0+veg_c2(i))
-            hhat(i)=hhat(i)-veg_c*(veg_h_sd+veg_beta(i)*chi(i)*dt)
-         else !emergent
-            hhat(i)=hhat(i)/(1.d0+veg_c2(i)) !veg_alpha_sd*uuint*dt)
-         endif !veg_h_sd
-         endif !iveg
+         if constexpr(iveg != 0) {
+            const double veg_h = side->veg_h();
+            if (veg_h < 0.99*htot) { // Submergent
+               const double veg_c    = side->veg_c();
+               const double veg_beta = side->veg_beta();
+               side->hhat -= veg_c*(veg_h + veg_beta*side->chi*dt);
+
+            } else { // Emergent
+               side->hhat = side->hhat/(1.0 + veg_c2); // veg_alpha_sd*uuint*dt)
+            }
+         } // if iveg
 
          // Enforce positivity for 3D model
          if (ihhat == 1) side->hhat = max(0.0, side->hhat)
       } // if 3D
 
         
-!...  Baroclinic force at side and whole levels
+      // Baroclinic force at side and whole levels
 
       bcc=0 !init for 2D cases
 
@@ -1896,11 +1906,11 @@ __device__ void computeVerticalAdvection(void) {
 
 
 __device__ void computeElemAverageGhat1(void) {
-// Element average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimension: m^2/s.
+// Element average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimensions: m^2/s.
 
    Element *elem = FROM kernel;
    
-   elem->ghat1= {0.0, 0.0};  // Init
+   elem->ghat1= {0.0, 0.0};  
 
    if constexpr(ihydraulics != 0) {
       if (nhtblocks > 0 && (elem->isblock > 0)) return;
@@ -1911,7 +1921,7 @@ __device__ void computeElemAverageGhat1(void) {
    // Wet elements.
    // Warning: ghat1=elem average of \breve{G} must include all: Coriolis, atmo. pressure, 
    // tidal potential, horizontal diffusion, and baroclinic etc
-   // Remember to update both f (botf) and F (bigf)
+   // Remember to update both fb and F 
    // If ics=2, ghat1 are in eframe (ll)
    // cff1-3: coefficients for 2D/3D
    Vector2 gradEta = {0.0, 0.0};  // \nabla \eta
@@ -1933,6 +1943,12 @@ __device__ void computeElemAverageGhat1(void) {
       const Node *node = elem->nodes[j];
       const Side *side = elem->sides[j];
 
+      const double chi      = side->chi;
+      const double veg_c2   = side->veg_c2;
+      const double veg_beta = side->veg_beta;
+      const double veg_h    = side->veg_h();
+      const double veg_c    = veg_c2/(1.0 + veg_c2);  // veg_c2 = \alpha*|u|*dt
+
       // Node - const in elem
       gradEta += node->eta2*elem->gradPhi[j];  // in eframe if ics=2
       gradPr  += node->pr  *elem->gradPhi[j];
@@ -1942,13 +1958,13 @@ __device__ void computeElemAverageGhat1(void) {
       }
 
       
-      const double htot = side->depth + side->eta2();  // Total depth of the side
-      const double zctr2 = side->zb() + side->veg_h()  // top of canopy
+      const double htot  = side->htot();        // Total depth at the side
+      const double zctr2 = side->zTopCanopy();  
 
       double cff1; 
       double cff2; 
       double cff3;   
-      if (nvrt==side->kb) {  // XXX Check indices, it used to have a +1
+      if (side->is2D()) {  // XXX Check indices, it used to have a +1
       // coefficients applied to 2D/3D case 
          cff1 = side->hhat/htot;
          cff2 = 0.0;
@@ -1959,17 +1975,22 @@ __device__ void computeElemAverageGhat1(void) {
          cff2 = 1.0;
          cff3 = 0.0;
 
-         if(iveg/=0) {
-            // Computes coefficients for vegetation terms G1, G2
-            if(side->veg_h() < 0.99*htot) { // submergent vegetation
+         if constexpr(iveg != 0) {
+            // Computes coefficients used with vegetation terms G1, G2
+            // cff1, cff3 are used for the first two terms in G1, G2:
+            // Emergent vegetation:   G1 = Ustar/(\alpha*|u|*dt)
+            // Submergent vegetation: G2 = Ustar - c*Ustar_alpha + ..., with c = \alpha*|u|*dt/(1+\alpha*|u|*dt)
+            // In general, cff1*Ustar - cff3*Ustar_alpha
+            if(veg_h < 0.99*htot) { // submergent vegetation
                cff1=1;
-               veg_c = side->veg_c2/(1.0 + side->veg_c2);  // veg_c2 = \alpha*abs(u)*dt
-               cff2 = 1.0 + side->veg_beta*veg_c;          // Term (1 + beta*c) in G2.
+               cff2 = 1.0 + veg_beta*veg_c;          // Term (1 + beta*c) in G2.
                cff3 = veg_c;
+
             } else { // emergent vegetation
-               cff1 = 1.0/(1.0 + side->veg_c2);
+               cff1 = 1.0/(1.0 + veg_c2);
                cff2 = cff1;
                cff3 = 0.0;
+
             }
          } // if iveg
       } //  2D/3D
@@ -1977,31 +1998,36 @@ __device__ void computeElemAverageGhat1(void) {
       av_cff1 += cff1/i34;
       av_cff2 += cff2/i34;
       av_cff3 += cff3/i34;
-      av_cff2_chi += cff2*side->chi/i34;
-      av_cff3_chi += cff3*side->chi/i34;
-      av_df += min(htot, side->veg_h())/(htot*i34);
+      av_cff2_chi += cff2*chi/i34;
+      av_cff3_chi += cff3*chi/i34;
+      av_df += min(htot, veg_h)/(htot*i34);
 
 
       // btrack values: U^\star, U^{\star\alpha}
-      Vector2 tmp  = {0.0, 0.0}; // U^\star
-      Vector2 xtmp = {0.0, 0.0}; // U^{\star\alpha}
+      // Computes the backtracked velocity integrated vertically (full depth and to the top of the canopy)
+      Vector2 Ustar       = {0.0, 0.0}; 
+      Vector2 Ustar_alpha = {0.0, 0.0}; 
       for (int k = side->kb; k < nvrt; k++) {
-         if (nvrt==side->kb) {  //2D; no need to compute U^{\star\alpha}
-            tmp += side->bt[nvrt]*side->Dz(k);
+         if (side->is2D()) {  //2D; no need to compute U^{\star\alpha}
+            Ustar += side->bt[nvrt]*side->Dz(k);
+
          } else { //3D
             Vector2 w2 = (side->bt[k] + side->bt[k-1])/2.0*side->Dz(k);
-            tmp += w2;
+            Ustar += w2;
 
-            if (iveg!=0 && zctr2 > side->zc[k-1]) {  // XXX CHECK INDICES!!! 
-                const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k));
-                xtmp += zrat*w2; // XXXX
-            }
+            if constexpr(iveg != 0) {
+                if (zctr2 > side->zc[k-1]) {  // XXX CHECK INDICES!!! 
+                    const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k)); // For the top of the canopy, ratio of the level that is below the canopy
+                    Ustar_alpha += zrat*w2; // XXXX
+                }
+            }  // if iveg
          }  //2/3D
-      } //k
+      }  //k
+      
 
       // Add btrack & surface stress terms to \breve{G} first
       if constexpr(ics==1) {
-         elem->ghat1 += cff1*tmp - cff3*xtmp;
+         elem->ghat1 += cff1*Ustar - cff3*Ustar_alpha;
       } else {
          // XXX IMPLEMENT THIS
          // call project_hvec(xtmp,ytmp,sframe2(:,:,isd),eframe(:,:,i),tt1,ss1)
@@ -2009,10 +2035,10 @@ __device__ void computeElemAverageGhat1(void) {
          // elem->ghat1[1] += cff1*vn2 - cff3*ss1;
       }  // if ics
 
+      // Surface and bottom stress terms
       if constexpr(ics==1) {
-         tau_x = sum(tau(1,isidenode(1:2,isd)))/2.d0
-         tau_y = sum(tau(2,isidenode(1:2,isd)))/2.d0
-         ubstar = side->sdbt[side->kb+1]; // XXX CHECK INDICES
+         const Vector2 tau    = side->tau();
+         const Vector2 ubstar = side->sdbt[side->kb+1]; // XXX CHECK INDICES
       } else {
          // XXX IMPLEMENT THIS
          // n1=isidenode(1,isd); n2=isidenode(2,isd)
@@ -2023,15 +2049,16 @@ __device__ void computeElemAverageGhat1(void) {
          // call project_hvec(sdbt(1,kbs(isd)+1,isd),sdbt(2,kbs(isd)+1,isd),sframe2(:,:,isd),eframe(:,:,i),ubstar,vbstar)
       }  // if ics
 
-      elem->ghat1 -= side->chi*dt*cff2*ubstar + dt*cff1*tau_x;
+      // Term for surface and bottom stress
+      elem->ghat1 -= chi*dt*cff2*ubstar + dt*cff1*tau;
 
       // All terms in F,F^\alpha,f_b except baroclinic
       // F, f_b: all explicit terms excluding vegetation 
       // F^\alpha=\int_{-h}^z_v f dz (f ncludes all explicit terms except for vegetation)
       // Only need to calculate F^\alpha for 3D sides (but init=0) 
       const double coriolis = side->cori;
-      const Vector2 F    =  coriolis*side->U;  // F_x
-      const Vector2 botf =  coriolis*side->u2;  // f_b_x
+      const Vector2 F  =  coriolis*side->U;  // F_x
+      const Vector2 fb =  coriolis*side->u2;  // f_b_x
       Vector2 Fa = {0.0, 0.0};  // F^\alpha, vertically forcing terms baroclinic gradient, horizontal viscosity, Coriolis, earth tidal potential, atmospheric pressure, radiation stress)
 
       if (iveg != 0 && nvrt > side->kb) {  // 3D
@@ -2060,7 +2087,7 @@ __device__ void computeElemAverageGhat1(void) {
          } // if iveg
       } // for k
 
-      botf += side->d2uv[side->kb];
+      fb += side->d2uv[side->kb];
 
 
       // Add to ghat1
@@ -2074,14 +2101,14 @@ __device__ void computeElemAverageGhat1(void) {
          // bigfa1=vn1; bigfa2=vn2
       } // if ics
 
-      elem->ghat1 += cff1*dt*F - cff2*side->chi*dt*dt*botf - cff3*dt*Fa;
+      elem->ghat1 += cff1*dt*F - cff2*chi*dt*dt*fb - cff3*dt*Fa;
    } // for j (nodes and sides)
 
    elem->ghat1 = (1.0/i34)*elem->ghat1;
       
    // Finish off terms in F, F^\alpha and f_b
    const double grav3 = elem->mean(Element::grav2)
-   const Vector2 botf = grav3*gradP - gradPr/rho0 //const in each elem
+   const Vector2 fb = grav3*gradP - gradPr/rho0 //const in each elem
 
 
    tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
@@ -2089,12 +2116,11 @@ __device__ void computeElemAverageGhat1(void) {
       // For each side in the element...
       Side *side = elem->sides[j];
 
-      const double htot = side->depth + side->eta2();
-      const double bigF = htot*botf;
-      const double tmph = min(htot, side->veg_h());
-      const double Fa = {tmph*botf.x, tmph*botf.y};
+      const double htot = side->htot();
+      const double F  = htot*fb;
+      const double Fa = min(htot, veg_h)*fb;
 
-      tmp += av_cff1*dt*bigF - av_cff2*side->chi*dt*dt*botf - av_cff3*dt*Fa;
+      tmp += av_cff1*dt*F - av_cff2*chi*dt*dt*fb - av_cff3*dt*Fa;
    } // for j
 
    //botf1 etc are already in elem frame
@@ -2107,15 +2133,16 @@ __device__ void computeElemAverageGhat1(void) {
       // swild2(k,:) = \sum_{l=k}^N dr*dz; whole level (and eframe if ics=2)
       swild2[nvrt-1,1:2]=0.d0
       for (int k=nvrt-2; k>elem->kbe; k--) { /// XXXX CHECK INDICES
-         swild2(k,1:2)=swild2(k+1,1:2)+dr_dxy(1:2,k+1,i)*(ze(k+1,i)-ze(k,i))
+         // dr_dxy is grad(rho)
+         swild2(k,1:2)=swild2(k+1,1:2)+dr_dxy(1:2,k+1,i)*(ze(k+1,i)-ze(k,i)) 
       }
       swild(1:2)=0.d0 !\in F [m^2/s/s]
       for (int k=side->kb; k<nvrt; k++) {
          swild(1:2) -= grav3/rho0*(side->Dz(k)*(2.d0*swild2(k,1:2)+dr_dxy(1:2,k,i)*side->Dz(k))
       }
-      botf = -grav3/rho0*swild2(kbe(i)+1,1:2) //[m/s/s]; elem average
+      fb = -grav3/rho0*swild2(kbe(i)+1,1:2) //[m/s/s]; elem average
       Fa = av_df*swild(1:2) //approx
-      elem->ghat1 += rampbc*dt*av_cff1*swild(1) - rampbc*dt*dt*av_cff2_chi*botf- rampbc*av_cff3*dt*Fa;
+      elem->ghat1 += rampbc*dt*av_cff1*swild(1) - rampbc*dt*dt*av_cff2_chi*fb- rampbc*av_cff3*dt*Fa;
 
    } // if ibc
 
