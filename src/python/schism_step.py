@@ -113,13 +113,14 @@ def schism_step(it: int):
     computeVerticalAdvection()        # Lines 5030-5122
 
 
-    # continuity equation: preparation of matrix
-    computeContinuityEquationRHS()       # Lines 5122-5320
+    computeElevationBoundaryConditions(ramp, time)
+    
+
+    computeVerticallyIntegratedVelocity()       # Lines 5122-5320
 
 
-    # compute vegetation model parameters
-    computeVegetationModelParameters()
-
+    # compute vegetation and drag model parameters
+    computeVegetationAndDragParameters()
 
     # Density Interpolation and Gradient Calculation
     computeDensityInterpolation()      # Lines 5321-5532

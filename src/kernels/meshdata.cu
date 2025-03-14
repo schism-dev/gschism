@@ -1644,72 +1644,73 @@ __device__ void cubicSplineDerivatives(int n, double *x, double *y, double *y_to
 }
 
 
+__device__ void computeElevationBoundaryConditions(double ramp, double time) {
+   // Compute elevation essential boundary conditions 
 
-__device__ void computeContinuityEquationRHS(void) {
-// Continuity equation: preparation of matrix
-
-   // Compute elevation essential boundary conditions
    // In case of border node on >1 bnd with imposed elevation, the bnd with largest segment # prevails.
+
+   const Node *node = FROM kernel; // A boundary node
+   const NodeBoundary *nodeBnd = node->bnd;
+   const int iettype = nodeBnd->iettype;
+
    double elbc[nope_global]; // flags
-   for (int i=0; i < nope_global; i++) {
-      // For all boundary segments...
-
-      for (int j=0; j < nond_global(i); j++) {
-         // For all nodes in the segment...
-
-         const Node *node = iond_global(i,j); //global
-
-         if (ipgl(nd)%rank==myrank) then
-
-            ip=ipgl(nd)%id
-            if(nramp_elev==1) then
-              eic=etaic(ip)
-            else
-              eic=0.d0
-            endif
-
-            // Prep tide
-            if (iettype(i)==3 || iettype(i)==5) then
-              eta1_bar=(1.d0-ramp)*eic !etaic(ip) !initialize
-              do jfr=1,nbfr
-                ncyc=int(amig(jfr)*time/2.d0/pi)
-                arg=amig(jfr)*time-real(ncyc,rkind)*2.d0*pi+face(jfr)-efa(i,j,jfr)
-                eta1_bar=eta1_bar+ramp*ff(jfr)*emo(i,j,jfr)*cos(arg)
-              enddo !jfr=1,nbfr
-            endif
-
-            if(iettype(i)==1.or.iettype(i)==2) then
-              elbc(ip)=ramp*eth(1,i)+(1.d0-ramp)*eic
-            else if(iettype(i)==3) then
-              elbc(ip)=eta1_bar
-            else if(iettype(i)==4) then
-              elbc(ip)=ramp*eth(j,i)+(1.d0-ramp)*eic !etaic(ip)
-            else if(iettype(i)==5) then
-              elbc(ip)=ramp*eth(j,i)+eta1_bar
-            endif
-
-            !Add inverse barometric effects
-            if(iettype(i)/=0.and.inv_atm_bnd==1) elbc(ip)=elbc(ip)+ramp*(prmsl_ref-pr(ip))/grav/rho0
-
-          endif !ipgl(nd)%rank==myrank
-        enddo !j
-   } // for i
 
 
-   side->U=0.d0; 
+   double eic = 0.0;
+   if(nramp_elev==1) eic = nodeBnd->etaic;
+   else              eic = 0.0;
 
-   // Computes the vertically integrated velocity U.
+   const double r_eic = (1.0 - ramp)*eic; 
+   const double r_eth = ramp*eth(1,i);
+   double eta1_bar = 0.0;
+
+   // Compute tide elevation
+   if (iettype == 3 || iettype == 5) {
+     
+      // XXX IMPLEMENT TIDE THINGS
+      for (int jfr=0; jfr<nbfr; jfr++) { // For all tide frequencies
+         int ncyc = int(amig[jfr]*time/2.d0/pi);
+         double arg = amig[jfr]*time - 2.0*pi*ncyc + face[jfr] - efa[i,j,jfr];
+         eta1_bar = r_eic + ramp*ff[jfr]*emo[i,j,jfr]*cos(arg);
+      } // for jfr
+   } // if iettype
+
+   switch (iettype) {
+      case 1:
+      case 2:
+         nodeBnd->elbc = r_eth + r_eic;
+         break;
+      case 3:
+         nodeBnd->elbc = eta1_bar + r_eic;
+         break;
+      case 4:
+         nodeBnd->elbc = r_eth + r_eic;
+         break;
+      case 5:
+         nodeBnd->elbc = r_eth + eta1_bar + r_eic;
+         break;
+   } // switch
+
+
+   //Add inverse barometric effects
+   if (iettype != 0 && inv_atm_bnd == 1) {
+      nodeBnd->elbc += ramp*(prmsl_ref - pr(ip))/grav/rho0;
+   }
+
+}
+
+__device__ void computeVerticallyIntegratedVelocity(void) {
+
    Side *side = FROM kernel;
+
+   side->U = {0.0, 0.0}; 
       
    if(side->idry) return;
-
 
    const Node *node1 = side->n1;
    const Node *node2 = side->n2;
 
-
    // Vertically integrated velocity U (in ll if ics=2)
-   side->U = {0.0, 0.0};
    for (int k=side->kbs; k<nvrt-1; k++) { /// XXX CHECK INDICES
       side->U += side->Dz(k+1)*0.5*(side->u2[k] + side->u2[k+1]);  // CHECK INDICES!!!!
    }
@@ -1717,99 +1718,283 @@ __device__ void computeContinuityEquationRHS(void) {
 }
 
 
-__device__ void computeVegetationModelParameters(void) {
+__device__ void computeBottomDragVegetation(void) {
+   // UNFINISHED. CHECK THIS:
+   // How many kernels are needed? Why so many for loops?
+   // Is the loop on sides needed?
+
+   Node *node = FROM kernel;
+
+   // nchi = {-1, 0, 1} is the type of bottom drag.
+   if (nchi==1) {
+
+      bool ltmp = false; // for WBL iteration
+
+
+      double Cdp = 0.0;
+      double Cd  = 0.0; // for dry pts
+
+      // Cdmax=-1 !max. Cd at node for this process (info only)
+      // Drag at nodes
+/////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)
+// !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guérin) 
+      
+  
+      if (node->idry) return;
+      // Wet node
+
+      const int    kb      = node->kb;
+      const double htot    = node->htot();
+      const double rough_p = node->rough_p;
+
+      assert(rough_p >= 0.0 && "computeBottomDragVegetation: rough_p < 0");
+      if (rough_p == 0.0) {
+         node->Cdp = 0.0;
+
+      } else { //roughness >0 
+         
+         const double bthick_ori = node->znl[kb + 1] - node->znl[kb];  // thickness of bottom bnd layer
+         const double bthick = max(dzb_min, bthick_ori);
+
+         assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
+
+         double tmp = 1.0/(2.5*log(bthick/rough_p));
+         node->Cdp = tmp*tmp;
+
+      } // if rough_p
+
+
+
+      if (it==iths_main+1) write(12,*)'Cd min/max at 1st step= ',minval(Cdp),maxval(Cdp);
+
+// !       Output warning for WBL if iteration didn't converge
+
+   } // nchi==1
+
+   // Dump Cdp for diagnostics
+   // if(ipre2/=0) then
+   //      fdb='Cdp_000000'
+   //      lfdb=len_trim(fdb)
+   //      write(fdb(lfdb-5:lfdb),'(i6.6)') myrank
+   //      open(10,file=out_dir(1:len_out_dir)//fdb,status='replace')
+   //      write(10,*)np,nproc
+   //      do i=1,np
+   //        write(10,'(i11,3(1x,e20.12))')iplg(i),xnd(i),ynd(i),Cdp(i)
+   //      enddo !i
+   //      close(10)
+   //      if(myrank==0) write(16,*)'Cdp_ output done...'
+        
+   //      call parallel_finalize
+   //      stop
+   // endif
+
+   // SAV const
+   double veg_cfk = 0.07; //Shimizu & Tsujimoto (1994)
+   double veg_cfpsi = 0.16;
+
+
+   if (nchi != 0) {
+        do i=1,nsa
+          if(idry_s(i)==1) cycle
+          Cd(i)=(Cdp(isidenode(1,i))+Cdp(isidenode(2,i)))/2.d0
+        enddo !i
+   } // nchi!=0
+
+   //   Bottom stress in m^2/s/s
+   for (int i=0; i<npa; i++) {
+      if(idry(i)==1 || prho(kbp(i)+1,i) < -98.d0) cycle
+
+      tmp=sqrt(uu2(kbp(i)+1,i)**2.d0+vv2(kbp(i)+1,i)**2.d0)
+      tau_bot_node(1,i)=prho(kbp(i)+1,i)*Cdp(i)*tmp*uu2(kbp(i)+1,i) !unit: kg/m/s^2 (Pa)
+      tau_bot_node(2,i)=prho(kbp(i)+1,i)*Cdp(i)*tmp*vv2(kbp(i)+1,i)
+      tau_bot_node(3,i)=prho(kbp(i)+1,i)*Cdp(i)*tmp*tmp
+   }
+
+
+   // Add vertical variation to veg_alpha and compute vertical mean etc
+   if constexpr(iveg!=0) {
+      if constexpr(iveg==1) { //specify vertical variation
+
+         do i=1,npa
+            if (node->idry) {
+              veg_alpha3D(:,i)=veg_alpha0(i)
+            } else { //wet
+               for (int k=node->kbp; k<nvrt; k++) {
+                  rl10=znl(k,i)-znl(node->kbp,i) !>=0
+                  if (rl10>=veg_vert_z(nbins_veg_vert+1)) {
+                     cff1=veg_vert_scale_cd(nbins_veg_vert+1)
+                     cff2=veg_vert_scale_N(nbins_veg_vert+1)
+                     cff3=veg_vert_scale_D(nbins_veg_vert+1)
+                  else
+                     ifl=0
+                     do kk=1,nbins_veg_vert
+                       if(rl10>=veg_vert_z(kk).and.rl10<=veg_vert_z(kk+1)) then
+                         zrat=(rl10-veg_vert_z(kk))/(veg_vert_z(kk+1)-veg_vert_z(kk))
+                         ifl=kk
+                         exit
+                       endif !znl
+                     enddo !kk
+                     if(ifl==0) then
+                       write(errmsg,*)'STEP: veg vert failed,',veg_vert_z
+                       call parallel_abort(errmsg) 
+                     endif
+                     cff1=veg_vert_scale_cd(ifl)*(1.d0-zrat)+veg_vert_scale_cd(ifl+1)*zrat
+                     cff2=veg_vert_scale_N(ifl)*(1.d0-zrat)+veg_vert_scale_N(ifl+1)*zrat
+                     cff3=veg_vert_scale_D(ifl)*(1.d0-zrat)+veg_vert_scale_D(ifl+1)*zrat
+                  } // if rl10
+  
+                  veg_alpha3D(k,i)=veg_alpha0(i)*cff1*cff2*cff3
+               } // for k
+            } // if idry
+         } // for i
+
+      } else { // Ganthy (iveg=2)
+      //  Modify canopy height, diameter, and density
+
+         do i=1,npa
+            // Make sure there is veg on this node
+            if (veg_h_unbent(i)>0.0) {
+               wtmp2=sqrt(dav(1,i)**2.d0+dav(2,i)**2.d0)*100.d0 !cm/s
+               veg_h(i) = 0.72e-2*(4.657 - 0.158*wtmp2 + 0.262*veg_lai - 0.011*veg_lai*wtmp2 + 
+                                   0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784d0
+               veg_h(i) = max(veg_h(i), 1.0e-2) //impose min of 1cm
+
+               wtmp2=veg_cw*veg_di_unbent(i)*veg_h_unbent(i)/veg_h(i) // \phi_b
+               veg_di(i)=(veg_di_unbent(i)+wtmp2)*0.5d0
+               wtmp2=max(0.0,veg_h_unbent(i)-veg_h(i)) !surplus height
+               veg_nv(i)=veg_nv_unbent(i)*(1.0 + wtmp2/veg_h(i))
+            } // if veg_h_unbent
+            veg_alpha3D(:,i) = 0.5d0*veg_di(i)*veg_nv(i)*veg_cd(i)
+         } // for i
+
+      } // if iveg
+  
+      //Compute vertical mean of veg_alpha
+      for (int i=0; i<npa; i++) {
+         if (node->idry) {
+            node->veg_alpha_vert_mean = veg_alpha0;
+
+         } else { //wet
+            const double zt = node->zTopCanopy(); // Top of the canopy
+            double sum1=0.0;
+            double sum2=0.0;
+            for (int k=node->kbp; k<nvrt-1; k++) {
+               if (node->znl[k+1] <= zt) { // If under the canopy...
+                  const double Dz = node->znl[k+1] - node->znl[k];
+                  sum1 += 0.5d0*(node->veg_alpha3D(k) + node->veg_alpha3D(k+1))*Dz;
+                  sum2 += Dz;
+               } else {
+                  break;
+               }
+            } // for k
+
+            if (sum2 == 0.0) node->veg_alpha_vert_mean = node->veg_alpha3D[kb];
+            else             node->veg_alpha_vert_mean = sum1/sum2;
+         } //idry
+      } // for i
+
+   } // if iveg
+
+}
+
+__device__ void computeVegetationAndDragParameters(void) {
+   // Computes the vegetation and drag model parameters:
+   // chi, \tilde\chi, beta, \breve{H}
    
    Side *side = FROM kernel;
-
-      
-   chi=0.d0; chi2=0.d0; hhat=0.d0; 
-   hhat2=0
-   veg_c2=0.d0; veg_beta=0.d0
-
 
    const double htot = side->htot();
 
    assert(htot > 0.0 && "computeVegetationModelParameters: htot <= 0");
 
-   const double veg_h  = side->veg_h();
-   const double veg_nv = side->veg_nv();
+   const double veg_h    = side->veg_h();
+   const double veg_nv   = side->veg_nv();
+   const double veg_c    = side->veg_c();
+   const double veg_beta = side->veg_beta();
 
-
-   // Compute the drag coefficients chi2 and chi (\tilde\chi in notes)
-   const double vmag1 = module(side->u2[side->kbs + 1])
+   // Compute the drag coefficients chi2 and chi (\tilde\chi in notes) // XXX change names, chi->chitilde, chi2->chi
+   // Velocity magnitude at the bottom level
+   const double vmag1 = length(side->u2[side->kb + 1]) // XXX CHECK INDICES
    side->chi2 = side->Cd*vmag1 
    side->chi  = side->chi2
    if constexpr(iveg != 0) {
-      veg_alpha_bot = (veg_alpha3D(kbp(n1),n1)+veg_alpha3D(kbp(n2),n2))/2.d0
-      side->chi = side->chi/(1.0 + veg_alpha_sd_bot*vmag1*dt)
+      const Node *n1 = side->n1;
+      const Node *n2 = side->n2;
+      const double veg_alpha_bot = 0.5*(n1->veg_alpha3D(n1->kb) + n2->veg_alpha3D(n2->kb));
+      side->chi = side->chi/(1.0 + veg_alpha_bot*vmag1*dt)
    }
 
    // Calc consts in SAV model; make sure veg_[c2,beta]=0 at 2D, dry side, and emergent side
-   // uuint=0.00 !\int_{-h}^{z_v} |u|dz / H^\alpha = \bar{|u|}^\alpha
-         if (iveg != 0 && nvrt - kbs(i) > 1 && veg_h_sd > 0.0) {
-            // 3D wet side with veg
-            const double zctr2 = side->zTopCanopy(); // top of canopy
-            for (int k = side->kbs; k < nvrt - 1; k++) {
-               if(zctr2>zs(k,i)) then !partial or full SAV layer
-               zz1=min(zctr2,zs(k+1,i))
-               zrat=(zz1-zs(k,i))/(zs(k+1,i)-zs(k,i)) !\in (0,1]
-               !if(zrat<=0.or.zrat>1) call parallel_abort('STEP: WOW2')
-               ub2=(1.d0-zrat)*su2(k,i)+zrat*su2(k+1,i) !@upper level
-               vb2=(1.d0-zrat)*sv2(k,i)+zrat*sv2(k+1,i) 
-   !              bigu1=bigu1+(zz1-zs(k,i))*(su2(k,i)+ub2)/2
-   !              bigv1=bigv1+(zz1-zs(k,i))*(sv2(k,i)+vb2)/2
-               ubar1=sqrt(su2(k,i)*su2(k,i)+sv2(k,i)*sv2(k,i))
-               ubar2=sqrt(ub2*ub2+vb2*vb2)
-               uuint=uuint+(zz1-zs(k,i))*(ubar1+ubar2)/2.d0
-               } // if
-            } // for
-      uuint=uuint/min(htot,veg_h_sd) !>=0
 
-      veg_alpha     = sum(veg_alpha_vert_mean(isidenode(1:2,i)))/2.d0
-      side->veg_c2 = side->veg_alpha*dt*uuint; // >=0
-      if(side->veg_h < 0.99*htot) { // 3D wet submergent side with vegetation
-      tmpx2 = max(1.0e-5, chi2(i)*vmag1/grav/htot) // Energy gradient
-      // \beta_2; arguments checked
-      tmpy2=sqrt(sqrt(veg_nv_sd)/veg_h_sd)*(-0.32d0-0.85d0*log10((htot-veg_h_sd)/veg_h_sd*tmpx2))
-      veg_beta(i)=exp(tmpy2*(zctr2-zs(kbs(i)+1,i)))-1.d0 !\beta
-      veg_beta(i)=min(10.d0,max(veg_beta(i),0.d0))
-      endif !veg_h_sd
-   endif !iveg
+   // Compute the vertically averaged velocity magnitude Ua up to the top of the canopy.
+   // \int_{-h}^{z_v} |u|dz / H^\alpha = \bar{|u|}^\alpha
+   double magUa = 0.0;
+   if (iveg != 0 && side->is3D() && veg_h > 0.0) {
+      // 3D wet side with veg...
 
-      // hhat is \breve{H} in notes
-      if (side->is2D()) { // 2D
+      for (int k = side->kb; k < nvrt - 1; k++) { // XXX CHECK INDICES
+         if (side->HasVegetation(k+1)) { //partial or full SAV layer
 
-         double tmp = htot + side->chi2*dt;
-         if (iveg != 0) tmp = tmp + veg_alpha_sd*vmag1*htot*dt;
+            // Velocity magnitude must be computed at the center of each level to perform the integration.
+            // The tricky part is to compute that velocity at the level that may be partially submerged.
+            const double zrat = side->zLevelVegRatio(k + 1); // in (0,1]
 
-         assert(tmp > 0.0 && "COMPUTE CONTINUITY EQUATION: Impossible dry 53");
+            // Velocity magnitude at the top of the level (may be partially submerged)
+            const double uTop = length((1.0 - zrat)*side->u2[k] + zrat*side->u2[k+1]);
 
-         hhat(i) = htot*htot/tmp; 
+            // Velocity magnitude at the bottom of the level
+            const double uBot = length(side->u2[k]);
 
-      else { // 3D
-         side->hhat = htot - side->chi*dt;
-!        hhat(i)=hhat2(i)
+            const double Dz = side->zTopCanopy() - side->zc[k];
+            magUa += Dz*(uTop + uBot)/2.0;
 
-         if constexpr(iveg != 0) {
-            const double veg_h = side->veg_h();
-            if (veg_h < 0.99*htot) { // Submergent
-               const double veg_c    = side->veg_c();
-               const double veg_beta = side->veg_beta();
-               side->hhat -= veg_c*(veg_h + veg_beta*side->chi*dt);
+         } // if HasVegetation
+      } // for
+      const double ua = magUa/min(htot, veg_h); // Vertical average
 
-            } else { // Emergent
-               side->hhat = side->hhat/(1.0 + veg_c2); // veg_alpha_sd*uuint*dt)
-            }
-         } // if iveg
+      // Computes beta, used for computing the stress term at the top of the canopy.
+      const double veg_alpha = side->veg_alpha_vert_mean();
+      side->veg_c2 = side->veg_alpha*dt*ua; // >=0
+      if (side->isSubmerged()) { // 3D wet submergent side with vegetation
+         const double I = max(1.0e-5, side->chi2*vmag1/(grav*htot)); // Energy gradient
+         const double beta2 = sqrt(sqrt(veg_nv)/veg_h)*(-0.32 - 0.85*log10((htot - veg_h)/veg_h*I))
+         const double beta = exp(beta2*(zctr2 - side->zc[side->kb + 1])) - 1.0; /// XXX CHECK INDICES
+         side->veg_beta = max(0.0, min(10.0, beta));  // Clamp to [0,10]
+      } // if isSubmerged
+   } // if iveg   
 
-         // Enforce positivity for 3D model
-         if (ihhat == 1) side->hhat = max(0.0, side->hhat)
-      } // if 3D
+   // Computes the friction modified depth, \breve{H} in notes
+   if (side->is2D()) { // 2D
 
-        
-      // Baroclinic force at side and whole levels
+      double fricH = htot + side->chi2*dt; // Depth enhanced by the bottom friction and form drag, \tilde{H} in notes
+      if constexpr(iveg != 0) fricH += veg_alpha*vmag1*htot*dt;
 
-      bcc=0 !init for 2D cases
+      assert(fricH > 0.0 && "COMPUTE CONTINUITY EQUATION: Impossible dry 53");
+
+      side->hhat = htot*htot/fricH; 
+
+   else { // 3D
+      side->hhat = htot - side->chi*dt; // Friction modified depth, \hat{H} in notes
+
+      if constexpr(iveg != 0) {
+         
+         if (side->isSubmerged()) { 
+            const double Hhat_alpha = veg_h + veg_beta*side->chi*dt; 
+            side->hhat -= veg_c*Hhat_alpha;
+
+         } else { // Emergent
+            side->hhat = side->hhat/(1.0 + veg_c2); // veg_c2 = alpha*|u|*dt
+         }
+      } // if iveg
+
+      // Enforce positivity for 3D model
+      if (ihhat == 1) side->hhat = max(0.0, side->hhat)
+   } // if 3D
+
+     
+   // Baroclinic force at side and whole levels
+
+   // bcc=0 !init for 2D cases XXX TEMPORARY???
 
 }
 
@@ -2066,7 +2251,7 @@ __device__ void computeElemAverageGhat1(void) {
          for (int k = side->kb; k < nvrt; k++) {
             if (zctr2 > side->z[k-1]) {
                 const Vector2 w2 = side->Dz[k]*(side->u2[k] + side->u2[k-1])/2.0;
-                const double zrat = min(1.0, (zctr2-side->z[k-1])/side->Dz[k]);
+                const double zrat = min(1.0, (zctr2 - side->z[k-1])/side->Dz[k]);
                 Fa +=  coriolis*w2*zrat;
             } // if zctr2
          } // k

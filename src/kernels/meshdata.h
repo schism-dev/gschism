@@ -68,6 +68,10 @@ __device__ __host__ __forceinline__ double2 operator/(const double2& v, double s
     return make_double2(v.x / s, v.y / s);
 }
 
+__device__ __host__ __forceinline__ double length(const double2& v) {
+    return sqrt(v.x*v.x + v.y*v.y);
+}
+
 __device__ __host__ __forceinline__ double dot(const double2& v, const double2& w) {
     return v.x*w.x + v.y*w.y;
 }
@@ -542,8 +546,14 @@ struct Side {
    
 
    __inline__ __device__ double zTopCanopy(void) const { return zc[kb] + veg_h(); } 
-
+   __inline__ __device__ double zLevelVegRatio(int k) const { 
+      // Ratio ocupied by the vegetation at vertical level k. It is 1.0 if the canopy is fully above the level k and 0.0 if it is fully below the level k
+      return max(0.0, min(1.0, (zTopCanopy() - zc[k-1])/Dz(k))); 
+      } 
+   __inline__ __device__ bool HasVegetation(int k) const { zTopCanopy() > side->zc[k-1]); }
+   __inline__ __device__ bool isSubmerged(int k) const { return veg_h() < 0.99*htot(); }
    __inline__ __device__ bool is2D(void) const { return kb == nvrt - 1; }
+   __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
 
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {
@@ -601,6 +611,8 @@ struct NodeBoundary {
    
    SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
+
+   int iettype;   // Type of elevation boundary condition
 
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
