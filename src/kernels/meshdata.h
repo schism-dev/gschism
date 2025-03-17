@@ -8,6 +8,8 @@ constexpr int ihh = 1;   // Option to limit \hat{H} to enhance stability for lar
 constexpr int imm = 0;   // Option to pre-compute vnorm on the element
 constexpr int iveg = 0;  // Vegetation option, 0: no vegetation, 1: vegetation
 
+constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
+
 constexpr int    iloadtide = 0;       // Option to use polynomial for discharge boundary
 constexpr double loadtide_coef = 0.1; // Load tide coefficient
 
@@ -539,6 +541,8 @@ struct Side {
    __inline__ __device__ double veg_h(void)  const { return 0.5*(n1->veg_h  + n2->veg_h); }
    __inline__ __device__ double veg_nv(void) const { return 0.5*(n1->veg_nv + n2->veg_nv); }
    __inline__ __device__ double veg_c(void)  const { return veg_c2/(1.0 + veg_c2); }
+
+   __inline__ __device__ double Cd(void)     const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
 
    __inline__ __device__ Vector2 tau(void)   const { return 0.5*(n1->tau(kb) + n2->tau(kb)); }
 

@@ -1725,6 +1725,10 @@ __device__ void computeBottomDragVegetation(void) {
 
    Node *node = FROM kernel;
 
+   const int    kb      = node->kb;
+   const double htot    = node->htot();
+   const double rough_p = node->rough_p;
+
    // nchi = {-1, 0, 1} is the type of bottom drag.
    if (nchi==1) {
 
@@ -1743,9 +1747,7 @@ __device__ void computeBottomDragVegetation(void) {
       if (node->idry) return;
       // Wet node
 
-      const int    kb      = node->kb;
-      const double htot    = node->htot();
-      const double rough_p = node->rough_p;
+
 
       assert(rough_p >= 0.0 && "computeBottomDragVegetation: rough_p < 0");
       if (rough_p == 0.0) {
@@ -1771,117 +1773,106 @@ __device__ void computeBottomDragVegetation(void) {
 
    } // nchi==1
 
-   // Dump Cdp for diagnostics
-   // if(ipre2/=0) then
-   //      fdb='Cdp_000000'
-   //      lfdb=len_trim(fdb)
-   //      write(fdb(lfdb-5:lfdb),'(i6.6)') myrank
-   //      open(10,file=out_dir(1:len_out_dir)//fdb,status='replace')
-   //      write(10,*)np,nproc
-   //      do i=1,np
-   //        write(10,'(i11,3(1x,e20.12))')iplg(i),xnd(i),ynd(i),Cdp(i)
-   //      enddo !i
-   //      close(10)
-   //      if(myrank==0) write(16,*)'Cdp_ output done...'
-        
-   //      call parallel_finalize
-   //      stop
-   // endif
+ 
 
    // SAV const
    double veg_cfk = 0.07; //Shimizu & Tsujimoto (1994)
    double veg_cfpsi = 0.16;
 
 
-   if (nchi != 0) {
-        do i=1,nsa
-          if(idry_s(i)==1) cycle
-          Cd(i)=(Cdp(isidenode(1,i))+Cdp(isidenode(2,i)))/2.d0
-        enddo !i
-   } // nchi!=0
 
    //   Bottom stress in m^2/s/s
-   for (int i=0; i<npa; i++) {
-      if(idry(i)==1 || prho(kbp(i)+1,i) < -98.d0) cycle
 
-      tmp=sqrt(uu2(kbp(i)+1,i)**2.d0+vv2(kbp(i)+1,i)**2.d0)
-      tau_bot_node(1,i)=prho(kbp(i)+1,i)*Cdp(i)*tmp*uu2(kbp(i)+1,i) !unit: kg/m/s^2 (Pa)
-      tau_bot_node(2,i)=prho(kbp(i)+1,i)*Cdp(i)*tmp*vv2(kbp(i)+1,i)
-      tau_bot_node(3,i)=prho(kbp(i)+1,i)*Cdp(i)*tmp*tmp
+   if (!node->idry &&  node->prho[kb + 1] >= -98.d0)
+   {
+      const double mag_u = length(node->u2[kb + 1]);
+      node->tau_bot = node->prho[kb + 1]*node->Cd*mag_u*node->u2[kb + 1]; // units: kg/m/s^2 (Pa)
    }
-
 
    // Add vertical variation to veg_alpha and compute vertical mean etc
    if constexpr(iveg!=0) {
       if constexpr(iveg==1) { //specify vertical variation
 
-         do i=1,npa
-            if (node->idry) {
-              veg_alpha3D(:,i)=veg_alpha0(i)
-            } else { //wet
-               for (int k=node->kbp; k<nvrt; k++) {
-                  rl10=znl(k,i)-znl(node->kbp,i) !>=0
-                  if (rl10>=veg_vert_z(nbins_veg_vert+1)) {
-                     cff1=veg_vert_scale_cd(nbins_veg_vert+1)
-                     cff2=veg_vert_scale_N(nbins_veg_vert+1)
-                     cff3=veg_vert_scale_D(nbins_veg_vert+1)
-                  else
-                     ifl=0
-                     do kk=1,nbins_veg_vert
-                       if(rl10>=veg_vert_z(kk).and.rl10<=veg_vert_z(kk+1)) then
-                         zrat=(rl10-veg_vert_z(kk))/(veg_vert_z(kk+1)-veg_vert_z(kk))
-                         ifl=kk
-                         exit
-                       endif !znl
-                     enddo !kk
-                     if(ifl==0) then
-                       write(errmsg,*)'STEP: veg vert failed,',veg_vert_z
-                       call parallel_abort(errmsg) 
-                     endif
-                     cff1=veg_vert_scale_cd(ifl)*(1.d0-zrat)+veg_vert_scale_cd(ifl+1)*zrat
-                     cff2=veg_vert_scale_N(ifl)*(1.d0-zrat)+veg_vert_scale_N(ifl+1)*zrat
-                     cff3=veg_vert_scale_D(ifl)*(1.d0-zrat)+veg_vert_scale_D(ifl+1)*zrat
-                  } // if rl10
-  
-                  veg_alpha3D(k,i)=veg_alpha0(i)*cff1*cff2*cff3
-               } // for k
-            } // if idry
-         } // for i
+         if (node->idry) {
+            for (int k=node->kbp; k<nvrt; k++) {  // XXX CHECK INDICES
+               node->veg_alpha3D[k] = node->veg_alpha0;
+            }
+         } else { //wet
+            // Compute the vegetation "density" \alpha = D*N*Cd/2
+            // D, N and Cd are given by the piecewise linear functions veg_vert_scale_cd, veg_vert_scale_N, veg_vert_scale_D
+
+            // Find the bin at which the current vertical level is
+            int kbin = 0; 
+
+            for (int k=node->kbp; k<nvrt; k++) {
+               // Computes node height above the bottom level
+               const double tmp_h = node->znl[k] - node->znl[node->kbp]; // >=0
+               
+               if (tmp_h > veg_vert_z[kbin]) kbin = min(kbin + 1, nbins_veg_vert + 1);
+               if (tmp_h >= veg_vert_z[nbins_veg_vert]) {
+                  cff1 = veg_vert_scale_cd[nbins_veg_vert];
+                  cff2 = veg_vert_scale_N [nbins_veg_vert];
+                  cff3 = veg_vert_scale_D [nbins_veg_vert];
+               } else {
+                  // Find the bin at which the current vertical level is
+                  while (kbin<nbins_veg_vert) {
+                     const double zn = node->znl[kbin];
+                     if (tmp_h >= veg_vert_z[kbin] && tmp_h <= veg_vert_z[kbin+1]) {
+                        break;
+                     } // if
+                     kbin++;
+                  } // while
+                  assert (kbin<nbins_veg_vert && "computeBottomDragVegetation: veg vert failed");
+
+                  // for linear interpolation, compute the ratio of the height above the bottom level to the bin width
+                  const double zrat = (tmp_h - veg_vert_z[kbin])/(veg_vert_z[kbin+1] - veg_vert_z[kbin]);
+                  
+                  // Linear interpolation of the vegetation parameters
+                  cff1 = veg_vert_scale_cd[kbin]*(1.d0-zrat) + veg_vert_scale_cd[kbin+1]*zrat;
+                  cff2 = veg_vert_scale_N [kbin]*(1.d0-zrat) + veg_vert_scale_N [kbin+1]*zrat;
+                  cff3 = veg_vert_scale_D [kbin]*(1.d0-zrat) + veg_vert_scale_D [kbin+1]*zrat;
+               } // if rl10
+
+               veg_alpha3D(k,i)=veg_alpha0(i)*cff1*cff2*cff3
+            } // for k
+         } // if idry
+      } // for i
 
       } else { // Ganthy (iveg=2)
       //  Modify canopy height, diameter, and density
 
-         do i=1,npa
-            // Make sure there is veg on this node
-            if (veg_h_unbent(i)>0.0) {
-               wtmp2=sqrt(dav(1,i)**2.d0+dav(2,i)**2.d0)*100.d0 !cm/s
-               veg_h(i) = 0.72e-2*(4.657 - 0.158*wtmp2 + 0.262*veg_lai - 0.011*veg_lai*wtmp2 + 
-                                   0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784d0
-               veg_h(i) = max(veg_h(i), 1.0e-2) //impose min of 1cm
 
-               wtmp2=veg_cw*veg_di_unbent(i)*veg_h_unbent(i)/veg_h(i) // \phi_b
-               veg_di(i)=(veg_di_unbent(i)+wtmp2)*0.5d0
-               wtmp2=max(0.0,veg_h_unbent(i)-veg_h(i)) !surplus height
-               veg_nv(i)=veg_nv_unbent(i)*(1.0 + wtmp2/veg_h(i))
+            // Make sure there is veg on this node
+            if (node->veg_h_unbent > 0.0) {
+               double wtmp2 = length(node->dav)*100.0; // cm/s
+
+               node->veg_h = 0.72e-2*(4.657 - 0.158*wtmp2 + 0.262*veg_lai - 0.011*veg_lai*wtmp2 + 
+                                      0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784d0
+               node->veg_h = max(node->veg_h, 1.0e-2);  //impose min of 1 cm
+
+               wtmp2 = veg_cw*node->veg_di_unbent*node->veg_h_unbent/node->veg_h; // \phi_b
+               node->veg_di = (node->veg_di_unbent + wtmp2)*0.5;
+               wtmp2 = max(0.0, node->veg_h_unbent - node->veg_h); //surplus height
+               node->veg_nv = node->veg_nv_unbent*(1.0 + wtmp2/node->veg_h);
             } // if veg_h_unbent
             veg_alpha3D(:,i) = 0.5d0*veg_di(i)*veg_nv(i)*veg_cd(i)
-         } // for i
+         
 
       } // if iveg
   
-      //Compute vertical mean of veg_alpha
-      for (int i=0; i<npa; i++) {
+      
          if (node->idry) {
             node->veg_alpha_vert_mean = veg_alpha0;
 
          } else { //wet
+            // Compute vertical mean of veg_alpha3D
             const double zt = node->zTopCanopy(); // Top of the canopy
             double sum1=0.0;
             double sum2=0.0;
-            for (int k=node->kbp; k<nvrt-1; k++) {
+            for (int k=kb; k<nvrt-1; k++) { /// XXX CHECK INDICES
                if (node->znl[k+1] <= zt) { // If under the canopy...
-                  const double Dz = node->znl[k+1] - node->znl[k];
-                  sum1 += 0.5d0*(node->veg_alpha3D(k) + node->veg_alpha3D(k+1))*Dz;
+                  const double Dz = node->Dz(k);
+                  sum1 += 0.5d0*(node->veg_alpha3D[k] + node->veg_alpha3D[k+1])*Dz;
                   sum2 += Dz;
                } else {
                   break;
@@ -1891,7 +1882,7 @@ __device__ void computeBottomDragVegetation(void) {
             if (sum2 == 0.0) node->veg_alpha_vert_mean = node->veg_alpha3D[kb];
             else             node->veg_alpha_vert_mean = sum1/sum2;
          } //idry
-      } // for i
+    
 
    } // if iveg
 
