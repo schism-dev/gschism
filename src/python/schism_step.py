@@ -114,7 +114,7 @@ def schism_step(it: int):
 
 
     computeElevationBoundaryConditions(ramp, time)
-    
+
 
     computeVerticallyIntegratedVelocity()       # Lines 5122-5320
 
@@ -122,8 +122,12 @@ def schism_step(it: int):
     # compute vegetation and drag model parameters
     computeVegetationAndDragParameters()
 
-    # Density Interpolation and Gradient Calculation
-    computeDensityInterpolation()      # Lines 5321-5532
+
+    # Density gradient at element centers
+    computeDensityGradient()      
+
+
+    computeBaroclinicTerm(rampbc)
 
 
     # Elem. average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimension: m^2/s

@@ -310,7 +310,7 @@ struct Element {
    int idry;                  // True if the element is dry
    int kbe;                   // Bottom index of the element
 
-   double xc, yc, zc;         // Element center coordinates
+   Vector3 center;            // Element center coordinates
    double xlon_el, ylat_el;   // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
@@ -335,6 +335,7 @@ struct Element {
       return res;
    }
 
+   __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
    __inline__ __device__ double computeSignedArea(void) const;

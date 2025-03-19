@@ -1,6 +1,3 @@
-
-
-
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr;
 
@@ -1575,73 +1572,190 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 }
 
 
-__device__ void cubicSplineDerivatives(int n, double *x, double *y, double *y_top, double *y_bot, double *yp_out, double *ypp_out) {
-// Compute the 1st and 2nd derivatives of y = f(x) using continuous cubic splines.
-// 
-// This function uses the General expression for a C2 interpolating cubic spline (search for "C2 interpolating cubic spline" in Wikipedia)
-// This method uses the 2nd derivatives and the y values at the endpoints to generate the polynomial coefficients for each level.
-//
-// NOTE: (x,y) here are just any function y=f(x). In fact we use these splines for vertical interpolation.
-// 
-// Inputs: 
-//            n: dimesion for x etc; # of data pts (>=2);
-//            x[n]: x coordinates; must be in ascending order (and distinctive);
-//            y[n]: functional values; 
-//            y_top and y_bot: 1st derivatives at x[0] and x[n-1];
-//     Output: 
-//            ypp[n]: 2nd derivatives used in interpolation.
-//             yp[n]: 1st derivatives 
+// Helper function that contains the core algorithm
+template<typename XAccessor, typename YAccessor>
+__device__ void cubicSplineDerivativesImpl(int k1, int k2, XAccessor getX, YAccessor getY, 
+                                          double y_top, double y_bot, 
+                                          double *yp_out, double *ypp_out) {
+   // Compute the 1st and 2nd derivatives of y = f(x) using continuous cubic splines.
+   // 
+   // This function uses the General expression for a C2 interpolating cubic spline (search for "C2 interpolating cubic spline" in Wikipedia)
+   // This method uses the 2nd derivatives and the y values at the endpoints to generate the polynomial coefficients for each level.
+   //
+   // NOTE: (x,y) here are just any function y=f(x). In fact we use these splines for vertical interpolation.
+   // 
+   // Inputs: 
+   //            n: dimension for x etc; # of data pts (>=2);
+   //            getX, getY: functions to access x,y coordinates
+   //            y_top and y_bot: 1st derivatives at x[0] and x[n-1];
+   //     Output: 
+   //            ypp[n]: 2nd derivatives used in interpolation.
+   //             yp[n]: 1st derivatives 
 
    assert(n >= 2 && "CUBIC SPLINE: n < 2");
 
+   const int n = k2 - k1 + 1;
    double a[n];   // Lower diagonal
    double b[n];   // Diagonal
    double c[n];   // Upper diagonal
    double gam[n]; // Gamma, used by the tridiagonal solver
    double rhs[n]; // Right-hand side
 
-   for (int k=0; k<n; k++) {
-
-      if (k == 0) {
+   for (int k=k1; k<=k2; k++) {
+      if (k == k1) {
          // Bottom level
-         assert(x[k+1] - x[k] != 0.0 && "CUBIC SPLINE: bottom problem");
-
-         b[k] = (x[k+1] - x[k])/3.0;
+         assert(getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: bottom problem");
+         b[k] = (getX(k+1) - getX(k))/3.0;
          c[k] = b[k]/2.0;
-         rhs[k] = (y[k+1] - y[k])/(x[k+1] - x[k]) - yp1;
-         
-      } else if (k == npts - 1) {
+         rhs[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - y_bot;
+      } else if (k == n - 1) {
          // Top level (surface)
-         assert(x[k] - x[k-1] != 0.0 && "CUBIC SPLINE: surface problem");
-
-         b[k] = (x[k] - x[k-1])/3.0;
+         assert(getX(k) - getX(k-1) != 0.0 && "CUBIC SPLINE: surface problem");
+         b[k] = (getX(k) - getX(k-1))/3.0;
          a[k] = b[k]/2.0;
-         rhs[k] = -(y[k] - y[k-1])/(x[k] - x[k-1]) + yp2;
-        
+         rhs[k] = -(getY(k) - getY(k-1))/(getX(k) - getX(k-1)) + y_top;
       } else {
          // Intermediate levels
-         assert(x[k] - x[k-1] != 0.0 && x[k+1] - x[k] != 0.0 && "CUBIC SPLINE: middle problem");
-
-         b[k] = (x[k+1] - x[k-1])/3.0;
-         a[k] = (x[k  ] - x[k-1])/6.0;
-         c[k] = (x[k+1] - x[k  ])/6.0;
-
-         rhs[k] = (y[k+1] - y[k])/(x[k+1] - x[k]) - (y[k] - y[k-1])/(x[k] - x[k-1]);
-
+         assert(getX(k) - getX(k-1) != 0.0 && getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: middle problem");
+         b[k] = (getX(k+1) - getX(k-1))/3.0;
+         a[k] = (getX(k) - getX(k-1))/6.0;
+         c[k] = (getX(k+1) - getX(k))/6.0;
+         rhs[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - 
+                     (getY(k) - getY(k-1))/(getX(k) - getX(k-1));
       }
    }
 
    // Solve the tridiagonal system
-   tridag_sch<1>(n, 1, a, b, c, rhs, ypp, gam)
+   tridag_sch<1>(n, a, b, c, rhs, ypp_out, gam);
     
-   yp[    0] = yp1; 
-   yp[n - 1] = yp2;
+   yp_out[k1] = y_bot;
+   yp_out[k2] = y_top;
 
    // Compute rest of 1st derivatives using the splines
-   for (int k=1; k < n - 1; k++) {
-      yp[k] = (y[k+1] - y[k])/(x[k+1] - x[k]) - (x[k+1] - x[k])/6.0*(2.0*ypp[k] + ypp[k+1]);
-   } 
+   for (int k=k1+1; k<k2; k++) {
+      yp_out[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - 
+                  (getX(k+1) - getX(k))/6.0*(2.0*ypp_out[k] + ypp_out[k+1]);
+   }
 }
+
+// Array version
+__device__ void cubicSplineDerivatives(int k1, int k2, double *x, double *y, 
+                                       double y_top, double y_bot, 
+                                       double *yp_out, double *ypp_out) {
+   auto getX = [x] __forceinline__ (int k) { return x[k]; };
+   auto getY = [y] __forceinline__ (int k) { return y[k]; };
+   cubicSplineDerivativesImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+}
+
+// Lambda version - allows custom access patterns
+template<typename XFunc, typename YFunc>
+__device__ void cubicSplineDerivatives(int k1, int k2, XFunc getX, YFunc getY,
+                                       double y_top, double y_bot,
+                                       double *yp_out, double *ypp_out) {
+   cubicSplineDerivativesImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+}
+
+__device__ void vertLinearInterp(int nc, double zt, int k1, int k2, double *za, double *s_in, double *s_out, int *ibelow) {
+//     Routine to do vertical linear interpolation in z
+//     Inputs:
+//
+//       nc: actual # of variables 
+//       k1,k2: lower and upper limits for za, s_in 
+//       zt: desired interpolation level
+//       za[0:nvrt-1]: z-coordinates for s_in (must be in ascending order)
+//       s_in[0:nc-1,0:nvrt-1]: values to be interpolated from; dimensions must match driving program
+
+//     Outputs:
+//       s_out[0:nc-1]: interpolated value @ z=zt (bottom value if ibelow=1). Constant extrapolation
+//                   is used below bottom or above surface.
+//       ibelow: flag indicating if zt is below za(k1)
+//
+
+   assert(k1 >= 0 && k2 < nvrt && "vertLinearInterp: k1 or k2 out of bounds");
+   assert(k1 <= k2 && "vertLinearInterp: k1 > k2");
+   
+   ibelow = 0;
+
+   if (zt < za[k1]) {
+      // Below bottom
+      ibelow = 1;
+      for (int i = 0; i < nc; i++) s_out[i] = s_in[i + k1*nc];
+
+   } else if(zt>=za[k2]) {
+      // Above surface
+      for (int i = 0; i < nc; i++) s_out[i] = s_in[i + k2*nc];
+
+   } else {
+      // Normal case (between bottom and surface)
+      
+      // Finds the level index using binary search
+      int l1 = k1;
+      int l2 = k2;
+      int k = (l1 + l2)/2;
+      while (l2 - l1 > 1) {  // Stop when we have adjacent levels
+          int k = (l1 + l2)/2;
+          if (zt >= za[k]) l1 = k;
+          else             l2 = k;
+      }
+      // Now l1 and l2 are adjacent levels and zt is between them
+
+      assert(za[l2] - za[l1] > 0.0 && "vertLinearInterp: za[l2] - za[l1] <= 0");
+
+      const double zrat = (zt - za[l1])/(za[l2] - za[l1]);
+      for (int i = 0; i < nc; i++) s_out[i] = s_in[i + l1*nc]*(1.0 - zrat) + s_in[i + l2*nc]*zrat;
+   }
+}
+
+
+__device__ void vertLinearInterp(double zt, int k1, int k2, double *za, double *s_in, double *s_out, int *ibelow) {
+//     Routine to do vertical linear interpolation in z
+//     Inputs:
+//
+//       k1,k2: lower and upper limits for za, s_in 
+//       zt: desired interpolation level
+//       za[0:nvrt-1]: z-coordinates for s_in (must be in ascending order)
+//       s_in[0:nvrt-1]: values to be interpolated from; dimensions must match driving program
+//     Outputs:
+//       s_out: interpolated value @ z=zt (bottom value if ibelow=1). Constant extrapolation
+//                   is used below bottom or above surface.
+//       ibelow: flag indicating if zt is below za(k1)
+//
+
+   assert(k1 >= 0 && k2 < nvrt && "vertLinearInterp: k1 or k2 out of bounds");
+   assert(k1 <= k2 && "vertLinearInterp: k1 > k2");
+   
+   ibelow = 0;
+
+   if (zt < za[k1]) {
+      // Below bottom
+      ibelow = 1;
+      s_out = s_in[k1];
+
+   } else if(zt>=za[k2]) {
+      // Above surface
+      s_out = s_in[k2];
+
+   } else {
+      // Normal case (between bottom and surface)
+      
+      // Finds the level index using binary search
+      int l1 = k1;
+      int l2 = k2;
+      int k = (l1 + l2)/2;
+      while (l2 - l1 > 1) {  // Stop when we have adjacent levels
+          int k = (l1 + l2)/2;
+          if (zt >= za[k]) l1 = k;
+          else             l2 = k;
+      }
+      // Now l1 and l2 are adjacent levels and zt is between them
+
+      assert(za[l2] - za[l1] > 0.0 && "vertLinearInterp: za[l2] - za[l1] <= 0");
+
+      const double zrat = (zt - za[l1])/(za[l2] - za[l1]);
+      s_out = s_in[l1]*(1.0 - zrat) + s_in[l2]*zrat;
+   }
+}
+
 
 
 __device__ void computeElevationBoundaryConditions(double ramp, double time) {
@@ -1662,16 +1776,16 @@ __device__ void computeElevationBoundaryConditions(double ramp, double time) {
 
    const double r_eic = (1.0 - ramp)*eic; 
    const double r_eth = ramp*eth(1,i);
-   double eta1_bar = 0.0;
+   double eta1_bar = r_eic;
 
    // Compute tide elevation
    if (iettype == 3 || iettype == 5) {
      
       // XXX IMPLEMENT TIDE THINGS
       for (int jfr=0; jfr<nbfr; jfr++) { // For all tide frequencies
-         int ncyc = int(amig[jfr]*time/2.d0/pi);
-         double arg = amig[jfr]*time - 2.0*pi*ncyc + face[jfr] - efa[i,j,jfr];
-         eta1_bar = r_eic + ramp*ff[jfr]*emo[i,j,jfr]*cos(arg);
+         const int ncyc = int(amig[jfr]*time/2.d0/pi);
+         const double arg = amig[jfr]*time - 2.0*pi*ncyc + face[jfr] - efa[i,j,jfr];
+         eta1_bar += ramp*ff[jfr]*emo[i,j,jfr]*cos(arg);
       } // for jfr
    } // if iettype
 
@@ -1711,8 +1825,8 @@ __device__ void computeVerticallyIntegratedVelocity(void) {
    const Node *node2 = side->n2;
 
    // Vertically integrated velocity U (in ll if ics=2)
-   for (int k=side->kbs; k<nvrt-1; k++) { /// XXX CHECK INDICES
-      side->U += side->Dz(k+1)*0.5*(side->u2[k] + side->u2[k+1]);  // CHECK INDICES!!!!
+   for (int k = side->kb; k < nvrt - 1; k++) { /// XXX CHECK INDICES
+      side->U += side->Dz(k + 1)*0.5*(side->u2[k] + side->u2[k + 1]);  // CHECK INDICES!!!!
    }
 
 }
@@ -1729,29 +1843,31 @@ __device__ void computeBottomDragVegetation(void) {
    const double htot    = node->htot();
    const double rough_p = node->rough_p;
 
+
+   if (node->idry) {
+      // Default values for dry nodes
+      node->veg_alpha_vert_mean = veg_alpha0;
+      /// XXX CHECK INDICES
+      if constexpr(iveg != 0) for (int k = kb; k < nvrt; k++) node->veg_alpha3D[k] = veg_alpha0;
+   }
+
+   // Compute bottom drag Cd
+   //--------------------------------
+
    // nchi = {-1, 0, 1} is the type of bottom drag.
    if (nchi==1) {
 
       bool ltmp = false; // for WBL iteration
 
-
-      double Cdp = 0.0;
-      double Cd  = 0.0; // for dry pts
-
       // Cdmax=-1 !max. Cd at node for this process (info only)
       // Drag at nodes
 /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)
 // !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guérin) 
-      
-  
-      if (node->idry) return;
-      // Wet node
-
-
-
-      assert(rough_p >= 0.0 && "computeBottomDragVegetation: rough_p < 0");
-      if (rough_p == 0.0) {
-         node->Cdp = 0.0;
+     
+      const double rough = node->rough;
+      assert(rough >= 0.0 && "computeBottomDragVegetation: rough_p < 0");
+      if (node->rough == 0.0) {
+         node->Cd = 0.0;
 
       } else { //roughness >0 
          
@@ -1760,129 +1876,112 @@ __device__ void computeBottomDragVegetation(void) {
 
          assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
 
-         double tmp = 1.0/(2.5*log(bthick/rough_p));
-         node->Cdp = tmp*tmp;
+         double tmp = 1.0/(2.5*log(bthick/rough));
+         node->Cd = tmp*tmp;
 
       } // if rough_p
 
 
+      // RECOVER THIS: XXX
+      // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
+      // Output warning for WBL if iteration didn't converge
 
-      if (it==iths_main+1) write(12,*)'Cd min/max at 1st step= ',minval(Cdp),maxval(Cdp);
-
-// !       Output warning for WBL if iteration didn't converge
 
    } // nchi==1
 
- 
-
-   // SAV const
-   double veg_cfk = 0.07; //Shimizu & Tsujimoto (1994)
-   double veg_cfpsi = 0.16;
-
-
-
-   //   Bottom stress in m^2/s/s
-
-   if (!node->idry &&  node->prho[kb + 1] >= -98.d0)
+   //   Bottom stress in m^2/s^2
+   if (node->prho[kb + 1] >= -98.d0)
    {
       const double mag_u = length(node->u2[kb + 1]);
       node->tau_bot = node->prho[kb + 1]*node->Cd*mag_u*node->u2[kb + 1]; // units: kg/m/s^2 (Pa)
    }
 
-   // Add vertical variation to veg_alpha and compute vertical mean etc
-   if constexpr(iveg!=0) {
-      if constexpr(iveg==1) { //specify vertical variation
+ 
+   // Compute vegetation parameters
+   //--------------------------------
 
-         if (node->idry) {
-            for (int k=node->kbp; k<nvrt; k++) {  // XXX CHECK INDICES
-               node->veg_alpha3D[k] = node->veg_alpha0;
-            }
-         } else { //wet
-            // Compute the vegetation "density" \alpha = D*N*Cd/2
-            // D, N and Cd are given by the piecewise linear functions veg_vert_scale_cd, veg_vert_scale_N, veg_vert_scale_D
+   // SAV constants
+   constexpr double veg_cfk   = 0.07; //Shimizu & Tsujimoto (1994)
+   constexpr double veg_cfpsi = 0.16;
 
-            // Find the bin at which the current vertical level is
-            int kbin = 0; 
+   // Add vertical variation to veg_alpha and compute vertical mean etc.
+   if constexpr(iveg == 1) { //  Vertical variation specified by functions
 
-            for (int k=node->kbp; k<nvrt; k++) {
-               // Computes node height above the bottom level
-               const double tmp_h = node->znl[k] - node->znl[node->kbp]; // >=0
-               
-               if (tmp_h > veg_vert_z[kbin]) kbin = min(kbin + 1, nbins_veg_vert + 1);
-               if (tmp_h >= veg_vert_z[nbins_veg_vert]) {
-                  cff1 = veg_vert_scale_cd[nbins_veg_vert];
-                  cff2 = veg_vert_scale_N [nbins_veg_vert];
-                  cff3 = veg_vert_scale_D [nbins_veg_vert];
-               } else {
-                  // Find the bin at which the current vertical level is
-                  while (kbin<nbins_veg_vert) {
-                     const double zn = node->znl[kbin];
-                     if (tmp_h >= veg_vert_z[kbin] && tmp_h <= veg_vert_z[kbin+1]) {
-                        break;
-                     } // if
-                     kbin++;
-                  } // while
-                  assert (kbin<nbins_veg_vert && "computeBottomDragVegetation: veg vert failed");
-
-                  // for linear interpolation, compute the ratio of the height above the bottom level to the bin width
-                  const double zrat = (tmp_h - veg_vert_z[kbin])/(veg_vert_z[kbin+1] - veg_vert_z[kbin]);
-                  
-                  // Linear interpolation of the vegetation parameters
-                  cff1 = veg_vert_scale_cd[kbin]*(1.d0-zrat) + veg_vert_scale_cd[kbin+1]*zrat;
-                  cff2 = veg_vert_scale_N [kbin]*(1.d0-zrat) + veg_vert_scale_N [kbin+1]*zrat;
-                  cff3 = veg_vert_scale_D [kbin]*(1.d0-zrat) + veg_vert_scale_D [kbin+1]*zrat;
-               } // if rl10
-
-               veg_alpha3D(k,i)=veg_alpha0(i)*cff1*cff2*cff3
-            } // for k
-         } // if idry
-      } // for i
-
-      } else { // Ganthy (iveg=2)
-      //  Modify canopy height, diameter, and density
-
-
-            // Make sure there is veg on this node
-            if (node->veg_h_unbent > 0.0) {
-               double wtmp2 = length(node->dav)*100.0; // cm/s
-
-               node->veg_h = 0.72e-2*(4.657 - 0.158*wtmp2 + 0.262*veg_lai - 0.011*veg_lai*wtmp2 + 
-                                      0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784d0
-               node->veg_h = max(node->veg_h, 1.0e-2);  //impose min of 1 cm
-
-               wtmp2 = veg_cw*node->veg_di_unbent*node->veg_h_unbent/node->veg_h; // \phi_b
-               node->veg_di = (node->veg_di_unbent + wtmp2)*0.5;
-               wtmp2 = max(0.0, node->veg_h_unbent - node->veg_h); //surplus height
-               node->veg_nv = node->veg_nv_unbent*(1.0 + wtmp2/node->veg_h);
-            } // if veg_h_unbent
-            veg_alpha3D(:,i) = 0.5d0*veg_di(i)*veg_nv(i)*veg_cd(i)
+      // Compute the vegetation "density" \alpha = D*N*Cd/2
+      // D, N and Cd are given as piecewise linear functions: veg_vert_scale_cd, veg_vert_scale_N, veg_vert_scale_D
+      int kbin = 0; // bin index
+      for (int k=node->kbp; k<nvrt; k++) {
+         // Computes node height above the bottom level
+         const double tmp_h = node->znl[k] - node->znl[node->kbp]; // >=0
          
+         if (tmp_h >= veg_vert_z[nbins_veg_vert]) {
+            cff1 = veg_vert_scale_cd[nbins_veg_vert];
+            cff2 = veg_vert_scale_N [nbins_veg_vert];
+            cff3 = veg_vert_scale_D [nbins_veg_vert];
+         } else {
+            // Find the bin at which the current vertical level is
+            while (kbin<nbins_veg_vert) {
+               const double zn = node->znl[kbin];
+               if (tmp_h >= veg_vert_z[kbin] && tmp_h <= veg_vert_z[kbin+1]) {
+                  break;
+               } // if
+               kbin++;
+            } // while
+            assert (kbin < nbins_veg_vert && "computeBottomDragVegetation: veg vert failed");
 
-      } // if iveg
+            // for linear interpolation, compute the ratio of the height above the bottom level to the bin width
+            const double zrat = (tmp_h - veg_vert_z[kbin])/(veg_vert_z[kbin+1] - veg_vert_z[kbin]);
+            
+            // Linear interpolation of the vegetation parameters
+            cff1 = veg_vert_scale_cd[kbin]*(1.d0-zrat) + veg_vert_scale_cd[kbin+1]*zrat;
+            cff2 = veg_vert_scale_N [kbin]*(1.d0-zrat) + veg_vert_scale_N [kbin+1]*zrat;
+            cff3 = veg_vert_scale_D [kbin]*(1.d0-zrat) + veg_vert_scale_D [kbin+1]*zrat;
+         } // if rl10
+
+         veg_alpha3D(k,i) = veg_alpha0(i)*cff1*cff2*cff3
+
+      } // for k
+
+
+   } else { // Ganthy (iveg=2)
+   //  Modify canopy height, diameter, and density
+
+      // Make sure there is vegetation on this node
+      if (node->veg_h_unbent > 0.0) {
+         const double wtmp2 = length(node->dav)*100.0; // cm/s
+
+         node->veg_h = 0.72e-2*(4.657 - 0.158*wtmp2 + 0.262*veg_lai - 0.011*veg_lai*wtmp2 + 
+                                0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784d0
+         node->veg_h = max(node->veg_h, 1.0e-2);  //impose min of 1 cm
+
+         const double phi_b = veg_cw*node->veg_di_unbent*node->veg_h_unbent/node->veg_h; // \phi_b
+         node->veg_di = (node->veg_di_unbent + phi_b)*0.5;
+         const double surpHeight = max(0.0, node->veg_h_unbent - node->veg_h); //surplus height
+         node->veg_nv = node->veg_nv_unbent*(1.0 + surpHeight/node->veg_h);
+      } // if veg_h_unbent
+      veg_alpha3D(:,i) = 0.5d0*veg_di(i)*veg_nv(i)*veg_cd(i)
+   
+
+   } // if iveg
   
       
-         if (node->idry) {
-            node->veg_alpha_vert_mean = veg_alpha0;
 
-         } else { //wet
-            // Compute vertical mean of veg_alpha3D
-            const double zt = node->zTopCanopy(); // Top of the canopy
-            double sum1=0.0;
-            double sum2=0.0;
-            for (int k=kb; k<nvrt-1; k++) { /// XXX CHECK INDICES
-               if (node->znl[k+1] <= zt) { // If under the canopy...
-                  const double Dz = node->Dz(k);
-                  sum1 += 0.5d0*(node->veg_alpha3D[k] + node->veg_alpha3D[k+1])*Dz;
-                  sum2 += Dz;
-               } else {
-                  break;
-               }
-            } // for k
+   // Compute vertical mean of veg_alpha3D
+   if (iveg != 0) {
+      const double ztop = node->zTopCanopy(); // Top of the canopy
+      double sum1=0.0;
+      double sum2=0.0;
+      // Integrate over each level under the canopy...
+      for (int k=kb; k<nvrt-1 && node->znl[k+1] <= zztop; k++) { /// XXX CHECK INDICES
+         const double Dz = node->Dz(k);
 
-            if (sum2 == 0.0) node->veg_alpha_vert_mean = node->veg_alpha3D[kb];
-            else             node->veg_alpha_vert_mean = sum1/sum2;
-         } //idry
-    
+         sum1 += 0.5*(node->veg_alpha3D[k] + node->veg_alpha3D[k+1])*Dz;
+         sum2 += Dz;
+
+      } // for k
+
+      if (sum2 == 0.0) node->veg_alpha_vert_mean = node->veg_alpha3D[kb];
+      else             node->veg_alpha_vert_mean = sum1/sum2;
 
    } // if iveg
 
@@ -1986,6 +2085,297 @@ __device__ void computeVegetationAndDragParameters(void) {
    // Baroclinic force at side and whole levels
 
    // bcc=0 !init for 2D cases XXX TEMPORARY???
+
+}
+
+
+
+__device__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int k, const double rho2, Vector2 *vec, double *diffRho) {
+// Computes the density gradient between two elements, e1 and e2.
+// If the neighbor element (e2doesn't exist (boundary or dry element), the density gradient is assumed to be
+// zero in the direction normal to the side. 
+// 
+// NOTE: In fact it doesn't compute the gradient, but the difference in de-meaned density between e1 and e2 and
+// the vector from e1 to e2 (or normal to side if neighbor is dry or not present
+//
+// Input:
+//    e1: Element
+//    e2: Neighbor element (or nullptr if boundary)
+//    k: Index of the half-level at which the density is interpolated
+//    rho2: De-meaned density at e2 interpolated at the k-th half-level of e1 (or zero if neighbor is dry or not present)
+// 
+// Output:
+//    vec: Vector from e1 to e2 (or normal to side if neighbor is dry or not present)
+//    diffRho: Difference in de-meaned density between e1 and e2 (or zero if neighbor is dry or not present)
+
+   if (e2 == nullptr || e2->idry) {
+      // Neighbor doesn't exist or is dry, we assume the density gradient is zero in the direction normal to the side.
+
+      Side *side = e1->sides[j];
+      assert((side->otherElem(e1) == nullptr || side->otherElem(e1)->idry) && "getRhoDiffAndVec: For boundary elements, side->otherElem(elem) must be nullptr or dry");
+              
+      if constexpr(ics==1) {
+         vec = side->n();
+      } else {
+         // IMPLEMENT THIS XXXXXX
+         // !replace with xel, yel?
+         //                   call project_pt('g2l',xnd(n1),ynd(n1),znd(n1),(/xctr(i),yctr(i),zctr(i)/), &
+         //      &eframe(:,:,i),xn1,yn1,tmp)
+         //                   call project_pt('g2l',xnd(n2),ynd(n2),znd(n2),(/xctr(i),yctr(i),zctr(i)/), &
+         //      &eframe(:,:,i),xn2,yn2,tmp)
+      } //ics
+                
+      diffRho = 0.0;
+
+   } else { //internal and wet
+      if constexpr(ics==1) {
+         assert(e2 != nullptr || e2->idry && "getRhoDiffAndVec: neighbor element is nullptr or dry");
+
+         // Vector from e1 to e2
+         vec = toVector2(e2->center - e1->center);
+
+      } else { 
+         // IMPLEMENT THIS XXXXXX
+         //                   call project_pt('g2l',xctr(ie),yctr(ie),zctr(ie),(/xctr(i),yctr(i),zctr(i)/), &
+         //      &eframe(:,:,i),xctr2,yctr2,tmp)
+         //                   alow(j)=xctr2
+         //                   bdia(j)=yctr2
+      } // ics
+
+      diffRho = e2->demeanedDensity(k) - rho1;
+   }
+
+}
+
+__device__ void computeDensityCubicSplines(void) {
+   // Computes cubic splines of de-meaned density (rho - rho_mean) for all elements
+
+   if (elem->idry) return;
+
+   const int kb = elem->kb;
+
+   // Computes the cubic splines of de-meaned density (rho - rho_mean) for all elements
+   if (elem->is2D()) {
+      // In the 2D case, the density is constant at the prism level. 
+      // In this case, rho_z doesn't contain the z derivatives, but the actual de-meaned density value.
+      elem->rho_z[nvrt-1] = elem->rho[nvrt-1] - elem->rho_mean[nvrt-1]
+   } else { //3D
+
+      // Lambda functions to access the function x,y points (x = z at element prism and y = de-meaned density)
+      auto getX = [zp             ] __forceinline__ (int k) { return elem->z_prism(k); };
+      auto getY = [elem,k,rho_mean] __forceinline__ (int k) { return elem->rho[k] - elem->rho_mean[k]; };
+      ///// XXXX CHECK INDICES!!!!!
+      cubicSplineDerivatives(kb, nvrt, getX, getY, 0.0, 0.0, elem->rho_zz, elem->rho_z);
+   } // 2D/3D
+
+
+}
+
+__device__ double interpolateDensityAtHalfLevel(Element *elem, Element *elem2, int k, double &rho) {
+// Interpolates the de-meaned density of elem2 at the same z coordinate as the k half-level of elem.
+
+   if (elem2 == nullptr || elem2->idry) return 0.0;
+
+   const int kb  = elem->kb;
+   const int kb2 = elem2->kb;
+
+   // z-coordinate of prism of elem
+   const double zp = elem->z_prism(k);
+
+   if (elem2->is2D()) {
+      return elem->rho_z; // Remember that we store the de-meaned density in rho_z for the 2D case.
+
+   } else {  // 3D
+
+      // eta_min may be < zmax
+      const double eta_min = min(swild(nvrt),  swild2(nvrt,12))
+      const double zmax    = max(swild(kb + 1),swild2(kb + 1,12)) //not really used
+
+
+      // (Extrapolate density below bottom, we will fix it later)
+      // NOTE: interpolate densities at elem2 at coordinates from elem.
+      rho = evalCubicSpline(zp, elem->rho_z, elem->rho_zz, elem->demeanedDensity(k), extrapolate=true)
+      // evalCubicSpline(nvrt-kbe(ie),swild2(kbe(ie)+1:nvrt,12), &
+      //      &erho(kbe(ie)+1:nvrt,ie)-rho_mean(kbe(ie)+1:nvrt,ie), &
+      //      &hp_int(kbe(ie)+1:nvrt,ie,1),nvrt-kbe(i),swild(kbe(i)+1:nvrt),ibot_fl,zmax,eta_min,swild2(kbe(i)+1:nvrt,j))
+   } // 2D/3D
+     
+
+   // For the case where the elem is deeper than elem2, we extrapolated the density in evalCubicSpline.
+   // Now we need to fix it.
+   if (elem->z[k] < elem2->z[kb2]) {
+      // We are at a z level that doesn't exist at elem2, so we need to adjust the density 
+
+      // There are two methods to adjust the density at the bottom of the element.
+      // iunder_deep=0: 
+      const double depth1 = abs(elem->z[kb]); // larger depth
+
+      if (iunder_deep==0) {
+
+         const double weight = max(0.0, min(1.0, (depth1 - elem->h1_bcc)/(elem->h2_bcc - elem->h1_bcc))); // weight
+
+         rho = (1.0 - weight)*rho + weight*elem->demeanedDensity(k)
+
+      } else { // iunder_deep != 0
+
+         const double diffDepth = abs(elem->z[kb] - elem2->z[kb2]) // Change??? XXX Was like this in the original code
+
+         if (depth1 >= hw_depth && diffDepth >= hw_ratio*depth1) {
+
+         //   Demeaned density at the same z coordinate as
+               rho = elem->demeanedDensity(k) // would make cupp() below=0
+            }
+         } // if tmp0>=
+      } // if iunder_deep
+   } // if elem->z[kb] < elem2->z[kb]
+}
+
+__device__ void computeDensityGradient(void) {
+
+   // Compute the horizontal density gradient at each element.
+   // It works in two steps:
+   // 1. Interpolate the density at the neighboring elements at the same zcor as the prism of element i.
+   // 2. Compute the density gradient at elem by averaging the density gradients computed between elem and pairs of neighboring elements.
+   //    To compute one of these gradients (that it later averages), it solves a 2nd rank linear system like:
+   //             gradRho.r1 = rho1 - rho0
+   //             gradRho.r2 = rho2 - rho0
+   //    where r1, r2 are the vectors from the prism center to the neighboring prism centers.
+   // 
+   //  NOTE: We use de-meaned densities.
+
+   Element *elem = FROM kernel;
+
+   if (elem->idry) return;
+
+   const int kb  = elem->kb;
+   const int i34 = elem->i34;
+
+   for (int k = kb + 1; k < nvrt; k++) {
+      // Computes the density gradient at elem as average of the density gradients computed between elem and pairs of neighboring elements.
+      //             gradRho.r1 = rho1 - rho0
+      //             gradRho.r2 = rho2 - rho0
+      icount=0
+      double sumRx = 0.0;
+      double sumRy = 0.0;
+      for (int j1=0; j1<i34; j1++) { 
+
+         const int j2 = elem->nxq(j1 + 1);
+
+         // Pairs of consecutive neighbor elements of elem
+         const Element *e1 = elem->elements[j1];
+         const Element *e2 = elem->elements[j2];
+
+         // Using cubic splines, interpolate demeaned density difference at the same z half-levels as elem.
+         const double rho1 = interpolateDensityAtHalfLevel(elem, e1, k);
+         const double rho2 = interpolateDensityAtHalfLevel(elem, e2, k);
+
+         // Compute the density difference and the vector from elem to e1 and e2
+         // getRhoDiffAndVec takes into account boundaries/dry elements
+         double diffRho1, diffRho2;
+         Vector2 vec1, vec2;
+         getRhoDiffAndVec(elem, e1, k, rho1, vec1, diffRho1);
+         getRhoDiffAndVec(elem, e2, k, rho2, vec2, diffRho2);
+
+         // If the two vectors are too parallel, the system of equations may be ill-conditioned.
+         const double rl1 = length(vec1);
+         const double rl2 = length(vec2);
+         assert(rl1 > 0.0 && rl2 > 0.0 && "computeDensityInterpolation: one of rl1 or rl2 is 0");
+
+         const double delta = cross(vec1, vec2);
+         const double sintheta = abs(delta)/(rl1*rl2);
+
+         // To avoid problems, avoid elements with small angle between vectors
+         constexpr double sin_one_deg = sin(pi/180.0); // use 1 degree as threshold for well-conditioned system
+         const bool validEq = (sintheta > sin_one_deg);
+
+         if (validEq) {
+            // Solve the system of equations to get the density gradient at elem
+            icount = icount+1
+            const double Rx = (y20*bb1 - y10*bb2)/delta;
+            const double Ry = (x10*bb2 - x20*bb1)/delta;
+            sumRx += Rx;
+            sumRy += Ry;
+         }
+      } // for j1
+
+      // Compute the average density gradient at elem
+      if (icount==0) {
+        // Bad mesh quality; bail out with 0 b-cc
+        elem->gradRho[k] = {0.0, 0.0};
+      } else {
+        elem->gradRho[k] = {sumRx/icount, sumRy/icount};
+      }
+
+   } // for k
+
+}
+
+__device__ void computeBaroclinicTerm(double rampbc) {
+// Computes the baroclinic term at sides (at half levels).
+// For this it has to compute the density gradient at the half-sides (face centers) and then integrate it vertically.
+// The baroclinic term is -(g/rho_0)*int_z^\eta grad(rho) dz
+
+   Side *side = FROM kernel;
+
+   if (side->idry == 1) return;
+
+   const Element *e1 = side->elements[0];
+   const Element *e2 = side->elements[1];      
+   const int kb = side->kb;
+   
+   assert(e1 != nullptr || e2 != nullptr && "computeSideDensityGradient: side has no elements");
+
+   // interpolates vertically the density gradient of the two elements at the half level/
+
+   // Finds the indices at kb+1 using binary search (this is faster when we don't have a starting index)
+   int k1 = nvrt - 1;
+   int k2 = nvrt - 1;
+
+   side->bcc[nvrt-1] = {0.0, 0.0};
+   for (int k = nvrt-1; k > side->kbs; k--) {
+   // For each half level (from surface to bottom)...
+
+      // For both elements, interpolate density gradient at the side's half level.
+      // The gradient at the side is the average of the gradients at the elements.
+      // w1, w2 are used to take into account boundary sides, with just one element.
+
+      double w1 = (e1!=nullptr) ? 1.0 : 0.0;
+      double w2 = (e2!=nullptr) ? 1.0 : 0.0;
+      w1 = w1/(w1 + w2);
+      w2 = w2/(w1 + w2);
+
+      assert(w1 + w2 > 0.99 && w1 + w2 < 1.01 && "computeSideDensityGradient: w1 + w2 is not 1");
+
+      Vector2 gradRho = {0.0, 0.0};
+      if (e1 != nullptr) {
+         k1 = e1->findLevel(side->z[k], k1); // finds the index at the half level starting the search at k1
+         const double zrat = (side->z[k] - e1->z[k1])/(e1->z[k1+1] - e1->z[k1]);
+         
+         gradRho += (e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1+1]*zrat)*w1;
+      }
+      
+      if (e2 != nullptr) {
+         k2 = e2->findLevel(side->z[k], k2); // finds the index at the half level starting the search at k2
+         const double zrat = (side->z[k] - e2->z[k2])/(e2->z[k2+1] - e2->z[k2]);
+         
+         gradRho += (e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2+1]*zrat)*w2;
+      }
+
+      if constexpr(ics==2) {
+         // IMPLEMENT THIS XXXXXX
+         // call project_hvec(swild(1),swild(2),eframe(:,:,ie),sframe2(:,:,i),tmp1,tmp2)
+         // swild(1)=tmp1
+         // swild(2)=tmp2
+      }
+
+
+      const double grav3 = 0.5*(side->n1->grav2 + side->n2->grav2);
+      // Integrate (using trapezoidal rule) the density gradient from the surface to the bottom 
+      // multiplied by -rampbc*(g/rho0)  (In ll if ics=2)
+
+      // CHECK INDICES!!! XXX
+      side->bcc[k - 1] = side->bcc[k] - ((rampbc*grav3/rho0)*(side->zc[k + 1] - side->zc[k]))*gradRho;
+   } // for
 
 }
 
