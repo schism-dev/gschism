@@ -221,6 +221,7 @@ class CudaSourceManager:
                         print(f"  {message_type}: {color_prefix}{error_text.strip()}{Colors.RESET}")
                         print()
                 
+                pass
                 # If no line errors were processed, print the raw error
                 if not has_line_errors:
                     print(f"  {Colors.RED}{error_msg}{Colors.RESET}")

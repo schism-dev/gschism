@@ -10,12 +10,16 @@ constexpr int iveg = 0;  // Vegetation option, 0: no vegetation, 1: vegetation
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
 
+constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
+
 constexpr int    iloadtide = 0;       // Option to use polynomial for discharge boundary
 constexpr double loadtide_coef = 0.1; // Load tide coefficient
 
 constexpr int    inv_atm_bnd = 0;     // Option to use inverse barometric effects at boundary
 constexpr double prmsl_ref = 101325.0; // Reference pressure for inverse barometric effects
 
+constexpr double veg_lai = 1.0; // Vegetation drag coefficient
+constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
 constexpr int nvrt = 54; // Number of vertical levels
 constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
@@ -37,9 +41,12 @@ constexpr double omega_e     = 7.292e-5;  // [1/s]
 
 constexpr double thetai = 0.6;
 
+constexpr double rho0 = 1000.0; // [kg/m^3]
 constexpr double dtb_min = 0.1; //XXXX
 constexpr double dtb_max = 1000.0; //XXXX
 constexpr double velmin_btrack = 0.01; //XXXX
+
+constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
 constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
@@ -364,6 +371,17 @@ struct Element {
 
    __device__ bool computeShapeCoords(Point2 xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
 
+   __device__ Vector2 grad(double *a) const
+   {
+      double gx = a[0]*gradPhi[0].x + a[1]*gradPhi[1].x + a[2]*gradPhi[2].x;
+      double gy = a[0]*gradPhi[0].y + a[1]*gradPhi[1].y + a[2]*gradPhi[2].y;
+      if (isQuad()) {
+         gx += a[3]*gradPhi[3].x;
+         gy += a[3]*gradPhi[3].y;
+      }
+      return {gx, gy};
+   }
+
    __device__ void setFrame(void) {
 
       double ar1, ar2;
@@ -641,8 +659,10 @@ struct NodeBoundary {
    SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
 
+   double etaic;  // Elevation at nodes used for essential boundary conditions
    double elbc;   // Elevation boundary condition
    int iettype;   // Type of elevation boundary condition
+   double eth;    // Elevation time history
 
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
@@ -677,24 +697,36 @@ struct Node {
    // Physical information
    Tracers tr_nd0[nvrt]; // Initial tracer conc. at nodes
 
+   double rho[nvrt];     // Density
+
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
 
+   
+   double pr;    // Air pressure
    double grav2; // Gravity 
    double hhat;  // \breve{H} in notes
+
+   Vector2 dav;  // Depth averaged velocity
 
    Vector2 tau; // Wind stress vector
 
    // Vegetation parameters
    double veg_h;
    double veg_nv;
+   double veg_di;
    double veg_Cd;
    double veg_h_unbent;
-   double veg_di;
    double veg_di_unbent;
+   double veg_nv_unbent;
+   double veg_alpha_vert_mean;
+   double veg_alpha0;
+   double veg_alpha3D[nvrt];
 
    // Bottom drag parameters
-   double Cd;
+   double Cd;       // Bottom drag coefficient
+   double rough;    // Bottom roughness length
+   Vector2 tau_bot; // Bottom stress vector
 
    double bdef1; // Bottom deformation at previous timestep
    double bdef2; // Bottom deformation at current timestep
@@ -704,6 +736,10 @@ struct Node {
    __host__ __device__ Point2 p2(void) const { return {p.x, p.y}; }
 
    __host__ __device__ double sigmaTransitionDepth(void) const;
+
+   __inline__ __device__ double Dz(int k) const { return znl[k] - znl[k-1]; }
+   __inline__ __device__ double htot(void) const { return eta2 + depth; }
+   __inline__ __device__ double zTopCanopy(void) const { return znl[kb] + veg_h; } 
 
    __device__ void clearMatrixRow(void) {
       // Clear the matrix row for this node

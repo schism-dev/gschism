@@ -1391,8 +1391,6 @@ __device__ void backtrackAllNodes(void) {
       
       const double vmag = length(toVector2(u_int));
 
-      vis_coe = 0.0;
-
       if (vmag <= velmin_btrack) {
          // No activity 
 
@@ -1415,20 +1413,23 @@ __device__ void backtrackAllNodes(void) {
 
             // Not strictly along z; in ll frame for ics=2
 
+            double utmp[4];
+            double vtmp[4];
             for (int jj = 0; jj < elem->i34; jj++) {
 
                const Node *node = elem->nodes[jj];
 
                if constexpr(ics==1) {
-                  Vector2 u_node = {node->u2[k].x, node->u2[k].y};
+                  utmp[jj] = node->u2[k].x;
+                  vtmp[jj] = node->u2[k].y;  
                } else {
                   // XXX IMPLEMENT THIS
                   // call project_hvec(uu2(j,nd0),vv2(j,nd0),pframe(:,:,nd0),eframe(:,:,ie),utmp0(jj),vtmp0(jj))
                }
             } // for jj
 
-            const Vector2 grad_u = elem->grad(u_int.x); // XXX IMPLEMENT THIS
-            const Vector2 grad_v = elem->grad(u_int.y);
+            const Vector2 grad_u = elem->grad(utmp); 
+            const Vector2 grad_v = elem->grad(vtmp);
 
             suma += dt*sqrt(dot(grad_u, grad_u) + dot(grad_v, grad_v));
          } // for ii
@@ -1452,7 +1453,7 @@ __device__ void backtrackAllNodes(void) {
          // } // ics
 
       
-         // call btrack(l,ipsgb,ifl_bnd,j,iadvf,swild_tmp,swild10_tmp, dtbk,vis_coe,time_rm,time_rm2,uuint,vvint,wwint,nnel,jlev,xt,yt,zt,swild3,ltmp)
+         // call btrack(l,ipsgb,ifl_bnd,j,iadvf,swild_tmp,swild10_tmp, dtbk,time_rm,time_rm2,uuint,vvint,wwint,nnel,jlev,xt,yt,zt,swild3,ltmp)
 
             
       } // if vmag (do backtrack)
@@ -1717,7 +1718,7 @@ __device__ void computeElevationBoundaryConditions(double ramp, double time) {
    else               eic = 0.0;
 
    const double r_eic = (1.0 - ramp)*eic; 
-   const double r_eth = ramp*eth(1,i);
+   const double r_eth = ramp*nodeBnd->eth;
    double eta1_bar = r_eic;
 
    // Compute tide elevation
@@ -1750,7 +1751,7 @@ __device__ void computeElevationBoundaryConditions(double ramp, double time) {
 
    //Add inverse barometric effects
    if (iettype != 0 && inv_atm_bnd == 1) {
-      nodeBnd->elbc += ramp*(prmsl_ref - pr(ip))/grav/rho0;
+      nodeBnd->elbc += ramp*(prmsl_ref - node->pr)/grav/rho0;
    }
 
 }
@@ -1783,14 +1784,14 @@ __device__ void computeBottomDragVegetation(void) {
 
    const int    kb      = node->kb;
    const double htot    = node->htot();
-   const double rough_p = node->rough_p;
+   const double rough   = node->rough;
 
 
    if (node->idry) {
       // Default values for dry nodes
-      node->veg_alpha_vert_mean = veg_alpha0;
+      node->veg_alpha_vert_mean = node->veg_alpha0;
       /// XXX CHECK INDICES
-      if constexpr(iveg != 0) for (int k = kb; k < nvrt; k++) node->veg_alpha3D[k] = veg_alpha0;
+      if constexpr(iveg != 0) for (int k = kb; k < nvrt; k++) node->veg_alpha3D[k] = node->veg_alpha0;
    }
 
    // Compute bottom drag Cd
@@ -1807,7 +1808,7 @@ __device__ void computeBottomDragVegetation(void) {
 // !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
      
       const double rough = node->rough;
-      assert(rough >= 0.0 && "computeBottomDragVegetation: rough_p < 0");
+      assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
       if (node->rough == 0.0) {
          node->Cd = 0.0;
 
@@ -1821,7 +1822,7 @@ __device__ void computeBottomDragVegetation(void) {
          double tmp = 1.0/(2.5*log(bthick/rough));
          node->Cd = tmp*tmp;
 
-      } // if rough_p
+      } // if rough
 
 
       // RECOVER THIS: XXX
@@ -1832,10 +1833,12 @@ __device__ void computeBottomDragVegetation(void) {
    } // nchi==1
 
    //   Bottom stress in m^2/s^2
-   if (node->rho[kb + 1] >= -98.d0)
+   if (node->rho[kb + 1] >= -98.0)
    {
-      const double mag_u = length(node->u2[kb + 1]);
-      node->tau_bot = node->rho[kb + 1]*node->Cd*mag_u*node->u2[kb + 1]; // units: kg/m/s^2 (Pa)
+      const double mag_u = length(toVector2(node->u2[kb + 1]));
+      node->tau_bot = node->rho[kb + 1]*node->Cd*mag_u*toVector2(node->u2[kb + 1]); // units: kg/m/s^2 (Pa)
+      // XXX In the original code there is an additional component of tau_bot, used in icm_sfm.F90 with this comment:
+      // !sediment erosion: this part needs more documentation
    }
 
  
@@ -1852,9 +1855,9 @@ __device__ void computeBottomDragVegetation(void) {
       // Compute the vegetation "density" \alpha = D*N*Cd/2
       // D, N and Cd are given as piecewise linear functions: veg_vert_scale_cd, veg_vert_scale_N, veg_vert_scale_D
       int kbin = 0; // bin index
-      for (int k=node->kbp; k<nvrt; k++) {
+      for (int k = kb; k < nvrt; k++) {
          // Computes node height above the bottom level
-         const double tmp_h = node->znl[k] - node->znl[node->kbp]; // >=0
+         const double tmp_h = node->znl[k] - node->znl[kb]; // >=0
          
          if (tmp_h >= veg_vert_z[nbins_veg_vert]) {
             cff1 = veg_vert_scale_cd[nbins_veg_vert];
@@ -1875,12 +1878,12 @@ __device__ void computeBottomDragVegetation(void) {
             const double zrat = (tmp_h - veg_vert_z[kbin])/(veg_vert_z[kbin+1] - veg_vert_z[kbin]);
             
             // Linear interpolation of the vegetation parameters
-            cff1 = veg_vert_scale_cd[kbin]*(1.d0-zrat) + veg_vert_scale_cd[kbin+1]*zrat;
-            cff2 = veg_vert_scale_N [kbin]*(1.d0-zrat) + veg_vert_scale_N [kbin+1]*zrat;
-            cff3 = veg_vert_scale_D [kbin]*(1.d0-zrat) + veg_vert_scale_D [kbin+1]*zrat;
+            cff1 = veg_vert_scale_cd[kbin]*(1.0 - zrat) + veg_vert_scale_cd[kbin+1]*zrat;
+            cff2 = veg_vert_scale_N [kbin]*(1.0 - zrat) + veg_vert_scale_N [kbin+1]*zrat;
+            cff3 = veg_vert_scale_D [kbin]*(1.0 - zrat) + veg_vert_scale_D [kbin+1]*zrat;
          } // if rl10
 
-         veg_alpha3D(k,i) = veg_alpha0(i)*cff1*cff2*cff3
+         node->veg_alpha3D[k] = node->veg_alpha0*cff1*cff2*cff3;
 
       } // for k
 
@@ -1893,7 +1896,7 @@ __device__ void computeBottomDragVegetation(void) {
          const double wtmp2 = length(node->dav)*100.0; // cm/s
 
          node->veg_h = 0.72e-2*(4.657 - 0.158*wtmp2 + 0.262*veg_lai - 0.011*veg_lai*wtmp2 + 
-                                0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784d0
+                                0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784;
          node->veg_h = max(node->veg_h, 1.0e-2);  //impose min of 1 cm
 
          const double phi_b = veg_cw*node->veg_di_unbent*node->veg_h_unbent/node->veg_h; // \phi_b
@@ -1901,7 +1904,10 @@ __device__ void computeBottomDragVegetation(void) {
          const double surpHeight = max(0.0, node->veg_h_unbent - node->veg_h); //surplus height
          node->veg_nv = node->veg_nv_unbent*(1.0 + surpHeight/node->veg_h);
       } // if veg_h_unbent
-      veg_alpha3D(:,i) = 0.5d0*veg_di(i)*veg_nv(i)*veg_cd(i)
+
+      for (int k = 0; k < nvrt; k++) {
+         node->veg_alpha3D[k] = 0.5*node->veg_di*node->veg_nv*node->veg_Cd;
+      } // for k
    
 
    } // if iveg
@@ -1966,6 +1972,7 @@ __device__ void computeVegetationAndDragParameters(void) {
    if (iveg != 0 && side->is3D() && veg_h > 0.0) {
       // 3D wet side with veg...
 
+      double magUa = 0.0;
       for (int k = kb; k < nvrt - 1; k++) { // XXX CHECK INDICES
          if (side->hasVegetation(k + 1)) { //partial or full SAV layer
 

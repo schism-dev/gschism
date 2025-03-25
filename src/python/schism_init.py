@@ -4,54 +4,20 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.dirname(current_dir)  # go up two levels to reach src/
 sys.path.append(src_dir)
 
-import f90nml  # XXX check if we need a more standard package
 from os import path
 import cupy as cp
 from iop.logger import *
+from iop.readNamelist import readNamelist, readParam
 from python.schism_consts import *
 
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 
 
 def schism_init(in_dir):
 
     # Reads the namelist file params.nml
-    nml = f90nml.read(path.join(in_dir, 'param.nml'))
-    
-    
-    core = nml['core']
+    nml = readParam(in_dir)
 
-    # Check core parameters
-
-    # Check model type parameters
-    if core['ibc'] not in {0, 1}:
-        error('Unknown ibcc')
-    if core['ibtp'] not in {0, 1}:
-        error('Unknown ibtp')
-
-    # Print model configuration
-    if core['ibc'] == 0:
-        log('You are using baroclinic model')
-    else:
-        message = ('Barotropic model without ST calculation' 
-                   if core['ibtp'] == 0 
-                   else 'Barotropic model with ST calculation')
-        log(message)
-
-    # Validate time parameters
-    if core['dt'] <= 0 or core['rnday'] <= 0:
-        error('Illegal dt,rnday')
-
-    # Validate pool settings
-    if core['nspool'] == 0 or core['ihfskip'] == 0:
-        error('Zero nspool')
-    if core['ihfskip'] % core['nspool'] != 0:
-        error('ihfskip/nspool /= integer')
-
-    # Validate vegetation parameters
-    if core['nbins_veg_vert'] <= 0:
-        error('INIT: nbins_veg_vert<=0')
-
+    core = nml.core
 
     # Count the number of tracer models and tracers
     # Each trace module has a pre-defined ID as follows:
@@ -76,7 +42,7 @@ def schism_init(in_dir):
 
     # Total number of tracers (including T,S)
     # The big tracer arrays are: tr_el[ntracers,nvrt,nea2],tr_nd0[ntracers,nvrt,npa]
-    ntracers = ntrs.sum() # Including T,S
+    ntracers = ntrs.sum().item() # Including T,S
     if (mntracers < ntracers):
         error('INIT: mntracers<ntracers')
 
@@ -91,11 +57,8 @@ def schism_init(in_dir):
     log(f'Index ranges of each module: {irange_tr}')
 
     # True b-tropic model cannot have tracer models (to ensure T,S always come first in arrays)
-    if(core['ibc'] == 1 and core['ibtp'] == 0 and ntracers > 2):
+    if(core.ibc == 1 and core.ibtp == 0 and ntracers > 2):
         error('INIT: true barotropic model cannot have tracer models')
 
+    return nml
 
-
-
-
-schism_init(in_dir)

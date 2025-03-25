@@ -3,6 +3,7 @@ import glob
 import importlib.util
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
+
 import pybind11
 import numpy as np
 import timeit
@@ -13,13 +14,14 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
 from iop.cudamodule import CudaSourceManager
+from python.schism_init import schism_init
 
-tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
-# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
+tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -148,6 +150,10 @@ if __name__ == "__main__":
     print("Looking for file at:", os.path.abspath(cpp_file))
     module = compile_and_import("test", cpp_file)
 
+
+
+    
+    namelist = schism_init('/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE')
 
 
     # Test the module

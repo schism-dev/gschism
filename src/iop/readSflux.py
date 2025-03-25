@@ -1,12 +1,11 @@
-import f90nml  # XXX check if we need a more standard package
 from os import path
 import numpy as np
 from netCDF4 import Dataset
 from datetime import datetime
 from typing import Tuple
 from iop.logger import *
+from iop.readNamelist import readNamelist
 from scipy.spatial import Delaunay
-
 
 """
 This module handles meteorological data interpolation for the SCHISM model.
@@ -569,7 +568,7 @@ class SFlux:
 
         try:
             # Read the namelist
-            nml = f90nml.read(path.join(in_dir, 'sflux', namelist_file))
+            nml = readNamelist(path.join(in_dir, 'sflux', namelist_file))
 
             # Get the 'sflux_inputs' section
             self.inputs = nml.get('sflux_inputs', {})
