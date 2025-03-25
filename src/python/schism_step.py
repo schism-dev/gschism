@@ -50,13 +50,10 @@ def schism_step(it: int):
 
     #  Compute new bed deformation
     computeBedDeformation()
-    # bdef2[:] = bdef[:]/real(ibdef,rkind)*real(min0(it,ibdef),rkind)
-
 
 
     # Earth tidal potential and loading tide at nodes: pre-compute to save time
     computeTidalPotential()
-
 
 
     computeMeteorologicalForcing()  # Lines 458-1014
@@ -131,11 +128,8 @@ def schism_step(it: int):
 
 
     # Elem. average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimension: m^2/s
-    computeElemAverageGhat1()          # Lines 5533-5783
+    computeElemAverageGhat()          # Lines 5533-5783
 
-
-    # Baroclinic force
-    computeBaroclinicForce()           # Lines 5784-5825
 
 
     # setup coefficient matrix, sparsem, for the wave equation

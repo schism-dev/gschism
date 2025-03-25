@@ -13,6 +13,10 @@ constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
 constexpr int    iloadtide = 0;       // Option to use polynomial for discharge boundary
 constexpr double loadtide_coef = 0.1; // Load tide coefficient
 
+constexpr int    inv_atm_bnd = 0;     // Option to use inverse barometric effects at boundary
+constexpr double prmsl_ref = 101325.0; // Reference pressure for inverse barometric effects
+
+
 constexpr int nvrt = 54; // Number of vertical levels
 constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast to z levels)
@@ -32,6 +36,10 @@ constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
 
 constexpr double thetai = 0.6;
+
+constexpr double dtb_min = 0.1; //XXXX
+constexpr double dtb_max = 1000.0; //XXXX
+constexpr double velmin_btrack = 0.01; //XXXX
 
 constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
@@ -117,8 +125,16 @@ __device__ __host__ __forceinline__ Vector2 toVector2(const double3& v) {
     return make_double2(v.x, v.y);
 }
 
+__device__ __host__ __forceinline__ double3 toVector3(const double2& v, double w) {
+    return make_double3(v.x, v.y, w);
+}
+
 __device__ __host__ __forceinline__ Point2 toPoint2(const double3& p) {
     return make_double2(p.x, p.y);
+}
+
+__device__ __host__ __forceinline__ Point3 toPoint3(const double2& p, double z) {
+    return make_double3(p.x, p.y, z);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -325,6 +341,7 @@ struct Element {
 
    double vsource;            // Volumetric source/sink term [m^3/s]
 
+
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
 
@@ -340,18 +357,17 @@ struct Element {
 
    __inline__ __device__ double computeSignedArea(void) const;
 
-   __inline__ __device__ void nudgeToBarycenter(double &x, double &y) const {
+   __inline__ __device__ void nudgeToBarycenter(Point2 &p) const {
       // Nudges the point (x,y) to the barycenter of the element
-      x = (1-eps)*x + eps*xc;
-      y = (1-eps)*y + eps*yc;
+      p = (1-eps)*p + eps*toVector2(center);
    }
 
-   __device__ bool computeShapeCoords(Vector2 xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
+   __device__ bool computeShapeCoords(Point2 xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
 
    __device__ void setFrame(void) {
 
       double ar1, ar2;
-      computeLonLat({xc, yc, zc}, ar1, ar2);
+      computeLonLat(center, ar1, ar2);
 
       frame.update(ar1, ar2);        
     }
@@ -504,7 +520,7 @@ struct Side {
    Element *elems[2];     // Elements that share this side XXX (why not e1,e2?)
 
    double length;         // Length of the side. Used to be called distj; but I think this name is less clear now.
-   double xc, yc;         // Location of side center. These variables used to have a j in their name: xcj, ycj, zcj
+   Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
    double depth;          // Depth at side center
 
@@ -521,31 +537,39 @@ struct Side {
 
    // Physical information
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
+   double  w2[nvrt];            // Vertical velocity at each vertical level
+   Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 uth[nvrt];           // "Time history" velocity
    Vector2 U;                   // Vertically averaged velocity vector   
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
+   double veg_c2;
+
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
+   __inline__ __device__ Point2 p_t(double t) const;
+
+   __inline__ __device__ Point3 center3D(int k) const { return {center.x, center.y, zc[k]}; }
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
-   __inline__ __device__ Point2 center(void)    const { return {xc, yc}; }
    __inline__ __device__ double Dz(int k)       const { return zc[k] - zc[k-1]; }
 
    __forceinline__ __device__ Vector2 t(void) const { return {-n.y, n.x}; } // Tangent vector
 
    __inline__ __device__ bool isBnd(void) const { return sideBnd != nullptr; } // True if the side is a boundary side
 
-   __inline__ __device__ double eta2(void)   const { return 0.5*(n1->eta2 + n2->eta2); }
-   __inline__ __device__ double htot(void)   const { return eta2() + depth; }
+   __inline__ __device__ int iadv(void) const;
 
-   __inline__ __device__ double veg_h(void)  const { return 0.5*(n1->veg_h  + n2->veg_h); }
-   __inline__ __device__ double veg_nv(void) const { return 0.5*(n1->veg_nv + n2->veg_nv); }
+   __inline__ __device__ double eta2(void) const;
+   __inline__ __device__ double htot(void) const { return eta2() + depth; }
+
+   __inline__ __device__ double veg_h(void) const;
+   __inline__ __device__ double veg_nv(void) const;
    __inline__ __device__ double veg_c(void)  const { return veg_c2/(1.0 + veg_c2); }
 
-   __inline__ __device__ double Cd(void)     const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
+   __inline__ __device__ double Cd(void) const;
 
-   __inline__ __device__ Vector2 tau(void)   const { return 0.5*(n1->tau(kb) + n2->tau(kb)); }
+   __inline__ __device__ Vector2 tau(void) const;
 
    __inline__ __device__ double zb(void) const { return zc[kb]; }
    
@@ -554,8 +578,8 @@ struct Side {
    __inline__ __device__ double zLevelVegRatio(int k) const { 
       // Ratio ocupied by the vegetation at vertical level k. It is 1.0 if the canopy is fully above the level k and 0.0 if it is fully below the level k
       return max(0.0, min(1.0, (zTopCanopy() - zc[k-1])/Dz(k))); 
-      } 
-   __inline__ __device__ bool HasVegetation(int k) const { zTopCanopy() > side->zc[k-1]); }
+   } 
+   __inline__ __device__ bool hasVegetation(int k) const { return zTopCanopy() > zc[k]; }
    __inline__ __device__ bool isSubmerged(int k) const { return veg_h() < 0.99*htot(); }
    __inline__ __device__ bool is2D(void) const { return kb == nvrt - 1; }
    __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
@@ -577,7 +601,7 @@ struct Side {
       const double dot_prod1 = -dot(u, n);
       
       // Vector from side center to element 0 centroid
-      const Vector2 v2 = {elems[0]->xc - xc, elems[0]->yc - yc};
+      const Vector2 v2 = toVector2(elems[0]->center) - center;
 
       // Dot product of the vector with the side normal vector
       const double dot_prod2 = dot(v2, n);
@@ -617,6 +641,7 @@ struct NodeBoundary {
    SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
 
+   double elbc;   // Elevation boundary condition
    int iettype;   // Type of elevation boundary condition
 
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
@@ -635,7 +660,7 @@ struct Node {
    Element **elements; // pointer to the elements that share this node
    int numElements;   // number of elements that share this node
 
-   double x, y, z;
+   Point3 p;
    Vector3 u2[nvrt];
    double znl[nvrt];
    double lon, lat;
@@ -644,6 +669,8 @@ struct Node {
    int kb;       // Bottom index of the node
 
    int idry;     // True if the node is dry
+
+   int iadv;     // Advection flag
 
    NodeBoundary *nodeBnd; // Pointer to additional boundary information. For non-boundary nodes, 
 
@@ -656,12 +683,25 @@ struct Node {
    double grav2; // Gravity 
    double hhat;  // \breve{H} in notes
 
+   Vector2 tau; // Wind stress vector
+
+   // Vegetation parameters
+   double veg_h;
+   double veg_nv;
+   double veg_Cd;
+   double veg_h_unbent;
+   double veg_di;
+   double veg_di_unbent;
+
+   // Bottom drag parameters
+   double Cd;
+
    double bdef1; // Bottom deformation at previous timestep
    double bdef2; // Bottom deformation at current timestep
 
    double qel; // RHS
 
-   __forceinline__ __device__ Point2 point2(void) const { return {x, y}; }
+   __host__ __device__ Point2 p2(void) const { return {p.x, p.y}; }
 
    __host__ __device__ double sigmaTransitionDepth(void) const;
 
@@ -849,7 +889,7 @@ class Mesh {
       printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
       for (int i = 0; i < ne; i++) {
          auto isInside = localElemData[i].containsPoint({x, y});
-         // printf("i = %d, isInside = %d, x = %f, y = %f\n", i, isInside, localElemData[i].xc, localElemData[i].yc);
+
          if (isInside) {
             printf("Point %f %f %f is inside element %d\n", x, y, z, i);
             Element *elem = &localElemData[i];

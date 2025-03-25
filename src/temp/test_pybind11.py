@@ -16,6 +16,8 @@ nws = 0
 # sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
 sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
+from iop.cudamodule import CudaSourceManager
+
 tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
 # tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
@@ -153,18 +155,37 @@ if __name__ == "__main__":
 
     if True:
         # Create the kernel module TESTING!!
+            # Read the CUDA source
         cuda_source = ""
-        source_files = [
-            os.path.join(project_root, "kernels", "meshdata.h"),
-            os.path.join(project_root, "kernels", "meshdata.cu")
-        ]
-        for file in source_files:
-            with open(file, 'r') as f:
-                cuda_source += f.read()
-        mod = cp.RawModule(code=cuda_source, 
-                        options=("-std=c++20", '-diag-suppress=64,1055')) # the diag-suppress is to suppress the warning about the anonymous union
+        source_file = os.path.join(project_root, "kernels", "meshdata.cu")
+  
+        # Create the CUDA source manager
+        cuda_manager = CudaSourceManager(project_root)
 
-        createMesh          = mod.get_function('createMesh')
+        try:
+            # Create the module with preprocessing
+            mod, combined_source = cuda_manager.create_module(
+                source_file, 
+                options=("-std=c++20", '-diag-suppress=64,1055')
+            )
+            
+            # Optionally save the combined source for debugging
+            cuda_manager.save_combined_source(combined_source, "debug_cuda_source.cu")
+            
+            # Get kernel functions with better error handling
+            try:
+                createMesh = mod.get_function('createMesh')
+                populateMesh = mod.get_function('populateMesh')
+                getStructSizes = mod.get_function('getStructSizes')
+                test = mod.get_function('test')
+            except Exception as e:
+                print(f"Error getting CUDA functions: {e}")
+                # Continue with error handling or exit
+                sys.exit(1)
+
+        except Exception as e:
+            print(f"Failed to compile CUDA code: {e}")
+            sys.exit(1)
 
 
 
@@ -380,18 +401,33 @@ if __name__ == "__main__":
         with open(file, 'r') as f:
             cuda_source += f.read()
 
-    # Create the kernel module
-    mod = cp.RawModule(code=cuda_source, 
-                       options=("-std=c++20", '-diag-suppress=64,1055')) # the diag-suppress is to suppress the warning about the anonymous union
+    # Create the CUDA source manager
+    cuda_manager = CudaSourceManager(project_root)
 
-    
-    # Get the kernel functions
-    createMesh          = mod.get_function('createMesh')
-    populateMesh        = mod.get_function('populateMesh')
-    getStructSizes      = mod.get_function('getStructSizes')
-    # computeFluxAdvHface = mod.get_function('computeFluxAdvHface')
-    test                = mod.get_function('test')
-    # destroy_mesh = mod.get_function('destroyMeshCPU')
+    try:
+        # Create the module with preprocessing
+        mod, combined_source = cuda_manager.create_module(
+            source_files, 
+            options=("-std=c++20", '-diag-suppress=64,1055')
+        )
+        
+        # Optionally save the combined source for debugging
+        cuda_manager.save_combined_source(combined_source, "debug_cuda_source.cu")
+        
+        # Get kernel functions with better error handling
+        try:
+            createMesh = mod.get_function('createMesh')
+            populateMesh = mod.get_function('populateMesh')
+            getStructSizes = mod.get_function('getStructSizes')
+            test = mod.get_function('test')
+        except Exception as e:
+            print(f"Error getting CUDA functions: {e}")
+            # Continue with error handling or exit
+            sys.exit(1)
+
+    except Exception as e:
+        print(f"Failed to compile CUDA code: {e}")
+        sys.exit(1)
 
     # Get number of GPUs
     n_gpus = cp.cuda.runtime.getDeviceCount()

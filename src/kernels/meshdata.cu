@@ -1,3 +1,5 @@
+#include "meshdata.h"
+
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr;
 
@@ -86,8 +88,8 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
       if (side2 == side) continue;
 
       // (x3,y3)-(x4,y4) is the element side line
-      const Point2 x3 = side2->n1->point2();
-      const Point2 x4 = side2->n2->point2();
+      const Point2 x3 = side2->n1->p2();
+      const Point2 x4 = side2->n2->p2();
 
       // delta is 0 if the two lines are parallel. In this case, they do not intersect.
       const double delta = cross(x2 - x1, x3 - x4);
@@ -140,8 +142,8 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
       Side *side2 = sides[i];
 
       // (x3,y3)-(x4,y4) is the element side line
-      const Point2 x3 = side2->n1->point2();
-      const Point2 x4 = side2->n2->point2();
+      const Point2 x3 = side2->n1->p2();
+      const Point2 x4 = side2->n2->p2();
 
       // delta is 0 if the two lines are parallel. In this case, they do not intersect.
       const double delta = cross(x2 - x1, x3 - x4);
@@ -191,13 +193,12 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // And uses this velocity instead to continue the tracking.
 
    // computes the intersection point in cartesian coordinates
-   double xint = nextSide->x(tt);
-   double yint = nextSide->y(tt);
-  
+   Point2 intersection = nextSide->p_t(tt);
+
    // Nudges the point to the barycenter of the element. 
    // This ensures that the point is inside the element and hence, we will find an intersection if the
    // next segment intersects the element sides.  
-   curElem->nudgeToBarycenter(xint, yint);
+   curElem->nudgeToBarycenter(intersection);
 
    // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
    // of the intersection point. We are approximating it by the velocity at the side center at jlev.
@@ -213,13 +214,13 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    const double ws = 0.5*(nextSide->n1->u2[jlev].z + nextSide->n2->u2[jlev].z);
 
    // Compute the new "tracked" time based on the remaining segment length and the original velocity.
-   const double len2 = (xint - xt.x)*(xint - xt.x) + (yint - xt.y)*(yint - xt.y);
+   const double len2 = length(intersection - toPoint2(xt));
    const double vel2 = u_int.x*u_int.x + u_int.y*u_int.y;        
    assert(vel2 > 0.0 && "Zero velocity found");
    dt = dt - sqrt(len2/vel2); 
 
    // The end of this tracking segment is now the intersection point.
-   xt = {xint, yint, zint};
+   xt = {intersection.x, intersection.y, zint};
    
    u_int = {us, vs, ws};
    
@@ -355,13 +356,13 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 __inline__ __device__ double Element::computeSignedArea(void) const {
    // Compute the area of the element
 
-   double res = signedArea(nodes[0]->point2(), nodes[1]->point2(), nodes[2]->point2());
+   double res = signedArea(nodes[0]->p2(), nodes[1]->p2(), nodes[2]->p2());
 
    // In the quad case we need to add the area of the other triangle.
    if (isQuad()) {
-      double ar1 = signedArea(nodes[0]->point2(), nodes[2]->point2(), nodes[3]->point2());
-      double ar2 = signedArea(nodes[0]->point2(), nodes[1]->point2(), nodes[3]->point2());
-      double ar3 = signedArea(nodes[1]->point2(), nodes[2]->point2(), nodes[3]->point2());
+      double ar1 = signedArea(nodes[0]->p2(), nodes[2]->p2(), nodes[3]->p2());
+      double ar2 = signedArea(nodes[0]->p2(), nodes[1]->p2(), nodes[3]->p2());
+      double ar3 = signedArea(nodes[1]->p2(), nodes[2]->p2(), nodes[3]->p2());
       if (ar1 < 0.0 || ar2 < 0.0 || ar3 < 0.0) {
          // XXX Aren't we computing a signed area? why is it not allowed to be negative?
          Error("Negative area found in quad element");
@@ -398,9 +399,9 @@ __device__ bool Element::computeShapeCoords(Point2 xt, double shpCoords[4],
       Point2 x0, x1, x2;
 
       if constexpr(ics==1) {
-         x0 = nodes[0]->point2();
-         x1 = nodes[1]->point2();
-         x2 = nodes[2]->point2();
+         x0 = nodes[0]->p2();
+         x1 = nodes[1]->p2();
+         x2 = nodes[2]->p2();
       }
       else // lat/lon
       {
@@ -554,8 +555,18 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) {
 
 
 
-__inline__ __device__ double Side::x(double t) const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->x + t*n2->x; }
-__inline__ __device__ double Side::y(double t) const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->y + t*n2->y; }
+__inline__ __device__ double Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
+__inline__ __device__ double Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
+__inline__ __device__ Point2 Side::p_t(double t) const { return {x(t), y(t)}; }
+__inline__ __device__ int    Side::iadv(void)    const { return min(n1->iadv, n2->iadv); }   
+__inline__ __device__ double Side::eta2(void)    const { return 0.5*(n1->eta2 + n2->eta2); }
+
+__inline__ __device__ double Side::veg_h(void)   const { return 0.5*(n1->veg_h  + n2->veg_h); }
+__inline__ __device__ double Side::veg_nv(void)  const { return 0.5*(n1->veg_nv + n2->veg_nv); }
+
+__inline__ __device__ double Side::Cd(void)      const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
+
+__inline__ __device__ Vector2 Side::tau(void)    const { return 0.5*(n1->tau + n2->tau); }
 
 /**
  * This method performs backtracking from the side center until a time -dt back in time 
@@ -584,7 +595,7 @@ __inline__ __device__ bool Side::btrack(
 ) const {
 
    // Start from side center
-   Point3 x0 = {xc, yc, zc[jlev]};
+   Point3 x0 = {center.x, center.y, zc[jlev]};
  
 
    double time_rm = dt; // Remaining time
@@ -815,48 +826,6 @@ __device__ double Node::compZCoord(int k) const {
    return 0.0;
 }
 
-#ifdef TESTING
-extern "C" { 
-   __global__ void computeFluxAdvHface(void) {
-      // Get global thread ID
-      int j = blockIdx.x * blockDim.x + threadIdx.x;
-      
-      if (j >= mesh->ns) return;  // Guard against out-of-bounds access
-
-      // Get the side object
-      Side *side = &(mesh->localSideData[j]);
-
-      // Skip dry sides
-      if (side->idry) return;
-      
-      // Check if it's land 
-      const bool isLand = (side->elems[1] == 0 && side->bdysd <= 0);  // XXX What does isbs (bdysd) mean?
-      
-      // Get the bottom index for this side
-      const int kbs = side->kb;
-      
-      // Process each vertical level
-      for (int k = kbs + 1; k < nvrt; k++) {
-          if (isLand) {
-              side->flux_adv_hface[k] = 0.0;
-
-          } else {
-              // Calculate normal component of the velocity at current and previous levels
-              const double vnor1 = dot(side->u2[k  ], side->n);
-              const double vnor2 = dot(side->u2[k-1], side->n);
-              
-              // Calculate flux (normal * area in local x-direction)
-              const double height = side->zc[k] - side->zc[k-1]; // Vertical distance between the two side centers
-              const double vmean = 0.5*(vnor1 + vnor2);
-              const double length = side->length;
-              
-              side->flux_adv_hface[k] = height*length*vmean;
-          }
-      }
-   }
-}
-
-#endif 
 
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 double *node_coords, double *wind_rotate_angle, 
@@ -893,9 +862,9 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       // Element **elements; // pointer to the elements connected to this node
       // int numElements;   // number of elements shared by this node
 
-      node.x = node_coords[i * 3];
-      node.y = node_coords[i * 3 + 1];
-      node.z = node_coords[i * 3 + 2];  // XXX this is probably wrong
+      node.p.x = node_coords[i * 3];
+      node.p.y = node_coords[i * 3 + 1];
+      node.p.z = node_coords[i * 3 + 2];  // XXX this is probably wrong
       node.depth = node_coords[i * 3 + 2];
 
       // Links the node to the boundary information
@@ -923,9 +892,9 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       }
 
 // XXXX
-constexpr double rot_per=3000.0;
-constexpr double rot_f=2.0*pi/rot_per;
-for (int k = 0; k < nvrt; k++) {node.u2[k] = {0.0, -node.y*rot_f, node.x*rot_f};}
+constexpr double rot_per = 3000.0;
+constexpr double rot_f = 2.0*pi/rot_per;
+for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0.0};}
 // XXXXX
    }
 
@@ -948,7 +917,7 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {0.0, -node.y*rot_f, node.x*rot_f};
       side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
       // Normal vector to the side
-      side.n = {- (side.n1->y - side.n2->y), (side.n1->x - side.n2->x)};
+      side.n = {- (side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
       const double norm = sqrt(dot(side.n, side.n));
       side.n = side.n/norm;
 
@@ -992,20 +961,19 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {0.0, -node.y*rot_f, node.x*rot_f};
 
 
       // Compute the center of the side
-      side.xc = 0.5*(side.n1->x + side.n2->x);
-      side.yc = 0.5*(side.n1->y + side.n2->y);
+      side.center = 0.5*(side.n1->p2() + side.n2->p2());
 
 // XXXX
 constexpr double rot_per=3000.0;
 constexpr double rot_f=2.0*pi/rot_per;
-for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.yc*rot_f , side.xc*rot_f};
+for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
 // XXXXX      
 
       // Compute the z level at the center of the side
       for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->znl[k] + side.n2->znl[k]);
 
       // Compute the length of the side
-      const Vector2 vLen = side.n2->point2() - side.n1->point2();
+      const Vector2 vLen = side.n2->p2() - side.n1->p2();
       side.length = sqrt(dot(vLen, vLen));
 
    }
@@ -1037,15 +1005,14 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.yc*rot_f , side.xc*rot_f};
       elem.wind_angle = wind_rotate_angle[i];
 
       // Compute the centroid of the element and its depth
-      elem.xc = 0.0;
-      elem.yc = 0.0;
+      Vector2 center = {0.0, 0.0};
       elem.depth = 0.0;
       for (int j = 0; j < i34[i]; j++) {
-         elem.xc    += elem.nodes[j]->x/i34[i];
-         elem.yc    += elem.nodes[j]->y/i34[i];
-         elem.depth += elem.nodes[j]->z/i34[i];
+         center += elem.nodes[j]->p2()/i34[i];
+         elem.depth  += elem.nodes[j]->p.z/i34[i];
       }
- 
+      elem.center.x = center.x;
+      elem.center.y = center.y;
       
       // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
       // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
@@ -1079,13 +1046,13 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.yc*rot_f , side.xc*rot_f};
             // This expression can be derived from the derivatives of the shape functions in area coordinates.
             // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
             // da1/dx = (y1 - y2)/(2*area)
-            const double dPhi_j_dx = (elem.nodes[id2]->y - elem.nodes[id3]->y)/(2*area); 
-            const double dPhi_j_dy = (elem.nodes[id3]->x - elem.nodes[id2]->x)/(2*area); 
+            const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id3]->p.y)/(2*area); 
+            const double dPhi_j_dy = (elem.nodes[id3]->p.x - elem.nodes[id2]->p.x)/(2*area); 
             elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
          }
          else  { // Quad; evaluate at centroid
-            const double dPhi_j_dx = (elem.nodes[id2]->y - elem.nodes[id4]->y)/(2*area); 
-            const double dPhi_j_dy = (elem.nodes[id4]->x - elem.nodes[id2]->x)/(2*area); 
+            const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id4]->p.y)/(2*area); 
+            const double dPhi_j_dy = (elem.nodes[id4]->p.x - elem.nodes[id2]->p.x)/(2*area); 
             elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
          } // if Tri
 
@@ -1147,9 +1114,9 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
          Node *node2 = elem->nodes[id2];
          Node *node3 = elem->nodes[id3];
 
-         const Point2 x1 = node1->point2();
-         const Point2 x2 = node2->point2();
-         const Point2 x3 = node3->point2();
+         const Point2 x1 = node1->p2();
+         const Point2 x2 = node2->p2();
+         const Point2 x3 = node3->p2();
 
          // integral of phi_i*phi_j
          const double ipp_ii = (1.0/6.0 )*area;
@@ -1208,19 +1175,18 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
       double vnorm = 0.0;
       if (imm == 2)  { // Pre-compute vnorm on the element
          Vector3 ubed;
-         update_bdef(time, elem->xc, elem->yc, elem->depth, ubed);
+         // update_bdef(time, elem->center, elem->depth, ubed); XXX
 
          Vector3 gradP(0.0, 0.0, 1.0);
          for (int m=0; m < elem->i34; m++) {
            const Vector2 gradP_2D = elem->nodes[m]->depth*elem->gradPhi[m];
-           gradP.x += gradP_2D.x;
-           gradP.y += gradP_2D.y;
+           gradP += toVector3(gradP_2D, 0.0);
          }   
          vnorm = dot(ubed, gradP)/sqrt(dot(gradP, gradP));
       } // imm==2
 
       if (elem->isTri()) {
-         for (thenint l=0; l<3; l++) {
+         for (int l=0; l<3; l++) {
            double fac;
 
            Node *node = elem->nodes[l];
@@ -1367,53 +1333,43 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
 __device__ void backtrackAllNodes(void) {
 
    // max/min # of sub-divisions
-   const double ndelt_max = max(1.0, dt/dtb_min);
-   const double ndelt_min = max(1.0, dt/dtb_max); 
+   const int ndelt_max = max(1.0, dt/dtb_min);
+   const int ndelt_min = max(1.0, dt/dtb_max); 
 
+   // Removed all references to swild98 XXX
+   // swild98=0.d0 !init
 
-   swild98=0.d0 !init
+   Side *side = FROM kernel;
 
-   do i=1,ns
-        sdbt(1,:,i)=su2(:,i)
-        sdbt(2,:,i)=sv2(:,i)
-   enddo !i
-
-   side = FROM kernel
+   const int kb = side->kb;
+   for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
    if (side->idry == 1) return;
 
-   isd0=i
-   jmin=kbs(isd0)
-   ie0=0
-
    // Checks that at least one element is not dry
-   const Element *elem1 = side->elements[0];
-   const Element *elem2 = side->elements[1];
+   const Element *elem1 = side->elems[0];
+   const Element *elem2 = side->elems[1];
    assert ((elem1 != nullptr && !(elem1->idry)) || (elem2 != nullptr && !(elem2->idry)) && "backtrackAllNodes: non dry side without two dry elements.");
 
+   // XXXXXX
+   // !swild_tmp to store global coord. of the starting side
+   // swild_tmp(1)=xcj(isd0); swild_tmp(2)=ycj(isd0); swild_tmp(3)=zcj(isd0)
+   // !swild10_tmp to store frame at starting pt for ics=2 (not used for ics=1)
+   // !Use sframe2 
+   // swild10_tmp(1:3,1:3)=sframe2(:,:,i) !pframe(:,:,isidenode(1,isd0)) 
 
-   !swild_tmp to store global coord. of the starting side
-   swild_tmp(1)=xcj(isd0); swild_tmp(2)=ycj(isd0); swild_tmp(3)=zcj(isd0)
-   !swild10_tmp to store frame at starting pt for ics=2 (not used for ics=1)
-   !Use sframe2 
-   swild10_tmp(1:3,1:3)=sframe2(:,:,i) !pframe(:,:,isidenode(1,isd0)) 
 
-
-   for (int j = jmin; j < nvrt; j++) {
+   for (int k = kb; k < nvrt; k++) {
    //  Initialize (xt,yt,zt), nnel and vel.
    //  For ics=2, the coordinates are in local frames
    //  Caution! nnel must be initialized inside this loop as it is updated inside.
 
-      ipsgb=islg(isd0)
 
-      Node *node1 = side->nodes[0];
-      Node *node2 = side->nodes[1];
-
-      iadvf = min(iadv(n1),iadv(n2))
+      const int iadvf = side->iadv();  // Advection flag
 
       Point3 xt;
       if constexpr(ics==1) {
-         xt = side->center(j); 
+         xt = side->center3D(k); 
       }
       else // lat/lon; in side lat/lon frame
       {
@@ -1428,26 +1384,19 @@ __device__ void backtrackAllNodes(void) {
 
       // Velocity at the side (in ll frame for ics, same vertical direction)
       // XXX IS THIS NECESSARY?
-      Vector3 u_int = side->velocity(j); //{side->u2[j].x, side->u2[j].y, 0.5*(side->w2[j] + side->w2[j+1])};
+      Vector3 u_int = toVector3(side->u2[k], 0.5*(side->w2[k] + side->w2[k+1])); // XXX {side->u2[j].x, side->u2[j].y, 0.5*(side->w2[j] + side->w2[j+1])};
 
       // If on land or open boundary...
       const bool ifl_bnd =  (side->sideBnd != nullptr);
       
       const double vmag = length(toVector2(u_int));
 
-      nnel = ie0;
-
       vis_coe = 0.0;
 
       if (vmag <= velmin_btrack) {
          // No activity 
-         // XXX IS THIS NECESSARY? 
 
-         sdbt(1,j,isd0)=su2(j,isd0)
-         sdbt(2,j,isd0)=sv2(j,isd0)
-         if(ielm_transport/=0) sdbt(3:2+ntracers,j,isd0)=(tr_nd(1:ntracers,j,n1)+tr_nd(1:ntracers,j,n2))*0.5d0
-         swild98(1:2,j,isd0)=su2(j,isd0) !max/min
-         swild98(3:4,j,isd0)=sv2(j,isd0)
+         side->btu[k] = side->u2[k];
 
 
       } else {  // do btrack
@@ -1458,11 +1407,11 @@ __device__ void backtrackAllNodes(void) {
          int icount = 0;
          for (int ii=0; ii<2; ii++) {
 
-            const Element *elem = side->elements[ii];
+            const Element *elem = side->elems[ii];
               
             if (elem == nullptr) continue;
 
-            icount=icount+1
+            icount++;
 
             // Not strictly along z; in ll frame for ics=2
 
@@ -1471,7 +1420,7 @@ __device__ void backtrackAllNodes(void) {
                const Node *node = elem->nodes[jj];
 
                if constexpr(ics==1) {
-                  Vector2 u_node = {node->u2[j].x, node->u2[j].y};
+                  Vector2 u_node = {node->u2[k].x, node->u2[k].y};
                } else {
                   // XXX IMPLEMENT THIS
                   // call project_hvec(uu2(j,nd0),vv2(j,nd0),pframe(:,:,nd0),eframe(:,:,ie),utmp0(jj),vtmp0(jj))
@@ -1480,10 +1429,6 @@ __device__ void backtrackAllNodes(void) {
 
             const Vector2 grad_u = elem->grad(u_int.x); // XXX IMPLEMENT THIS
             const Vector2 grad_v = elem->grad(u_int.y);
-            // dudx = dot_product(utmp0(1:i34(ie)),dldxy(1:i34(ie),1,ie))
-            // dudy = dot_product(utmp0(1:i34(ie)),dldxy(1:i34(ie),2,ie))
-            // dvdx = dot_product(vtmp0(1:i34(ie)),dldxy(1:i34(ie),1,ie))
-            // dvdy = dot_product(vtmp0(1:i34(ie)),dldxy(1:i34(ie),2,ie))
 
             suma += dt*sqrt(dot(grad_u, grad_u) + dot(grad_v, grad_v));
          } // for ii
@@ -1491,8 +1436,9 @@ __device__ void backtrackAllNodes(void) {
          assert(icount > 0 && "Impossible 77");
 
          // '4' is somewhat arbitrary
-         ndelt = max0(ndelt_min,min0(ndelt_max,int(suma/icount)*4)) // >=1
-         dtbk=dt/ndelt // Target btrack step; may be smaller sometimes
+         const int ndelt = max(ndelt_min, min(ndelt_max, int(suma/icount)*4)); // >=1
+         const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
+
 
          // Perturb starting pt to avoid underflow 
          // XXX I don't think this is needed with the current implementation
@@ -1505,8 +1451,7 @@ __device__ void backtrackAllNodes(void) {
          //    yt=(1.d0-eps)*yt+eps*yctr2
          // } // ics
 
-         time_rm=dt
-         
+      
          // call btrack(l,ipsgb,ifl_bnd,j,iadvf,swild_tmp,swild10_tmp, dtbk,vis_coe,time_rm,time_rm2,uuint,vvint,wwint,nnel,jlev,xt,yt,zt,swild3,ltmp)
 
             
@@ -1574,9 +1519,9 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 
 // Helper function that contains the core algorithm
 template<typename XAccessor, typename YAccessor>
-__device__ void cubicSplineDerivativesImpl(int k1, int k2, XAccessor getX, YAccessor getY, 
-                                          double y_top, double y_bot, 
-                                          double *yp_out, double *ypp_out) {
+__device__ void initCubicSplineImpl(int k1, int k2, XAccessor getX, YAccessor getY, 
+                                           double yp_top, double yp_bot, 
+                                           double *yp_out, double *ypp_out) {
    // Compute the 1st and 2nd derivatives of y = f(x) using continuous cubic splines.
    // 
    // This function uses the General expression for a C2 interpolating cubic spline (search for "C2 interpolating cubic spline" in Wikipedia)
@@ -1587,7 +1532,7 @@ __device__ void cubicSplineDerivativesImpl(int k1, int k2, XAccessor getX, YAcce
    // Inputs: 
    //            n: dimension for x etc; # of data pts (>=2);
    //            getX, getY: functions to access x,y coordinates
-   //            y_top and y_bot: 1st derivatives at x[0] and x[n-1];
+   //            yp_top and yp_bot: 1st derivatives at x[0] and x[n-1];
    //     Output: 
    //            ypp[n]: 2nd derivatives used in interpolation.
    //             yp[n]: 1st derivatives 
@@ -1607,29 +1552,29 @@ __device__ void cubicSplineDerivativesImpl(int k1, int k2, XAccessor getX, YAcce
          assert(getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: bottom problem");
          b[k] = (getX(k+1) - getX(k))/3.0;
          c[k] = b[k]/2.0;
-         rhs[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - y_bot;
+         rhs[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - yp_bot;
       } else if (k == n - 1) {
          // Top level (surface)
          assert(getX(k) - getX(k-1) != 0.0 && "CUBIC SPLINE: surface problem");
          b[k] = (getX(k) - getX(k-1))/3.0;
          a[k] = b[k]/2.0;
-         rhs[k] = -(getY(k) - getY(k-1))/(getX(k) - getX(k-1)) + y_top;
+         rhs[k] = -(getY(k) - getY(k-1))/(getX(k) - getX(k-1)) + yp_top;
       } else {
          // Intermediate levels
          assert(getX(k) - getX(k-1) != 0.0 && getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: middle problem");
          b[k] = (getX(k+1) - getX(k-1))/3.0;
-         a[k] = (getX(k) - getX(k-1))/6.0;
-         c[k] = (getX(k+1) - getX(k))/6.0;
-         rhs[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - 
-                     (getY(k) - getY(k-1))/(getX(k) - getX(k-1));
+         a[k] = (getX(k  ) - getX(k-1))/6.0;
+         c[k] = (getX(k+1) - getX(k  ))/6.0;
+         rhs[k] = (getY(k+1) - getY(k  ))/(getX(k+1) - getX(k  )) - 
+                  (getY(k  ) - getY(k-1))/(getX(k  ) - getX(k-1));
       }
    }
 
    // Solve the tridiagonal system
    tridag_sch<1>(n, a, b, c, rhs, ypp_out, gam);
     
-   yp_out[k1] = y_bot;
-   yp_out[k2] = y_top;
+   yp_out[k1] = yp_bot;
+   yp_out[k2] = yp_top;
 
    // Compute rest of 1st derivatives using the splines
    for (int k=k1+1; k<k2; k++) {
@@ -1639,122 +1584,122 @@ __device__ void cubicSplineDerivativesImpl(int k1, int k2, XAccessor getX, YAcce
 }
 
 // Array version
-__device__ void cubicSplineDerivatives(int k1, int k2, double *x, double *y, 
-                                       double y_top, double y_bot, 
-                                       double *yp_out, double *ypp_out) {
-   auto getX = [x] __forceinline__ (int k) { return x[k]; };
-   auto getY = [y] __forceinline__ (int k) { return y[k]; };
-   cubicSplineDerivativesImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+__device__ void initCubicSpline(int k1, int k2, double *x, double *y, 
+                                double y_top, double y_bot, 
+                                double *yp_out, double *ypp_out) {
+   auto getX = [x] (int k) { return x[k]; };
+   auto getY = [y] (int k) { return y[k]; };
+   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
 }
 
 // Lambda version - allows custom access patterns
 template<typename XFunc, typename YFunc>
-__device__ void cubicSplineDerivatives(int k1, int k2, XFunc getX, YFunc getY,
+__device__ void initCubicSpline(int k1, int k2, XFunc getX, YFunc getY,
                                        double y_top, double y_bot,
                                        double *yp_out, double *ypp_out) {
-   cubicSplineDerivativesImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
 }
 
-__device__ void vertLinearInterp(int nc, double zt, int k1, int k2, double *za, double *s_in, double *s_out, int *ibelow) {
-//     Routine to do vertical linear interpolation in z
-//     Inputs:
-//
-//       nc: actual # of variables 
-//       k1,k2: lower and upper limits for za, s_in 
-//       zt: desired interpolation level
-//       za[0:nvrt-1]: z-coordinates for s_in (must be in ascending order)
-//       s_in[0:nc-1,0:nvrt-1]: values to be interpolated from; dimensions must match driving program
+// __device__ void vertLinearInterp(int nc, double zt, int k1, int k2, double *za, double *s_in, double *s_out, int *ibelow) {
+// //     Routine to do vertical linear interpolation in z
+// //     Inputs:
+// //
+// //       nc: actual # of variables 
+// //       k1,k2: lower and upper limits for za, s_in 
+// //       zt: desired interpolation level
+// //       za[0:nvrt-1]: z-coordinates for s_in (must be in ascending order)
+// //       s_in[0:nc-1,0:nvrt-1]: values to be interpolated from; dimensions must match driving program
 
-//     Outputs:
-//       s_out[0:nc-1]: interpolated value @ z=zt (bottom value if ibelow=1). Constant extrapolation
-//                   is used below bottom or above surface.
-//       ibelow: flag indicating if zt is below za(k1)
-//
+// //     Outputs:
+// //       s_out[0:nc-1]: interpolated value @ z=zt (bottom value if ibelow=1). Constant extrapolation
+// //                   is used below bottom or above surface.
+// //       ibelow: flag indicating if zt is below za(k1)
+// //
 
-   assert(k1 >= 0 && k2 < nvrt && "vertLinearInterp: k1 or k2 out of bounds");
-   assert(k1 <= k2 && "vertLinearInterp: k1 > k2");
+//    assert(k1 >= 0 && k2 < nvrt && "vertLinearInterp: k1 or k2 out of bounds");
+//    assert(k1 <= k2 && "vertLinearInterp: k1 > k2");
    
-   ibelow = 0;
+//    ibelow = 0;
 
-   if (zt < za[k1]) {
-      // Below bottom
-      ibelow = 1;
-      for (int i = 0; i < nc; i++) s_out[i] = s_in[i + k1*nc];
+//    if (zt < za[k1]) {
+//       // Below bottom
+//       ibelow = 1;
+//       for (int i = 0; i < nc; i++) s_out[i] = s_in[i + k1*nc];
 
-   } else if(zt>=za[k2]) {
-      // Above surface
-      for (int i = 0; i < nc; i++) s_out[i] = s_in[i + k2*nc];
+//    } else if(zt>=za[k2]) {
+//       // Above surface
+//       for (int i = 0; i < nc; i++) s_out[i] = s_in[i + k2*nc];
 
-   } else {
-      // Normal case (between bottom and surface)
+//    } else {
+//       // Normal case (between bottom and surface)
       
-      // Finds the level index using binary search
-      int l1 = k1;
-      int l2 = k2;
-      int k = (l1 + l2)/2;
-      while (l2 - l1 > 1) {  // Stop when we have adjacent levels
-          int k = (l1 + l2)/2;
-          if (zt >= za[k]) l1 = k;
-          else             l2 = k;
-      }
-      // Now l1 and l2 are adjacent levels and zt is between them
+//       // Finds the level index using binary search
+//       int l1 = k1;
+//       int l2 = k2;
+//       int k = (l1 + l2)/2;
+//       while (l2 - l1 > 1) {  // Stop when we have adjacent levels
+//           int k = (l1 + l2)/2;
+//           if (zt >= za[k]) l1 = k;
+//           else             l2 = k;
+//       }
+//       // Now l1 and l2 are adjacent levels and zt is between them
 
-      assert(za[l2] - za[l1] > 0.0 && "vertLinearInterp: za[l2] - za[l1] <= 0");
+//       assert(za[l2] - za[l1] > 0.0 && "vertLinearInterp: za[l2] - za[l1] <= 0");
 
-      const double zrat = (zt - za[l1])/(za[l2] - za[l1]);
-      for (int i = 0; i < nc; i++) s_out[i] = s_in[i + l1*nc]*(1.0 - zrat) + s_in[i + l2*nc]*zrat;
-   }
-}
+//       const double zrat = (zt - za[l1])/(za[l2] - za[l1]);
+//       for (int i = 0; i < nc; i++) s_out[i] = s_in[i + l1*nc]*(1.0 - zrat) + s_in[i + l2*nc]*zrat;
+//    }
+// }
 
 
-__device__ void vertLinearInterp(double zt, int k1, int k2, double *za, double *s_in, double *s_out, int *ibelow) {
-//     Routine to do vertical linear interpolation in z
-//     Inputs:
-//
-//       k1,k2: lower and upper limits for za, s_in 
-//       zt: desired interpolation level
-//       za[0:nvrt-1]: z-coordinates for s_in (must be in ascending order)
-//       s_in[0:nvrt-1]: values to be interpolated from; dimensions must match driving program
-//     Outputs:
-//       s_out: interpolated value @ z=zt (bottom value if ibelow=1). Constant extrapolation
-//                   is used below bottom or above surface.
-//       ibelow: flag indicating if zt is below za(k1)
-//
+// __device__ void vertLinearInterp(double zt, int k1, int k2, double *za, double *s_in, double *s_out, int *ibelow) {
+// //     Routine to do vertical linear interpolation in z
+// //     Inputs:
+// //
+// //       k1,k2: lower and upper limits for za, s_in 
+// //       zt: desired interpolation level
+// //       za[0:nvrt-1]: z-coordinates for s_in (must be in ascending order)
+// //       s_in[0:nvrt-1]: values to be interpolated from; dimensions must match driving program
+// //     Outputs:
+// //       s_out: interpolated value @ z=zt (bottom value if ibelow=1). Constant extrapolation
+// //                   is used below bottom or above surface.
+// //       ibelow: flag indicating if zt is below za(k1)
+// //
 
-   assert(k1 >= 0 && k2 < nvrt && "vertLinearInterp: k1 or k2 out of bounds");
-   assert(k1 <= k2 && "vertLinearInterp: k1 > k2");
+//    assert(k1 >= 0 && k2 < nvrt && "vertLinearInterp: k1 or k2 out of bounds");
+//    assert(k1 <= k2 && "vertLinearInterp: k1 > k2");
    
-   ibelow = 0;
+//    ibelow = 0;
 
-   if (zt < za[k1]) {
-      // Below bottom
-      ibelow = 1;
-      s_out = s_in[k1];
+//    if (zt < za[k1]) {
+//       // Below bottom
+//       ibelow = 1;
+//       s_out = s_in[k1];
 
-   } else if(zt>=za[k2]) {
-      // Above surface
-      s_out = s_in[k2];
+//    } else if(zt>=za[k2]) {
+//       // Above surface
+//       s_out = s_in[k2];
 
-   } else {
-      // Normal case (between bottom and surface)
+//    } else {
+//       // Normal case (between bottom and surface)
       
-      // Finds the level index using binary search
-      int l1 = k1;
-      int l2 = k2;
-      int k = (l1 + l2)/2;
-      while (l2 - l1 > 1) {  // Stop when we have adjacent levels
-          int k = (l1 + l2)/2;
-          if (zt >= za[k]) l1 = k;
-          else             l2 = k;
-      }
-      // Now l1 and l2 are adjacent levels and zt is between them
+//       // Finds the level index using binary search
+//       int l1 = k1;
+//       int l2 = k2;
+//       int k = (l1 + l2)/2;
+//       while (l2 - l1 > 1) {  // Stop when we have adjacent levels
+//           int k = (l1 + l2)/2;
+//           if (zt >= za[k]) l1 = k;
+//           else             l2 = k;
+//       }
+//       // Now l1 and l2 are adjacent levels and zt is between them
 
-      assert(za[l2] - za[l1] > 0.0 && "vertLinearInterp: za[l2] - za[l1] <= 0");
+//       assert(za[l2] - za[l1] > 0.0 && "vertLinearInterp: za[l2] - za[l1] <= 0");
 
-      const double zrat = (zt - za[l1])/(za[l2] - za[l1]);
-      s_out = s_in[l1]*(1.0 - zrat) + s_in[l2]*zrat;
-   }
-}
+//       const double zrat = (zt - za[l1])/(za[l2] - za[l1]);
+//       s_out = s_in[l1]*(1.0 - zrat) + s_in[l2]*zrat;
+//    }
+// }
 
 
 
@@ -1764,15 +1709,12 @@ __device__ void computeElevationBoundaryConditions(double ramp, double time) {
    // In case of border node on >1 bnd with imposed elevation, the bnd with largest segment # prevails.
 
    const Node *node = FROM kernel; // A boundary node
-   const NodeBoundary *nodeBnd = node->bnd;
+   NodeBoundary *nodeBnd = node->nodeBnd;
    const int iettype = nodeBnd->iettype;
 
-   double elbc[nope_global]; // flags
-
-
    double eic = 0.0;
-   if(nramp_elev==1) eic = nodeBnd->etaic;
-   else              eic = 0.0;
+   if (nramp_elev==1) eic = nodeBnd->etaic;
+   else               eic = 0.0;
 
    const double r_eic = (1.0 - ramp)*eic; 
    const double r_eth = ramp*eth(1,i);
@@ -1783,7 +1725,7 @@ __device__ void computeElevationBoundaryConditions(double ramp, double time) {
      
       // XXX IMPLEMENT TIDE THINGS
       for (int jfr=0; jfr<nbfr; jfr++) { // For all tide frequencies
-         const int ncyc = int(amig[jfr]*time/2.d0/pi);
+         const int ncyc = int(amig[jfr]*time/(2.0*pi));
          const double arg = amig[jfr]*time - 2.0*pi*ncyc + face[jfr] - efa[i,j,jfr];
          eta1_bar += ramp*ff[jfr]*emo[i,j,jfr]*cos(arg);
       } // for jfr
@@ -1862,7 +1804,7 @@ __device__ void computeBottomDragVegetation(void) {
       // Cdmax=-1 !max. Cd at node for this process (info only)
       // Drag at nodes
 /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)
-// !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guérin) 
+// !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
      
       const double rough = node->rough;
       assert(rough >= 0.0 && "computeBottomDragVegetation: rough_p < 0");
@@ -1890,10 +1832,10 @@ __device__ void computeBottomDragVegetation(void) {
    } // nchi==1
 
    //   Bottom stress in m^2/s^2
-   if (node->prho[kb + 1] >= -98.d0)
+   if (node->rho[kb + 1] >= -98.d0)
    {
       const double mag_u = length(node->u2[kb + 1]);
-      node->tau_bot = node->prho[kb + 1]*node->Cd*mag_u*node->u2[kb + 1]; // units: kg/m/s^2 (Pa)
+      node->tau_bot = node->rho[kb + 1]*node->Cd*mag_u*node->u2[kb + 1]; // units: kg/m/s^2 (Pa)
    }
 
  
@@ -1994,6 +1936,7 @@ __device__ void computeVegetationAndDragParameters(void) {
    Side *side = FROM kernel;
 
    const double htot = side->htot();
+   const double kb   = side->kb;
 
    assert(htot > 0.0 && "computeVegetationModelParameters: htot <= 0");
 
@@ -2004,7 +1947,8 @@ __device__ void computeVegetationAndDragParameters(void) {
 
    // Compute the drag coefficients chi2 and chi (\tilde\chi in notes) // XXX change names, chi->chitilde, chi2->chi
    // Velocity magnitude at the bottom level
-   const double vmag1 = length(side->u2[side->kb + 1]) // XXX CHECK INDICES
+   // XXXX Check if we have add -dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1) to u2.
+   const double vmag1 = length(side->u2[kb + 1]) BACKTRACKED VELOCITY
    side->chi2 = side->Cd*vmag1 
    side->chi  = side->chi2
    if constexpr(iveg != 0) {
@@ -2022,33 +1966,35 @@ __device__ void computeVegetationAndDragParameters(void) {
    if (iveg != 0 && side->is3D() && veg_h > 0.0) {
       // 3D wet side with veg...
 
-      for (int k = side->kb; k < nvrt - 1; k++) { // XXX CHECK INDICES
-         if (side->HasVegetation(k+1)) { //partial or full SAV layer
+      for (int k = kb; k < nvrt - 1; k++) { // XXX CHECK INDICES
+         if (side->hasVegetation(k + 1)) { //partial or full SAV layer
 
             // Velocity magnitude must be computed at the center of each level to perform the integration.
             // The tricky part is to compute that velocity at the level that may be partially submerged.
             const double zrat = side->zLevelVegRatio(k + 1); // in (0,1]
 
-            // Velocity magnitude at the top of the level (may be partially submerged)
-            const double uTop = length((1.0 - zrat)*side->u2[k] + zrat*side->u2[k+1]);
+            // Velocity magnitude at the top (h) of the level (may be partially submerged)
+            const double uh = length((1.0 - zrat)*side->u2[k] + zrat*side->u2[k + 1]);
 
-            // Velocity magnitude at the bottom of the level
-            const double uBot = length(side->u2[k]);
+            // Velocity magnitude at the bottom (l) of the level
+            const double ul = length(side->u2[k]);
 
-            const double Dz = side->zTopCanopy() - side->zc[k];
-            magUa += Dz*(uTop + uBot)/2.0;
+            const double Dz = zrat*side->Dz(k);  // Takes into account the partially submerged level
+            magUa += Dz*0.5*(uh + ul);
 
          } // if HasVegetation
-      } // for
+      } // for k
       const double ua = magUa/min(htot, veg_h); // Vertical average
 
       // Computes beta, used for computing the stress term at the top of the canopy.
       const double veg_alpha = side->veg_alpha_vert_mean();
       side->veg_c2 = side->veg_alpha*dt*ua; // >=0
       if (side->isSubmerged()) { // 3D wet submergent side with vegetation
+         const double zCpy = side->zTopCanopy();
          const double I = max(1.0e-5, side->chi2*vmag1/(grav*htot)); // Energy gradient
+         const double Dz_veg = veg_h - side->Dz(kb + 1); // Distance from the top of the canopy to the top of the bottom level (equal to side->topOfCanopy() - side->zc[kb + 1])
          const double beta2 = sqrt(sqrt(veg_nv)/veg_h)*(-0.32 - 0.85*log10((htot - veg_h)/veg_h*I))
-         const double beta = exp(beta2*(zctr2 - side->zc[side->kb + 1])) - 1.0; /// XXX CHECK INDICES
+         const double beta = exp(beta2*Dz_veg) - 1.0; /// XXX CHECK INDICES
          side->veg_beta = max(0.0, min(10.0, beta));  // Clamp to [0,10]
       } // if isSubmerged
    } // if iveg   
@@ -2082,15 +2028,11 @@ __device__ void computeVegetationAndDragParameters(void) {
    } // if 3D
 
      
-   // Baroclinic force at side and whole levels
-
-   // bcc=0 !init for 2D cases XXX TEMPORARY???
-
 }
 
 
 
-__device__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int k, const double rho2, Vector2 *vec, double *diffRho) {
+__device__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int j, const int k, const double rho2, Vector2 *vec, double *diffRho) {
 // Computes the density gradient between two elements, e1 and e2.
 // If the neighbor element (e2doesn't exist (boundary or dry element), the density gradient is assumed to be
 // zero in the direction normal to the side. 
@@ -2101,6 +2043,7 @@ __device__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int
 // Input:
 //    e1: Element
 //    e2: Neighbor element (or nullptr if boundary)
+//    j: Index of the neighbor element (and the side of e1 that is shared with e2)
 //    k: Index of the half-level at which the density is interpolated
 //    rho2: De-meaned density at e2 interpolated at the k-th half-level of e1 (or zero if neighbor is dry or not present)
 // 
@@ -2115,7 +2058,7 @@ __device__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int
       assert((side->otherElem(e1) == nullptr || side->otherElem(e1)->idry) && "getRhoDiffAndVec: For boundary elements, side->otherElem(elem) must be nullptr or dry");
               
       if constexpr(ics==1) {
-         vec = side->n();
+         vec = side->n(); // Normal vector to the side
       } else {
          // IMPLEMENT THIS XXXXXX
          // !replace with xel, yel?
@@ -2142,7 +2085,7 @@ __device__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int
          //                   bdia(j)=yctr2
       } // ics
 
-      diffRho = e2->demeanedDensity(k) - rho1;
+      diffRho = rho2 - e1->demeanedDensity(k);
    }
 
 }
@@ -2165,9 +2108,8 @@ __device__ void computeDensityCubicSplines(void) {
       auto getX = [zp             ] __forceinline__ (int k) { return elem->z_prism(k); };
       auto getY = [elem,k,rho_mean] __forceinline__ (int k) { return elem->rho[k] - elem->rho_mean[k]; };
       ///// XXXX CHECK INDICES!!!!!
-      cubicSplineDerivatives(kb, nvrt, getX, getY, 0.0, 0.0, elem->rho_zz, elem->rho_z);
+      initCubicSpline(kb, nvrt, getX, getY, 0.0, 0.0, elem->rho_zz, elem->rho_z);
    } // 2D/3D
-
 
 }
 
@@ -2183,18 +2125,17 @@ __device__ double interpolateDensityAtHalfLevel(Element *elem, Element *elem2, i
    const double zp = elem->z_prism(k);
 
    if (elem2->is2D()) {
-      return elem->rho_z; // Remember that we store the de-meaned density in rho_z for the 2D case.
+      return elem->rho_z[nvrt - 1]; // Remember that we stored the de-meaned density in rho_z for the 2D case.
 
    } else {  // 3D
 
       // eta_min may be < zmax
-      const double eta_min = min(swild(nvrt),  swild2(nvrt,12))
-      const double zmax    = max(swild(kb + 1),swild2(kb + 1,12)) //not really used
-
+      const double eta_min = min(elem->z[nvrt - 1], elem2->z[nvrt - 1])
+      const double zmax    = max(elem->z[kb   + 1], elem2->z[kb   + 1]) ;
 
       // (Extrapolate density below bottom, we will fix it later)
       // NOTE: interpolate densities at elem2 at coordinates from elem.
-      rho = evalCubicSpline(zp, elem->rho_z, elem->rho_zz, elem->demeanedDensity(k), extrapolate=true)
+      rho = evalCubicSpline(zp, elem->rho_z, elem->rho_zz, elem->demeanedDensity(k), extrapolate = true);
       // evalCubicSpline(nvrt-kbe(ie),swild2(kbe(ie)+1:nvrt,12), &
       //      &erho(kbe(ie)+1:nvrt,ie)-rho_mean(kbe(ie)+1:nvrt,ie), &
       //      &hp_int(kbe(ie)+1:nvrt,ie,1),nvrt-kbe(i),swild(kbe(i)+1:nvrt),ibot_fl,zmax,eta_min,swild2(kbe(i)+1:nvrt,j))
@@ -2273,10 +2214,9 @@ __device__ void computeDensityGradient(void) {
          // getRhoDiffAndVec takes into account boundaries/dry elements
          double diffRho1, diffRho2;
          Vector2 vec1, vec2;
-         getRhoDiffAndVec(elem, e1, k, rho1, vec1, diffRho1);
-         getRhoDiffAndVec(elem, e2, k, rho2, vec2, diffRho2);
+         getRhoDiffAndVec(elem, e1, j1, k, rho1, vec1, diffRho1); // We could remove one of these calls, but it would make the code uglier.
+         getRhoDiffAndVec(elem, e2, j2, k, rho2, vec2, diffRho2);
 
-         // If the two vectors are too parallel, the system of equations may be ill-conditioned.
          const double rl1 = length(vec1);
          const double rl2 = length(vec2);
          assert(rl1 > 0.0 && rl2 > 0.0 && "computeDensityInterpolation: one of rl1 or rl2 is 0");
@@ -2290,9 +2230,9 @@ __device__ void computeDensityGradient(void) {
 
          if (validEq) {
             // Solve the system of equations to get the density gradient at elem
-            icount = icount+1
-            const double Rx = (y20*bb1 - y10*bb2)/delta;
-            const double Ry = (x10*bb2 - x20*bb1)/delta;
+            icount++;
+            const double Rx = (vec2.y*diffRho1 - vec1.y*diffRho2)/delta;
+            const double Ry = (vec1.x*diffRho2 - vec2.x*diffRho1)/delta;
             sumRx += Rx;
             sumRy += Ry;
          }
@@ -2327,18 +2267,17 @@ __device__ void computeBaroclinicTerm(double rampbc) {
 
    // interpolates vertically the density gradient of the two elements at the half level/
 
-   // Finds the indices at kb+1 using binary search (this is faster when we don't have a starting index)
+   // Starts the integration at the surface and goes down to the bottom
    int k1 = nvrt - 1;
    int k2 = nvrt - 1;
 
    side->bcc[nvrt-1] = {0.0, 0.0};
-   for (int k = nvrt-1; k > side->kbs; k--) {
-   // For each half level (from surface to bottom)...
+   for (int k = nvrt-1; k >= side->kbs; k--) {
+   // For each prism level (from surface to bottom)...
 
       // For both elements, interpolate density gradient at the side's half level.
       // The gradient at the side is the average of the gradients at the elements.
       // w1, w2 are used to take into account boundary sides, with just one element.
-
       double w1 = (e1!=nullptr) ? 1.0 : 0.0;
       double w2 = (e2!=nullptr) ? 1.0 : 0.0;
       w1 = w1/(w1 + w2);
@@ -2346,19 +2285,20 @@ __device__ void computeBaroclinicTerm(double rampbc) {
 
       assert(w1 + w2 > 0.99 && w1 + w2 < 1.01 && "computeSideDensityGradient: w1 + w2 is not 1");
 
+      // Linear interpolation of both elements' density gradient at the shared side's level.
       Vector2 gradRho = {0.0, 0.0};
-      if (e1 != nullptr) {
+      if (e1 != nullptr && k > kb) {
+         // XXXX WHAT HAPPENS IF k1 < kb??? (check ibelow)
          k1 = e1->findLevel(side->z[k], k1); // finds the index at the half level starting the search at k1
-         const double zrat = (side->z[k] - e1->z[k1])/(e1->z[k1+1] - e1->z[k1]);
+         const double zrat = (side->z[k] - e1->z[k1])/(e1->z[k1 + 1] - e1->z[k1]);
          
-         gradRho += (e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1+1]*zrat)*w1;
-      }
-      
-      if (e2 != nullptr) {
+         gradRho += (e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1 + 1]*zrat)*w1;
+      }      
+      if (e2 != nullptr && k > kb) {
          k2 = e2->findLevel(side->z[k], k2); // finds the index at the half level starting the search at k2
-         const double zrat = (side->z[k] - e2->z[k2])/(e2->z[k2+1] - e2->z[k2]);
+         const double zrat = (side->z[k] - e2->z[k2])/(e2->z[k2 + 1] - e2->z[k2]);
          
-         gradRho += (e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2+1]*zrat)*w2;
+         gradRho += (e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat)*w2;
       }
 
       if constexpr(ics==2) {
@@ -2367,14 +2307,12 @@ __device__ void computeBaroclinicTerm(double rampbc) {
          // swild(1)=tmp1
          // swild(2)=tmp2
       }
-
-
-      const double grav3 = 0.5*(side->n1->grav2 + side->n2->grav2);
-      // Integrate (using trapezoidal rule) the density gradient from the surface to the bottom 
+      
+      // Integrate (using a central Gauss point) the density gradient from the surface to the bottom 
       // multiplied by -rampbc*(g/rho0)  (In ll if ics=2)
-
       // CHECK INDICES!!! XXX
-      side->bcc[k - 1] = side->bcc[k] - ((rampbc*grav3/rho0)*(side->zc[k + 1] - side->zc[k]))*gradRho;
+      const double grav3 = 0.5*(side->n1->grav2 + side->n2->grav2);
+      side->bcc[k] = side->bcc[k + 1] - (rampbc*grav3/rho0)*side->Dz(k + 1)*gradRho;
    } // for
 
 }
@@ -2418,11 +2356,11 @@ __device__ void computeVerticalAdvection(void) {
    
    double top_duw_dz = (ws[nvrt - 1]*side->u2[nvrt] - ws[nvrt - 1]*side->u2[nvrt - 1])/(side->z[nvrt - 1] - side->z[nvrt - 2])
    double bot_duw_dz = (ws[kbs     ]*side->u2[kbs ] - ws[kbs     ]*side->u2[kbs  - 1])/(side->z[kbs ] - side->z[kbs  - 1])
-   cubicSplineDerivatives(kbs, nvrt, side, ws, up)
+   initCubicSpline(kbs, nvrt, side, ws, up)
 
    double top_dvw_dz = (ws[nvrt - 1]*side->v2[nvrt] - ws[nvrt - 1]*side->v2[nvrt - 1])/(side->z[nvrt - 1] - side->z[nvrt - 2])
    double bot_dvw_dz = (ws[kbs     ]*side->v2[kbs ] - ws[kbs     ]*side->v2[kbs  - 1])/(side->z[kbs ] - side->z[kbs  - 1])
-   cubicSplineDerivatives(kbs, nvrt, side, ws, vp)
+   initCubicSpline(kbs, nvrt, side, ws, vp)
 
    // Total advection (average onto side)
    const Node *node1 = side->nodes[0];
@@ -2444,34 +2382,8 @@ __device__ void computeVerticalAdvection(void) {
    }
 }
 #endif
-!      call exchange_s3d_4(sdbt)
-      allocate(swild96(2,nvrt,nsa),stat=istat)
-      if(istat/=0) call parallel_abort('MAIN: fail to allocate swild96 (3.4)')
-      swild96=sdbt(1:2,:,:)
-      call exchange_s3d_2(swild96)
-      sdbt(1:2,:,:)=swild96
-      deallocate(swild96)
 
-#ifdef INCLUDE_TIMING
-      wtimer(4,2)=wtimer(4,2)+mpi_wtime()-cwtmp
-#endif
-
-!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-      endif !ELM or upwind
-
-#ifdef TIMER2
-      tmp=mpi_wtime()
-      write(12,*)'Time taken for mom advection=',tmp-cwtmp3,it
-      cwtmp3=tmp !reset
-#endif
-
-      if(itransport_only==0) then
-
-}
-
-
-
-__device__ void computeElemAverageGhat1(void) {
+__device__ void computeElemAverageGhat(void) {
 // Element average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimensions: m^2/s.
 
    Element *elem = FROM kernel;
@@ -2677,16 +2589,16 @@ __device__ void computeElemAverageGhat1(void) {
    const Vector2 fb = grav3*gradP - gradPr/rho0 //const in each elem
 
 
-   tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
+   Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
    for (int j=1; j<i34; j++) { 
       // For each side in the element...
-      Side *side = elem->sides[j];
+      const Side *side = elem->sides[j];
 
       const double htot = side->htot();
       const double F  = htot*fb;
       const double Fa = min(htot, veg_h)*fb;
 
-      tmp += av_cff1*dt*F - av_cff2*chi*dt*dt*fb - av_cff3*dt*Fa;
+      tmp += dt*(av_cff1*F - av_cff2*chi*dt*fb - av_cff3*Fa);
    } // for j
 
    //botf1 etc are already in elem frame
@@ -2694,21 +2606,22 @@ __device__ void computeElemAverageGhat1(void) {
 
    // Baroclinic force
    if constexpr(ibc==0) {
-      assert(prho(1,elnode(1,i))>= -98.d0 && prho(1,elnode(2,i))>= -98.d0 && prho(1,elnode(3,i))>= -98.d0 && "Impossible dry 5");
+      assert(elem->nodes[0]->rho >= -98.d0 && elem->nodes[1]->rho >= -98.d0 && elem->nodes[2]->rho >= -98.d0 && "computeElemAverageGhat1: Impossible dry");
+
+      Vector2 Fa = {0.0, 0.0};
+      Vector2 intGradRho = {0.0, 0.0};
       
-      // swild2(k,:) = \sum_{l=k}^N dr*dz; whole level (and eframe if ics=2)
-      swild2[nvrt-1,1:2]=0.d0
-      for (int k=nvrt-2; k>elem->kbe; k--) { /// XXXX CHECK INDICES
-         // dr_dxy is grad(rho)
-         swild2(k,1:2)=swild2(k+1,1:2)+dr_dxy(1:2,k+1,i)*(ze(k+1,i)-ze(k,i)) 
+      // \sum_{l=k}^N dr*dz; whole level (and eframe if ics=2)
+      for (int k=nvrt-2; k > kb + 1; k--) { /// XXXX CHECK INDICES
+         intGradRho += elem->gradRho[k+1]*elem->Dz(k+1); 
+
+         // \in F [m^2/s/s]
+         Fa -= grav3/rho0*elem->Dz(k)*(2.0*intGradRho + elem->gradRho[k]*elem->Dz(k));
       }
-      swild(1:2)=0.d0 !\in F [m^2/s/s]
-      for (int k=side->kb; k<nvrt; k++) {
-         swild(1:2) -= grav3/rho0*(side->Dz(k)*(2.d0*swild2(k,1:2)+dr_dxy(1:2,k,i)*side->Dz(k))
-      }
-      fb = -grav3/rho0*swild2(kbe(i)+1,1:2) //[m/s/s]; elem average
-      Fa = av_df*swild(1:2) //approx
-      elem->ghat1 += rampbc*dt*av_cff1*swild(1) - rampbc*dt*dt*av_cff2_chi*fb- rampbc*av_cff3*dt*Fa;
+
+      const Vector2 fb = -grav3/rho0*intGradRho; //[m/s/s]; elem average
+      const Vector2 F = av_df*Fa; //approx
+      elem->ghat1 += rampbc*dt*(av_cff1*F - dt*av_cff2_chi*fb - av_cff3*Fa);
 
    } // if ibc
 
@@ -2743,6 +2656,8 @@ __global__ void checkMassConservation(Tracers* sumtr) {
          sumtr[i].tracer[tr] += vol * elem->tracers[k].tracer[tr];
       }
    }
+
+   
 
    //  This function returns per element sums. A reduction must be done on the host side.
 }
