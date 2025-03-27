@@ -9,6 +9,7 @@ import cupy as cp
 from iop.logger import *
 from iop.readNamelist import readNamelist, readParam
 from python.schism_consts import *
+from python.schism_consts import *
 
 
 

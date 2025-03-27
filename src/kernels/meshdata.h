@@ -7,6 +7,7 @@ constexpr int ics = 1;   // 1: global, 2: local
 constexpr int ihh = 1;   // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int imm = 0;   // Option to pre-compute vnorm on the element
 constexpr int iveg = 0;  // Vegetation option, 0: no vegetation, 1: vegetation
+constexpr int ihhat = 1; // Option to limit \hat{H} to enhance stability for large friction in shallow area
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
 
@@ -319,7 +320,7 @@ struct Element {
    Node *nodes[4];        // Nodes of the element
    Element *nghbElems[4]; // Neighbors of the element
 
-   
+   int kb;                    // Bottom index of the element
    double area;               // Area of the element
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
@@ -348,9 +349,16 @@ struct Element {
 
    double vsource;            // Volumetric source/sink term [m^3/s]
 
+   double rho[nvrt];          // Density at each prism center
+   double rho_mean[nvrt];     // Mean density at each prism center
+
+   __inline__ __device__ double demeanedDensity(int k) const { return rho[k] - rho_mean[k]; }   
 
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
+
+   __inline__ __device__ bool is2D(void) const { return kb == nvrt - 1; }
+   __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
 
    __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
    __inline__ __device__ int nodeLocalIdx(Node *node) const { 
@@ -455,6 +463,37 @@ struct Element {
 
    }      
 
+   template<typename T>
+   __device__ void getSideValues(T Side::* field, T res[4]) const {
+      // Get the values of the field at the nodes of the element
+      res[0] = sides[0]->*field;
+      res[1] = sides[1]->*field;
+      res[2] = sides[2]->*field;
+      if (isQuad()) res[3] = sides[3]->*field;
+      else          res[3] = T();
+   }
+
+   template<typename T>
+   __device__ void getSideValues(int level, T (Side::* field)[nvrt], T res[4]) const {
+      // Get the values of the field at the nodes of the element
+      res[0] = (sides[0]->*field)[level];
+      res[1] = (sides[1]->*field)[level];
+      res[2] = (sides[2]->*field)[level];
+      if (isQuad()) res[3] = (sides[3]->*field)[level];
+      else          res[3] = T();
+   }    
+
+   template<typename T>
+   __device__ void getSideValues(int level, T (Side::*func)(int) const, T res[4]) const {
+      // Get the values of the func at the nodes of the element
+      res[0] = (sides[0]->*func)(level);
+      res[1] = (sides[1]->*func)(level);
+      res[2] = (sides[2]->*func)(level);
+      if (isQuad()) res[3] = (sides[3]->*func)(level);
+      else          res[3] = T();  // This is 0.0 or a zero vector
+
+   }      
+
 
    __device__ double interpolate(int level, const double shapeCoords[4], double (Node::*func)(int) const) const {
       double values[4];
@@ -484,9 +523,17 @@ struct Element {
    __device__ T mean(T Node::* field) const {
       T values[4];
       getNodalValues(field, values);
-      
+
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }
+
+   template<typename T>
+   __device__ T mean(T Side::* field) const {
+      T values[4];
+      getSideValues(field, values);
+      
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }   
 
    // __device__ double mean(double (Node::*func)(int) const) const {
    //    double values[4];
@@ -546,7 +593,6 @@ struct Side {
 
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
-
    
    int kb;                // Bottom index of the side
    bool idry;             // True if the side is dry
@@ -560,9 +606,17 @@ struct Side {
    Vector2 uth[nvrt];           // "Time history" velocity
    Vector2 U;                   // Vertically averaged velocity vector   
 
+   double hhat;                 // \breve{H} in notes
+
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
+   // Vegetation parameters
    double veg_c2;
+   double veg_beta;
+
+   // Bottom drag parameters.
+   double chi;
+   double chi2;
 
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
@@ -581,8 +635,9 @@ struct Side {
    __inline__ __device__ double eta2(void) const;
    __inline__ __device__ double htot(void) const { return eta2() + depth; }
 
-   __inline__ __device__ double veg_h(void) const;
+   __inline__ __device__ double veg_h(void)  const;
    __inline__ __device__ double veg_nv(void) const;
+   __inline__ __device__ double veg_alpha_vert_mean(void) const;
    __inline__ __device__ double veg_c(void)  const { return veg_c2/(1.0 + veg_c2); }
 
    __inline__ __device__ double Cd(void) const;
@@ -598,7 +653,7 @@ struct Side {
       return max(0.0, min(1.0, (zTopCanopy() - zc[k-1])/Dz(k))); 
    } 
    __inline__ __device__ bool hasVegetation(int k) const { return zTopCanopy() > zc[k]; }
-   __inline__ __device__ bool isSubmerged(int k) const { return veg_h() < 0.99*htot(); }
+   __inline__ __device__ bool isSubmerged(void)    const { return veg_h() < 0.99*htot(); }
    __inline__ __device__ bool is2D(void) const { return kb == nvrt - 1; }
    __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
 
@@ -633,7 +688,7 @@ struct Side {
  
    }
 
-   __forceinline__ __device__ Element* otherElement(Element* elem) {
+   __forceinline__ __device__ Element* otherElem(const Element* elem) {
       // Given an element, returns the other element that shares this side
       return (elems[0] == elem) ? elems[1] : elems[0];
    }
@@ -655,6 +710,7 @@ struct Side {
 // This struct is used to store the boundary information for a node.
 struct NodeBoundary {   
    BoundarySegment *segment;
+   Node *node;
    
    SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
@@ -705,8 +761,7 @@ struct Node {
    
    double pr;    // Air pressure
    double grav2; // Gravity 
-   double hhat;  // \breve{H} in notes
-
+   
    Vector2 dav;  // Depth averaged velocity
 
    Vector2 tau; // Wind stress vector

@@ -14,14 +14,14 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
 from iop.cudamodule import CudaSourceManager
 from python.schism_init import schism_init
-
-# tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
-tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+from python.schism_consts import *
+tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -152,9 +152,13 @@ if __name__ == "__main__":
 
 
 
-    
-    namelist = schism_init('/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE')
+    # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+    test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
+    namelist = schism_init(test_dir)
+
+    from iop.readTides import read_bctides
+    bctides = read_bctides(test_dir, 4, 89, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
 
     # Test the module
     import cupy as cp

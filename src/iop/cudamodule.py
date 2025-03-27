@@ -192,6 +192,7 @@ class CudaSourceManager:
                     
                     # Determine if this is a warning or error
                     is_warning = "warning" in error_text.lower()
+                    is_error = "error" in error_text.lower()
                     message_type = f"{Colors.YELLOW}Warning{Colors.RESET}" if is_warning else f"{Colors.RED}Error{Colors.RESET}"
                     color_prefix = Colors.YELLOW if is_warning else Colors.RED
                     
