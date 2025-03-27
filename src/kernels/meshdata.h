@@ -2,12 +2,15 @@
 // XXX: Pure constants that are to be set before compiling the code
 constexpr int N_TRACERS = 2;
 
-constexpr int ivcor = 2; // Vertical coordinate system
-constexpr int ics = 1;   // 1: global, 2: local
-constexpr int ihh = 1;   // Option to limit \hat{H} to enhance stability for large friction in shallow area
-constexpr int imm = 0;   // Option to pre-compute vnorm on the element
-constexpr int iveg = 0;  // Vegetation option, 0: no vegetation, 1: vegetation
-constexpr int ihhat = 1; // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int ivcor = 2;       // Vertical coordinate system
+constexpr int ics = 1;         // 1: global, 2: local
+constexpr int ihh = 1;         // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int imm = 0;         // Option to pre-compute vnorm on the element
+constexpr int iveg = 0;        // Vegetation option, 0: no vegetation, 1: vegetation
+constexpr int ihhat = 1;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int ihydraulics = 0; // Option of including hydraulics
+constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
+constexpr int ibc = 1;         // Option to include baroclinic term (0 means yes)
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
 
@@ -21,6 +24,15 @@ constexpr double prmsl_ref = 101325.0; // Reference pressure for inverse baromet
 
 constexpr double veg_lai = 1.0; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
+
+constexpr int ntip = 1;            // Number of tidal potential components
+constexpr double tip_dp = 1.0e6;   // cut-off depth for applying tidal potential
+
+constexpr int iunder_deep = 0;     // Option of under-deep methods
+constexpr double h1_bcc   = 50.0;  // Parameters for under-deep methods
+constexpr double h2_bcc   = 100.0; 
+constexpr double hw_depth = 1.0e6; 
+constexpr double hw_ratio = 0.5;
 
 constexpr int nvrt = 54; // Number of vertical levels
 constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
@@ -74,11 +86,11 @@ __device__ __host__ __forceinline__ double2 operator-(const double2& a, const do
     return make_double2(a.x - b.x, a.y - b.y);
 }
 
-__device__ __host__ __forceinline__ double2 operator*(const double2& v, double s) {
+__device__ __host__ __forceinline__ double2 operator*(const double2& v, const double s) {
     return make_double2(v.x * s, v.y * s);
 }
 
-__device__ __host__ __forceinline__ double2 operator*(double s, const double2& v) {
+__device__ __host__ __forceinline__ double2 operator*(const double s, const double2& v) {
     return v * s;  // reuse the previous operator
 }
 
@@ -342,15 +354,22 @@ struct Element {
    // Physical information
    Tracers tracers[nvrt];     // Tracer values at each vertical level  
 
+   static const bool isblock = false;              // Always false
+
    double w[nvrt];            // Vertical velocity at element centers & whole levels, calculated using F.V.M. 
                               // For hydrostatic model, this is the same as we(); for non-hydrostatic model, this is only used in upwind transport
 
    Vector2 ghat1;             // Element averaged ghat (\breve{G} in notes)
 
+   
+
    double vsource;            // Volumetric source/sink term [m^3/s]
 
    double rho[nvrt];          // Density at each prism center
    double rho_mean[nvrt];     // Mean density at each prism center
+   double rho_zz[nvrt];       // Second derivative of density at each prism center
+   double rho_z[nvrt];        // First derivative of density at each prism center
+   Vector2 gradRho[nvrt];     // Gradient of de-meaned density at each prism center
 
    __inline__ __device__ double demeanedDensity(int k) const { return rho[k] - rho_mean[k]; }   
 
@@ -365,6 +384,27 @@ struct Element {
       int res = (nodes[0] == node) ? 0 : ((nodes[1] == node) ? 1 : ((nodes[2] == node) ? 2 : 3)); 
       assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
       return res;
+   }
+
+   __inline__ __device__ int findLevel(double z1, int k) const {
+      // Starting at index k, find sequentially the level that contains z
+
+      // if z is alreaf betweeen z[k] and z[k+1], return k
+      if (z1 >= z[k] && z1 < z[k+1]) return k;
+      else if (z1 < z[k]) { 
+         // Search for increasing levels
+         for (int kk = k; kk < nvrt - 1; kk++) {
+            if (z1 >= z[kk] && z1 < z[kk + 1]) return kk;
+         }
+         return nvrt - 1;
+      }
+      else {
+         // Search for decreasing levels
+         for (int kk = k; kk > 0; kk--) {
+            if (z1 >= z[kk] && z1 < z[kk + 1]) return kk;
+         }
+         return 0;
+      }
    }
 
    __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
@@ -604,11 +644,15 @@ struct Side {
    double  w2[nvrt];            // Vertical velocity at each vertical level
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 uth[nvrt];           // "Time history" velocity
-   Vector2 U;                   // Vertically averaged velocity vector   
+   Vector2 U;                   // Vertically averaged velocity vector  
+
+   Vector2 bcc[nvrt];           // Baroclinic term
 
    double hhat;                 // \breve{H} in notes
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
+
+   double coriolis;             // Coriolis parameter
 
    // Vegetation parameters
    double veg_c2;
@@ -757,6 +801,8 @@ struct Node {
 
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
+
+   double etp;  // Earth Tidal Potential
 
    
    double pr;    // Air pressure

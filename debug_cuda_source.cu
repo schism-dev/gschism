@@ -3,12 +3,15 @@
 // XXX: Pure constants that are to be set before compiling the code
 constexpr int N_TRACERS = 2;
 
-constexpr int ivcor = 2; // Vertical coordinate system
-constexpr int ics = 1;   // 1: global, 2: local
-constexpr int ihh = 1;   // Option to limit \hat{H} to enhance stability for large friction in shallow area
-constexpr int imm = 0;   // Option to pre-compute vnorm on the element
-constexpr int iveg = 0;  // Vegetation option, 0: no vegetation, 1: vegetation
-constexpr int ihhat = 1; // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int ivcor = 2;       // Vertical coordinate system
+constexpr int ics = 1;         // 1: global, 2: local
+constexpr int ihh = 1;         // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int imm = 0;         // Option to pre-compute vnorm on the element
+constexpr int iveg = 0;        // Vegetation option, 0: no vegetation, 1: vegetation
+constexpr int ihhat = 1;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int ihydraulics = 0; // Option of including hydraulics
+constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
+constexpr int ibc = 1;         // Option to include baroclinic term (0 means yes)
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
 
@@ -22,6 +25,15 @@ constexpr double prmsl_ref = 101325.0; // Reference pressure for inverse baromet
 
 constexpr double veg_lai = 1.0; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
+
+constexpr int ntip = 1;            // Number of tidal potential components
+constexpr double tip_dp = 1.0e6;   // cut-off depth for applying tidal potential
+
+constexpr int iunder_deep = 0;     // Option of under-deep methods
+constexpr double h1_bcc   = 50.0;  // Parameters for under-deep methods
+constexpr double h2_bcc   = 100.0; 
+constexpr double hw_depth = 1.0e6; 
+constexpr double hw_ratio = 0.5;
 
 constexpr int nvrt = 54; // Number of vertical levels
 constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
@@ -75,11 +87,11 @@ __device__ __host__ __forceinline__ double2 operator-(const double2& a, const do
     return make_double2(a.x - b.x, a.y - b.y);
 }
 
-__device__ __host__ __forceinline__ double2 operator*(const double2& v, double s) {
+__device__ __host__ __forceinline__ double2 operator*(const double2& v, const double s) {
     return make_double2(v.x * s, v.y * s);
 }
 
-__device__ __host__ __forceinline__ double2 operator*(double s, const double2& v) {
+__device__ __host__ __forceinline__ double2 operator*(const double s, const double2& v) {
     return v * s;  // reuse the previous operator
 }
 
@@ -343,15 +355,22 @@ struct Element {
    // Physical information
    Tracers tracers[nvrt];     // Tracer values at each vertical level  
 
+   static const bool isblock = false;              // Always false
+
    double w[nvrt];            // Vertical velocity at element centers & whole levels, calculated using F.V.M. 
                               // For hydrostatic model, this is the same as we(); for non-hydrostatic model, this is only used in upwind transport
 
    Vector2 ghat1;             // Element averaged ghat (\breve{G} in notes)
 
+   
+
    double vsource;            // Volumetric source/sink term [m^3/s]
 
    double rho[nvrt];          // Density at each prism center
    double rho_mean[nvrt];     // Mean density at each prism center
+   double rho_zz[nvrt];       // Second derivative of density at each prism center
+   double rho_z[nvrt];        // First derivative of density at each prism center
+   Vector2 gradRho[nvrt];     // Gradient of de-meaned density at each prism center
 
    __inline__ __device__ double demeanedDensity(int k) const { return rho[k] - rho_mean[k]; }   
 
@@ -366,6 +385,27 @@ struct Element {
       int res = (nodes[0] == node) ? 0 : ((nodes[1] == node) ? 1 : ((nodes[2] == node) ? 2 : 3)); 
       assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
       return res;
+   }
+
+   __inline__ __device__ int findLevel(double z1, int k) const {
+      // Starting at index k, find sequentially the level that contains z
+
+      // if z is alreaf betweeen z[k] and z[k+1], return k
+      if (z1 >= z[k] && z1 < z[k+1]) return k;
+      else if (z1 < z[k]) { 
+         // Search for increasing levels
+         for (int kk = k; kk < nvrt - 1; kk++) {
+            if (z1 >= z[kk] && z1 < z[kk + 1]) return kk;
+         }
+         return nvrt - 1;
+      }
+      else {
+         // Search for decreasing levels
+         for (int kk = k; kk > 0; kk--) {
+            if (z1 >= z[kk] && z1 < z[kk + 1]) return kk;
+         }
+         return 0;
+      }
    }
 
    __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
@@ -605,11 +645,15 @@ struct Side {
    double  w2[nvrt];            // Vertical velocity at each vertical level
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 uth[nvrt];           // "Time history" velocity
-   Vector2 U;                   // Vertically averaged velocity vector   
+   Vector2 U;                   // Vertically averaged velocity vector  
+
+   Vector2 bcc[nvrt];           // Baroclinic term
 
    double hhat;                 // \breve{H} in notes
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
+
+   double coriolis;             // Coriolis parameter
 
    // Vegetation parameters
    double veg_c2;
@@ -758,6 +802,8 @@ struct Node {
 
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
+
+   double etp;  // Earth Tidal Potential
 
    
    double pr;    // Air pressure
@@ -2539,7 +2585,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 
    assert(n >= 1       && "TRIDAG: n must be >= 1");
    assert(nc <= nvec   && "TRIDAG: Increase number of columns");
-   assert(b[0] != 0.d0 && "TRIDAG: b[0]=0");
+   assert(b[0] != 0.0  && "TRIDAG: b[0]=0");
 
    double bet = b[0];
    if constexpr (nc == 1) {
@@ -2552,7 +2598,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
       gam[j] = c[j-1]/bet;
       bet = b[j] - a[j]*gam[j];
 
-      assert (bet!=0.d0 && "TRIDIAGONAL SOLVER: bet=0");
+      assert (bet != 0.0 && "TRIDIAGONAL SOLVER: bet=0");
 
       if constexpr (nc == 1) {
          u[j] = (rhs[j] - a[j]*u[j - 1])/bet;
@@ -2576,11 +2622,18 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 }
 
 
+struct CubicSpline { 
+   double *x;
+   double *y;
+   double *yp;
+   double *ypp;
+};
+
 // Helper function that contains the core algorithm
 template<typename XAccessor, typename YAccessor>
 __device__ void initCubicSplineImpl(int k1, int k2, XAccessor getX, YAccessor getY, 
-                                           double yp_top, double yp_bot, 
-                                           double *yp_out, double *ypp_out) {
+                                    double  yp_top, double  yp_bot, 
+                                    CubicSpline &spline) {
    // Compute the 1st and 2nd derivatives of y = f(x) using continuous cubic splines.
    // 
    // This function uses the General expression for a C2 interpolating cubic spline (search for "C2 interpolating cubic spline" in Wikipedia)
@@ -2596,49 +2649,65 @@ __device__ void initCubicSplineImpl(int k1, int k2, XAccessor getX, YAccessor ge
    //            ypp[n]: 2nd derivatives used in interpolation.
    //             yp[n]: 1st derivatives 
 
-   assert(n >= 2 && "CUBIC SPLINE: n < 2");
 
    const int n = k2 - k1 + 1;
-   double a[n];   // Lower diagonal
-   double b[n];   // Diagonal
-   double c[n];   // Upper diagonal
-   double gam[n]; // Gamma, used by the tridiagonal solver
-   double rhs[n]; // Right-hand side
+   assert(n >= 2 && "CUBIC SPLINE: n < 2");
 
-   for (int k=k1; k<=k2; k++) {
-      if (k == k1) {
-         // Bottom level
-         assert(getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: bottom problem");
-         b[k] = (getX(k+1) - getX(k))/3.0;
-         c[k] = b[k]/2.0;
-         rhs[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - yp_bot;
-      } else if (k == n - 1) {
-         // Top level (surface)
-         assert(getX(k) - getX(k-1) != 0.0 && "CUBIC SPLINE: surface problem");
-         b[k] = (getX(k) - getX(k-1))/3.0;
-         a[k] = b[k]/2.0;
-         rhs[k] = -(getY(k) - getY(k-1))/(getX(k) - getX(k-1)) + yp_top;
-      } else {
-         // Intermediate levels
-         assert(getX(k) - getX(k-1) != 0.0 && getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: middle problem");
-         b[k] = (getX(k+1) - getX(k-1))/3.0;
-         a[k] = (getX(k  ) - getX(k-1))/6.0;
-         c[k] = (getX(k+1) - getX(k  ))/6.0;
-         rhs[k] = (getY(k+1) - getY(k  ))/(getX(k+1) - getX(k  )) - 
-                  (getY(k  ) - getY(k-1))/(getX(k  ) - getX(k-1));
+   double *a = nullptr;
+   double *b = nullptr;
+   double *c = nullptr;
+   double *gam = nullptr;
+   double *rhs = nullptr;
+   
+   try {
+       a = new double[n];   // Lower diagonal
+       b = new double[n];   // Diagonal
+       c = new double[n];   // Upper diagonal
+       gam = new double[n]; // Gamma, used by the tridiagonal solver
+       rhs = new double[n]; // Right-hand side
+
+      for (int k=k1; k<=k2; k++) {
+         if (k == k1) {
+            // Bottom level
+            assert(getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: bottom problem");
+            b[k] = (getX(k+1) - getX(k))/3.0;
+            c[k] = b[k]/2.0;
+            rhs[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - yp_bot;
+         } else if (k == n - 1) {
+            // Top level (surface)
+            assert(getX(k) - getX(k-1) != 0.0 && "CUBIC SPLINE: surface problem");
+            b[k] = (getX(k) - getX(k-1))/3.0;
+            a[k] = b[k]/2.0;
+            rhs[k] = -(getY(k) - getY(k-1))/(getX(k) - getX(k-1)) + yp_top;
+         } else {
+            // Intermediate levels
+            assert(getX(k) - getX(k-1) != 0.0 && getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: middle problem");
+            b[k] = (getX(k+1) - getX(k-1))/3.0;
+            a[k] = (getX(k  ) - getX(k-1))/6.0;
+            c[k] = (getX(k+1) - getX(k  ))/6.0;
+            rhs[k] = (getY(k+1) - getY(k  ))/(getX(k+1) - getX(k  )) - 
+                     (getY(k  ) - getY(k-1))/(getX(k  ) - getX(k-1));
+         }
       }
+
+      // Solve the tridiagonal system
+      tridag_sch<1>(n, a, b, c, rhs, spline.ypp, gam);
+      
+      spline.yp[k1] = yp_bot;
+      spline.yp[k2] = yp_top;
+
+       // Compute rest of 1st derivatives using the splines
+       for (int k=k1+1; k<k2; k++) {
+           spline.yp[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - 
+                          (getX(k+1) - getX(k))/6.0*(2.0*spline.ypp[k] + spline.ypp[k+1]);
+       }
    }
-
-   // Solve the tridiagonal system
-   tridag_sch<1>(n, a, b, c, rhs, ypp_out, gam);
-    
-   yp_out[k1] = yp_bot;
-   yp_out[k2] = yp_top;
-
-   // Compute rest of 1st derivatives using the splines
-   for (int k=k1+1; k<k2; k++) {
-      yp_out[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - 
-                  (getX(k+1) - getX(k))/6.0*(2.0*ypp_out[k] + ypp_out[k+1]);
+   finally {
+       delete[] a;
+       delete[] b;
+       delete[] c;
+       delete[] gam;
+       delete[] rhs;
    }
 }
 
@@ -2657,6 +2726,12 @@ __device__ void initCubicSpline(int k1, int k2, XFunc getX, YFunc getY,
                                        double y_top, double y_bot,
                                        double *yp_out, double *ypp_out) {
    initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+}
+
+
+__device__ void evalCubicSpline(CubicSpline spline, double z, bool extrapolate = false)
+{
+   assert("Not implemented");
 }
 
 // __device__ void vertLinearInterp(int nc, double zt, int k1, int k2, double *za, double *s_in, double *s_out, int *ibelow) {
@@ -2979,7 +3054,7 @@ __device__ void computeBottomDragVegetation(void) {
       double sum1=0.0;
       double sum2=0.0;
       // Integrate over each level under the canopy...
-      for (int k=kb; k<nvrt-1 && node->znl[k+1] <= zztop; k++) { /// XXX CHECK INDICES
+      for (int k=kb; k<nvrt-1 && node->znl[k+1] <= ztop; k++) { /// XXX CHECK INDICES
          const double Dz = node->Dz(k);
 
          sum1 += 0.5*(node->veg_alpha3D[k] + node->veg_alpha3D[k+1])*Dz;
@@ -3181,7 +3256,7 @@ __device__ void computeDensityCubicSplines(void) {
 
 }
 
-__device__ double interpolateDensityAtHalfLevel(Element *elem, Element *elem2, int k, double &rho) {
+__device__ double interpolateDensityAtHalfLevel(const Element *elem, const Element *elem2, int k) {
 // Interpolates the de-meaned density of elem2 at the same z coordinate as the k half-level of elem.
 
    if (elem2 == nullptr || elem2->idry) return 0.0;
@@ -3191,6 +3266,8 @@ __device__ double interpolateDensityAtHalfLevel(Element *elem, Element *elem2, i
 
    // z-coordinate of prism of elem
    const double zp = elem->z_prism(k);
+
+   double rho = 0.0;
 
    if (elem2->is2D()) {
       return elem->rho_z[nvrt - 1]; // Remember that we stored the de-meaned density in rho_z for the 2D case.
@@ -3221,7 +3298,7 @@ __device__ double interpolateDensityAtHalfLevel(Element *elem, Element *elem2, i
 
       if (iunder_deep==0) {
 
-         const double weight = max(0.0, min(1.0, (depth1 - elem->h1_bcc)/(elem->h2_bcc - elem->h1_bcc))); // weight
+         const double weight = max(0.0, min(1.0, (depth1 - h1_bcc)/(h2_bcc - h1_bcc))); // weight
 
          rho = (1.0 - weight)*rho + weight*elem->demeanedDensity(k);
 
@@ -3232,11 +3309,13 @@ __device__ double interpolateDensityAtHalfLevel(Element *elem, Element *elem2, i
          if (depth1 >= hw_depth && diffDepth >= hw_ratio*depth1) {
 
          //   Demeaned density at the same z coordinate as
-               rho = elem->demeanedDensity(k) // would make cupp() below=0
+               rho = elem->demeanedDensity(k); // would make cupp() below=0
          }
 
       } // if iunder_deep
    } // if elem->z[kb] < elem2->z[kb]
+
+   return rho;
 }
 
 __device__ void computeDensityGradient(void) {
@@ -3271,8 +3350,8 @@ __device__ void computeDensityGradient(void) {
          const int j2 = elem->nxq(j1 + 1);
 
          // Pairs of consecutive neighbor elements of elem
-         const Element *e1 = elem->elems[j1];
-         const Element *e2 = elem->elems[j2];
+         const Element *e1 = elem->nghbElems[j1];
+         const Element *e2 = elem->nghbElems[j2];
 
          // Using cubic splines, interpolate demeaned density difference at the same z half-levels as elem.
          const double rho1 = interpolateDensityAtHalfLevel(elem, e1, k);
@@ -3327,8 +3406,8 @@ __device__ void computeBaroclinicTerm(double rampbc) {
 
    if (side->idry == 1) return;
 
-   const Element *e1 = side->elements[0];
-   const Element *e2 = side->elements[1];      
+   const Element *e1 = side->elems[0];
+   const Element *e2 = side->elems[1];      
    const int kb = side->kb;
    
    assert(e1 != nullptr || e2 != nullptr && "computeSideDensityGradient: side has no elements");
@@ -3340,7 +3419,7 @@ __device__ void computeBaroclinicTerm(double rampbc) {
    int k2 = nvrt - 1;
 
    side->bcc[nvrt-1] = {0.0, 0.0};
-   for (int k = nvrt-1; k >= side->kbs; k--) {
+   for (int k = nvrt-1; k >= kb; k--) {
    // For each prism level (from surface to bottom)...
 
       // For both elements, interpolate density gradient at the side's half level.
@@ -3357,14 +3436,14 @@ __device__ void computeBaroclinicTerm(double rampbc) {
       Vector2 gradRho = {0.0, 0.0};
       if (e1 != nullptr && k > kb) {
          // XXXX WHAT HAPPENS IF k1 < kb??? (check ibelow)
-         k1 = e1->findLevel(side->z[k], k1); // finds the index at the half level starting the search at k1
-         const double zrat = (side->z[k] - e1->z[k1])/(e1->z[k1 + 1] - e1->z[k1]);
+         k1 = e1->findLevel(side->zc[k], k1); // finds the index at the half level starting the search at k1
+         const double zrat = (side->zc[k] - e1->z[k1])/(e1->z[k1 + 1] - e1->z[k1]);
          
          gradRho += (e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1 + 1]*zrat)*w1;
       }      
       if (e2 != nullptr && k > kb) {
-         k2 = e2->findLevel(side->z[k], k2); // finds the index at the half level starting the search at k2
-         const double zrat = (side->z[k] - e2->z[k2])/(e2->z[k2 + 1] - e2->z[k2]);
+         k2 = e2->findLevel(side->zc[k], k2); // finds the index at the half level starting the search at k2
+         const double zrat = (side->zc[k] - e2->z[k2])/(e2->z[k2 + 1] - e2->z[k2]);
          
          gradRho += (e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat)*w2;
       }
@@ -3459,7 +3538,7 @@ __device__ void computeElemAverageGhat(void) {
    elem->ghat1= {0.0, 0.0};  
 
    if constexpr(ihydraulics != 0) {
-      if (nhtblocks > 0 && (elem->isblock > 0)) return;
+      if (nhtblocks > 0 && elem->isblock) return;
    }
 
    if (elem->idry == 1) return;
@@ -3482,6 +3561,7 @@ __device__ void computeElemAverageGhat(void) {
    double av_cff3_chi = 0.0;  // av. for cff3*chi
 
    const int i34 = elem->i34;
+   const int kb = elem->kb;
 
    for (int j=1; j<i34; j++) {
       // For each node and side in the element...
@@ -3555,10 +3635,10 @@ __device__ void computeElemAverageGhat(void) {
       Vector2 Ustar_alpha = {0.0, 0.0}; 
       for (int k = side->kb; k < nvrt; k++) {
          if (side->is2D()) {  //2D; no need to compute U^{\star\alpha}
-            Ustar += side->bt[nvrt]*side->Dz(k);
+            Ustar += side->btu[nvrt]*side->Dz(k);
 
          } else { //3D
-            Vector2 w2 = (side->bt[k] + side->bt[k-1])/2.0*side->Dz(k);
+            Vector2 w2 = (side->btu[k] + side->btu[k-1])/2.0*side->Dz(k);
             Ustar += w2;
 
             if constexpr(iveg != 0) {
@@ -3584,7 +3664,7 @@ __device__ void computeElemAverageGhat(void) {
       // Surface and bottom stress terms
       if constexpr(ics==1) {
          const Vector2 tau    = side->tau();
-         const Vector2 ubstar = side->sdbt[side->kb+1]; // XXX CHECK INDICES
+         const Vector2 ubstar = side->btu[side->kb + 1]; // XXX CHECK INDICES
       } else {
          // XXX IMPLEMENT THIS
          // n1=isidenode(1,isd); n2=isidenode(2,isd)
@@ -3602,17 +3682,17 @@ __device__ void computeElemAverageGhat(void) {
       // F, f_b: all explicit terms excluding vegetation 
       // F^\alpha=\int_{-h}^z_v f dz (f ncludes all explicit terms except for vegetation)
       // Only need to calculate F^\alpha for 3D sides (but init=0) 
-      const double coriolis = side->cori;
+      const double coriolis = side->coriolis;
       const Vector2 F  =  coriolis*side->U;  // F_x
-      const Vector2 fb =  coriolis*side->u2;  // f_b_x
+      const Vector2 fb =  coriolis*side->u2[side->kb + 1];  // f_b_x
       Vector2 Fa = {0.0, 0.0};  // F^\alpha, vertically forcing terms baroclinic gradient, horizontal viscosity, Coriolis, earth tidal potential, atmospheric pressure, radiation stress)
 
       if (iveg != 0 && nvrt > side->kb) {  // 3D
          
          for (int k = side->kb; k < nvrt; k++) {
-            if (zctr2 > side->z[k-1]) {
-                const Vector2 w2 = side->Dz[k]*(side->u2[k] + side->u2[k-1])/2.0;
-                const double zrat = min(1.0, (zctr2 - side->z[k-1])/side->Dz[k]);
+            if (zctr2 > side->zc[k-1]) {
+                const Vector2 w2 = side->Dz(k)*(side->u2[k] + side->u2[k-1])/2.0;
+                const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k));
                 Fa +=  coriolis*w2*zrat;
             } // if zctr2
          } // k
@@ -3620,14 +3700,14 @@ __device__ void computeElemAverageGhat(void) {
 
       // Integrate horizontal viscosity vertically
       for (int k=side->kb; k<nvrt; k++) {
-         const Vector2 levelHorVisc = side->Dz(k)*(side->d2uv[k] + side->d2uv[k-1])/2.d0 // (d2uv(1,k,isd)+d2uv(1,k-1,isd))/2
+         const Vector2 levelHorVisc = side->Dz(k)*(side->d2uv[k] + side->d2uv[k-1])/2.0; // (d2uv(1,k,isd)+d2uv(1,k-1,isd))/2
 
          F += w2;
 
          // Vegetation term
          if constexpr(iveg!=0) {
-            if (nvrt > side->kbs + 1 && zctr2 > side->z[k-1]) { // 3D
-               const double zrat = min(1.0, (zctr2 - side->z[k-1])/side->Dz(k));
+            if (nvrt > side->kb + 1 && zctr2 > side->zc[k-1]) { // 3D
+               const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k));
                Fa += w2*zrat;
             } 
          } // if iveg
@@ -3653,8 +3733,8 @@ __device__ void computeElemAverageGhat(void) {
    elem->ghat1 = (1.0/i34)*elem->ghat1;
       
    // Finish off terms in F, F^\alpha and f_b
-   const double grav3 = elem->mean(Element::grav2)
-   const Vector2 fb = grav3*gradP - gradPr/rho0 //const in each elem
+   const double grav3 = elem->mean(Element::grav2);
+   const Vector2 fb = grav3*gradP - gradPr/rho0; //const in each elem
 
 
    Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
@@ -3663,8 +3743,8 @@ __device__ void computeElemAverageGhat(void) {
       const Side *side = elem->sides[j];
 
       const double htot = side->htot();
-      const double F  = htot*fb;
-      const double Fa = min(htot, veg_h)*fb;
+      const Vector2 F  = htot*fb;
+      const Vector2 Fa = min(htot, veg_h)*fb;
 
       tmp += dt*(av_cff1*F - av_cff2*chi*dt*fb - av_cff3*Fa);
    } // for j
@@ -3674,7 +3754,7 @@ __device__ void computeElemAverageGhat(void) {
 
    // Baroclinic force
    if constexpr(ibc==0) {
-      assert(elem->nodes[0]->rho >= -98.d0 && elem->nodes[1]->rho >= -98.d0 && elem->nodes[2]->rho >= -98.d0 && "computeElemAverageGhat1: Impossible dry");
+      assert(elem->nodes[0]->rho[0] >= -98.0 && elem->nodes[1]->rho[0] >= -98.0 && elem->nodes[2]->rho[0] >= -98.0 && "computeElemAverageGhat1: Impossible dry");
 
       Vector2 Fa = {0.0, 0.0};
       Vector2 intGradRho = {0.0, 0.0};
