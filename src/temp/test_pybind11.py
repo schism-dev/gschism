@@ -14,24 +14,24 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/New450/src/gschism/src')  
 
 from iop.cudamodule import CudaSourceManager
 from python.schism_init import schism_init
 from python.schism_consts import *
-# tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
-tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -152,8 +152,8 @@ if __name__ == "__main__":
 
 
 
-    test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    # test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+    # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+    test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
     namelist = schism_init(test_dir)
 

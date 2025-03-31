@@ -86,6 +86,12 @@ __device__ __host__ __forceinline__ double2 operator-(const double2& a, const do
     return make_double2(a.x - b.x, a.y - b.y);
 }
 
+__device__ __host__ __forceinline__ double2 operator-=(double2& a, const double2& b) {
+    a.x -= b.x;
+    a.y -= b.y;
+    return a;
+}
+
 __device__ __host__ __forceinline__ double2 operator*(const double2& v, const double s) {
     return make_double2(v.x * s, v.y * s);
 }
@@ -342,6 +348,7 @@ struct Element {
    Frame frame;
 
    Vector2 gradPhi[4];       // Derivatives of shape functions
+   Vector2 gradEta[nvrt];    // Gradient of free surface elevation
 
    int idry;                  // True if the element is dry
    int kbe;                   // Bottom index of the element
@@ -389,7 +396,7 @@ struct Element {
    __inline__ __device__ int findLevel(double z1, int k) const {
       // Starting at index k, find sequentially the level that contains z
 
-      // if z is alreaf betweeen z[k] and z[k+1], return k
+      // if z is already betweeen z[k] and z[k+1], return k
       if (z1 >= z[k] && z1 < z[k+1]) return k;
       else if (z1 < z[k]) { 
          // Search for increasing levels
@@ -408,6 +415,8 @@ struct Element {
    }
 
    __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
+   __inline__ __device__ double Dz(int k)      const { return z[k+1] - z[k]; }
+
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
    __inline__ __device__ double computeSignedArea(void) const;
@@ -645,6 +654,8 @@ struct Side {
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 uth[nvrt];           // "Time history" velocity
    Vector2 U;                   // Vertically averaged velocity vector  
+
+   Vector2 d2uv[nvrt];          // divergence of (nu*grad u) XXX COMPUTE!!
 
    Vector2 bcc[nvrt];           // Baroclinic term
 

@@ -87,6 +87,12 @@ __device__ __host__ __forceinline__ double2 operator-(const double2& a, const do
     return make_double2(a.x - b.x, a.y - b.y);
 }
 
+__device__ __host__ __forceinline__ double2 operator-=(double2& a, const double2& b) {
+    a.x -= b.x;
+    a.y -= b.y;
+    return a;
+}
+
 __device__ __host__ __forceinline__ double2 operator*(const double2& v, const double s) {
     return make_double2(v.x * s, v.y * s);
 }
@@ -343,6 +349,7 @@ struct Element {
    Frame frame;
 
    Vector2 gradPhi[4];       // Derivatives of shape functions
+   Vector2 gradEta[nvrt];    // Gradient of free surface elevation
 
    int idry;                  // True if the element is dry
    int kbe;                   // Bottom index of the element
@@ -390,7 +397,7 @@ struct Element {
    __inline__ __device__ int findLevel(double z1, int k) const {
       // Starting at index k, find sequentially the level that contains z
 
-      // if z is alreaf betweeen z[k] and z[k+1], return k
+      // if z is already betweeen z[k] and z[k+1], return k
       if (z1 >= z[k] && z1 < z[k+1]) return k;
       else if (z1 < z[k]) { 
          // Search for increasing levels
@@ -409,6 +416,8 @@ struct Element {
    }
 
    __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
+   __inline__ __device__ double Dz(int k)      const { return z[k+1] - z[k]; }
+
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
    __inline__ __device__ double computeSignedArea(void) const;
@@ -646,6 +655,8 @@ struct Side {
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 uth[nvrt];           // "Time history" velocity
    Vector2 U;                   // Vertically averaged velocity vector  
+
+   Vector2 d2uv[nvrt];          // divergence of (nu*grad u) XXX COMPUTE!!
 
    Vector2 bcc[nvrt];           // Baroclinic term
 
@@ -2714,18 +2725,18 @@ __device__ void initCubicSplineImpl(int k1, int k2, XAccessor getX, YAccessor ge
 // Array version
 __device__ void initCubicSpline(int k1, int k2, double *x, double *y, 
                                 double y_top, double y_bot, 
-                                double *yp_out, double *ypp_out) {
+                                CubicSpline &spline) {
    auto getX = [x] (int k) { return x[k]; };
    auto getY = [y] (int k) { return y[k]; };
-   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, &spline);
 }
 
 // Lambda version - allows custom access patterns
 template<typename XFunc, typename YFunc>
 __device__ void initCubicSpline(int k1, int k2, XFunc getX, YFunc getY,
-                                       double y_top, double y_bot,
-                                       double *yp_out, double *ypp_out) {
-   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+                                double y_top, double y_bot,
+                                CubicSpline &spline) {
+   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, spline);
 }
 
 
@@ -3280,7 +3291,7 @@ __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Eleme
 
       // (Extrapolate density below bottom, we will fix it later)
       // NOTE: interpolate densities at elem2 at coordinates from elem.
-      rho = evalCubicSpline(zp, elem->rho_z, elem->rho_zz, elem->demeanedDensity(k), extrapolate = true);
+      rho = evalCubicSpline(zp, elem->rho_z, elem->rho_zz, elem->demeanedDensity(k), true);
       // evalCubicSpline(nvrt-kbe(ie),swild2(kbe(ie)+1:nvrt,12), &
       //      &erho(kbe(ie)+1:nvrt,ie)-rho_mean(kbe(ie)+1:nvrt,ie), &
       //      &hp_int(kbe(ie)+1:nvrt,ie,1),nvrt-kbe(i),swild(kbe(i)+1:nvrt),ibot_fl,zmax,eta_min,swild2(kbe(i)+1:nvrt,j))
@@ -3665,6 +3676,9 @@ __device__ void computeElemAverageGhat(void) {
       if constexpr(ics==1) {
          const Vector2 tau    = side->tau();
          const Vector2 ubstar = side->btu[side->kb + 1]; // XXX CHECK INDICES
+
+         // Term for surface and bottom stress
+         elem->ghat1 -= chi*dt*cff2*ubstar + dt*cff1*tau;
       } else {
          // XXX IMPLEMENT THIS
          // n1=isidenode(1,isd); n2=isidenode(2,isd)
@@ -3675,16 +3689,15 @@ __device__ void computeElemAverageGhat(void) {
          // call project_hvec(sdbt(1,kbs(isd)+1,isd),sdbt(2,kbs(isd)+1,isd),sframe2(:,:,isd),eframe(:,:,i),ubstar,vbstar)
       }  // if ics
 
-      // Term for surface and bottom stress
-      elem->ghat1 -= chi*dt*cff2*ubstar + dt*cff1*tau;
+      
 
       // All terms in F,F^\alpha,f_b except baroclinic
       // F, f_b: all explicit terms excluding vegetation 
       // F^\alpha=\int_{-h}^z_v f dz (f ncludes all explicit terms except for vegetation)
       // Only need to calculate F^\alpha for 3D sides (but init=0) 
       const double coriolis = side->coriolis;
-      const Vector2 F  =  coriolis*side->U;  // F_x
-      const Vector2 fb =  coriolis*side->u2[side->kb + 1];  // f_b_x
+      Vector2 F  =  coriolis*side->U;  // F_x
+      Vector2 fb =  coriolis*side->u2[side->kb + 1];  // f_b_x
       Vector2 Fa = {0.0, 0.0};  // F^\alpha, vertically forcing terms baroclinic gradient, horizontal viscosity, Coriolis, earth tidal potential, atmospheric pressure, radiation stress)
 
       if (iveg != 0 && nvrt > side->kb) {  // 3D
@@ -3698,17 +3711,17 @@ __device__ void computeElemAverageGhat(void) {
          } // k
       } // iveg
 
-      // Integrate horizontal viscosity vertically
-      for (int k=side->kb; k<nvrt; k++) {
-         const Vector2 levelHorVisc = side->Dz(k)*(side->d2uv[k] + side->d2uv[k-1])/2.0; // (d2uv(1,k,isd)+d2uv(1,k-1,isd))/2
+      // Integrate horizontal viscosity force vertically
+      for (int k=side->kb + 1; k<nvrt; k++) {
+         const Vector2 levelHorVisc = side->Dz(k)*(side->d2uv[k] + side->d2uv[k-1])/2.0; 
 
-         F += w2;
+         F += levelHorVisc;
 
          // Vegetation term
          if constexpr(iveg!=0) {
             if (nvrt > side->kb + 1 && zctr2 > side->zc[k-1]) { // 3D
                const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k));
-               Fa += w2*zrat;
+               Fa += levelHorVisc*zrat;
             } 
          } // if iveg
       } // for k
@@ -3733,8 +3746,8 @@ __device__ void computeElemAverageGhat(void) {
    elem->ghat1 = (1.0/i34)*elem->ghat1;
       
    // Finish off terms in F, F^\alpha and f_b
-   const double grav3 = elem->mean(Element::grav2);
-   const Vector2 fb = grav3*gradP - gradPr/rho0; //const in each elem
+   const double grav3 = elem->mean(Node::grav2);
+   const Vector2 fb = grav3*gradEtp - gradPr/rho0; //const in each elem
 
 
    Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1

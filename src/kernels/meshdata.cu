@@ -1618,18 +1618,18 @@ __device__ void initCubicSplineImpl(int k1, int k2, XAccessor getX, YAccessor ge
 // Array version
 __device__ void initCubicSpline(int k1, int k2, double *x, double *y, 
                                 double y_top, double y_bot, 
-                                double *yp_out, double *ypp_out) {
+                                CubicSpline &spline) {
    auto getX = [x] (int k) { return x[k]; };
    auto getY = [y] (int k) { return y[k]; };
-   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, &spline);
 }
 
 // Lambda version - allows custom access patterns
 template<typename XFunc, typename YFunc>
 __device__ void initCubicSpline(int k1, int k2, XFunc getX, YFunc getY,
-                                       double y_top, double y_bot,
-                                       double *yp_out, double *ypp_out) {
-   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, yp_out, ypp_out);
+                                double y_top, double y_bot,
+                                CubicSpline &spline) {
+   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, spline);
 }
 
 
@@ -2184,7 +2184,7 @@ __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Eleme
 
       // (Extrapolate density below bottom, we will fix it later)
       // NOTE: interpolate densities at elem2 at coordinates from elem.
-      rho = evalCubicSpline(zp, elem->rho_z, elem->rho_zz, elem->demeanedDensity(k), extrapolate = true);
+      rho = evalCubicSpline(zp, elem->rho_z, elem->rho_zz, elem->demeanedDensity(k), true);
       // evalCubicSpline(nvrt-kbe(ie),swild2(kbe(ie)+1:nvrt,12), &
       //      &erho(kbe(ie)+1:nvrt,ie)-rho_mean(kbe(ie)+1:nvrt,ie), &
       //      &hp_int(kbe(ie)+1:nvrt,ie,1),nvrt-kbe(i),swild(kbe(i)+1:nvrt),ibot_fl,zmax,eta_min,swild2(kbe(i)+1:nvrt,j))
@@ -2589,8 +2589,8 @@ __device__ void computeElemAverageGhat(void) {
       // F^\alpha=\int_{-h}^z_v f dz (f ncludes all explicit terms except for vegetation)
       // Only need to calculate F^\alpha for 3D sides (but init=0) 
       const double coriolis = side->coriolis;
-      const Vector2 F  =  coriolis*side->U;  // F_x
-      const Vector2 fb =  coriolis*side->u2[side->kb + 1];  // f_b_x
+      Vector2 F  =  coriolis*side->U;  // F_x
+      Vector2 fb =  coriolis*side->u2[side->kb + 1];  // f_b_x
       Vector2 Fa = {0.0, 0.0};  // F^\alpha, vertically forcing terms baroclinic gradient, horizontal viscosity, Coriolis, earth tidal potential, atmospheric pressure, radiation stress)
 
       if (iveg != 0 && nvrt > side->kb) {  // 3D
@@ -2604,17 +2604,17 @@ __device__ void computeElemAverageGhat(void) {
          } // k
       } // iveg
 
-      // Integrate horizontal viscosity vertically
-      for (int k=side->kb; k<nvrt; k++) {
-         const Vector2 levelHorVisc = side->Dz(k)*(side->d2uv[k] + side->d2uv[k-1])/2.0; // (d2uv(1,k,isd)+d2uv(1,k-1,isd))/2
+      // Integrate horizontal viscosity force vertically
+      for (int k=side->kb + 1; k<nvrt; k++) {
+         const Vector2 levelHorVisc = side->Dz(k)*(side->d2uv[k] + side->d2uv[k-1])/2.0; 
 
-         F += w2;
+         F += levelHorVisc;
 
          // Vegetation term
          if constexpr(iveg!=0) {
             if (nvrt > side->kb + 1 && zctr2 > side->zc[k-1]) { // 3D
                const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k));
-               Fa += w2*zrat;
+               Fa += levelHorVisc*zrat;
             } 
          } // if iveg
       } // for k
@@ -2639,8 +2639,8 @@ __device__ void computeElemAverageGhat(void) {
    elem->ghat1 = (1.0/i34)*elem->ghat1;
       
    // Finish off terms in F, F^\alpha and f_b
-   const double grav3 = elem->mean(Element::grav2);
-   const Vector2 fb = grav3*gradP - gradPr/rho0; //const in each elem
+   const double grav3 = elem->mean(Node::grav2);
+   const Vector2 fb = grav3*gradEtp - gradPr/rho0; //const in each elem
 
 
    Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
@@ -2649,6 +2649,7 @@ __device__ void computeElemAverageGhat(void) {
       const Side *side = elem->sides[j];
 
       const double htot = side->htot();
+      const double veg_h = side->veg_h();
       const Vector2 F  = htot*fb;
       const Vector2 Fa = min(htot, veg_h)*fb;
 
