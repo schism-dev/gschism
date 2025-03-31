@@ -328,6 +328,12 @@ struct Element;
 struct Node;
 struct Mesh;
 
+struct CubicSpline { 
+   double *x   = nullptr;
+   double *y   = nullptr;
+   double *yp  = nullptr;
+   double *ypp = nullptr;
+};
 
 struct Element {
 
@@ -374,6 +380,7 @@ struct Element {
 
    double rho[nvrt];          // Density at each prism center
    double rho_mean[nvrt];     // Mean density at each prism center
+   CubicSpline rho_spl;
    double rho_zz[nvrt];       // Second derivative of density at each prism center
    double rho_z[nvrt];        // First derivative of density at each prism center
    Vector2 gradRho[nvrt];     // Gradient of de-meaned density at each prism center

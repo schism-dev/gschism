@@ -1488,7 +1488,6 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 // [n, nc] is the shape of Fortran-type arrays rhs and u.
 
    assert(n >= 1       && "TRIDAG: n must be >= 1");
-   assert(nc <= nvec   && "TRIDAG: Increase number of columns");
    assert(b[0] != 0.0  && "TRIDAG: b[0]=0");
 
    double bet = b[0];
@@ -1526,12 +1525,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 }
 
 
-struct CubicSpline { 
-   double *x;
-   double *y;
-   double *yp;
-   double *ypp;
-};
+
 
 // Helper function that contains the core algorithm
 template<typename XAccessor, typename YAccessor>
@@ -1550,12 +1544,26 @@ __device__ void initCubicSplineImpl(int k1, int k2, XAccessor getX, YAccessor ge
    //            getX, getY: functions to access x,y coordinates
    //            yp_top and yp_bot: 1st derivatives at x[0] and x[n-1];
    //     Output: 
-   //            ypp[n]: 2nd derivatives used in interpolation.
-   //             yp[n]: 1st derivatives 
-
+   //            spline (CubicSpline): spline structure with x,y,y',y''
 
    const int n = k2 - k1 + 1;
    assert(n >= 2 && "CUBIC SPLINE: n < 2");
+
+   // Allocate memory for the splines
+   assert(spline.x == nullptr && spline.y == nullptr && spline.yp == nullptr && spline.ypp == nullptr && "CUBIC SPLINE: x,y,yp,ypp already allocated");
+   spline.x   = new double[n];
+   spline.y   = new double[n];
+   spline.yp  = new double[n];
+   spline.ypp = new double[n];
+
+   for (int k=k1; k<=k2; k++) {
+      spline.x[k] = getX(k);
+      spline.y[k] = getY(k);
+   }
+
+   // This is to simplify expressions later
+   double *x = spline.x;
+   double *y = spline.y;
 
    double *a = nullptr;
    double *b = nullptr;
@@ -1563,56 +1571,55 @@ __device__ void initCubicSplineImpl(int k1, int k2, XAccessor getX, YAccessor ge
    double *gam = nullptr;
    double *rhs = nullptr;
    
-   try {
-       a = new double[n];   // Lower diagonal
-       b = new double[n];   // Diagonal
-       c = new double[n];   // Upper diagonal
-       gam = new double[n]; // Gamma, used by the tridiagonal solver
-       rhs = new double[n]; // Right-hand side
 
-      for (int k=k1; k<=k2; k++) {
-         if (k == k1) {
-            // Bottom level
-            assert(getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: bottom problem");
-            b[k] = (getX(k+1) - getX(k))/3.0;
-            c[k] = b[k]/2.0;
-            rhs[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - yp_bot;
-         } else if (k == n - 1) {
-            // Top level (surface)
-            assert(getX(k) - getX(k-1) != 0.0 && "CUBIC SPLINE: surface problem");
-            b[k] = (getX(k) - getX(k-1))/3.0;
-            a[k] = b[k]/2.0;
-            rhs[k] = -(getY(k) - getY(k-1))/(getX(k) - getX(k-1)) + yp_top;
-         } else {
-            // Intermediate levels
-            assert(getX(k) - getX(k-1) != 0.0 && getX(k+1) - getX(k) != 0.0 && "CUBIC SPLINE: middle problem");
-            b[k] = (getX(k+1) - getX(k-1))/3.0;
-            a[k] = (getX(k  ) - getX(k-1))/6.0;
-            c[k] = (getX(k+1) - getX(k  ))/6.0;
-            rhs[k] = (getY(k+1) - getY(k  ))/(getX(k+1) - getX(k  )) - 
-                     (getY(k  ) - getY(k-1))/(getX(k  ) - getX(k-1));
-         }
+      a = new double[n];   // Lower diagonal
+      b = new double[n];   // Diagonal
+      c = new double[n];   // Upper diagonal
+      gam = new double[n]; // Gamma, used by the tridiagonal solver
+      rhs = new double[n]; // Right-hand side
+
+   for (int k=k1; k<=k2; k++) {
+      if (k == k1) {
+         // Bottom level
+         assert(x[k+1] - x[k] != 0.0 && "CUBIC SPLINE: bottom problem");
+         b[k] = (x[k+1] - x[k])/3.0;
+         c[k] = b[k]/2.0;
+         rhs[k] = (y[k+1] - y[k])/(x[k+1] - x[k]) - yp_bot;
+      } else if (k == n - 1) {
+         // Top level (surface)
+         assert(x[k] - x[k-1] != 0.0 && "CUBIC SPLINE: surface problem");
+         b[k] = (x[k] - x[k-1])/3.0;
+         a[k] = b[k]/2.0;
+         rhs[k] = -(y[k] - y[k-1])/(x[k] - x[k-1]) + yp_top;
+      } else {
+         // Intermediate levels
+         assert(x[k] - x[k-1] != 0.0 && x[k+1] - x[k] != 0.0 && "CUBIC SPLINE: middle problem");
+         b[k] = (x[k+1] - x[k-1])/3.0;
+         a[k] = (x[k  ] - x[k-1])/6.0;
+         c[k] = (x[k+1] - x[k  ])/6.0;
+         rhs[k] = (y[k+1] - y[k  ])/(x[k+1] - x[k  ]) - 
+                  (y[k  ] - y[k-1])/(x[k  ] - x[k-1]);
       }
-
-      // Solve the tridiagonal system
-      tridag_sch<1>(n, a, b, c, rhs, spline.ypp, gam);
-      
-      spline.yp[k1] = yp_bot;
-      spline.yp[k2] = yp_top;
-
-       // Compute rest of 1st derivatives using the splines
-       for (int k=k1+1; k<k2; k++) {
-           spline.yp[k] = (getY(k+1) - getY(k))/(getX(k+1) - getX(k)) - 
-                          (getX(k+1) - getX(k))/6.0*(2.0*spline.ypp[k] + spline.ypp[k+1]);
-       }
    }
-   finally {
-       delete[] a;
-       delete[] b;
-       delete[] c;
-       delete[] gam;
-       delete[] rhs;
+
+   // Solve the tridiagonal system
+   tridag_sch<1>(n, a, b, c, rhs, spline.ypp, gam);
+   
+   spline.yp[k1] = yp_bot;
+   spline.yp[k2] = yp_top;
+
+   // Compute rest of 1st derivatives using the splines
+   for (int k=k1+1; k<k2; k++) {
+      spline.yp[k] = (y[k+1] - y[k])/(x[k+1] - x[k]) - 
+                     (x[k+1] - x[k])/6.0*(2.0*spline.ypp[k] + spline.ypp[k+1]);
    }
+   
+   delete[] a;
+   delete[] b;
+   delete[] c;
+   delete[] gam;
+   delete[] rhs;
+
 }
 
 // Array version
@@ -1621,7 +1628,7 @@ __device__ void initCubicSpline(int k1, int k2, double *x, double *y,
                                 CubicSpline &spline) {
    auto getX = [x] (int k) { return x[k]; };
    auto getY = [y] (int k) { return y[k]; };
-   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, &spline);
+   initCubicSplineImpl(k1, k2, getX, getY, y_top, y_bot, spline);
 }
 
 // Lambda version - allows custom access patterns
@@ -1633,9 +1640,11 @@ __device__ void initCubicSpline(int k1, int k2, XFunc getX, YFunc getY,
 }
 
 
-__device__ void evalCubicSpline(CubicSpline spline, double z, bool extrapolate = false)
+__device__ double evalCubicSpline(CubicSpline spline, double z, bool extrapolate = false)
 {
    assert("Not implemented");
+
+   return 0.0;
 }
 
 // __device__ void vertLinearInterp(int nc, double zt, int k1, int k2, double *za, double *s_in, double *s_out, int *ibelow) {
@@ -2155,7 +2164,7 @@ __device__ void computeDensityCubicSplines(void) {
       auto getX = [elem] (int k) { return elem->z_prism(k); };
       auto getY = [elem] (int k) { return elem->demeanedDensity(k); };
       ///// XXXX CHECK INDICES!!!!!
-      initCubicSpline(kb, nvrt, getX, getY, 0.0, 0.0, elem->rho_zz, elem->rho_z);
+      initCubicSpline(kb, nvrt, getX, getY, 0.0, 0.0, elem->rho_spl);
    } // 2D/3D
 
 }
@@ -2184,7 +2193,7 @@ __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Eleme
 
       // (Extrapolate density below bottom, we will fix it later)
       // NOTE: interpolate densities at elem2 at coordinates from elem.
-      rho = evalCubicSpline(zp, elem->rho_z, elem->rho_zz, elem->demeanedDensity(k), true);
+      rho = evalCubicSpline(elem->rho_spl, zp, true);
       // evalCubicSpline(nvrt-kbe(ie),swild2(kbe(ie)+1:nvrt,12), &
       //      &erho(kbe(ie)+1:nvrt,ie)-rho_mean(kbe(ie)+1:nvrt,ie), &
       //      &hp_int(kbe(ie)+1:nvrt,ie,1),nvrt-kbe(i),swild(kbe(i)+1:nvrt),ibot_fl,zmax,eta_min,swild2(kbe(i)+1:nvrt,j))
@@ -2434,7 +2443,7 @@ __device__ void computeVerticalAdvection(void) {
 }
 #endif
 
-__device__ void computeElemAverageGhat(void) {
+__device__ void computeElemAverageGhat(double rampbc) {
 // Element average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimensions: m^2/s.
 
    Element *elem = ELEM_PTR;
@@ -2639,7 +2648,7 @@ __device__ void computeElemAverageGhat(void) {
    elem->ghat1 = (1.0/i34)*elem->ghat1;
       
    // Finish off terms in F, F^\alpha and f_b
-   const double grav3 = elem->mean(Node::grav2);
+   const double grav3 = elem->mean(&Node::grav2);
    const Vector2 fb = grav3*gradEtp - gradPr/rho0; //const in each elem
 
 
@@ -2647,6 +2656,7 @@ __device__ void computeElemAverageGhat(void) {
    for (int j=1; j<i34; j++) { 
       // For each side in the element...
       const Side *side = elem->sides[j];
+      const double chi = side->chi;
 
       const double htot = side->htot();
       const double veg_h = side->veg_h();
