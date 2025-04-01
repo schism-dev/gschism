@@ -937,6 +937,8 @@ class Mesh {
    const int ne;   // Local number of elements
    const int ns;   // Local number of sides
 
+   int nbp;  // Local number of boundary nodes
+
    const int max_np; // Maximum number of horizontal nodes per partition (shared by all partitions)
    const int max_ne; // Maximum number of elements per partition (shared by all partitions)
    const int max_ns; // Maximum number of sides per partition (shared by all partitions)

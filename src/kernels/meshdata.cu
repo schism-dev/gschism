@@ -3,13 +3,22 @@
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr;
 
+#define SIDE(side) const int idx_side = threadIdx.x + blockIdx.x * blockDim.x; \
+                   Side *side = &(mesh->localSideData[idx_side]); \
+                   if (idx_side >= mesh->ns) return;
 
-#define SIDE_PTR (&(mesh->localSideData[threadIdx.x + blockIdx.x * blockDim.x]))
-#define ELEM_PTR (&(mesh->localElemData[threadIdx.x + blockIdx.x * blockDim.x]))
-#define NODE_PTR (&(mesh->localNodeData[threadIdx.x + blockIdx.x * blockDim.x]))
+#define ELEM(elem) const int idx_elem = threadIdx.x + blockIdx.x * blockDim.x; \
+                   Element *elem = &(mesh->localElemData[idx_elem]); \
+                   if (idx_elem >= mesh->ne) return;
 
-#define NODE_BND_PTR (&(mesh->localNodeBoundaryMem[threadIdx.x + blockIdx.x * blockDim.x]))
+#define NODE(node) const int idx_node = threadIdx.x + blockIdx.x * blockDim.x; \
+                   Node *node = &(mesh->localNodeData[idx_node]); \
+                   if (idx_node >= mesh->np) return;
 
+
+#define NODE_BND(node_bnd) const int idx_node_bnd = threadIdx.x + blockIdx.x * blockDim.x; \
+                           NodeBoundary *node_bnd = &(mesh->localNodeBoundaryMem[idx_node_bnd]); \
+                           if (idx_node_bnd >= mesh->nbp) return;
 
 Polynomial<4> *polyDischarge; // XXX read from file
 
@@ -267,7 +276,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
  */
 __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
                                                        Element *&nextElem, int &jlev, double &dt) {
-// printf("trackThroughElementsAndLevels: x0=%f, y0=%f, xt=%f, yt=%f\n", x0, y0, xt, yt);
+
    // First thing is to check if the target point is inside the element. If it is there is nothing
    // else to do.
    if (containsPoint(toPoint2(xt))) {
@@ -609,7 +618,7 @@ __inline__ __device__ bool Side::btrack(
    double time_rm = dt; // Remaining time
 
 
-   // // Initialize outputs
+   // // Initialize outputs XXX
    // for(int i = 0; i < 4 + N_TRACERS; i++) {
    //    sclr[i] = 0.0;
    // }
@@ -621,8 +630,8 @@ __inline__ __device__ bool Side::btrack(
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards({u_int.x, u_int.y});
 
-printf("$$$  %d, %d, %.5f, %.5f\n",  curElem->idx,idx, x0.x, x0.y)   ;
-   const int MAX_ITERATIONS = 100000; // XXX 1000
+
+   const int MAX_ITERATIONS = 1000; 
    Element* nextElem = curElem;
    int iter = 0;
    while(true) {
@@ -848,7 +857,8 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
    printf("Populating mesh for partition %d, %d, %d\n", partNum, nond, nlnd);
 
    // Horizontal grid
-   printf("Processing %d nodes\n", np);      
+   printf("Processing %d nodes\n", np);    
+   int idxNodeBoundary = 0;  
    for (int i = 0; i < np; i++)
    {
       Node &node = localNodeData[i];
@@ -876,7 +886,6 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.depth = node_coords[i * 3 + 2];
 
       // Links the node to the boundary information
-      int idxNodeBoundary = 0;
       if (isbnd[i] >= 0) {
          node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
          if (isbnd[i]>0) {
@@ -905,6 +914,8 @@ constexpr double rot_f = 2.0*pi/rot_per;
 for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0.0};}
 // XXXXX
    }
+
+   nbp = idxNodeBoundary;
 
    printf("Processing %d sides\n", ns);
    int idxSideBoundary = 0;
@@ -1347,9 +1358,13 @@ __device__ void backtrackAllNodes(void) {
    // Removed all references to swild98 XXX
    // swild98=0.d0 !init
 
-   Side *side = SIDE_PTR;
+   SIDE(side);
+
+   if (side - mesh->localSideData >= mesh->ns) return;
 
    const int kb = side->kb;
+
+   // Initialize btrack velocities to the actual velocities at the side 
    for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
    if (side->idry == 1) return;
@@ -1753,7 +1768,7 @@ __device__ double evalCubicSpline(CubicSpline spline, double z, bool extrapolate
 __device__ void computeElevationBoundaryConditions(double ramp, double time) {
    // Compute elevation essential boundary conditions 
 
-   NodeBoundary *nodeBnd = NODE_BND_PTR; // A boundary node
+   NODE_BND(nodeBnd); // Each boundary node.
 
    const Node *node = nodeBnd->node;
    const int iettype = nodeBnd->iettype;
@@ -1804,7 +1819,7 @@ __device__ void computeElevationBoundaryConditions(double ramp, double time) {
 
 __device__ void computeVerticallyIntegratedVelocity(void) {
 
-   Side *side = SIDE_PTR;
+   SIDE(side);
 
    side->U = {0.0, 0.0}; 
       
@@ -1826,7 +1841,7 @@ __device__ void computeBottomDragVegetation(void) {
    // How many kernels are needed? Why so many for loops?
    // Is the loop on sides needed?
 
-   Node *node = NODE_PTR;
+   NODE(node);
 
    const int    kb      = node->kb;
    const double htot    = node->htot();
@@ -1986,7 +2001,7 @@ __device__ void computeVegetationAndDragParameters(void) {
    // Computes the vegetation and drag model parameters:
    // chi, \tilde\chi, beta, \breve{H}
    
-   Side *side = SIDE_PTR;
+   SIDE(side);
 
    const double htot = side->htot();
    const int    kb   = side->kb;
@@ -2148,7 +2163,8 @@ __device__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int
 __device__ void computeDensityCubicSplines(void) {
    // Computes cubic splines of de-meaned density (rho - rho_mean) for all elements
 
-   Element *elem = ELEM_PTR;
+   ELEM(elem);
+
    if (elem->idry) return;
 
    const int kb = elem->kb;
@@ -2244,7 +2260,7 @@ __device__ void computeDensityGradient(void) {
    // 
    //  NOTE: We use de-meaned densities.
 
-   Element *elem = ELEM_PTR;
+   ELEM(elem);
 
    if (elem->idry) return;
 
@@ -2315,7 +2331,7 @@ __device__ void computeBaroclinicTerm(double rampbc) {
 // For this it has to compute the density gradient at the half-sides (face centers) and then integrate it vertically.
 // The baroclinic term is -(g/rho_0)*int_z^\eta grad(rho) dz
 
-   Side *side = SIDE_PTR;
+   SIDE(side);
 
    if (side->idry == 1) return;
 
@@ -2446,7 +2462,7 @@ __device__ void computeVerticalAdvection(void) {
 __device__ void computeElemAverageGhat(double rampbc) {
 // Element average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimensions: m^2/s.
 
-   Element *elem = ELEM_PTR;
+   ELEM(elem);
    
    elem->ghat1= {0.0, 0.0};  
 
