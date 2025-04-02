@@ -1,12 +1,15 @@
 
+import python.cuda_functions as cufunc
 
+def schism_step(it: int, namelist: dict):
 
-def schism_step(it: int):
-
+    core = namelist.core
+    opt  = namelist.opt
 
     # SAL option: scale gravity
-    scale_gravity()
+    cufunc.scaleGravity((1,), (1,), ())
 
+    dt = core.dt
 
     time = it*dt
 
@@ -15,41 +18,12 @@ def schism_step(it: int):
 
     
     # Compute time ramps for boundary elevation forcing, wind and pressure forcing and tidal potential forcing
-    computeTimeRamps()
-    # if ibc == 0:
-    #     if drampbc > 0.0:
-    #         rampbc = cp.tanh(2.0*time/86400.0/drampbc)
-    #     else:
-    #         rampbc=1.0
-
-    #     if nws != 0 and drampwind > 0.0:
-    #         rampwind = cp.tanh(2.0*time/86400.0/drampwind)
-    #     else:
-    #         rampwind = 1.0
-
-
-    # if drampwafo > 0.0:
-    #     rampwafo = cp.tanh(2.0*time/86400.0/drampwafo)
-    # else:
-    #     rampwafo = 1.0
-
-
-    # # For source/sinks
-    # if if_source != 0:
-    #     if dramp_ss > 0.0:
-    #         ramp_ss = cp.tanh(2.0*time/86400.0/dramp_ss)
-    #     else:
-    #         ramp_ss = 1.0
-
-
-    # if dramp > 0.0:
-    #     ramp = cp.tanh(2.0*time/86400.0/dramp)
-    # else:
-    #     ramp = 1.0
+    cufunc.computeTimeRamps((1,), (1,), (time, opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp))
+    
 
 
     #  Compute new bed deformation
-    computeBedDeformation()
+    cufunc.computeBedDeformation()
 
 
     # Earth tidal potential and loading tide at nodes: pre-compute to save time
@@ -59,19 +33,19 @@ def schism_step(it: int):
     computeMeteorologicalForcing()  # Lines 458-1014
 
 
-    computeTracerStuff()            # Lines 1015-1145
+    # computeTracerStuff()            # Lines 1015-1145
 
 
-    # Compute hydraulic transfer blocks together with reading in flux values
-    computeHydraulicTransfer()      # Lines 1146-1330
+    # # Compute hydraulic transfer blocks together with reading in flux values
+    # computeHydraulicTransfer()      # Lines 1146-1330
 
 
     # Get boundary conditions from external files
     getBoundaryConditions()          # Lines 1331-1584
 
 
-    # Read in volume/mass sources/sinks
-    readInSourcesSinks()              # Lines 1585-1610
+    # # Read in volume/mass sources/sinks
+    # readInSourcesSinks()              # Lines 1585-1610
 
 
     # Calculation of cross-section areas and length for flow b.c.
@@ -95,7 +69,7 @@ def schism_step(it: int):
 
 
 
-    computeTurbulence()                # Lines 2663-3839
+    # computeTurbulence()                # Lines 2663-3839
 
 
     # Horizontal viscosity, implemented as a filter (also Shapiro filter)
@@ -103,7 +77,7 @@ def schism_step(it: int):
 
 
     # Backtracking/upwind for momentum
-    computeBacktracking()             # Lines 4161-5029
+    backtrackAllNodes()             # Lines 4161-5029
 
 
     # Vertical advection 

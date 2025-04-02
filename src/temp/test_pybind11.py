@@ -12,16 +12,19 @@ from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
 
 
+
 nws = 0
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/New450/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/Elements2/src/gschism/src')  
 
 from iop.cudamodule import CudaSourceManager
 from python.schism_init import schism_init
+from python.schism_step import schism_step
 from python.schism_consts import *
-# tracktest = '/media/jmg/New450/src/gschism/src/temp/tracktest.txt'
-tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+import python.cuda_functions as cufunc
+tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -29,9 +32,9 @@ tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
+# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -152,8 +155,8 @@ if __name__ == "__main__":
 
 
 
-    test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    # test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+    # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+    test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
     namelist = schism_init(test_dir)
 
@@ -163,10 +166,10 @@ if __name__ == "__main__":
     # Test the module
     import cupy as cp
 
-    if True:
+    if False:
         # Create the kernel module TESTING!!
             # Read the CUDA source
-        cuda_source = ""
+
         source_file = os.path.join(project_root, "kernels", "meshdata.cu")
   
         # Create the CUDA source manager
@@ -401,43 +404,9 @@ if __name__ == "__main__":
         plt.pause(0)
 
     # js         = cp.array(js)
-    # Read the CUDA source
-    cuda_source = ""
-    source_files = [
-        os.path.join(project_root, "kernels", "meshdata.h"),
-        os.path.join(project_root, "kernels", "meshdata.cu")
-    ]
-    for file in source_files:
-        with open(file, 'r') as f:
-            cuda_source += f.read()
-
-    # Create the CUDA source manager
-    cuda_manager = CudaSourceManager(project_root)
-
-    try:
-        # Create the module with preprocessing
-        mod, combined_source = cuda_manager.create_module(
-            source_files, 
-            options=("-std=c++20", '-diag-suppress=64,1055')
-        )
-        
-        # Optionally save the combined source for debugging
-        cuda_manager.save_combined_source(combined_source, "debug_cuda_source.cu")
-        
-        # Get kernel functions with better error handling
-        try:
-            createMesh = mod.get_function('createMesh')
-            populateMesh = mod.get_function('populateMesh')
-            getStructSizes = mod.get_function('getStructSizes')
-            test = mod.get_function('test')
-        except Exception as e:
-            print(f"Error getting CUDA functions: {e}")
-            # Continue with error handling or exit
-            sys.exit(1)
-
-    except Exception as e:
-        print(f"Failed to compile CUDA code: {e}")
-        sys.exit(1)
+    
+    # Initialize the CUDA functions
+    cufunc.initialize_cuda_functions(project_root)
 
     # Get number of GPUs
     n_gpus = cp.cuda.runtime.getDeviceCount()
@@ -456,7 +425,7 @@ if __name__ == "__main__":
    
     # Get the struct sizes
     sizes = cp.zeros(6, dtype=cp.int32)
-    getStructSizes((1,), (1,), sizes)
+    cufunc.getStructSizes((1,), (1,), sizes)
     [nodesSize, elemsSize, sidesSize, boundaryNodesSize, sideBoundarySize, segmentSize] = sizes.tolist()
 
     # Compute the maximum number of nodes, elements, and sides per partition
@@ -595,15 +564,15 @@ if __name__ == "__main__":
 
             # Creates the mesh object on each GPU. This function mostly deals with letting the GPU know
             # which memory is being used by the mesh, both locally and in other GPUs.
-            createMesh((1,), (1,),  
-                       (ipart, numNodes, numElements, numSides, numSegments,
-                        numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt, kz,
-                        max(numPartNodes), max(numPartElements), max(numPartSides),
-                        nodesPtr, elemsPtr, sidesPtr,
-                        nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
-                        boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
-                        partNodeNeighNodesMem, partNodeNeighElemsMem,
-                        h_s.item(), theta_b.item(), theta_f.item()  , sigma, sigma, ztot, cs, dcs)
+            cufunc.createMesh((1,), (1,),  
+                              (ipart, numNodes, numElements, numSides, numSegments,
+                               numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt, kz,
+                               max(numPartNodes), max(numPartElements), max(numPartSides),
+                               nodesPtr, elemsPtr, sidesPtr,
+                               nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
+                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
+                               partNodeNeighNodesMem, partNodeNeighElemsMem,
+                               h_s.item(), theta_b.item(), theta_f.item()  , sigma, sigma, ztot, cs, dcs)
             )
             
             # Given a local index, this array will return the global index
@@ -616,17 +585,21 @@ if __name__ == "__main__":
         with cp.cuda.Device(ipart):
             # Adds additional information to the mesh object. This function deals with the actual data
             # of the mesh, including the nodes, elements, sides, and their neighbors.
-            populateMesh((1,), (1,),  (i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
-                                       isdel, isidenode, isbnd,
-                                       nond, nlnd, iond, ilnd,
-                                       nodeNeighNodesStart, nodeNeighNodes,
-                                       nodeNeighElemsStart, nodeNeighElems,
-                                       globalNodeIndices, globalElemIndices, globalSideIndices,
-                                       localNodeIndices, localElemIndices, localSideIndices,
-                                       localNodePart, localElemPart, localSidePart))
+            cufunc.populateMesh((1,), (1,),  (i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
+                                              isdel, isidenode, isbnd,
+                                              nond, nlnd, iond, ilnd,
+                                              nodeNeighNodesStart, nodeNeighNodes,
+                                              nodeNeighElemsStart, nodeNeighElems,
+                                              globalNodeIndices, globalElemIndices, globalSideIndices,
+                                              localNodeIndices, localElemIndices, localSideIndices,
+                                              localNodePart, localElemPart, localSidePart))
 
             # test((1,), (1,), (-2.21334,  0.76058, -1.0))
-            test((1,), (1,), (12.0,  1.0, -1.0))
+            cufunc.test((1,), (1,), (12.0,  1.0, -1.0))
+
+
+    schism_step(0, namelist)
+
 
     # Launch kernel on each GPU
     launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)

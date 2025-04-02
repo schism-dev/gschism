@@ -65,6 +65,15 @@ constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
 constexpr double dt = -1e10;  // Time step  XXX
 
+
+// Time ramps ---------------------------------------------------------------------------
+
+double rampbc;
+double rampwind;
+double rampwafo;
+double ramp_ss;
+double ramp;
+
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
 using Vector2 = double2; 
@@ -1112,4 +1121,72 @@ extern "C" {
        sizes[4] = (int)sizeof(SideBoundary);
        sizes[5] = (int)sizeof(BoundarySegment);
    }
+
+
+   __global__ void scaleGravity(void) {
+     printf("NOT IMPLEMENTED: scaleGravity %d\n", 12);
+   }
+
+   __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
+      // Compute the different time ramps used in the code 
+      // This function is performed by just one thread
+
+      if constexpr(ibc == 0) {
+         if (drampbc > 0.0) {
+            rampbc = tanh(2.0*time/86400.0/drampbc);
+         } else {
+            rampbc = 1.0;
+         }
+
+         if (nws != 0 && drampwind > 0.0) {
+            rampwind = tanh(2.0*time/86400.0/drampwind);
+         } else {
+            rampwind = 1.0;
+         }
+      }
+
+      if (drampwafo > 0.0) {
+         rampwafo = tanh(2.0*time/86400.0/drampwafo);
+      } else {
+         rampwafo = 1.0;
+      }
+
+      // For source/sinks
+      if (if_source && dramp_ss > 0.0) {
+         ramp_ss = tanh(2.0*time/86400.0/dramp_ss);
+      } else {
+         ramp_ss = 1.0;
+      }
+
+      if (dramp > 0.0) {
+         ramp = tanh(2.0*time/86400.0/dramp);
+      } else {
+         ramp = 1.0;
+      }
+   }
+      
+
+   __global__ void computeBedDeformation(void) {
+
+   }
+
+   __global__ void computeTidalPotential(void) {
+
+   }
+
+
+   __global__ void computeWaveEquation(void) {
+
+   }
+
+   __global__ void solveWaveEquation(void) {
+
+   }
+
+   __global__ void computeGradients(void) {
+
+   }  
+
 }
+
+
