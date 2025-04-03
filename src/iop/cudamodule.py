@@ -33,6 +33,8 @@ import os
 import re
 import cupy as cp
 
+import iop.cudaKernelWrapper as ckw
+
 # ANSI color codes for terminal output
 class Colors:
     RESET = "\033[0m"
@@ -168,10 +170,13 @@ class CudaSourceManager:
             self.source = source
             self.manager = manager
             
-        def get_function(self, name):
+        def get_function(self, name, sizes,kernel_type):
             """Get a kernel function with error handling."""
             try:
-                return self.module.get_function(name)
+                func = self.module.get_function(name)
+
+                return ckw.CudaKernelWrapper(func, sizes, kernel_type=kernel_type)
+
             except Exception as e:
                 print(f"\n{Colors.BOLD}===== CUDA FUNCTION ERROR ====={Colors.RESET}")
                 print(f"Error getting function '{Colors.CYAN}{name}{Colors.RESET}':")

@@ -7,7 +7,7 @@ def schism_step(it: int, namelist: dict):
     opt  = namelist.opt
 
     # SAL option: scale gravity
-    cufunc.scaleGravity((1,), (1,), ())
+    cufunc.scaleGravity(opt.loadtide_coef)
 
     dt = core.dt
 
@@ -18,7 +18,7 @@ def schism_step(it: int, namelist: dict):
 
     
     # Compute time ramps for boundary elevation forcing, wind and pressure forcing and tidal potential forcing
-    cufunc.computeTimeRamps((1,), (1,), (time, opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp))
+    cufunc.computeTimeRamps(time, opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp)
     
 
 

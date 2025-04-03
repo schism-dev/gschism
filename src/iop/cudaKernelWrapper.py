@@ -1,39 +1,40 @@
 import cupy as cp
 from functools import partial
 
+THREADS_PER_BLOCK = 256
+
 class CudaKernelWrapper:
-    def __init__(self, n_gpus=None):
-        self.n_gpus = n_gpus or cp.cuda.runtime.getDeviceCount()
-        
-    def wrap(self, kernel_func, kernel_type='global'):
+    def __init__(self, kernel_func, sizes,kernel_type='global', n_gpus=None):
         """
-        Wraps a CuPy kernel function with multi-GPU launch logic
+        Initialize wrapper for a specific kernel function
         
         Args:
             kernel_func: CuPy kernel function from get_function()
             kernel_type: Type of kernel ('global', 'nodes', 'elements', 'sides')
+            n_gpus: Number of GPUs to use (defaults to all available)
         """
-        def get_num_items(device_id):
+        self.n_gpus = n_gpus or cp.cuda.runtime.getDeviceCount()
+        self.kernel_func = kernel_func
+        self.kernel_type = kernel_type
+        
+        # Set number of items and threads based on kernel type
+
+        self.num_items = sizes[kernel_type]
+        self.threads_per_block = THREADS_PER_BLOCK
+        
+
+    def __call__(self, *args, async_launch=False, **kwargs):
+        """Execute the kernel on all devices"""
+
+        # Launch on all devices
+        for device_id in range(self.n_gpus):
             with cp.cuda.Device(device_id):
-                if kernel_type == 'nodes':
-                    return mesh.np
-                elif kernel_type == 'elements':
-                    return mesh.ne
-                elif kernel_type == 'sides':
-                    return mesh.ns
-                else:  # global
-                    return 1
+                num_blocks = (self.num_items + self.threads_per_block - 1) // self.threads_per_block
+                self.kernel_func((num_blocks,), (self.threads_per_block,), args)
+                if not async_launch:
+                    cp.cuda.Stream.null.synchronize()
 
-        def wrapped_kernel(*args, threads_per_block=256, async_launch=False, **kwargs):
-            for device_id in range(self.n_gpus):
-                with cp.cuda.Device(device_id):
-                    num_items = get_num_items(device_id)
-                    num_blocks = (num_items + threads_per_block - 1) // threads_per_block
-                    kernel_func((num_blocks,), (threads_per_block,), *args, **kwargs)
-                    if not async_launch:
-                        cp.cuda.Stream.null.synchronize()
-
-        # Add async version
-        wrapped_kernel.async_ = partial(wrapped_kernel, async_launch=True)
-        return wrapped_kernel
+    def async_(self, *args, **kwargs):
+        """Async version of the kernel execution"""
+        return self(*args, async_launch=True, **kwargs)
 

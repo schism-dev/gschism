@@ -1766,6 +1766,38 @@ __device__ double evalCubicSpline(CubicSpline spline, double z, bool extrapolate
 
 
 extern "C" {
+
+   __global__ void scaleGravity(double loadtide_coef) {
+
+      NODE(node);
+
+      // SAL option: scale gravity
+      if constexpr(iloadtide==2) {  // simple const
+         node->grav2 = grav*(1.0 - loadtide_coef);
+
+      } else if constexpr(iloadtide==3) {  // Stepanov & Hughes (2004)
+        
+          const double depth = max(node->depth, 0.0);
+          const double tmp1 = sqrt(depth);
+          double beta_bar = -9.8169e-3 + 1.8289e-3*tmp1 + 4.3787e-4*depth - 2.9042e-5*depth*tmp1 + 
+                             6.6038e-7*depth*depth - 4.7393e-9*depth*depth*tmp1 - 1.9354e-11*depth*depth*depth + 
+                             2.6969e-13*depth*depth*depth*tmp1;
+          
+          beta_bar=max(0.0, min(loadtide_coef, beta_bar));
+          
+
+
+          node->grav2 = grav*(1.0 - beta_bar);
+
+      } else {  // iloadtide=0,1
+        node->grav2=grav;
+
+      }
+
+      printf("scaleGravity: node(%d)->grav2 = %f\n", node->idx, node->grav2);
+   }
+
+
    __global__ void computeElevationBoundaryConditions(double ramp, double time) {
       // Compute elevation essential boundary conditions 
 

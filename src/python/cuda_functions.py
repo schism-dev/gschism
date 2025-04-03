@@ -5,6 +5,10 @@ import sys
 from iop.cudamodule import CudaSourceManager 
 
 
+cuda_manager = None
+mod = None
+project_root = None
+
 # Global CUDA function declarations
 createMesh = None
 populateMesh = None
@@ -24,12 +28,10 @@ solveWaveEquation = None
 computeGradients = None
 test = None
 
-def initialize_cuda_functions(project_root):
-    global createMesh, populateMesh, getStructSizes, scaleGravity, computeTimeRamps
-    global computeBedDeformation, computeTidalPotential, computeBottomDragVegetation
-    global computeElevationBoundaryConditions, computeDensityCubicSplines
-    global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat
-    global computeWaveEquation, solveWaveEquation, computeGradients, test
+def initializeCudaKernelManager(_project_root):
+    global createMesh, populateMesh, getStructSizes, cuda_manager, project_root, mod
+
+    project_root = _project_root
 
     source_file = os.path.join(project_root, "kernels", "meshdata.cu")
 
@@ -48,26 +50,11 @@ def initialize_cuda_functions(project_root):
         
         # Get kernel functions with better error handling
         try:
-            createMesh     = mod.get_function('createMesh')
-            populateMesh   = mod.get_function('populateMesh')
-            getStructSizes = mod.get_function('getStructSizes')
+            sizes = {'global': 1}
+            createMesh     = mod.get_function('createMesh',     sizes, kernel_type='global')
+            populateMesh   = mod.get_function('populateMesh',   sizes, kernel_type='global')
+            getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='global')
 
-            
-            scaleGravity                       = mod.get_function('scaleGravity')
-            computeTimeRamps                   = mod.get_function('computeTimeRamps')
-            computeBedDeformation              = mod.get_function('computeBedDeformation')
-            computeTidalPotential              = mod.get_function('computeTidalPotential')
-            computeBottomDragVegetation        = mod.get_function('computeBottomDragVegetation')
-            computeElevationBoundaryConditions = mod.get_function('computeElevationBoundaryConditions')
-            computeDensityCubicSplines         = mod.get_function('computeDensityCubicSplines')
-            computeDensityGradient             = mod.get_function('computeDensityGradient')
-            computeBaroclinicTerm              = mod.get_function('computeBaroclinicTerm')
-            computeElemAverageGhat             = mod.get_function('computeElemAverageGhat')
-            computeWaveEquation                = mod.get_function('computeWaveEquation')
-            solveWaveEquation                  = mod.get_function('solveWaveEquation')
-            computeGradients                   = mod.get_function('computeGradients')
-
-            test = mod.get_function('test')
         except Exception as e:
             print(f"Error getting CUDA functions: {e}")
             # Continue with error handling or exit
@@ -76,3 +63,36 @@ def initialize_cuda_functions(project_root):
     except Exception as e:
         print(f"Failed to compile CUDA code: {e}")
         sys.exit(1)
+
+
+def initializeCudaFunctions(sizes):
+    global mod
+    global scaleGravity, computeTimeRamps
+    global computeBedDeformation, computeTidalPotential, computeBottomDragVegetation
+    global computeElevationBoundaryConditions, computeDensityCubicSplines
+    global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat
+    global computeWaveEquation, solveWaveEquation, computeGradients, test
+
+ 
+    # Get kernel functions with better error handling
+    try:
+        scaleGravity                       = mod.get_function('scaleGravity',                       sizes, kernel_type='nodes')
+        computeTimeRamps                   = mod.get_function('computeTimeRamps',                   sizes, kernel_type='global')
+        computeBedDeformation              = mod.get_function('computeBedDeformation',              sizes, kernel_type='global')
+        computeTidalPotential              = mod.get_function('computeTidalPotential',              sizes, kernel_type='global')
+        computeBottomDragVegetation        = mod.get_function('computeBottomDragVegetation',        sizes, kernel_type='global')
+        computeElevationBoundaryConditions = mod.get_function('computeElevationBoundaryConditions', sizes, kernel_type='global')
+        computeDensityCubicSplines         = mod.get_function('computeDensityCubicSplines',         sizes, kernel_type='global')
+        computeDensityGradient             = mod.get_function('computeDensityGradient',             sizes, kernel_type='global')
+        computeBaroclinicTerm              = mod.get_function('computeBaroclinicTerm',              sizes, kernel_type='global')
+        computeElemAverageGhat             = mod.get_function('computeElemAverageGhat',             sizes, kernel_type='global')
+        computeWaveEquation                = mod.get_function('computeWaveEquation',                sizes, kernel_type='global')
+        solveWaveEquation                  = mod.get_function('solveWaveEquation',                  sizes, kernel_type='global')
+        computeGradients                   = mod.get_function('computeGradients',                   sizes, kernel_type='global')
+
+        test = mod.get_function('test', sizes, kernel_type='global')
+    except Exception as e:
+        print(f"Error getting CUDA functions: {e}")
+        # Continue with error handling or exit
+        sys.exit(1)
+     

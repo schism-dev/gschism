@@ -1123,9 +1123,7 @@ extern "C" {
    }
 
 
-   __global__ void scaleGravity(void) {
-     printf("NOT IMPLEMENTED: scaleGravity %d\n", 12);
-   }
+   
 
    __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
       // Compute the different time ramps used in the code 
