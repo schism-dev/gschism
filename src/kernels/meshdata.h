@@ -25,7 +25,7 @@ constexpr double prmsl_ref = 101325.0; // Reference pressure for inverse baromet
 constexpr double veg_lai = 1.0; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-// constexpr int ntip = 1;            // Number of tidal potential components
+constexpr int ntip = 1;            // Number of tidal potential components
 constexpr double tip_dp = 1.0e6;   // cut-off depth for applying tidal potential
 
 constexpr int iunder_deep = 0;     // Option of under-deep methods
@@ -357,8 +357,6 @@ struct Element {
    double area;               // Area of the element
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
-
-   double wind_angle;         // Wind rotation angle
 
    Frame frame;
 
@@ -867,6 +865,17 @@ struct Node {
    double p_air;
    double t_air;
    double q_air;
+   double wind_angle;  // Wind rotation angle
+
+   __host__ __device__ void setWind(Vector2 &u) {
+   // Sets the wind vector taking into account the wind rotation angle
+   
+      const double dir = atan2(-u.x,-u.y);
+      const double speed = length(u);
+
+      // Calculate new u and v components with added rotation angle
+      u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
+   }
 
    __host__ __device__ Point2 p2(void) const { return {p.x, p.y}; }
 

@@ -15,16 +15,16 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-sys.path.append(r'/media/jmg/Elements2/src/gschism/src')  
+sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+# sys.path.append(r'/media/jmg/Elements2/src/gschism/src')  
 
 from iop.cudamodule import CudaSourceManager
 from python.schism_init import schism_init
 from python.schism_step import schism_step
 from python.schism_consts import *
 import python.cuda_functions as cufunc
-tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
-# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
+tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -32,9 +32,9 @@ tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
+in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -155,8 +155,8 @@ if __name__ == "__main__":
 
 
 
-    # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+    test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+    # test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
     namelist = schism_init(test_dir)
 
@@ -226,9 +226,9 @@ if __name__ == "__main__":
         module.readVGrid(vgrid_file, nodeCoords.shape[1])
 
     if (nws == 2):
-        wind_rotate_angle = module.readWindRotationAngle(os.path.join(in_dir, 'windrot_geo2proj.gr3'), elnode.shape[1])
+        wind_rotate_angle = module.readWindRotationAngle(os.path.join(in_dir, 'windrot_geo2proj.gr3'), nodeCoords.shape[1])
     else:
-        wind_rotate_angle = np.zeros(elnode.shape[1])
+        wind_rotate_angle = np.zeros(nodeCoords.shape[1])
 
     # Before sending the mesh to the GPU, we need to do some preprocessing, including computing the 
     # interpolation weights.
@@ -245,7 +245,7 @@ if __name__ == "__main__":
     p_air_node = np.zeros(nodeCoords.shape[1])
     t_air_node = np.zeros(nodeCoords.shape[1])
     q_air_node = np.zeros(nodeCoords.shape[1])
-    sflux.getWind(2452424.0, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
+    # sflux.getWind(2452424.0, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
 
 
     
@@ -555,7 +555,7 @@ if __name__ == "__main__":
             elnodePart = elnode[:, maskElemsPart].copy(order='F')
             elsidePart = elside[:, maskElemsPart].copy(order='F')
             nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
-            windRotateAnglePart = wind_rotate_angle[maskElemsPart].copy(order='F')
+            windRotateAnglePart = wind_rotate_angle[maskNodesPart].copy(order='F')
 
             numSegments = ilnd.shape[0]
 

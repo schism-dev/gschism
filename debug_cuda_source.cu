@@ -359,8 +359,6 @@ struct Element {
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
 
-   double wind_angle;         // Wind rotation angle
-
    Frame frame;
 
    Vector2 gradPhi[4];       // Derivatives of shape functions
@@ -862,6 +860,23 @@ struct Node {
    double bdef2; // Bottom deformation at current timestep
 
    double qel; // RHS
+
+   // Meteorological forcing
+   Vector2 u_air;
+   double p_air;
+   double t_air;
+   double q_air;
+   double wind_angle;  // Wind rotation angle
+
+   __host__ __device__ void setWind(Vector2 &u) {
+   // Sets the wind vector taking into account the wind rotation angle
+   
+      const double dir = atan2(-u.x,-u.y);
+      const double speed = length(u);
+
+      // Calculate new u and v components with added rotation angle
+      u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
+   }
 
    __host__ __device__ Point2 p2(void) const { return {p.x, p.y}; }
 
@@ -2067,6 +2082,8 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
          nodeNeighNodes[idxNode] = node_ptr;
          node.nodes = &(nodeNeighNodes[idxNode]);
+
+         node_ptr->wind_angle = wind_rotate_angle[i];
       }
 
       // Element **elements; // pointer to the elements connected to this node
@@ -2213,7 +2230,6 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
       
 
       elem.i34 = i34[i];
-      elem.wind_angle = wind_rotate_angle[i];
 
       // Compute the centroid of the element and its depth
       Vector2 center = {0.0, 0.0};
@@ -2991,11 +3007,13 @@ extern "C" {
    }
 
 
-   __global__ void computeTidalPotential(double time, int ntip, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
+   __global__ void computeTidalPotential(double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
 
-      NODE(node);
+      NODE_BND(nodeBnd);
 
-      printf("computeTidalPotential:  ntip = %d\n",  ntip);
+      Node *node = nodeBnd->node;
+
+      printf("computeTidalPotential: nodeIdx = %d, ntip = %d\n", node->idx, ntip);
       node->ETP = 0.0;
 
       for (int j=0; j<ntip; j++) {
@@ -3013,6 +3031,147 @@ extern "C" {
       
    }
 
+   __global__ void getBoundaryConditions(double time) {
+      // Get boundary conditions
+      // XXX IMPLEMENT THIS
+      assert(true && "getBoundaryConditions not implemented");
+
+      NODE_BND(nodeBnd);
+
+      const Node *node = nodeBnd->node;
+
+   //    if(nettype>0) then
+   //      if(time>th_time(1,2,1)) then !not '>=' to avoid last step
+   //        ath(:,1,1,1)=ath(:,1,2,1)
+   //        read(50,*) tmp,ath(1:nettype,1,2,1)
+   //        th_time(1,1,1)=th_time(1,2,1)
+   //        th_time(1,2,1)=th_time(1,2,1)+th_dt(1,1)
+   //      endif !time
+
+      
+   //      rat=(time-th_time(1,1,1))/th_dt(1,1)
+   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //        write(errmsg,*) 'STEP: rat out in elev.th:',rat,time,th_time(1,1:2,1),th_dt(1,1)
+   //        call parallel_abort(errmsg)
+   //      endif
+
+   //      icount=0
+   //      do k=1,nope_global
+   //        if(iettype(k)==1) then
+   //          icount=icount+1
+   //          if(icount>nettype) call parallel_abort('Wrong counting 1')
+   //          eth(1,k)=(1-rat)*ath(icount,1,1,1)+rat*ath(icount,1,2,1)
+   //        endif
+   //      enddo 
+   //    endif !nettype
+
+   //    if(nfltype>0) then
+   //      if(time>th_time(1,2,2)) then
+   //        ath(:,1,1,2)=ath(:,1,2,2)
+   //        read(51,*) tmp,ath(1:nfltype,1,2,2)
+   //        th_time(1,1,2)=th_time(1,2,2)
+   //        th_time(1,2,2)=th_time(1,2,2)+th_dt(1,2)
+   //      endif !time
+
+
+   //      rat=(time - th_time(1,1,2))/th_dt(1,2)
+   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //        write(errmsg,*) 'STEP: ratio out of range while interpolating &
+   //   &flux.th. Probably times are not equally spaced or dt has changesd &
+   //   &from a prior run (ratio, time, th times):',rat,time,th_time(1,1:2,2)
+   //        call parallel_abort(errmsg)
+   //      endif
+   //      icount=0
+   //      do k=1,nope_global
+   //        if(ifltype(k)==1) then
+   //          icount=icount+1
+   //          if(icount>nfltype) call parallel_abort('STEP: wrong counting 2')
+   //          qthcon(k)=(1.d0-rat)*ath(icount,1,1,2)+rat*ath(icount,1,2,2)
+   //        endif
+   //      enddo !k
+   //    endif !nfltype
+
+ 
+
+   //    if(nettype2>0) then
+   //      if(time>th_time2(2,1)) then        
+   //        ath2(:,:,:,1,1)=ath2(:,:,:,2,1)
+   //        icount3=time/th_dt2(1)+2
+   //        j=nf90_inq_varid(ncid_elev2D, "time_series",mm)
+   //        if(j/=NF90_NOERR) call parallel_abort('step: time_series in elev2D.th.nc')
+   //        j=nf90_get_var(ncid_elev2D,mm,ath2(1,1,1:nnode_et,2,1), &
+   //  &(/1,1,1,icount3/),(/1,1,nnode_et,1/))
+   //        if(j/=NF90_NOERR) call parallel_abort('step: time_series in elev2D.th.nc (2)')
+
+   //        th_time2(1,1)=th_time2(2,1)
+   //        th_time2(2,1)=th_time2(2,1)+th_dt2(1)
+   //      endif !time
+
+
+   //      rat=(time-th_time2(1,1))/th_dt2(1)
+   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //        write(errmsg,*) 'STEP: rat out in elev2D.th:',rat,time,th_time2(1:2,1),th_dt2(1)
+   //        call parallel_abort(errmsg)
+   //      endif
+   //      icount=0
+   //      icount2=0
+   //      do k=1,nope_global
+   //        if(iettype(k)>=4) then
+   //          icount=icount+1
+   //          if(icount>nettype2) call parallel_abort('STEP: wrong counting 7')
+   //          do j=1,nond_global(k)
+
+   //            icount2=icount2+1
+   //            if(icount2>nnode_et) call parallel_abort('STEP: wrong counting nodes')
+
+   //            eth(j,k)=(1.d0-rat)*ath2(1,1,icount2,1,1)+rat*ath2(1,1,icount2,2,1)
+   //          enddo !j
+   //        endif
+   //      enddo !k
+   //    endif !nettype2
+
+   //    if(nfltype2>0) then
+   //      if(time>th_time2(2,2)) then
+   //        ath2(:,:,:,1,2)=ath2(:,:,:,2,2)
+
+
+   //        icount3=time/th_dt2(2)+2
+   //        j=nf90_inq_varid(ncid_uv3D, "time_series",mm)
+   //        if(j/=NF90_NOERR) call parallel_abort('step: time_series in uv3D.th.nc')
+   //        j=nf90_get_var(ncid_uv3D,mm,ath2(1:2,1:nvrt,1:nnode_fl,2,2), &
+   //  &(/1,1,1,icount3/),(/2,nvrt,nnode_fl,1/))
+
+   //        if(j/=NF90_NOERR) call parallel_abort('step: time_series in uv3D.th.nc')
+
+
+
+   //        th_time2(1,2)=th_time2(2,2)
+   //        th_time2(2,2)=th_time2(2,2)+th_dt2(2)
+   //      endif !time
+
+
+   //      rat=(time-th_time2(1,2))/th_dt2(2)
+   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //        write(errmsg,*) 'STEP: rat out in uv3D.th:',rat,time,th_time2(1:2,2),th_dt2(2)
+   //        call parallel_abort(errmsg)
+   //      endif
+   //      icount=0
+   //      icount2=0
+   //      do k=1,nope_global
+   //        if(iabs(ifltype(k))>=4) then
+   //          icount=icount+1
+   //          if(icount>nfltype2) call parallel_abort('STEP: wrong counting 6')
+   //          do j=1,nond_global(k)
+   //            icount2=icount2+1
+   //            if(icount2>nnode_fl) call parallel_abort('STEP: wrong counting vel')
+
+   //            uthnd(1:nvrt,j,k)=(1.d0-rat)*ath2(1,1:nvrt,icount2,1,2)+rat*ath2(1,1:nvrt,icount2,2,2) !ll frame if ics=2
+   //            vthnd(1:nvrt,j,k)=(1.d0-rat)*ath2(2,1:nvrt,icount2,1,2)+rat*ath2(2,1:nvrt,icount2,2,2)
+   //          enddo !j
+   //        endif
+   //      enddo !k
+   //    endif !nfltype2
+   }
 
    __global__ void computeElevationBoundaryConditions(double ramp, double time) {
       // Compute elevation essential boundary conditions 

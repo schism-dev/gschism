@@ -875,6 +875,8 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
          nodeNeighNodes[idxNode] = node_ptr;
          node.nodes = &(nodeNeighNodes[idxNode]);
+
+         node_ptr->wind_angle = wind_rotate_angle[i];
       }
 
       // Element **elements; // pointer to the elements connected to this node
@@ -1021,7 +1023,6 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
       
 
       elem.i34 = i34[i];
-      elem.wind_angle = wind_rotate_angle[i];
 
       // Compute the centroid of the element and its depth
       Vector2 center = {0.0, 0.0};
@@ -1799,11 +1800,13 @@ extern "C" {
    }
 
 
-   __global__ void computeTidalPotential(double time, int ntip, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
+   __global__ void computeTidalPotential(double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
 
-      NODE(node);
+      NODE_BND(nodeBnd);
 
-      printf("computeTidalPotential:  ntip = %d\n",  ntip);
+      Node *node = nodeBnd->node;
+
+      printf("computeTidalPotential: nodeIdx = %d, ntip = %d\n", node->idx, ntip);
       node->ETP = 0.0;
 
       for (int j=0; j<ntip; j++) {

@@ -79,7 +79,7 @@ def initializeCudaFunctions(sizes):
         scaleGravity                       = mod.get_function('scaleGravity',                       sizes, kernel_type='nodes')
         computeTimeRamps                   = mod.get_function('computeTimeRamps',                   sizes, kernel_type='global')
         computeBedDeformation              = mod.get_function('computeBedDeformation',              sizes, kernel_type='global')
-        computeTidalPotential              = mod.get_function('computeTidalPotential',              sizes, kernel_type='nodes')
+        computeTidalPotential              = mod.get_function('computeTidalPotential',              sizes, kernel_type='nodeBnd')
         getBoundaryConditions              = mod.get_function('getBoundaryConditions',              sizes, kernel_type='nodeBnd')
         computeBottomDragVegetation        = mod.get_function('computeBottomDragVegetation',        sizes, kernel_type='global')
         computeElevationBoundaryConditions = mod.get_function('computeElevationBoundaryConditions', sizes, kernel_type='global')

@@ -6,8 +6,8 @@ import iop.readSflux as readSflux
 def computeMeteorologicalForcing(time, sflux):
     sflux.getWinds(time)
 
-    print("IMPLEMENT THIS!!!!")
-    stop
+    print("IMPLEMENT THIS: computeMeteorologicalForcing!!!!")
+    # stop
 #     # Re-scale wind
 #     if (nws != 0 && iwindoff!=0) {
 #         do i=1,npa
@@ -86,7 +86,7 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     # Earth tidal potential and loading tide at nodes: pre-compute to save time
-    cufunc.computeTidalPotential(time, bctides.ntip, bctides.tfreq, bctides.tamp, bctides.tnf, 
+    cufunc.computeTidalPotential(time, bctides.tfreq, bctides.tamp, bctides.tnf, 
                                  bctides.tear, bctides.jspc)
 
 

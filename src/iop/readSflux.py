@@ -651,27 +651,10 @@ class SFlux:
                 raise ValueError(f'Error combining sflux data from two datasets: {e}')
 
 
-    def rotate_winds(self, u, v):
-
- 
-        pass
-
-        assert(False and 'IMPLEMENT THIS!!!!')
-        # # XXX TODO: Do this using a rotation matrix (or complex numbers) instead of trigonometric functions
-        # # calculate speed and direction (geographic)
-        # dir = np.arctan2(-u,-v)
-        # speed = np.sqrt(u*u + v*v)
-
-        # # add rotation angle
-        # dir += self.wind_rotate_angle
-
-        # # calculate new u and v components
-        # u = -speed * np.sin(dir)
-        # v = -speed * np.cos(dir)
-
 
     def getWind(self, time_now: float, u_air_node: np.ndarray, v_air_node: np.ndarray, p_air_node: np.ndarray, t_air_node: np.ndarray, q_air_node: np.ndarray) -> tuple:
 
+        # XXX REMOVE THIS FUNCTION
         self.getCombinedData(time_now, self.inputs['uwind_name'], u_air_node)
         self.getCombinedData(time_now, self.inputs['vwind_name'], v_air_node)
         self.getCombinedData(time_now, self.inputs['prmsl_name'], p_air_node)
@@ -687,4 +670,7 @@ class SFlux:
 
 
     def getWinds(self, time: float):
-        assert(False and 'IMPLEMENT THIS!!!!, should be similar to getWind()')
+        # assert(False and 'IMPLEMENT THIS!!!!, should be similar to getWind()')
+        print('IMPLEMENT THIS!!!!, should be similar to getWind()')
+        print('Use node->setWind() in meshdata.h')
+        print('time = ', time)
