@@ -656,7 +656,7 @@ class SFlux:
  
         pass
 
-        print('IMPLEMENT THIS!!!!')
+        assert(False and 'IMPLEMENT THIS!!!!')
         # # XXX TODO: Do this using a rotation matrix (or complex numbers) instead of trigonometric functions
         # # calculate speed and direction (geographic)
         # dir = np.arctan2(-u,-v)
@@ -672,7 +672,6 @@ class SFlux:
 
     def getWind(self, time_now: float, u_air_node: np.ndarray, v_air_node: np.ndarray, p_air_node: np.ndarray, t_air_node: np.ndarray, q_air_node: np.ndarray) -> tuple:
 
-
         self.getCombinedData(time_now, self.inputs['uwind_name'], u_air_node)
         self.getCombinedData(time_now, self.inputs['vwind_name'], v_air_node)
         self.getCombinedData(time_now, self.inputs['prmsl_name'], p_air_node)
@@ -686,3 +685,6 @@ class SFlux:
         # rotate the winds from geographic to the grid's map projection
         self.rotate_winds(u_air_node, v_air_node)
 
+
+    def getWinds(self, time: float):
+        assert(False and 'IMPLEMENT THIS!!!!, should be similar to getWind()')

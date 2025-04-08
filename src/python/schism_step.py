@@ -1,7 +1,66 @@
 
 import python.cuda_functions as cufunc
+import iop.readSflux as readSflux
 
-def schism_step(it: int, namelist: dict):
+
+def computeMeteorologicalForcing(time, sflux):
+    sflux.getWinds(time)
+
+    print("IMPLEMENT THIS!!!!")
+    stop
+#     # Re-scale wind
+#     if (nws != 0 && iwindoff!=0) {
+#         do i=1,npa
+#           windx(i)=windx(i)*windfactor(i)
+#           windy(i)=windy(i)*windfactor(i)
+#         enddo !i
+#       endif; endif
+
+# !...  compute wind stress components (in lat/lon frame if ics=2; in map projection E-N direction if ics=1)
+#       dragcmin=1.0d-3*(0.61d0+0.063d0*6.d0)
+#       dragcmax=1.0d-3*(0.61d0+0.063d0*50.d0)
+
+# !$OMP parallel default(shared) private(i,wmag,dragcoef,tmp,theta,z0_donelan)
+
+# !$OMP workshare
+#       tau=0.d0 !init.
+# !$OMP end workshare
+
+# !$OMP do
+#       do i=1,npa
+#         if(nws==0) then
+#           tau(1,i)=0.d0
+#           tau(2,i)=0.d0
+#         else if(nws==2.and.ihconsv==1.and.iwind_form==0) then !tauxz and tauyz defined
+#           if(idry(i)==1) then
+#             tau(1,i)=0.d0
+#             tau(2,i)=0.d0
+#           else !rescale as well
+#             tau(1,i)=-tauxz(i)/rho0*rampwind*windfactor(i)**2.d0 !sign and scale difference between stresses tauxz and tau
+#             tau(2,i)=-tauyz(i)/rho0*rampwind*windfactor(i)**2.d0
+#           endif
+#         else !if(nws==1.or.nws>=4.or.nws>=2.and.ihconsv==0.or.iwind_form==-1) then
+#           wmag=sqrt(windx(i)**2.d0+windy(i)**2.d0)
+#           if(iwind_form==-1) then !P&P
+#             dragcoef=1.0d-3*(0.61d0+0.063d0*wmag)
+#             dragcoef=min(max(dragcoef,dragcmin),dragcmax)
+#             tau(1,i)=dragcoef*0.001293d0*wmag*windx(i)*rampwind
+#             tau(2,i)=dragcoef*0.001293d0*wmag*windy(i)*rampwind
+#           else if(iwind_form==1) then !Hwang
+#             if(wmag<=35.d0) then
+#               dragcoef=1.0d-4*(-0.016d0*wmag*wmag+0.967d0*wmag+8.058d0)
+#             else
+#               dragcoef=2.23d-3*35.0d0/wmag
+#             endif
+#             dragcoef=max(dragcoef,4.d-4)
+#             tau(1,i)=dragcoef*0.001293d0*wmag*windx(i)*rampwind
+#             tau(2,i)=dragcoef*0.001293d0*wmag*windy(i)*rampwind
+#           endif !iwind_form
+#         endif !nws
+#       enddo !i=1,npa
+# !$OMP end do      
+
+def schism_step(it: int, namelist, bctides, sflux):
 
     core = namelist.core
     opt  = namelist.opt
@@ -27,10 +86,12 @@ def schism_step(it: int, namelist: dict):
 
 
     # Earth tidal potential and loading tide at nodes: pre-compute to save time
-    computeTidalPotential()
+    cufunc.computeTidalPotential(time, bctides.ntip, bctides.tfreq, bctides.tamp, bctides.tnf, 
+                                 bctides.tear, bctides.jspc)
 
 
-    computeMeteorologicalForcing()  # Lines 458-1014
+    # Meteorological forcing
+    computeMeteorologicalForcing(time, sflux)  # Lines 458-1014
 
 
     # computeTracerStuff()            # Lines 1015-1145
@@ -41,7 +102,7 @@ def schism_step(it: int, namelist: dict):
 
 
     # Get boundary conditions from external files
-    getBoundaryConditions()          # Lines 1331-1584
+    getBoundaryConditions(time)          # Lines 1331-1584
 
 
     # # Read in volume/mass sources/sinks

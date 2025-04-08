@@ -4,7 +4,7 @@ from functools import partial
 THREADS_PER_BLOCK = 256
 
 class CudaKernelWrapper:
-    def __init__(self, kernel_func, sizes,kernel_type='global', n_gpus=None):
+    def __init__(self, kernel_func, sizes, kernel_type='global', n_gpus=None):
         """
         Initialize wrapper for a specific kernel function
         
@@ -20,7 +20,10 @@ class CudaKernelWrapper:
         # Set number of items and threads based on kernel type
 
         self.num_items = sizes[kernel_type]
-        self.threads_per_block = THREADS_PER_BLOCK
+        if kernel_type != 'global':
+            self.threads_per_block = THREADS_PER_BLOCK
+        else:
+            self.threads_per_block = 1
         
 
     def __call__(self, *args, async_launch=False, **kwargs):

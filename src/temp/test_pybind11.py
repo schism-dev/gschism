@@ -15,16 +15,16 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/Elements2/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/Elements2/src/gschism/src')  
 
 from iop.cudamodule import CudaSourceManager
 from python.schism_init import schism_init
 from python.schism_step import schism_step
 from python.schism_consts import *
 import python.cuda_functions as cufunc
-# tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
-tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -32,9 +32,9 @@ tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
+# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -155,8 +155,8 @@ if __name__ == "__main__":
 
 
 
-    test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    # test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+    # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+    test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
     namelist = schism_init(test_dir)
 
@@ -208,7 +208,6 @@ if __name__ == "__main__":
     # mesh_file = "/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
     # mesh_file = "/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
     # mesh_file = "/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
-    # hgrid_file = os.path.join(in_dir, 'hgrid.ll')
     hgrid_file = os.path.join(in_dir, 'hgrid.gr3')
     vgrid_file = os.path.join(in_dir, 'vgrid.in')
 
@@ -563,8 +562,8 @@ if __name__ == "__main__":
             # Creates the mesh object on each GPU. This function mostly deals with letting the GPU know
             # which memory is being used by the mesh, both locally and in other GPUs.
             cufunc.createMesh(ipart, numNodes, numElements, numSides, numSegments,
-                              numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart], nvrt, kz,
-                              max(numPartNodes), max(numPartElements), max(numPartSides),
+                              numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart],  
+                              max(numPartNodes), max(numPartElements), max(numPartSides), nvrt, kz,
                               nodesPtr, elemsPtr, sidesPtr,
                               nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
@@ -593,10 +592,11 @@ if __name__ == "__main__":
             # # test((1,), (1,), (-2.21334,  0.76058, -1.0))
             # cufunc.test(12.0,  1.0, -1.0)
 
-    sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides)}
+    sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
+             'nodeBnd': max(numPartBoundaryNodes)}
     cufunc.initializeCudaFunctions(sizes)
 
-    schism_step(0, namelist)
+    schism_step(0, namelist, bctides, sflux)
 
     # Launch kernel on each GPU
     launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)

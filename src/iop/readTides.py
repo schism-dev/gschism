@@ -72,11 +72,11 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
         
         if tide.ntip > 0:
             tide.tp_name = []
-            tide.tamp = cp.zeros(tide.ntip, dtype=float64)
-            tide.tnf = cp.zeros(tide.ntip, dtype=float64)
+            tide.tamp  = cp.zeros(tide.ntip, dtype=float64)
+            tide.tnf   = cp.zeros(tide.ntip, dtype=float64)
             tide.tfreq = cp.zeros(tide.ntip, dtype=float64)
-            tide.jspc = cp.zeros(tide.ntip, dtype=int32)
-            tide.tear = cp.zeros(tide.ntip, dtype=float64)
+            tide.jspc  = cp.zeros(tide.ntip, dtype=int32)
+            tide.tear  = cp.zeros(tide.ntip, dtype=float64)
             
             for i in range(tide.ntip):
                 tide.tp_name.append(f.readline().strip())
@@ -276,14 +276,14 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                 raise ValueError('INIT:icount!=ntrmod')
         
         # Store counters in tide object
-        tide.nettype = nettype
-        tide.nfltype = nfltype
-        tide.nettype2 = nettype2
-        tide.nfltype2 = nfltype2
-        tide.nnode_et = nnode_et
-        tide.nnode_fl = nnode_fl
+        tide.nettype   = nettype
+        tide.nfltype   = nfltype
+        tide.nettype2  = nettype2
+        tide.nfltype2  = nfltype2
+        tide.nnode_et  = nnode_et
+        tide.nnode_fl  = nnode_fl
         tide.nnode_tr2 = nnode_tr2
-        tide.ntrtype1 = ntrtype1
+        tide.ntrtype1  = ntrtype1
     
     return tide
 

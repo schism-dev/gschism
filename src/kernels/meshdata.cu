@@ -1769,6 +1769,7 @@ extern "C" {
 
    __global__ void scaleGravity(double loadtide_coef) {
 
+      printf("scaleGravity: i = %d, np = %d\n", threadIdx.x + blockIdx.x * blockDim.x,mesh->np);
       NODE(node);
 
       // SAL option: scale gravity
@@ -1797,6 +1798,170 @@ extern "C" {
       printf("scaleGravity: node(%d)->grav2 = %f\n", node->idx, node->grav2);
    }
 
+
+   __global__ void computeTidalPotential(double time, int ntip, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
+
+      NODE(node);
+
+      printf("computeTidalPotential:  ntip = %d\n",  ntip);
+      node->ETP = 0.0;
+
+      for (int j=0; j<ntip; j++) {
+
+         const double ncyc = int(tfreq[j]*time/(2.0*pi));
+         const double arg = tfreq[j]*time - ncyc*2.0*pi + jspc[j]*node->lon + tear[j];
+         node->ETP += 0.69*ramp*tamp[j]*tnf[j]*node->fun_lat[jspc[j]]*cos(arg);
+
+         if constexpr(iloadtide==1) { // loading tide
+            assert(true && "Loading tide not implemented");
+            // node->ETP += node->rloadtide[0,j]*cos(tfreq[j]*time - node->rloadtide[1,j]);
+         }
+         
+      }
+      
+   }
+
+   __global__ void getBoundaryConditions(double time) {
+      // Get boundary conditions
+      // XXX IMPLEMENT THIS
+      assert(true && "getBoundaryConditions not implemented");
+
+      NODE_BND(nodeBnd);
+
+      const Node *node = nodeBnd->node;
+
+   //    if(nettype>0) then
+   //      if(time>th_time(1,2,1)) then !not '>=' to avoid last step
+   //        ath(:,1,1,1)=ath(:,1,2,1)
+   //        read(50,*) tmp,ath(1:nettype,1,2,1)
+   //        th_time(1,1,1)=th_time(1,2,1)
+   //        th_time(1,2,1)=th_time(1,2,1)+th_dt(1,1)
+   //      endif !time
+
+      
+   //      rat=(time-th_time(1,1,1))/th_dt(1,1)
+   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //        write(errmsg,*) 'STEP: rat out in elev.th:',rat,time,th_time(1,1:2,1),th_dt(1,1)
+   //        call parallel_abort(errmsg)
+   //      endif
+
+   //      icount=0
+   //      do k=1,nope_global
+   //        if(iettype(k)==1) then
+   //          icount=icount+1
+   //          if(icount>nettype) call parallel_abort('Wrong counting 1')
+   //          eth(1,k)=(1-rat)*ath(icount,1,1,1)+rat*ath(icount,1,2,1)
+   //        endif
+   //      enddo 
+   //    endif !nettype
+
+   //    if(nfltype>0) then
+   //      if(time>th_time(1,2,2)) then
+   //        ath(:,1,1,2)=ath(:,1,2,2)
+   //        read(51,*) tmp,ath(1:nfltype,1,2,2)
+   //        th_time(1,1,2)=th_time(1,2,2)
+   //        th_time(1,2,2)=th_time(1,2,2)+th_dt(1,2)
+   //      endif !time
+
+
+   //      rat=(time - th_time(1,1,2))/th_dt(1,2)
+   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //        write(errmsg,*) 'STEP: ratio out of range while interpolating &
+   //   &flux.th. Probably times are not equally spaced or dt has changesd &
+   //   &from a prior run (ratio, time, th times):',rat,time,th_time(1,1:2,2)
+   //        call parallel_abort(errmsg)
+   //      endif
+   //      icount=0
+   //      do k=1,nope_global
+   //        if(ifltype(k)==1) then
+   //          icount=icount+1
+   //          if(icount>nfltype) call parallel_abort('STEP: wrong counting 2')
+   //          qthcon(k)=(1.d0-rat)*ath(icount,1,1,2)+rat*ath(icount,1,2,2)
+   //        endif
+   //      enddo !k
+   //    endif !nfltype
+
+ 
+
+   //    if(nettype2>0) then
+   //      if(time>th_time2(2,1)) then        
+   //        ath2(:,:,:,1,1)=ath2(:,:,:,2,1)
+   //        icount3=time/th_dt2(1)+2
+   //        j=nf90_inq_varid(ncid_elev2D, "time_series",mm)
+   //        if(j/=NF90_NOERR) call parallel_abort('step: time_series in elev2D.th.nc')
+   //        j=nf90_get_var(ncid_elev2D,mm,ath2(1,1,1:nnode_et,2,1), &
+   //  &(/1,1,1,icount3/),(/1,1,nnode_et,1/))
+   //        if(j/=NF90_NOERR) call parallel_abort('step: time_series in elev2D.th.nc (2)')
+
+   //        th_time2(1,1)=th_time2(2,1)
+   //        th_time2(2,1)=th_time2(2,1)+th_dt2(1)
+   //      endif !time
+
+
+   //      rat=(time-th_time2(1,1))/th_dt2(1)
+   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //        write(errmsg,*) 'STEP: rat out in elev2D.th:',rat,time,th_time2(1:2,1),th_dt2(1)
+   //        call parallel_abort(errmsg)
+   //      endif
+   //      icount=0
+   //      icount2=0
+   //      do k=1,nope_global
+   //        if(iettype(k)>=4) then
+   //          icount=icount+1
+   //          if(icount>nettype2) call parallel_abort('STEP: wrong counting 7')
+   //          do j=1,nond_global(k)
+
+   //            icount2=icount2+1
+   //            if(icount2>nnode_et) call parallel_abort('STEP: wrong counting nodes')
+
+   //            eth(j,k)=(1.d0-rat)*ath2(1,1,icount2,1,1)+rat*ath2(1,1,icount2,2,1)
+   //          enddo !j
+   //        endif
+   //      enddo !k
+   //    endif !nettype2
+
+   //    if(nfltype2>0) then
+   //      if(time>th_time2(2,2)) then
+   //        ath2(:,:,:,1,2)=ath2(:,:,:,2,2)
+
+
+   //        icount3=time/th_dt2(2)+2
+   //        j=nf90_inq_varid(ncid_uv3D, "time_series",mm)
+   //        if(j/=NF90_NOERR) call parallel_abort('step: time_series in uv3D.th.nc')
+   //        j=nf90_get_var(ncid_uv3D,mm,ath2(1:2,1:nvrt,1:nnode_fl,2,2), &
+   //  &(/1,1,1,icount3/),(/2,nvrt,nnode_fl,1/))
+
+   //        if(j/=NF90_NOERR) call parallel_abort('step: time_series in uv3D.th.nc')
+
+
+
+   //        th_time2(1,2)=th_time2(2,2)
+   //        th_time2(2,2)=th_time2(2,2)+th_dt2(2)
+   //      endif !time
+
+
+   //      rat=(time-th_time2(1,2))/th_dt2(2)
+   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //        write(errmsg,*) 'STEP: rat out in uv3D.th:',rat,time,th_time2(1:2,2),th_dt2(2)
+   //        call parallel_abort(errmsg)
+   //      endif
+   //      icount=0
+   //      icount2=0
+   //      do k=1,nope_global
+   //        if(iabs(ifltype(k))>=4) then
+   //          icount=icount+1
+   //          if(icount>nfltype2) call parallel_abort('STEP: wrong counting 6')
+   //          do j=1,nond_global(k)
+   //            icount2=icount2+1
+   //            if(icount2>nnode_fl) call parallel_abort('STEP: wrong counting vel')
+
+   //            uthnd(1:nvrt,j,k)=(1.d0-rat)*ath2(1,1:nvrt,icount2,1,2)+rat*ath2(1,1:nvrt,icount2,2,2) !ll frame if ics=2
+   //            vthnd(1:nvrt,j,k)=(1.d0-rat)*ath2(2,1:nvrt,icount2,1,2)+rat*ath2(2,1:nvrt,icount2,2,2)
+   //          enddo !j
+   //        endif
+   //      enddo !k
+   //    endif !nfltype2
+   }
 
    __global__ void computeElevationBoundaryConditions(double ramp, double time) {
       // Compute elevation essential boundary conditions 
@@ -2520,7 +2685,7 @@ extern "C" {
       // cff1-3: coefficients for 2D/3D
       Vector2 gradEta = {0.0, 0.0};  // \nabla \eta
       Vector2 gradPr  = {0.0, 0.0};  // \nabla pressure
-      Vector2 gradEtp = {0.0, 0.0};  // \nabla etp
+      Vector2 gradETP = {0.0, 0.0};  // \nabla etp
 
       double av_cff1 = 0.0;  // av. for cff1
       double av_cff2 = 0.0;  // av. for cff2
@@ -2549,7 +2714,7 @@ extern "C" {
          gradPr  += node->pr  *elem->gradPhi[j];
 
          if (elem->depth >= tip_dp) {
-           gradEtp += node->etp*elem->gradPhi[j];
+           gradETP += node->ETP*elem->gradPhi[j];
          }
 
          
@@ -2705,7 +2870,7 @@ extern "C" {
          
       // Finish off terms in F, F^\alpha and f_b
       const double grav3 = elem->mean(&Node::grav2);
-      const Vector2 fb = grav3*gradEtp - gradPr/rho0; //const in each elem
+      const Vector2 fb = grav3*gradETP - gradPr/rho0; //const in each elem
 
 
       Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
@@ -3124,6 +3289,7 @@ __global__ void transport(void) {
 
 
 extern "C" 
+
 __global__ void createMesh(int partNum, 
                            int npgb, int negb, int nsgb, int nseg,
                            int np, int ne, int ns, int nvrt, int kz,
@@ -3141,7 +3307,7 @@ __global__ void createMesh(int partNum,
       return;
    };
 
-   printf("Creating mesh for partition %d\n", partNum);
+   printf("Creating mesh for partition %d, np = %d\n", partNum, np);
    mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, kz, np, ne, ns, nseg, max_np, max_ne, max_ns,
                    nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 

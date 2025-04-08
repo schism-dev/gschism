@@ -812,6 +812,7 @@ struct Node {
    Vector3 u2[nvrt];
    double znl[nvrt];
    double lon, lat;
+   double fun_lat[ntip]; // XXXXX CHECK IF THIS MAKES SENSE
    double depth;
 
    int kb;       // Bottom index of the node
@@ -830,7 +831,7 @@ struct Node {
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
 
-   double etp;  // Earth Tidal Potential
+   double ETP;  // Earth Tidal Potential
 
    
    double pr;    // Air pressure
@@ -1162,6 +1163,9 @@ extern "C" {
       } else {
          ramp = 1.0;
       }
+
+      printf("computeTimeRamps: i = %d, nws = %d, if_source = %d, drampbc = %f, drampwind = %f, drampwafo = %f, dramp_ss = %f, dramp = %f\n", 
+             threadIdx.x + blockIdx.x * blockDim.x, nws, if_source, drampbc, drampwind, drampwafo, dramp_ss, dramp);
    }
       
 
@@ -1169,10 +1173,7 @@ extern "C" {
 
    }
 
-   __global__ void computeTidalPotential(void) {
-
-   }
-
+ 
 
    __global__ void computeWaveEquation(void) {
 
@@ -2960,6 +2961,7 @@ extern "C" {
 
    __global__ void scaleGravity(double loadtide_coef) {
 
+      printf("scaleGravity: i = %d, np = %d\n", threadIdx.x + blockIdx.x * blockDim.x,mesh->np);
       NODE(node);
 
       // SAL option: scale gravity
@@ -2986,6 +2988,29 @@ extern "C" {
       }
 
       printf("scaleGravity: node(%d)->grav2 = %f\n", node->idx, node->grav2);
+   }
+
+
+   __global__ void computeTidalPotential(double time, int ntip, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
+
+      NODE(node);
+
+      printf("computeTidalPotential:  ntip = %d\n",  ntip);
+      node->ETP = 0.0;
+
+      for (int j=0; j<ntip; j++) {
+
+         const double ncyc = int(tfreq[j]*time/(2.0*pi));
+         const double arg = tfreq[j]*time - ncyc*2.0*pi + jspc[j]*node->lon + tear[j];
+         node->ETP += 0.69*ramp*tamp[j]*tnf[j]*node->fun_lat[jspc[j]]*cos(arg);
+
+         if constexpr(iloadtide==1) { // loading tide
+            assert(true && "Loading tide not implemented");
+            // node->ETP += node->rloadtide[0,j]*cos(tfreq[j]*time - node->rloadtide[1,j]);
+         }
+         
+      }
+      
    }
 
 
@@ -3711,7 +3736,7 @@ extern "C" {
       // cff1-3: coefficients for 2D/3D
       Vector2 gradEta = {0.0, 0.0};  // \nabla \eta
       Vector2 gradPr  = {0.0, 0.0};  // \nabla pressure
-      Vector2 gradEtp = {0.0, 0.0};  // \nabla etp
+      Vector2 gradETP = {0.0, 0.0};  // \nabla etp
 
       double av_cff1 = 0.0;  // av. for cff1
       double av_cff2 = 0.0;  // av. for cff2
@@ -3740,7 +3765,7 @@ extern "C" {
          gradPr  += node->pr  *elem->gradPhi[j];
 
          if (elem->depth >= tip_dp) {
-           gradEtp += node->etp*elem->gradPhi[j];
+           gradETP += node->ETP*elem->gradPhi[j];
          }
 
          
@@ -3896,7 +3921,7 @@ extern "C" {
          
       // Finish off terms in F, F^\alpha and f_b
       const double grav3 = elem->mean(&Node::grav2);
-      const Vector2 fb = grav3*gradEtp - gradPr/rho0; //const in each elem
+      const Vector2 fb = grav3*gradETP - gradPr/rho0; //const in each elem
 
 
       Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
@@ -4315,6 +4340,7 @@ __global__ void transport(void) {
 
 
 extern "C" 
+
 __global__ void createMesh(int partNum, 
                            int npgb, int negb, int nsgb, int nseg,
                            int np, int ne, int ns, int nvrt, int kz,
@@ -4332,7 +4358,7 @@ __global__ void createMesh(int partNum,
       return;
    };
 
-   printf("Creating mesh for partition %d\n", partNum);
+   printf("Creating mesh for partition %d, np = %d\n", partNum, np);
    mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, kz, np, ne, ns, nseg, max_np, max_ne, max_ns,
                    nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 

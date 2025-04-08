@@ -25,7 +25,7 @@ constexpr double prmsl_ref = 101325.0; // Reference pressure for inverse baromet
 constexpr double veg_lai = 1.0; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 1;            // Number of tidal potential components
+// constexpr int ntip = 1;            // Number of tidal potential components
 constexpr double tip_dp = 1.0e6;   // cut-off depth for applying tidal potential
 
 constexpr int iunder_deep = 0;     // Option of under-deep methods
@@ -811,6 +811,7 @@ struct Node {
    Vector3 u2[nvrt];
    double znl[nvrt];
    double lon, lat;
+   double fun_lat[ntip]; // XXXXX CHECK IF THIS MAKES SENSE
    double depth;
 
    int kb;       // Bottom index of the node
@@ -829,7 +830,7 @@ struct Node {
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
 
-   double etp;  // Earth Tidal Potential
+   double ETP;  // Earth Tidal Potential
 
    
    double pr;    // Air pressure
@@ -860,6 +861,12 @@ struct Node {
    double bdef2; // Bottom deformation at current timestep
 
    double qel; // RHS
+
+   // Meteorological forcing
+   Vector2 u_air;
+   double p_air;
+   double t_air;
+   double q_air;
 
    __host__ __device__ Point2 p2(void) const { return {p.x, p.y}; }
 
@@ -1161,6 +1168,9 @@ extern "C" {
       } else {
          ramp = 1.0;
       }
+
+      printf("computeTimeRamps: i = %d, nws = %d, if_source = %d, drampbc = %f, drampwind = %f, drampwafo = %f, dramp_ss = %f, dramp = %f\n", 
+             threadIdx.x + blockIdx.x * blockDim.x, nws, if_source, drampbc, drampwind, drampwafo, dramp_ss, dramp);
    }
       
 
@@ -1168,10 +1178,7 @@ extern "C" {
 
    }
 
-   __global__ void computeTidalPotential(void) {
-
-   }
-
+ 
 
    __global__ void computeWaveEquation(void) {
 
