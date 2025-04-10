@@ -68,10 +68,11 @@ def initializeCudaKernelManager(_project_root):
 def initializeCudaFunctions(sizes):
     global mod
     global scaleGravity, computeTimeRamps
-    global computeBedDeformation, computeTidalPotential, computeBottomDragVegetation
+    global computeBedDeformation, computeTidalPotential
+    global getBoundaryConditions, computeBottomDragVegetation
     global computeElevationBoundaryConditions, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat
-    global computeWaveEquation, solveWaveEquation, computeGradients, test
+    global computeWaveEquation, solveWaveEquation, computeGradients, backtrackAllNodes, test
 
  
     # Get kernel functions with better error handling
@@ -81,7 +82,7 @@ def initializeCudaFunctions(sizes):
         computeBedDeformation              = mod.get_function('computeBedDeformation',              sizes, kernel_type='global')
         computeTidalPotential              = mod.get_function('computeTidalPotential',              sizes, kernel_type='nodeBnd')
         getBoundaryConditions              = mod.get_function('getBoundaryConditions',              sizes, kernel_type='nodeBnd')
-        computeBottomDragVegetation        = mod.get_function('computeBottomDragVegetation',        sizes, kernel_type='global')
+        computeBottomDragVegetation        = mod.get_function('computeBottomDragVegetation',        sizes, kernel_type='nodes')
         computeElevationBoundaryConditions = mod.get_function('computeElevationBoundaryConditions', sizes, kernel_type='global')
         computeDensityCubicSplines         = mod.get_function('computeDensityCubicSplines',         sizes, kernel_type='global')
         computeDensityGradient             = mod.get_function('computeDensityGradient',             sizes, kernel_type='global')
@@ -90,6 +91,7 @@ def initializeCudaFunctions(sizes):
         computeWaveEquation                = mod.get_function('computeWaveEquation',                sizes, kernel_type='global')
         solveWaveEquation                  = mod.get_function('solveWaveEquation',                  sizes, kernel_type='global')
         computeGradients                   = mod.get_function('computeGradients',                   sizes, kernel_type='global')
+        backtrackAllNodes                  = mod.get_function('backtrackAllNodes',                  sizes, kernel_type='sides')
 
         test = mod.get_function('test', sizes, kernel_type='global')
     except Exception as e:

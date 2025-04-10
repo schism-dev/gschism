@@ -66,7 +66,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     opt  = namelist.opt
 
     # SAL option: scale gravity
-    cufunc.scaleGravity(opt.loadtide_coef)
+    # cufunc.scaleGravity(opt.loadtide_coef)
 
     dt = core.dt
 
@@ -77,21 +77,21 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     
     # Compute time ramps for boundary elevation forcing, wind and pressure forcing and tidal potential forcing
-    cufunc.computeTimeRamps(time, opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp)
+    # cufunc.computeTimeRamps(time, opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp)
     
 
 
-    #  Compute new bed deformation
-    cufunc.computeBedDeformation()
+    # #  Compute new bed deformation
+    # cufunc.computeBedDeformation()
 
 
     # Earth tidal potential and loading tide at nodes: pre-compute to save time
-    cufunc.computeTidalPotential(time, bctides.tfreq, bctides.tamp, bctides.tnf, 
-                                 bctides.tear, bctides.jspc)
+    # cufunc.computeTidalPotential(time, bctides.tfreq, bctides.tamp, bctides.tnf, 
+    #                              bctides.tear, bctides.jspc)
 
 
     # Meteorological forcing
-    computeMeteorologicalForcing(time, sflux)  # Lines 458-1014
+    # computeMeteorologicalForcing(time, sflux)  # Lines 458-1014
 
 
     # computeTracerStuff()            # Lines 1015-1145
@@ -102,31 +102,31 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     # Get boundary conditions from external files
-    getBoundaryConditions(time)          # Lines 1331-1584
+    # cufunc.getBoundaryConditions(time)          # Lines 1331-1584
 
 
     # # Read in volume/mass sources/sinks
     # readInSourcesSinks()              # Lines 1585-1610
 
 
-    # Calculation of cross-section areas and length for flow b.c.
-    computeFlowBcAreas()                   # Lines 1611-1758
+    # # Calculation of cross-section areas and length for flow b.c.
+    # computeFlowBcAreas()                   # Lines 1611-1758
 
 
-    # Compute new vel. for flow b.c. (uth,vth)
-    computeFlowBcVelocities()            # Lines 1759-1800
+    # # Compute new vel. for flow b.c. (uth,vth)
+    # computeFlowBcVelocities()            # Lines 1759-1800
 
 
 
     # Bottom drag coefficients for nchi=-1 or 1; Cd and Cdp for nchi=0 already read in
-    computeBottomDrag()                  # Lines 1801-1961
+    #####computeBottomDrag()                  # Lines 1801-1961
 
 
     # bypass solver for transport only XXXX
     # I haven't included this in the code yet
 
     # bottom drag and vegetation drag
-    computeBottomDragVegetation()      # Lines 2353-2662
+    # cufunc.computeBottomDragVegetation()      # Lines 2353-2662
 
 
 
@@ -134,11 +134,11 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     # Horizontal viscosity, implemented as a filter (also Shapiro filter)
-    computeHorizontalViscosity()       # Lines 3840-4160
+    #####cufunc.computeHorizontalViscosity()       # Lines 3840-4160
 
 
     # Backtracking/upwind for momentum
-    backtrackAllNodes()             # Lines 4161-5029
+    cufunc.backtrackAllNodes()              # Lines 4161-5029
 
 
     # Vertical advection 

@@ -15,16 +15,16 @@ from matplotlib.collections import LineCollection
 
 nws = 0
 
-sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-# sys.path.append(r'/media/jmg/Elements2/src/gschism/src')  
+# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+sys.path.append(r'/media/jmg/Elements2/src/gschism/src')  
 
 from iop.cudamodule import CudaSourceManager
 from python.schism_init import schism_init
 from python.schism_step import schism_step
 from python.schism_consts import *
 import python.cuda_functions as cufunc
-# tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
-tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2' # XXX
@@ -32,9 +32,9 @@ tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2' # XXX
 # in_dir = '/mnt/c/Users/jondina/src/temp/schism_examples/schism_verification_tests/Test_CORIE'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
+# in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-# in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -155,8 +155,8 @@ if __name__ == "__main__":
 
 
 
-    test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    # test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+    # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+    test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 
     namelist = schism_init(test_dir)
 
@@ -203,11 +203,6 @@ if __name__ == "__main__":
 
 
 
-    # mesh_file = "/media/jmg/New450/src/gschism/test/hgrid2.gr3"
-    # mesh_file = "/home/jo.gonzalez/src/gschism/test/hgrid.gr3"
-    # mesh_file = "/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
-    # mesh_file = "/home/jo.gonzalez/src/gschism/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
-    # mesh_file = "/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/hgrid.gr3"
     hgrid_file = os.path.join(in_dir, 'hgrid.gr3')
     vgrid_file = os.path.join(in_dir, 'vgrid.in')
 
@@ -234,11 +229,9 @@ if __name__ == "__main__":
     # interpolation weights.
 
     # Test the readSflux module
-    # sflux_inputs = readSflux.readSFluxNamelist(r"/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt")
     nodeCoords[:2,:] = np.deg2rad(nodeCoords[:2,:]) # XXX Why deg2rad?
-    # sflux = SFlux(r'/blue/olabarrieta/jo.gonzalez/projects/src/test/schism_verification_tests/Test_CORIE_LSC2/sflux/sflux_inputs.txt', nodes) 
+
     sflux = SFlux(in_dir, r'sflux_inputs.txt', nodeCoords) 
-    print(sflux)
 
     u_air_node = np.zeros(nodeCoords.shape[1])
     v_air_node = np.zeros(nodeCoords.shape[1])

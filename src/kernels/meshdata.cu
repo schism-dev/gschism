@@ -1,7 +1,7 @@
 #include "meshdata.h"
 
 // Each device has a global mesh object
-__device__ Mesh* mesh = nullptr;
+__device__ Mesh* mesh = nullptr; 
 
 #define SIDE(side) const int idx_side = threadIdx.x + blockIdx.x * blockDim.x; \
                    Side *side = &(mesh->localSideData[idx_side]); \
@@ -288,7 +288,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    // 1. Initial checks
    // Verify starting element is valid (wet)
-   assert(!nextElem->idry && "Starting element is dry");
+   assert(!nextElem->isDry && "Starting element is dry");
 
    // Checks if track has a zero length.
    const double len2 = (xt.x - x0.x)*(xt.x - x0.x) + (xt.y - x0.y)*(xt.y - x0.y);   
@@ -311,7 +311,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    zint = (1 - tIntersect)*zint + tIntersect*xt.z;
 
    // if the tracking segment goes out of water (either dry or edge boundary)
-   if (isEdgeBoundary(nextSide) || (nextElem->idry)) {
+   if (isEdgeBoundary(nextSide) || (nextElem->isDry)) {
       trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
       nextElem = this;
       
@@ -337,7 +337,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
   
       // if the tracking segment goes out of water (either dry or edge boundary).
-      if (curElem->isEdgeBoundary(nextSide) || (nextElem->idry)) {
+      if (curElem->isEdgeBoundary(nextSide) || (nextElem->isDry)) {
 
          trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
 
@@ -794,9 +794,7 @@ __device__ double Node::compZCoord(int k) const {
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
       
-   if (idry) {
-      return 0.0;
-   }
+   if (isDry)  return 0.0;
 
    if constexpr(ivcor == 2) {
 
@@ -856,6 +854,8 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
    printf("Populating mesh for partition %d, %d, %d\n", partNum, nond, nlnd);
 
+   printf("XXX elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
+
    // Horizontal grid
    printf("Processing %d nodes\n", np);    
    int idxNodeBoundary = 0;  
@@ -869,23 +869,26 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.nodes = (Node **)(nodeNeighNodes + idxStart*sizeof(Node *));
       node.idx = i;
 
-      for (int idx = idxStart; idx < idxEnd; idx++) {
-         int idxNode = nodeNeighNodesIndices[idx];
-         Node *node_ptr = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
+      SOMETHING IS WRONG HERE
+      // for (int idx = idxStart; idx < idxEnd; idx++) {
+      //    int idxNode = nodeNeighNodesIndices[idx];
+      //    Node *node_ptr = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
 
-         nodeNeighNodes[idxNode] = node_ptr;
-         node.nodes = &(nodeNeighNodes[idxNode]);
+      //    nodeNeighNodes[idxNode] = node_ptr;
+      //    node.nodes = &(nodeNeighNodes[idxNode]);
 
-         node_ptr->wind_angle = wind_rotate_angle[i];
-      }
+      //    node_ptr->wind_angle = wind_rotate_angle[i];
+      // }
 
       // Element **elements; // pointer to the elements connected to this node
       // int numElements;   // number of elements shared by this node
 
-      node.p.x = node_coords[i * 3];
-      node.p.y = node_coords[i * 3 + 1];
-      node.p.z = node_coords[i * 3 + 2];  // XXX this is probably wrong
+      node.p.x   = node_coords[i * 3];
+      node.p.y   = node_coords[i * 3 + 1];
+      node.p.z   = node_coords[i * 3 + 2];  // XXX this is probably wrong
       node.depth = node_coords[i * 3 + 2];
+
+      printf("ZZ elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
 
       // Links the node to the boundary information
       if (isbnd[i] >= 0) {
@@ -911,6 +914,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       }
 
 // XXXX
+if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
 constexpr double rot_per = 3000.0;
 constexpr double rot_f = 2.0*pi/rot_per;
 for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0.0};}
@@ -919,6 +923,7 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
 
    nbp = idxNodeBoundary;
 
+   printf("YY elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
    printf("Processing %d sides\n", ns);
    int idxSideBoundary = 0;
    for (int i = 0; i < ns; i++)
@@ -964,7 +969,10 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
       if (idx_e1 > -1) {
          const int locidx_e1 = localElemIndices[idx_e1];
          const int part_e1 =  localElemPart[idx_e1];
-         side.elems[0] = (Element *)&(elems[part_e1][locidx_e1]);
+         side.elems[0] = elems[part_e1] + locidx_e1;
+         printf("s@@ part_e1 = %d, locidx_e1 = %d, elems[part_e1] = %p\n", part_e1, locidx_e1, elems[part_e1]);
+         // printf("s-- side.elems[0] = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f) size = %d\n", side.elems[0], side.elems[0]->idx, side.elems[0]->i34, side.elems[0]->center.x, side.elems[0]->center.y, side.elems[0]->center.z, sizeof(Element));
+         printf("o-- elems = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
       }
       else {
          side.elems[0] = nullptr;
@@ -973,7 +981,7 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
       if (idx_e2 > -1) {
          const int locidx_e2 = localElemIndices[idx_e2];
          const int part_e2 =  localElemPart[idx_e2];
-         side.elems[1] = (Element *)&(elems[part_e2][locidx_e2]);
+         side.elems[1] = elems[part_e2] + locidx_e2;
       }
       else {
          side.elems[1] = nullptr;
@@ -1024,6 +1032,8 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
       elem.i34 = i34[i];
 
+// printf("elem = %p, elem.i34 = %d\n", &elem, elem.i34);
+
       // Compute the centroid of the element and its depth
       Vector2 center = {0.0, 0.0};
       elem.depth = 0.0;
@@ -1033,6 +1043,8 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
       }
       elem.center.x = center.x;
       elem.center.y = center.y;
+
+      printf("elem = %p, i34 = %d, center = (%f,%f,%f)\n", &elem, elem.i34, elem.center.x, elem.center.y, elem.depth);
       
       // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
       // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
@@ -1218,7 +1230,7 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
            
          }
 
-         if (elem->idry == 0) {
+         if (!elem->isDry) {
            const Vector2 gradEta = elem->nodes[0]->eta2*elem->gradPhi[0] +
                                    elem->nodes[1]->eta2*elem->gradPhi[1] +
                                    elem->nodes[2]->eta2*elem->gradPhi[2];
@@ -1280,7 +1292,7 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
                // Calculate I_3 even if i is on essential b.c. so as to check symmetry later
                // especially for Flather b.c.
                double ri3 = 0.0;
-               if (side->idry != 1) {
+               if (!side->isDry) {
                   // If the side is not dry
                   
                   // Computes the side flux of (uth, vth)
@@ -1332,7 +1344,7 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
           
 
             // Integral I_5
-            if(side->idry != 1) {
+            if(!side->isDry) {
 
                const double Unbar = dot(side->U, side->n);
 
@@ -1361,19 +1373,29 @@ extern "C" {
 
       SIDE(side);
 
-      if (side - mesh->localSideData >= mesh->ns) return;
+      printf("backtrackAllNodes: side = %p idx = %d isDry = %d center = (%f,%f)\n", side, side->idx, side->isDry, side->center.x, side->center.y);
 
       const int kb = side->kb;
 
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
-      if (side->idry == 1) return;
+      if (side->isDry) return;
 
       // Checks that at least one element is not dry
       const Element *elem1 = side->elems[0];
       const Element *elem2 = side->elems[1];
-      assert ((elem1 != nullptr && !(elem1->idry)) || (elem2 != nullptr && !(elem2->idry)) && "backtrackAllNodes: non dry side without two dry elements.");
+
+      // printf("backtrackAllNodes: side->isDry = %d, idx = %d, elem1 = %p, elem2 = %p\n", side->isDry, side->idx, elem1, elem2);
+      // printf("elem1->isDry = %d, elem2->isDry = %d\n", elem1!=nullptr?elem1->isDry:-10, elem2!=nullptr?elem2->isDry:-10);
+      // if (elem1!=nullptr && (elem1->isDry<0 || elem1->isDry>1)) printf("XXXX elem1 = %p idx = %d isDry = %d\n", elem1, elem1->idx, elem1->isDry);
+      // if (elem2!=nullptr && (elem2->isDry<0 || elem2->isDry>1)) printf("XXXX elem2 = %p idx = %d isDry = %d\n", elem2, elem2->idx, elem2->isDry);
+      // if (elem1!=nullptr && (elem1->isDry==0 || elem1->isDry==1)) printf("elem1 = %p idx = %d isDry = %d\n", elem1, elem1->idx, elem1->isDry);
+      // if (elem2!=nullptr && (elem2->isDry==0 || elem2->isDry==1)) printf("elem2 = %p idx = %d isDry = %d\n", elem2, elem2->idx, elem2->isDry);
+      if (elem1!=nullptr) printf("elem1 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem1, elem1->idx, elem1->i34, elem1->center.x, elem1->center.y, elem1->center.z);
+      if (elem2!=nullptr) printf("elem2 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem2, elem2->idx, elem2->i34, elem2->center.x, elem2->center.y, elem2->center.z);
+
+      assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
 
       // XXXXXX
       // !swild_tmp to store global coord. of the starting side
@@ -1827,11 +1849,15 @@ extern "C" {
    __global__ void getBoundaryConditions(double time) {
       // Get boundary conditions
       // XXX IMPLEMENT THIS
-      assert(true && "getBoundaryConditions not implemented");
+      // assert(true && "getBoundaryConditions not implemented");
 
+      printf("getBoundaryConditions: time = %f NOT IMPLEMENTED\n", time);
+      return;
       NODE_BND(nodeBnd);
 
       const Node *node = nodeBnd->node;
+
+    
 
    //    if(nettype>0) then
    //      if(time>th_time(1,2,1)) then !not '>=' to avoid last step
@@ -2024,7 +2050,7 @@ extern "C" {
 
       side->U = {0.0, 0.0}; 
          
-      if(side->idry) return;
+      if(side->isDry) return;
 
       const Node *node1 = side->n1;
       const Node *node2 = side->n2;
@@ -2048,7 +2074,7 @@ extern "C" {
       const double rough   = node->rough;
 
 
-      if (node->idry) {
+      if (node->isDry) {
          // Default values for dry nodes
          node->veg_alpha_vert_mean = node->veg_alpha0;
          /// XXX CHECK INDICES
@@ -2195,6 +2221,8 @@ extern "C" {
 
       } // if iveg
 
+      printf("computeBottomDragVegetation: nodeIdx = %d, node->veg_alpha_vert_mean = %f\n", node->idx, node->veg_alpha_vert_mean);
+
    }
 
    __global__ void computeVegetationAndDragParameters(void) {
@@ -2321,11 +2349,11 @@ extern "C" {
    //    vec: Vector from e1 to e2 (or normal to side if neighbor is dry or not present)
    //    diffRho: Difference in de-meaned density between e1 and e2 (or zero if neighbor is dry or not present)
 
-      if (e2 == nullptr || e2->idry) {
+      if (e2 == nullptr || e2->isDry) {
          // Neighbor doesn't exist or is dry, we assume the density gradient is zero in the direction normal to the side.
 
          Side *side = e1->sides[j];
-         assert((side->otherElem(e1) == nullptr || side->otherElem(e1)->idry) && "getRhoDiffAndVec: For boundary elements, side->otherElem(elem) must be nullptr or dry");
+         assert((side->otherElem(e1) == nullptr || side->otherElem(e1)->isDry) && "getRhoDiffAndVec: For boundary elements, side->otherElem(elem) must be nullptr or dry");
                  
          if constexpr(ics == 1) {
             vec = side->n; // Normal vector to the side
@@ -2342,7 +2370,7 @@ extern "C" {
 
       } else { //internal and wet
          if constexpr(ics==1) {
-            assert(e2 != nullptr || e2->idry && "getRhoDiffAndVec: neighbor element is nullptr or dry");
+            assert(e2 != nullptr || e2->isDry && "getRhoDiffAndVec: neighbor element is nullptr or dry");
 
             // Vector from e1 to e2
             vec = toVector2(e2->center - e1->center);
@@ -2365,7 +2393,7 @@ extern "C" {
 
       ELEM(elem);
 
-      if (elem->idry) return;
+      if (elem->isDry) return;
 
       const int kb = elem->kb;
 
@@ -2390,7 +2418,7 @@ extern "C" {
 __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Element *elem2, int k) {
 // Interpolates the de-meaned density of elem2 at the same z coordinate as the k half-level of elem.
 
-   if (elem2 == nullptr || elem2->idry) return 0.0;
+   if (elem2 == nullptr || elem2->isDry) return 0.0;
 
    const int kb  = elem->kb;
    const int kb2 = elem2->kb;
@@ -2466,7 +2494,7 @@ extern "C" {
 
       ELEM(elem);
 
-      if (elem->idry) return;
+      if (elem->isDry) return;
 
       const int kb  = elem->kb;
       const int i34 = elem->i34;
@@ -2537,7 +2565,7 @@ extern "C" {
 
       SIDE(side);
 
-      if (side->idry == 1) return;
+      if (side->isDry) return;
 
       const Element *e1 = side->elems[0];
       const Element *e2 = side->elems[1];      
@@ -2607,7 +2635,7 @@ __device__ void computeVerticalAdvection(void) {
 
    const Side *side = FROM kernel;
 
-   if(side->idry) return;
+   if(side->isDry) return;
 
    // If side is wet...
 
@@ -2678,7 +2706,7 @@ extern "C" {
          if (nhtblocks > 0 && elem->isblock) return;
       }
 
-      if (elem->idry == 1) return;
+      if (elem->isDry) return;
 
       // Wet elements.
       // Warning: ghat1=elem average of \breve{G} must include all: Coriolis, atmo. pressure, 
@@ -2930,7 +2958,7 @@ __global__ void checkMassConservation(Tracers* sumtr) {
    Element *elem = &(mesh->localElemData[i]);
 
    // Skip dry elements
-   if (elem->idry) return;
+   if (elem->isDry) return;
 
    // Local sum array for this thread
    double localSum[N_TRACERS] = {0.0};
@@ -3295,14 +3323,16 @@ extern "C"
 
 __global__ void createMesh(int partNum, 
                            int npgb, int negb, int nsgb, int nseg,
-                           int np, int ne, int ns, int nvrt, int kz,
-                           int max_np, int max_ne, int max_ns,
-                           const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
+                           int np, int ne, int ns, 
+                           int max_np, int max_ne, int max_ns, int nvrt, int kz,
+                           Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
                            double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
                            double *ztot, double *cs, double *dcs) {
+
+
 
    if (mesh != nullptr) 
    {
@@ -3310,9 +3340,19 @@ __global__ void createMesh(int partNum,
       return;
    };
 
+   printf("partNum = %d, npgb = %d, negb = %d, nsgb = %d, nseg = %d\n", partNum, npgb, negb, nsgb, nseg);
+   printf("np = %d, ne = %d, ns = %d\n", np, ne, ns);
+   printf("max_np = %d, max_ne = %d, max_ns = %d\n", max_np, max_ne, max_ns);
+   printf("nvrt = %d, kz = %d\n", nvrt, kz);
+
    printf("Creating mesh for partition %d, np = %d\n", partNum, np);
-   mesh = new Mesh(partNum, npgb, negb, nsgb, nvrt, kz, np, ne, ns, nseg, max_np, max_ne, max_ns,
-                   nodesPtr, elemsPtr, sidesPtr, nodes, elems, sides,
+   printf("CREATEMESH: elemsPtr = %p, elems = %p\n", *elemsPtr, elems);
+   
+   mesh = new Mesh(partNum, npgb, negb, nsgb, 
+                   np, ne, ns, nvrt, kz,
+                   max_np, max_ne, max_ns, nseg, 
+                   nodesPtr, elemsPtr, sidesPtr, 
+                   nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
                    h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
@@ -3323,6 +3363,7 @@ __global__ void createMesh(int partNum,
 }
 
 extern "C"
+                                 
   __global__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,

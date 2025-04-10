@@ -34,8 +34,8 @@ constexpr double h2_bcc   = 100.0;
 constexpr double hw_depth = 1.0e6; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt = 54; // Number of vertical levels
-constexpr int nzlev = 5; // Number of z levels (in contrast to sigma levels)
+constexpr int nvrt = 2; // Number of vertical levels
+constexpr int nzlev = 1; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast to z levels)
 
 constexpr double small1 = 1.0e-10;       // Small non-negative number
@@ -363,7 +363,7 @@ struct Element {
    Vector2 gradPhi[4];       // Derivatives of shape functions
    Vector2 gradEta[nvrt];    // Gradient of free surface elevation
 
-   int idry;                  // True if the element is dry
+   bool isDry;                  // True if the element is dry
    int kbe;                   // Bottom index of the element
 
    Vector3 center;            // Element center coordinates
@@ -658,7 +658,7 @@ struct Side {
                           // this is nullptr
    
    int kb;                // Bottom index of the side
-   bool idry;             // True if the side is dry
+   bool isDry;             // True if the side is dry
  
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
@@ -814,7 +814,7 @@ struct Node {
 
    int kb;       // Bottom index of the node
 
-   int idry;     // True if the node is dry
+   bool isDry;     // True if the node is dry
 
    int iadv;     // Advection flag
 
@@ -900,7 +900,7 @@ struct Node {
    // XXX: To be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
       // Check if node is wet
-      idry = (depth + eta2 <= h0);  // XXX Check if we are doing this elsewhere
+      isDry = (depth + eta2 <= h0);  // XXX Check if we are doing this elsewhere
 
       if (idry) return;
 
@@ -941,9 +941,9 @@ class Mesh {
    int partNum; // Partition number for this mesh.
 
    // Pointers to each GPU's local memory (size is the number of partitions).
-   const Node**    nodes;  
-   const Element** elems;  
-   const Side**    sides;  
+   Node**    nodes;  
+   Element** elems;  
+   Side**    sides;  
    
    // Local memory
    Node*    localNodeData; 
@@ -1025,7 +1025,7 @@ class Mesh {
                    int npgb, int negb, int nsgb, 
                    int np, int ne, int ns, int nvrt, int kz,
                    int max_np, int max_ne, int max_ns, int nseg,
-                   const Node **nodesPtr, const Element **elemsPtr, const Side **sidesPtr,
+                   Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
                    Element **localNodeNeighElemsMem,
@@ -1046,6 +1046,12 @@ class Mesh {
                        cs(cs), dcs(dcs)
    {
       printf("Mesh constructor for partition %d\n", partNum);
+
+      printf("npgb = %d, negb = %d, nsgb = %d, nseg = %d\n", npgb, negb, nsgb, nseg);
+      printf("np = %d, ne = %d, ns = %d\n", np, ne, ns);
+      printf("max_np = %d, max_ne = %d, max_ns = %d\n", max_np, max_ne, max_ns);
+      printf("nvrt = %d, kz = %d\n", nvrt, kz);
+      printf("elemsPtr = %p, elems = %p\n", *elems, elemsMem);
       
       sinh_theta_f = sinh(theta_f);
 
