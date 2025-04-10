@@ -853,11 +853,14 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 int *localNodePart,     int *localElemPart,     int *localSidePart) {
 
    printf("Populating mesh for partition %d, %d, %d\n", partNum, nond, nlnd);
+   printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");
 
    printf("XXX elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
 
    // Horizontal grid
    printf("Processing %d nodes\n", np);    
+
+
    int idxNodeBoundary = 0;  
    for (int i = 0; i < np; i++)
    {
@@ -869,16 +872,19 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.nodes = (Node **)(nodeNeighNodes + idxStart*sizeof(Node *));
       node.idx = i;
 
-      SOMETHING IS WRONG HERE
+      
       // for (int idx = idxStart; idx < idxEnd; idx++) {
       //    int idxNode = nodeNeighNodesIndices[idx];
-      //    Node *node_ptr = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
+
+      //    Node *node_ptr = nodes[localNodePart[idxNode]];
+      //    // printf("idx = %d, idxNode = %d, nodes = %p, localNodePart[idxNode] = %d, localNodeIndices[idxNode] = %d\n", idx, idxNode, nodes, localNodePart[idxNode], localNodeIndices[idxNode]);
+      //    // printf("nodeNeighNodes[idxNode] = %d, (nodes[%d][%d]) = %p\n", nodeNeighNodes[idxNode], localNodePart[idxNode], localNodeIndices[idxNode], nodes + idxNode);
 
       //    nodeNeighNodes[idxNode] = node_ptr;
-      //    node.nodes = &(nodeNeighNodes[idxNode]);
-
-      //    node_ptr->wind_angle = wind_rotate_angle[i];
       // }
+      // node.nodes = nodeNeighNodes + idxStart;
+
+      // node.wind_angle = wind_rotate_angle[i];
 
       // Element **elements; // pointer to the elements connected to this node
       // int numElements;   // number of elements shared by this node
@@ -888,7 +894,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.p.z   = node_coords[i * 3 + 2];  // XXX this is probably wrong
       node.depth = node_coords[i * 3 + 2];
 
-      printf("ZZ elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
+      // printf("ZZ elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
 
       // Links the node to the boundary information
       if (isbnd[i] >= 0) {
@@ -970,9 +976,9 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
          const int locidx_e1 = localElemIndices[idx_e1];
          const int part_e1 =  localElemPart[idx_e1];
          side.elems[0] = elems[part_e1] + locidx_e1;
-         printf("s@@ part_e1 = %d, locidx_e1 = %d, elems[part_e1] = %p\n", part_e1, locidx_e1, elems[part_e1]);
-         // printf("s-- side.elems[0] = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f) size = %d\n", side.elems[0], side.elems[0]->idx, side.elems[0]->i34, side.elems[0]->center.x, side.elems[0]->center.y, side.elems[0]->center.z, sizeof(Element));
-         printf("o-- elems = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
+         // printf("s@@ part_e1 = %d, locidx_e1 = %d, elems[part_e1] = %p\n", part_e1, locidx_e1, elems[part_e1]);
+         // // printf("s-- side.elems[0] = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f) size = %d\n", side.elems[0], side.elems[0]->idx, side.elems[0]->i34, side.elems[0]->center.x, side.elems[0]->center.y, side.elems[0]->center.z, sizeof(Element));
+         // printf("o-- elems = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
       }
       else {
          side.elems[0] = nullptr;
@@ -1044,7 +1050,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
       elem.center.x = center.x;
       elem.center.y = center.y;
 
-      printf("elem = %p, i34 = %d, center = (%f,%f,%f)\n", &elem, elem.i34, elem.center.x, elem.center.y, elem.depth);
+      // printf("elem = %p, i34 = %d, center = (%f,%f,%f)\n", &elem, elem.i34, elem.center.x, elem.center.y, elem.depth);
       
       // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
       // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
@@ -1373,7 +1379,7 @@ extern "C" {
 
       SIDE(side);
 
-      printf("backtrackAllNodes: side = %p idx = %d isDry = %d center = (%f,%f)\n", side, side->idx, side->isDry, side->center.x, side->center.y);
+      // printf("backtrackAllNodes: side = %p idx = %d isDry = %d center = (%f,%f)\n", side, side->idx, side->isDry, side->center.x, side->center.y);
 
       const int kb = side->kb;
 
@@ -1394,6 +1400,7 @@ extern "C" {
       // if (elem2!=nullptr && (elem2->isDry==0 || elem2->isDry==1)) printf("elem2 = %p idx = %d isDry = %d\n", elem2, elem2->idx, elem2->isDry);
       if (elem1!=nullptr) printf("elem1 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem1, elem1->idx, elem1->i34, elem1->center.x, elem1->center.y, elem1->center.z);
       if (elem2!=nullptr) printf("elem2 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem2, elem2->idx, elem2->i34, elem2->center.x, elem2->center.y, elem2->center.z);
+      printf("elem1 = %p, elem2 = %p\n", elem1, elem2);
 
       assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
 
@@ -1441,7 +1448,7 @@ extern "C" {
             // No activity 
 
             side->btu[k] = side->u2[k];
-
+            printf("XXX vmag = %f\n", vmag);
 
          } else {  // do btrack
 
@@ -1485,6 +1492,8 @@ extern "C" {
             // '4' is somewhat arbitrary
             const int ndelt = max(ndelt_min, min(ndelt_max, int(suma/icount)*4)); // >=1
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
+
+            // printf("dtbk = %f\n", dtbk);
 
 
             // Perturb starting pt to avoid underflow 
@@ -1992,7 +2001,7 @@ extern "C" {
    //    endif !nfltype2
    }
 
-   __global__ void computeElevationBoundaryConditions(double ramp, double time) {
+   __global__ void computeElevationBoundaryConditions(double time) {
       // Compute elevation essential boundary conditions 
 
       NODE_BND(nodeBnd); // Each boundary node.
@@ -2044,9 +2053,11 @@ extern "C" {
 
    }
 
-   __device__ void computeVerticallyIntegratedVelocity(void) {
+   __global__ void computeVerticallyIntegratedVelocity(void) {
 
       SIDE(side);
+
+      printf("computeVerticallyIntegratedVelocity: side = %p, side->idx = %d\n", side, side->idx);
 
       side->U = {0.0, 0.0}; 
          
@@ -2558,7 +2569,7 @@ extern "C" {
 
    }
 
-   __global__ void computeBaroclinicTerm(double rampbc) {
+   __global__ void computeBaroclinicTerm(void) {
    // Computes the baroclinic term at sides (at half levels).
    // For this it has to compute the density gradient at the half-sides (face centers) and then integrate it vertically.
    // The baroclinic term is -(g/rho_0)*int_z^\eta grad(rho) dz

@@ -1190,6 +1190,7 @@ extern "C" {
       
 
    __global__ void computeBedDeformation(void) {
+      printf("NOT IMPLEMENTED: computeBedDeformation\n");
 
    }
 
