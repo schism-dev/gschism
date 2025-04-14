@@ -25,7 +25,7 @@ computeDensityCubicSplines = None
 computeDensityGradient = None
 computeBaroclinicTerm = None
 computeElemAverageGhat = None
-computeWaveEquation = None
+setupCoefficientMatrixAndRHS = None
 solveWaveEquation = None
 computeGradients = None
 test = None
@@ -74,7 +74,7 @@ def initializeCudaFunctions(sizes):
     global getBoundaryConditions, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat
-    global computeWaveEquation, solveWaveEquation, computeGradients, backtrackAllNodes, test
+    global setupCoefficientMatrixAndRHS, solveWaveEquation, computeGradients, backtrackAllNodes, test
 
  
     # Get kernel functions with better error handling
@@ -87,12 +87,12 @@ def initializeCudaFunctions(sizes):
         computeBottomDragVegetation         = mod.get_function('computeBottomDragVegetation',         sizes, kernel_type='nodes')
         computeVegetationAndDragParameters  = mod.get_function('computeVegetationAndDragParameters',  sizes, kernel_type='sides')
         computeElevationBoundaryConditions  = mod.get_function('computeElevationBoundaryConditions',  sizes, kernel_type='sides')
-        computeVerticallyIntegratedVelocity = mod.get_function('computeVerticallyIntegratedVelocity', sizes, kernel_type='global')
-        computeDensityCubicSplines          = mod.get_function('computeDensityCubicSplines',          sizes, kernel_type='global')
-        computeDensityGradient              = mod.get_function('computeDensityGradient',              sizes, kernel_type='global')
-        computeBaroclinicTerm               = mod.get_function('computeBaroclinicTerm',               sizes, kernel_type='global')
-        computeElemAverageGhat              = mod.get_function('computeElemAverageGhat',              sizes, kernel_type='global')
-        computeWaveEquation                 = mod.get_function('computeWaveEquation',                 sizes, kernel_type='global')
+        computeVerticallyIntegratedVelocity = mod.get_function('computeVerticallyIntegratedVelocity', sizes, kernel_type='sides')
+        computeDensityCubicSplines          = mod.get_function('computeDensityCubicSplines',          sizes, kernel_type='elements')
+        computeDensityGradient              = mod.get_function('computeDensityGradient',              sizes, kernel_type='elements')
+        computeBaroclinicTerm               = mod.get_function('computeBaroclinicTerm',               sizes, kernel_type='sides')
+        computeElemAverageGhat              = mod.get_function('computeElemAverageGhat',              sizes, kernel_type='elements')
+        setupCoefficientMatrixAndRHS        = mod.get_function('setupCoefficientMatrixAndRHS',        sizes, kernel_type='nodes')
         solveWaveEquation                   = mod.get_function('solveWaveEquation',                   sizes, kernel_type='global')
         computeGradients                    = mod.get_function('computeGradients',                    sizes, kernel_type='global')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')

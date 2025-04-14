@@ -63,7 +63,7 @@ constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
 constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
-constexpr double dt = -1e10;  // Time step  XXX
+constexpr double dt = 0.1;  // Time step  XXX
 
 
 // Time ramps ---------------------------------------------------------------------------
@@ -650,7 +650,6 @@ struct Side {
    double length;         // Length of the side. Used to be called distj; but I think this name is less clear now.
    Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
-   double depth;          // Depth at side center
 
    Frame frame;
 
@@ -702,7 +701,8 @@ struct Side {
    __inline__ __device__ int iadv(void) const;
 
    __inline__ __device__ double eta2(void) const;
-   __inline__ __device__ double htot(void) const { return eta2() + depth; }
+   __inline__ __device__ double depth(void) const;
+   __inline__ __device__ double htot(void) const { return eta2() + depth(); }
 
    __inline__ __device__ double veg_h(void)  const;
    __inline__ __device__ double veg_nv(void) const;
@@ -767,8 +767,7 @@ struct Side {
       return (n1 == node) ? n2 : n1;
    }
  
-   __inline__ __device__ bool btrack(int jlev, double dt, double dtbk, double* sclr,
-                                     Vector3 &u_int) const;
+   __inline__ __device__ bool btrack(int jlev, double dt, double dtbk, Vector3 &u_int) const;
 
 
 
@@ -1092,7 +1091,7 @@ class Mesh {
             // RECORDAR:
             // - con y=0 no encuentra el triangulo
             // - jlev = 5, z = 0.1...
-            side->btrack(5, 3000.0, 3.1, nullptr, u_int);
+            side->btrack(5, 3000.0, 3.1, u_int);
 
          }
       }
@@ -1196,9 +1195,6 @@ extern "C" {
 
  
 
-   __global__ void computeWaveEquation(void) {
-
-   }
 
    __global__ void solveWaveEquation(void) {
 

@@ -306,7 +306,8 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
-   assert(found_intersection && "No intersection found");
+   if (!found_intersection) printf("No intersection found at %d, x0 = %f, y0 = %f, xt = %f, yt = %f\n", nextElem->idx, x0.x, x0.y, xt.x, xt.y);
+   assert(found_intersection && "No intersection found at %d");
 
    zint = (1 - tIntersect)*zint + tIntersect*xt.z;
 
@@ -575,6 +576,7 @@ __inline__ __device__ double Side::y(double t)   const { assert(t >= 0.0 && t <=
 __inline__ __device__ Point2 Side::p_t(double t) const { return {x(t), y(t)}; }
 __inline__ __device__ int    Side::iadv(void)    const { return min(n1->iadv, n2->iadv); }   
 __inline__ __device__ double Side::eta2(void)    const { return 0.5*(n1->eta2 + n2->eta2); }
+__inline__ __device__ double Side::depth(void)   const { return 0.5*(n1->depth + n2->depth); }
 
 __inline__ __device__ double Side::veg_h(void)   const { return 0.5*(n1->veg_h  + n2->veg_h); }
 __inline__ __device__ double Side::veg_nv(void)  const { return 0.5*(n1->veg_nv + n2->veg_nv); }
@@ -600,14 +602,12 @@ __inline__ __device__ Vector2 Side::tau(void)    const { return 0.5*(n1->tau + n
  * @param uuint, vvint, wwint: Velocities at the final point
  * @param jlev: Level at which the backtracking is performed
  * @param dt, dtbk: Tracking timesteps
- * @param sclr: Array for backtracked values
  * @return: True if the backtracking was successful, false otherwise
  */
 __inline__ __device__ bool Side::btrack(
       int jlev,
       double dt,            // Tracking time
       double dtbk,          // Tracking timestep
-      double* sclr,         // Array for backtracked values
       Vector3 &u_int
 ) const {
 
@@ -1104,15 +1104,15 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 }
 
 
-__global__ void setupCoefficientMatrixAndRHS(double time) {
-// Setup coefficient matrix, sparsem, for the shallow water wave equation
-// No elevation essential b.c. are imposed yet but other b.c. is imposed
-// 
-// This kernel is called for all nodes.
+extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
+   // Setup coefficient matrix, sparsem, for the shallow water wave equation
+   // No elevation essential b.c. are imposed yet but other b.c. is imposed
+   // 
+   // This kernel is called for all nodes.
 
-   int in = 1; //XXX blockIdx.x * blockDim.x + threadIdx.x;
 
-   Node *node1 = &(mesh->localNodeData[in]);
+   NODE(node1);
+
 
 
    node1->clearMatrixRow();
@@ -1318,9 +1318,9 @@ __global__ void setupCoefficientMatrixAndRHS(double time) {
                if (sideSegment->ifltype == -1) { // Flather 1
 
                   assert(node1->eta2 >= -98.0 && node2->eta2 >= -98.0 && "Mismatch 1") ;
-                  assert(side->depth > 0.0 && "Negative depth at Flather boundary");
+                  assert(side->depth() > 0.0 && "Negative depth at Flather boundary");
 
-                  const double con0 = (1.0/6.0)*side->length*sqrt(grav*side->depth); // For coefficient matrix
+                  const double con0 = (1.0/6.0)*side->length*sqrt(grav*side->depth()); // For coefficient matrix
                   ri3 -= con0*(2.0*node1->eta2 + node2->eta2);
                   
                   node1->addToSparseMatrix(node1, (thetai*dt*con0)*2.0);
@@ -1398,9 +1398,9 @@ extern "C" {
       // if (elem2!=nullptr && (elem2->isDry<0 || elem2->isDry>1)) printf("XXXX elem2 = %p idx = %d isDry = %d\n", elem2, elem2->idx, elem2->isDry);
       // if (elem1!=nullptr && (elem1->isDry==0 || elem1->isDry==1)) printf("elem1 = %p idx = %d isDry = %d\n", elem1, elem1->idx, elem1->isDry);
       // if (elem2!=nullptr && (elem2->isDry==0 || elem2->isDry==1)) printf("elem2 = %p idx = %d isDry = %d\n", elem2, elem2->idx, elem2->isDry);
-      if (elem1!=nullptr) printf("elem1 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem1, elem1->idx, elem1->i34, elem1->center.x, elem1->center.y, elem1->center.z);
-      if (elem2!=nullptr) printf("elem2 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem2, elem2->idx, elem2->i34, elem2->center.x, elem2->center.y, elem2->center.z);
-      printf("elem1 = %p, elem2 = %p\n", elem1, elem2);
+      // if (elem1!=nullptr) printf("elem1 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem1, elem1->idx, elem1->i34, elem1->center.x, elem1->center.y, elem1->center.z);
+      // if (elem2!=nullptr) printf("elem2 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem2, elem2->idx, elem2->i34, elem2->center.x, elem2->center.y, elem2->center.z);
+      // printf("elem1 = %p, elem2 = %p\n", elem1, elem2);
 
       assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
 
@@ -1426,6 +1426,7 @@ extern "C" {
          }
          else // lat/lon; in side lat/lon frame
          {
+            assert(false && "lat/lon not implemented in backtrackAllNodes");
          // XXX IMPLEMENT THIS
       //          xt=0.d0
       //          yt=0.d0
@@ -1448,10 +1449,10 @@ extern "C" {
             // No activity 
 
             side->btu[k] = side->u2[k];
-            printf("XXX vmag = %f\n", vmag);
-
+            
          } else {  // do btrack
 
+            
             // Compute number of sub-divisions based on local gradients 
             // XXX IS THIS NECESSARY?
             double suma = 0.0;
@@ -1476,7 +1477,7 @@ extern "C" {
                      utmp[jj] = node->u2[k].x;
                      vtmp[jj] = node->u2[k].y;  
                   } else {
-                     // XXX IMPLEMENT THIS
+                     assert(false && "lat/lon not implemented in backtrackAllNodes");
                      // call project_hvec(uu2(j,nd0),vv2(j,nd0),pframe(:,:,nd0),eframe(:,:,ie),utmp0(jj),vtmp0(jj))
                   }
                } // for jj
@@ -1493,7 +1494,8 @@ extern "C" {
             const int ndelt = max(ndelt_min, min(ndelt_max, int(suma/icount)*4)); // >=1
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
 
-            // printf("dtbk = %f\n", dtbk);
+            // printf("ndelt = %d, dt = %f, dtbk = %f\n", ndelt, dt, dtbk);
+
 
 
             // Perturb starting pt to avoid underflow 
@@ -1509,6 +1511,8 @@ extern "C" {
 
          
             // call btrack(l,ipsgb,ifl_bnd,j,iadvf,swild_tmp,swild10_tmp, dtbk,time_rm,time_rm2,uuint,vvint,wwint,nnel,jlev,xt,yt,zt,swild3,ltmp)
+            Vector3 u_int = {0.0, 0.0, 0.0};
+            side->btrack(k, dt, dtbk, u_int);
 
                
          } // if vmag (do backtrack)
@@ -1801,7 +1805,7 @@ extern "C" {
 
    __global__ void scaleGravity(double loadtide_coef) {
 
-      printf("scaleGravity: i = %d, np = %d\n", threadIdx.x + blockIdx.x * blockDim.x,mesh->np);
+
       NODE(node);
 
       // SAL option: scale gravity
@@ -1847,7 +1851,7 @@ extern "C" {
          node->ETP += 0.69*ramp*tamp[j]*tnf[j]*node->fun_lat[jspc[j]]*cos(arg);
 
          if constexpr(iloadtide==1) { // loading tide
-            assert(true && "Loading tide not implemented");
+            assert(false && "Loading tide not implemented");
             // node->ETP += node->rloadtide[0,j]*cos(tfreq[j]*time - node->rloadtide[1,j]);
          }
          
@@ -2021,7 +2025,7 @@ extern "C" {
       if (iettype == 3 || iettype == 5) {
         
          // XXX IMPLEMENT TIDE THINGS
-         assert(true && "Tide elevation not implemented");
+         assert(false && "Tide elevation not implemented");
          // for (int jfr=0; jfr<nbfr; jfr++) { // For all tide frequencies
          //    const int ncyc = int(amig[jfr]*time/(2.0*pi));
          //    const double arg = amig[jfr]*time - 2.0*pi*ncyc + face[jfr] - efa[i,j,jfr];
@@ -2156,7 +2160,7 @@ extern "C" {
          for (int k = kb; k < nvrt; k++) {
             // Computes node height above the bottom level
             const double tmp_h = node->znl[k] - node->znl[kb]; // >=0
-            assert(true && "Vertical variation of vegetation not implemented");
+            assert(false && "Vertical variation of vegetation not implemented");
 
             // if (tmp_h >= veg_vert_z[nbins_veg_vert]) {
             //    cff1 = veg_vert_scale_cd[nbins_veg_vert];
@@ -2255,9 +2259,8 @@ extern "C" {
 
       // Compute the drag coefficients chi2 and chi (\tilde\chi in notes) // XXX change names, chi->chitilde, chi2->chi
       // Velocity magnitude at the bottom level
-      // XXXX Check if we have add -dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1) to u2.
-      assert(true && "Must use backtracked velocity");
-      const double vmag1 = length(side->u2[kb + 1]); //BACKTRACKED VELOCITY
+      // XXXX Check if we have added -dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1) to u2.
+      const double vmag1 = length(side->btu[kb + 1]); //BACKTRACKED VELOCITY
       side->chi2 = side->Cd()*vmag1;
       side->chi  = side->chi2;
       if constexpr(iveg != 0) {
@@ -2335,6 +2338,8 @@ extern "C" {
          // Enforce positivity for 3D model
          if (ihhat == 1) side->hhat = max(0.0, side->hhat);
       } // if 3D
+
+      printf("computeVegetationAndDragParameters: sideIdx = %d, side->htot = %f, side->hhat = %f\n", side->idx, side->htot(), side->hhat);
 
         
    }
@@ -2599,9 +2604,10 @@ extern "C" {
          // w1, w2 are used to take into account boundary sides, with just one element.
          double w1 = (e1!=nullptr) ? 1.0 : 0.0;
          double w2 = (e2!=nullptr) ? 1.0 : 0.0;
-         w1 = w1/(w1 + w2);
-         w2 = w2/(w1 + w2);
-
+         const double wsum = w1 + w2;
+         w1 = w1/wsum;
+         w2 = w2/wsum;
+         printf("w1 = %f, w2 = %f\n", w1, w2);
          assert(w1 + w2 > 0.99 && w1 + w2 < 1.01 && "computeSideDensityGradient: w1 + w2 is not 1");
 
          // Linear interpolation of both elements' density gradient at the shared side's level.
@@ -2706,7 +2712,7 @@ __device__ void computeVerticalAdvection(void) {
 
 
 extern "C" {
-   __global__ void computeElemAverageGhat(double rampbc) {
+   __global__ void computeElemAverageGhat(void) {
       // Element average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimensions: m^2/s.
 
       ELEM(elem);

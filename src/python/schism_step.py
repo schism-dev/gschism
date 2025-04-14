@@ -168,18 +168,18 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # setup coefficient matrix, sparsem, for the wave equation
     #!...  No elevation essential b.c. are imposed yet but other b.c. is imposed
-    computeWaveEquation()                # Lines 5826-
+    cufunc.setupCoefficientMatrixAndRHS(time)                # Lines 5826-
 
 
 
     #  Solve the wave equation
-    solveWaveEquation()
+    cufunc.solveWaveEquation()
 
 
     # Momentum equations	
      
     # Precompute elevation gradient, atmo. pressure and earth tidal potential 
-    computeGradients()  # lines -7296
+    cufunc.computeGradients()  # lines -7296
 
 
     # Transport    lines 7388-8111
