@@ -402,9 +402,13 @@ struct Element {
    __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
 
    __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
-   __inline__ __device__ int nodeLocalIdx(Node *node) const { 
-      int res = (nodes[0] == node) ? 0 : ((nodes[1] == node) ? 1 : ((nodes[2] == node) ? 2 : 3)); 
-      printf("nodeLocalIdx: node = %p, nodes[0] = %p, nodes[1] = %p, nodes[2] = %p, nodes[3] = %p\n", node, nodes[0], nodes[1], nodes[2], nodes[3]);
+   __inline__ __device__ int nodeLocalIdx(Node *node) const {
+      // Find the local index of the node in the element (0,1,2,3)
+      int res = __ffs((nodes[0] == node) | 
+                     ((nodes[1] == node) << 1) | 
+                     ((nodes[2] == node) << 2) | 
+                     ((nodes[3] == node) << 3)) - 1;
+      
       assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
       return res;
    }
@@ -800,11 +804,11 @@ struct Node {
 
    // Geometry information
    int idx;        // Index of the node
-   Node **nodes;   // pointer to the nodes that are neighbors of this node (there is no guarantee that they are connected)
-   int numNodes;   // number of nodes neighbors of this node
+   Node **nodes;   // Array of pointers to the nodes that are neighbors of this node (there is no guarantee that they are connected)
+   int numNodes;   // Number of nodes neighbors of this node
 
-   Element **elements; // pointer to the elements that share this node
-   int numElements;   // number of elements that share this node
+   Element **elements; // Array of pointers to the elements that share this node
+   int numElements;   // Number of elements that share this node
 
    Point3 p;
    Vector3 u2[nvrt];
@@ -897,7 +901,21 @@ struct Node {
 
    __device__ void addToSparseMatrix(Node const *node, double value) {
       // Add the value to the sparse matrix for this node
-      printf("NOT IMPLEMENTED: addToSparseMatrix\n");
+      
+      if (node == this) {
+         coeffDiag += value;
+      } else {
+         // Search (linearly)the index of the node in the array of nodes
+         // XXX: This is not efficient, see if we can improve this
+         int i;
+         for (i = 0; i < numNodes; i++) {
+            if (nodes[i] == node) {
+               break;
+            }
+         }
+         assert(i < numNodes && "addToSparseMatrix: node not found in array of nodes");
+         coeffMatrix[i] += value;
+      }
    }
 
 #ifdef BACKTRACKING
@@ -1206,8 +1224,8 @@ extern "C" {
 
 
    __global__ void solveWaveEquation(void) {
-
-   }
+   
+ }
 
    __global__ void computeGradients(void) {
 
@@ -1635,6 +1653,8 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    // In boundary sides, the element 1 is nullptr
    return side->elems[1] == nullptr; 
 }
+
+
 
 /**
    Compute the shape coordinates of the point (xt,yt) in the element.
@@ -2095,9 +2115,6 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 int *localNodePart,     int *localElemPart,     int *localSidePart) {
 
    printf("Populating mesh for partition %d, %d, %d\n", partNum, nond, nlnd);
-   printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");printf("DDDD\n");
-
-   printf("XXX elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
 
    // Horizontal grid
    printf("Processing %d nodes\n", np);    
@@ -2113,41 +2130,37 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       const int idxNodeStart = nodeNeighNodesStart[i];
       const int idxNodeEnd   = nodeNeighNodesStart[i+1];
       node.numNodes = idxNodeEnd - idxNodeStart;
-      node.nodes = (Node **)(nodeNeighNodes + idxNodeStart);
+      node.nodes = nodeNeighNodes + idxNodeStart;
       node.coeffMatrix = coeffMatrixMem + idxNodeStart;
+
+
 
       const int idxElemStart = nodeNeighElemsStart[i];
       const int idxElemEnd   = nodeNeighElemsStart[i+1];      
       node.numElements = idxElemEnd - idxElemStart;
-      node.elements = (Element **)(nodeNeighElems + idxElemStart);
+      node.elements = nodeNeighElems + idxElemStart;
+
 
       
       for (int idx = idxNodeStart; idx < idxNodeEnd; idx++) {
-         const int idxNode = nodeNeighNodesIndices[idx];
-         const int partNode = localNodePart[idxNode]; 
+         const int idxNodeGlobal = nodeNeighNodesIndices[idx];
+         const int partNode = localNodePart[idxNodeGlobal]; 
+         const int idxNode  = localNodeIndices[idxNodeGlobal];
 
-         Node *node_ptr = nodes[partNode] + localNodeIndices[idxNode];
-         // printf("idx = %d, idxNode = %d, nodes = %p, localNodePart[idxNode] = %d, localNodeIndices[idxNode] = %d\n", idx, idxNode, nodes, localNodePart[idxNode], localNodeIndices[idxNode]);
-         // printf("nodeNeighNodes[idxNode] = %d, (nodes[%d][%d]) = %p\n", nodeNeighNodes[idxNode], localNodePart[idxNode], localNodeIndices[idxNode], nodes + idxNode);
 
-         nodeNeighNodes[idxNode] = node_ptr;
+         Node *node_ptr = nodes[partNode] + idxNode;
+         
+         nodeNeighNodes[idx] = node_ptr;
       }
 
       for (int idx = idxElemStart; idx < idxElemEnd; idx++) {
-         const int idxElem = nodeNeighElemsIndices[idx];
-         const int partElem = localElemPart[idxElem];
+         const int idxElemGlobal = nodeNeighElemsIndices[idx];
+         const int partElem = localElemPart[idxElemGlobal];
+         const int idxElem  = localElemIndices[idxElemGlobal];
 
-         Element *elem_ptr = elems[partElem] + localElemIndices[idxElem];
-         // printf("idx = %d, idxNode = %d, nodes = %p, localNodePart[idxNode] = %d, localNodeIndices[idxNode] = %d\n", idx, idxNode, nodes, localNodePart[idxNode], localNodeIndices[idxNode]);
-         // printf("nodeNeighNodes[idxNode] = %d, (nodes[%d][%d]) = %p\n", nodeNeighNodes[idxNode], localNodePart[idxNode], localNodeIndices[idxNode], nodes + idxNode);
-         // printf("i = %d, idx = %d, idxElem = %d, elems = %p, localElemPart[idxElem] = %d, localElemIndices[idxElem] = %d\n", i, idx, idxElem, elem_ptr, localElemPart[idxElem], localElemIndices[idxElem]);
-         
-         // printf("i = %d, idx = %d, ii = %d, idxElem = %d, nodes =  %d, %d, %d\n", 
-         //       i, idx, localElemIndices[idxElem], idxElem, elem_ptr->nodes[0]->idx, elem_ptr->nodes[1]->idx, elem_ptr->nodes[2]->idx);
-         printf("i = %d, idx = %d, ii = %d, idxElem = %d, elem_ptr = %p, nodes = %p, %p, %p\n", 
-               i, idx, localElemIndices[idxElem], idxElem, elem_ptr, elem_ptr->nodes[0], elem_ptr->nodes[1], elem_ptr->nodes[2]);
+         Element *elem_ptr = elems[partElem] + idxElem;
 
-         nodeNeighElems[idxElem] = elem_ptr;
+         nodeNeighElems[idx] = elem_ptr;
       }      
 
 
@@ -2196,7 +2209,6 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
 
    nbp = idxNodeBoundary;
 
-   printf("YY elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
    printf("Processing %d sides\n", ns);
    int idxSideBoundary = 0;
    for (int i = 0; i < ns; i++)
@@ -2292,6 +2304,8 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
          elem.nodes[j] = (Node *)&(nodes[localElemPart[idxNode]][localElemIndices[idxNode]]);
          elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
 
+
+
          // Find the neighboring element  
          if (elem.sides[j]->elems[0] == &elem) {
             elem.nghbElems[j] = elem.sides[j]->elems[1];
@@ -2299,9 +2313,8 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
          else {
             elem.nghbElems[j] = elem.sides[j]->elems[0];
          }
+         
       }
-
-      
 
       elem.i34 = i34[i];
 
@@ -2381,7 +2394,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    NODE(node1);
 
 
-
    node1->clearMatrixRow();
    node1->qel = 0.0;
 
@@ -2393,10 +2405,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // For each element connected to the node...
 
       Element *elem = node1->elements[j];
-
-      //printf("node1 = %p, elem = %p, elem idx = %d, elem i34 = %d, elem nodes = %p, %p, %p\n", node1, elem, elem->idx, elem->i34, elem->nodes[0], elem->nodes[1], elem->nodes[2]);
-      printf("node1 = %d, elem = %d, elem i34 = %d, elem nodes = %d, %d, %d\n", node1->idx, elem->idx, elem->i34, elem->nodes[0]->idx, elem->nodes[1]->idx, elem->nodes[2]->idx);
-
 
       // Compute the average gravity
       const double grav3 = elem->mean(&Node::grav2);
@@ -2444,6 +2452,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          node1->addToSparseMatrix(node1, I1_ii);
          node1->addToSparseMatrix(node2, I1_ij); 
          node1->addToSparseMatrix(node3, I1_ik);
+
+         printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
      
       }
       else { // Quad
@@ -2530,7 +2540,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       } // isQuad
 
 
-      // printf("node1 = %p\n", node1);
       node1->qel += (dt/elem->i34)*elem->vsource;
       
 
@@ -2650,8 +2659,6 @@ extern "C" {
 
       SIDE(side);
 
-      // printf("backtrackAllNodes: side = %p idx = %d isDry = %d center = (%f,%f)\n", side, side->idx, side->isDry, side->center.x, side->center.y);
-
       const int kb = side->kb;
 
       // Initialize btrack velocities to the actual velocities at the side 
@@ -2662,16 +2669,6 @@ extern "C" {
       // Checks that at least one element is not dry
       const Element *elem1 = side->elems[0];
       const Element *elem2 = side->elems[1];
-
-      // printf("backtrackAllNodes: side->isDry = %d, idx = %d, elem1 = %p, elem2 = %p\n", side->isDry, side->idx, elem1, elem2);
-      // printf("elem1->isDry = %d, elem2->isDry = %d\n", elem1!=nullptr?elem1->isDry:-10, elem2!=nullptr?elem2->isDry:-10);
-      // if (elem1!=nullptr && (elem1->isDry<0 || elem1->isDry>1)) printf("XXXX elem1 = %p idx = %d isDry = %d\n", elem1, elem1->idx, elem1->isDry);
-      // if (elem2!=nullptr && (elem2->isDry<0 || elem2->isDry>1)) printf("XXXX elem2 = %p idx = %d isDry = %d\n", elem2, elem2->idx, elem2->isDry);
-      // if (elem1!=nullptr && (elem1->isDry==0 || elem1->isDry==1)) printf("elem1 = %p idx = %d isDry = %d\n", elem1, elem1->idx, elem1->isDry);
-      // if (elem2!=nullptr && (elem2->isDry==0 || elem2->isDry==1)) printf("elem2 = %p idx = %d isDry = %d\n", elem2, elem2->idx, elem2->isDry);
-      // if (elem1!=nullptr) printf("elem1 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem1, elem1->idx, elem1->i34, elem1->center.x, elem1->center.y, elem1->center.z);
-      // if (elem2!=nullptr) printf("elem2 = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f)\n", elem2, elem2->idx, elem2->i34, elem2->center.x, elem2->center.y, elem2->center.z);
-      // printf("elem1 = %p, elem2 = %p\n", elem1, elem2);
 
       assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
 
@@ -2764,26 +2761,12 @@ extern "C" {
             // '4' is somewhat arbitrary
             const int ndelt = max(ndelt_min, min(ndelt_max, int(suma/icount)*4)); // >=1
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
-
-            // printf("ndelt = %d, dt = %f, dtbk = %f\n", ndelt, dt, dtbk);
-
-
-
-            // Perturb starting pt to avoid underflow 
-            // XXX I don't think this is needed with the current implementation
-            // eps=btrack_nudge
-            // if constexpr(ics==1) {
-            //    xt=(1.d0-eps)*xt+eps*xctr(nnel)
-            //    yt=(1.d0-eps)*yt+eps*yctr(nnel)
-            // } else { //lat/lon
-            //    xt=(1.d0-eps)*xt+eps*xctr2
-            //    yt=(1.d0-eps)*yt+eps*yctr2
-            // } // ics
-
          
             // call btrack(l,ipsgb,ifl_bnd,j,iadvf,swild_tmp,swild10_tmp, dtbk,time_rm,time_rm2,uuint,vvint,wwint,nnel,jlev,xt,yt,zt,swild3,ltmp)
             Vector3 u_int = {0.0, 0.0, 0.0};
             side->btrack(k, dt, dtbk, u_int);
+
+            printf("backtrackAllNodes: side->idx = %d, u_int = %f,%f\n", side->idx, u_int.x, u_int.y);
 
                
          } // if vmag (do backtrack)
@@ -3332,7 +3315,6 @@ extern "C" {
 
       SIDE(side);
 
-      printf("computeVerticallyIntegratedVelocity: side = %p, side->idx = %d\n", side, side->idx);
 
       side->U = {0.0, 0.0}; 
          
@@ -3878,7 +3860,6 @@ extern "C" {
          const double wsum = w1 + w2;
          w1 = w1/wsum;
          w2 = w2/wsum;
-         printf("w1 = %f, w2 = %f\n", w1, w2);
          assert(w1 + w2 > 0.99 && w1 + w2 < 1.01 && "computeSideDensityGradient: w1 + w2 is not 1");
 
          // Linear interpolation of both elements' density gradient at the shared side's level.

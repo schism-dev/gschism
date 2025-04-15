@@ -401,9 +401,13 @@ struct Element {
    __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
 
    __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
-   __inline__ __device__ int nodeLocalIdx(Node *node) const { 
-      int res = (nodes[0] == node) ? 0 : ((nodes[1] == node) ? 1 : ((nodes[2] == node) ? 2 : 3)); 
-      printf("nodeLocalIdx: node = %p, nodes[0] = %p, nodes[1] = %p, nodes[2] = %p, nodes[3] = %p\n", node, nodes[0], nodes[1], nodes[2], nodes[3]);
+   __inline__ __device__ int nodeLocalIdx(Node *node) const {
+      // Find the local index of the node in the element (0,1,2,3)
+      int res = __ffs((nodes[0] == node) | 
+                     ((nodes[1] == node) << 1) | 
+                     ((nodes[2] == node) << 2) | 
+                     ((nodes[3] == node) << 3)) - 1;
+      
       assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
       return res;
    }
@@ -799,11 +803,11 @@ struct Node {
 
    // Geometry information
    int idx;        // Index of the node
-   Node **nodes;   // pointer to the nodes that are neighbors of this node (there is no guarantee that they are connected)
-   int numNodes;   // number of nodes neighbors of this node
+   Node **nodes;   // Array of pointers to the nodes that are neighbors of this node (there is no guarantee that they are connected)
+   int numNodes;   // Number of nodes neighbors of this node
 
-   Element **elements; // pointer to the elements that share this node
-   int numElements;   // number of elements that share this node
+   Element **elements; // Array of pointers to the elements that share this node
+   int numElements;   // Number of elements that share this node
 
    Point3 p;
    Vector3 u2[nvrt];
@@ -896,7 +900,21 @@ struct Node {
 
    __device__ void addToSparseMatrix(Node const *node, double value) {
       // Add the value to the sparse matrix for this node
-      printf("NOT IMPLEMENTED: addToSparseMatrix\n");
+      
+      if (node == this) {
+         coeffDiag += value;
+      } else {
+         // Search (linearly)the index of the node in the array of nodes
+         // XXX: This is not efficient, see if we can improve this
+         int i;
+         for (i = 0; i < numNodes; i++) {
+            if (nodes[i] == node) {
+               break;
+            }
+         }
+         assert(i < numNodes && "addToSparseMatrix: node not found in array of nodes");
+         coeffMatrix[i] += value;
+      }
    }
 
 #ifdef BACKTRACKING
@@ -1205,8 +1223,8 @@ extern "C" {
 
 
    __global__ void solveWaveEquation(void) {
-
-   }
+   
+ }
 
    __global__ void computeGradients(void) {
 
