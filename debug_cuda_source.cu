@@ -41,7 +41,7 @@ constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast
 
 constexpr double small1 = 1.0e-10;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
-constexpr double small = 0.0;            // Small positive number or 0
+constexpr double small = 1.0e-10;            // Small positive number or 0
 
 constexpr int internalNode = -1;
 constexpr int landNode = -2;
@@ -404,6 +404,7 @@ struct Element {
    __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
    __inline__ __device__ int nodeLocalIdx(Node *node) const { 
       int res = (nodes[0] == node) ? 0 : ((nodes[1] == node) ? 1 : ((nodes[2] == node) ? 2 : 3)); 
+      printf("nodeLocalIdx: node = %p, nodes[0] = %p, nodes[1] = %p, nodes[2] = %p, nodes[3] = %p\n", node, nodes[0], nodes[1], nodes[2], nodes[3]);
       assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
       return res;
    }
@@ -859,6 +860,8 @@ struct Node {
    double bdef2; // Bottom deformation at current timestep
 
    double qel; // RHS
+   double coeffDiag; // Diagonal coefficient of the matrix
+   double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
 
    // Meteorological forcing
    Vector2 u_air;
@@ -887,7 +890,9 @@ struct Node {
 
    __device__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
-      printf("NOT IMPLEMENTED: clearMatrixRow\n");
+      coeffDiag = 0.0;
+      for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
+
    }
 
    __device__ void addToSparseMatrix(Node const *node, double value) {
@@ -952,6 +957,7 @@ class Mesh {
 
    NodeBoundary *localNodeBoundaryMem; // Array of objects with the boundary information of each node
    SideBoundary *localSideBoundaryMem; // Array of objects with the boundary information of each side
+   double       *coeffMatrixMem;       // Matrix coefficients for neighbors. [0..numNodes-1], doesn't include the diagonal
    BoundarySegment *localSegmentMem;   // Array of objects with the boundary segments
    
    const int npgb;  // Global number of horizontal nodes
@@ -1029,6 +1035,7 @@ class Mesh {
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
                    Element **localNodeNeighElemsMem,
+                   double *partCoeffMatrixMem,
                    NodeBoundary *localNodeBoundaryMem,
                    SideBoundary *localSideBoundaryMem,
                    BoundarySegment *localSegmentMem,
@@ -1043,7 +1050,8 @@ class Mesh {
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
                        h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
-                       cs(cs), dcs(dcs)
+                       cs(cs), dcs(dcs),
+                       coeffMatrixMem(partCoeffMatrixMem)
    {
       printf("Mesh constructor for partition %d\n", partNum);
 
@@ -1350,6 +1358,17 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
 // if (nextElement == nullptr)  printf("$$$  0, %d, %.5f, %.5f\n",  side->idx, side->x(t), side->y(t));
 // else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(t), side->y(t));
 // }   
+   if (!found_intersection) {
+      // Check if the segment is parallel to the initial side
+      printf("XXX %f\n", dot(x2 - x1, side->n1->p2() - side->n2->p2()));
+      if (abs(dot(x2 - x1, side->n1->p2() - side->n2->p2())) < small) {
+         found_intersection = true;
+         nextElement = side->otherElem(this);
+         tIntersect = t;
+         t = 0.0;
+         found_intersection = true;
+      }
+   }
    return found_intersection;
 }
 
@@ -1393,12 +1412,10 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
       
       }
 
+
    }
 
-// if (found_intersection) {
-// if (nextElement == nullptr)  printf("$$$  0, %d, %.5f, %.5f\n",  side->idx, side->x(t), side->y(t));
-// else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(t), side->y(t));
-// }
+   assert(found_intersection && "No intersection found");
 
    // found_intersection should always be true, since we checked all the sides.  
    return found_intersection;
@@ -1516,7 +1533,22 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
-   if (!found_intersection) printf("No intersection found at %d, x0 = %f, y0 = %f, xt = %f, yt = %f\n", nextElem->idx, x0.x, x0.y, xt.x, xt.y);
+   if (!found_intersection) {
+      printf("No intersection found:\n"
+           "Element %d\n"
+           "Start point: (%f, %f)\n"
+           "Target point: (%f, %f)\n"
+           "Vertices:\n"
+           "  Node 0: (%f, %f)\n"
+           "  Node 1: (%f, %f)\n"
+           "  Node 2: (%f, %f)\n",
+           nextElem->idx,
+           x0.x, x0.y,
+           xt.x, xt.y,
+           nextElem->nodes[0]->p.x, nextElem->nodes[0]->p.y,
+           nextElem->nodes[1]->p.x, nextElem->nodes[1]->p.y,
+           nextElem->nodes[2]->p.x, nextElem->nodes[2]->p.y);
+   }
    assert(found_intersection && "No intersection found at %d");
 
    zint = (1 - tIntersect)*zint + tIntersect*xt.z;
@@ -2076,25 +2108,50 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
    {
       Node &node = localNodeData[i];
 
-      const int idxStart = nodeNeighNodesStart[i];
-      const int idxEnd   = nodeNeighNodesStart[i+1];
-      node.numNodes = idxEnd - idxStart;
-      node.nodes = (Node **)(nodeNeighNodes + idxStart*sizeof(Node *));
       node.idx = i;
 
+      const int idxNodeStart = nodeNeighNodesStart[i];
+      const int idxNodeEnd   = nodeNeighNodesStart[i+1];
+      node.numNodes = idxNodeEnd - idxNodeStart;
+      node.nodes = (Node **)(nodeNeighNodes + idxNodeStart);
+      node.coeffMatrix = coeffMatrixMem + idxNodeStart;
+
+      const int idxElemStart = nodeNeighElemsStart[i];
+      const int idxElemEnd   = nodeNeighElemsStart[i+1];      
+      node.numElements = idxElemEnd - idxElemStart;
+      node.elements = (Element **)(nodeNeighElems + idxElemStart);
+
       
-      // for (int idx = idxStart; idx < idxEnd; idx++) {
-      //    int idxNode = nodeNeighNodesIndices[idx];
+      for (int idx = idxNodeStart; idx < idxNodeEnd; idx++) {
+         const int idxNode = nodeNeighNodesIndices[idx];
+         const int partNode = localNodePart[idxNode]; 
 
-      //    Node *node_ptr = nodes[localNodePart[idxNode]];
-      //    // printf("idx = %d, idxNode = %d, nodes = %p, localNodePart[idxNode] = %d, localNodeIndices[idxNode] = %d\n", idx, idxNode, nodes, localNodePart[idxNode], localNodeIndices[idxNode]);
-      //    // printf("nodeNeighNodes[idxNode] = %d, (nodes[%d][%d]) = %p\n", nodeNeighNodes[idxNode], localNodePart[idxNode], localNodeIndices[idxNode], nodes + idxNode);
+         Node *node_ptr = nodes[partNode] + localNodeIndices[idxNode];
+         // printf("idx = %d, idxNode = %d, nodes = %p, localNodePart[idxNode] = %d, localNodeIndices[idxNode] = %d\n", idx, idxNode, nodes, localNodePart[idxNode], localNodeIndices[idxNode]);
+         // printf("nodeNeighNodes[idxNode] = %d, (nodes[%d][%d]) = %p\n", nodeNeighNodes[idxNode], localNodePart[idxNode], localNodeIndices[idxNode], nodes + idxNode);
 
-      //    nodeNeighNodes[idxNode] = node_ptr;
-      // }
-      // node.nodes = nodeNeighNodes + idxStart;
+         nodeNeighNodes[idxNode] = node_ptr;
+      }
 
-      // node.wind_angle = wind_rotate_angle[i];
+      for (int idx = idxElemStart; idx < idxElemEnd; idx++) {
+         const int idxElem = nodeNeighElemsIndices[idx];
+         const int partElem = localElemPart[idxElem];
+
+         Element *elem_ptr = elems[partElem] + localElemIndices[idxElem];
+         // printf("idx = %d, idxNode = %d, nodes = %p, localNodePart[idxNode] = %d, localNodeIndices[idxNode] = %d\n", idx, idxNode, nodes, localNodePart[idxNode], localNodeIndices[idxNode]);
+         // printf("nodeNeighNodes[idxNode] = %d, (nodes[%d][%d]) = %p\n", nodeNeighNodes[idxNode], localNodePart[idxNode], localNodeIndices[idxNode], nodes + idxNode);
+         // printf("i = %d, idx = %d, idxElem = %d, elems = %p, localElemPart[idxElem] = %d, localElemIndices[idxElem] = %d\n", i, idx, idxElem, elem_ptr, localElemPart[idxElem], localElemIndices[idxElem]);
+         
+         // printf("i = %d, idx = %d, ii = %d, idxElem = %d, nodes =  %d, %d, %d\n", 
+         //       i, idx, localElemIndices[idxElem], idxElem, elem_ptr->nodes[0]->idx, elem_ptr->nodes[1]->idx, elem_ptr->nodes[2]->idx);
+         printf("i = %d, idx = %d, ii = %d, idxElem = %d, elem_ptr = %p, nodes = %p, %p, %p\n", 
+               i, idx, localElemIndices[idxElem], idxElem, elem_ptr, elem_ptr->nodes[0], elem_ptr->nodes[1], elem_ptr->nodes[2]);
+
+         nodeNeighElems[idxElem] = elem_ptr;
+      }      
+
+
+      node.wind_angle = wind_rotate_angle[i];
 
       // Element **elements; // pointer to the elements connected to this node
       // int numElements;   // number of elements shared by this node
@@ -2331,11 +2388,14 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // THIS IS FOR STRUCTURES XXX
    // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
 
-
+   
    for (int j=0; j<node1->numElements; j++) {
       // For each element connected to the node...
 
       Element *elem = node1->elements[j];
+
+      //printf("node1 = %p, elem = %p, elem idx = %d, elem i34 = %d, elem nodes = %p, %p, %p\n", node1, elem, elem->idx, elem->i34, elem->nodes[0], elem->nodes[1], elem->nodes[2]);
+      printf("node1 = %d, elem = %d, elem i34 = %d, elem nodes = %d, %d, %d\n", node1->idx, elem->idx, elem->i34, elem->nodes[0]->idx, elem->nodes[1]->idx, elem->nodes[2]->idx);
 
 
       // Compute the average gravity
@@ -2470,8 +2530,9 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       } // isQuad
 
 
-
+      // printf("node1 = %p\n", node1);
       node1->qel += (dt/elem->i34)*elem->vsource;
+      
 
    } // for all elements connected to the node
    
@@ -4555,6 +4616,7 @@ __global__ void createMesh(int partNum,
                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
+                           double *partCoeffMatrixMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
                            double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
                            double *ztot, double *cs, double *dcs) {
@@ -4581,6 +4643,7 @@ __global__ void createMesh(int partNum,
                    nodesPtr, elemsPtr, sidesPtr, 
                    nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
+                   partCoeffMatrixMem,
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
                    h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
 

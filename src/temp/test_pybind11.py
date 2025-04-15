@@ -490,7 +490,9 @@ if __name__ == "__main__":
     elemsPtr = cp.array(elemsMemList, dtype=cp.uintp)
     sidesPtr = cp.array(sidesMemList, dtype=cp.uintp)
 
-
+    partNodeNeighNodesMem = []
+    partNodeNeighElemsMem = []
+    partCoeffMatrixMem    = []
 
     # Create the local node and element neighbor arrays
     for ipart, device_id in enumerate(range(n_gpus)):
@@ -507,10 +509,9 @@ if __name__ == "__main__":
             partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
 
             pointerSize = cp.dtype(cp.uintp).itemsize 
-            partNodeNeighNodesMem = cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)
-            partNodeNeighElemsMem = cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)
-
-
+            partNodeNeighNodesMem += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
+            partNodeNeighElemsMem += [cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)]
+            partCoeffMatrixMem    += [cp.zeros(partNodeNeighElemsCount.sum().item(), dtype=cp.float64)]
     # Create arrays that convert from global indices to (partition,localIdx)
     # These arrays will be released after building the mesh
     with cp.cuda.Device(0):
@@ -520,7 +521,7 @@ if __name__ == "__main__":
         localNodePart    = cp.zeros(numNodes,    dtype=cp.int32)
         localElemPart    = cp.zeros(numElements, dtype=cp.int32)
         localSidePart    = cp.zeros(numSides,    dtype=cp.int32)
-
+        
         for ipart in range(n_gpus):
             
             maskNodesPart = (partNodes == ipart)
@@ -559,8 +560,9 @@ if __name__ == "__main__":
                               max(numPartNodes), max(numPartElements), max(numPartSides), nvrt, kz,
                               nodesPtr, elemsPtr, sidesPtr,
                               nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
+                              partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 
+                              partCoeffMatrixMem[ipart],
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
-                              partNodeNeighNodesMem, partNodeNeighElemsMem,
                               h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs)
             
             # Given a local index, this array will return the global index
@@ -589,11 +591,10 @@ if __name__ == "__main__":
              'nodeBnd': max(numPartBoundaryNodes)}
     cufunc.initializeCudaFunctions(sizes)
 
-
     schism_step(0, namelist, bctides, sflux)
 
     # Launch kernel on each GPU
-    launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)
+    # launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)
 
     print(len(deviceMemRef))
     

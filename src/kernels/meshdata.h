@@ -40,7 +40,7 @@ constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast
 
 constexpr double small1 = 1.0e-10;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
-constexpr double small = 0.0;            // Small positive number or 0
+constexpr double small = 1.0e-10;            // Small positive number or 0
 
 constexpr int internalNode = -1;
 constexpr int landNode = -2;
@@ -403,6 +403,7 @@ struct Element {
    __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
    __inline__ __device__ int nodeLocalIdx(Node *node) const { 
       int res = (nodes[0] == node) ? 0 : ((nodes[1] == node) ? 1 : ((nodes[2] == node) ? 2 : 3)); 
+      printf("nodeLocalIdx: node = %p, nodes[0] = %p, nodes[1] = %p, nodes[2] = %p, nodes[3] = %p\n", node, nodes[0], nodes[1], nodes[2], nodes[3]);
       assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
       return res;
    }
@@ -858,6 +859,8 @@ struct Node {
    double bdef2; // Bottom deformation at current timestep
 
    double qel; // RHS
+   double coeffDiag; // Diagonal coefficient of the matrix
+   double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
 
    // Meteorological forcing
    Vector2 u_air;
@@ -886,7 +889,9 @@ struct Node {
 
    __device__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
-      printf("NOT IMPLEMENTED: clearMatrixRow\n");
+      coeffDiag = 0.0;
+      for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
+
    }
 
    __device__ void addToSparseMatrix(Node const *node, double value) {
@@ -951,6 +956,7 @@ class Mesh {
 
    NodeBoundary *localNodeBoundaryMem; // Array of objects with the boundary information of each node
    SideBoundary *localSideBoundaryMem; // Array of objects with the boundary information of each side
+   double       *coeffMatrixMem;       // Matrix coefficients for neighbors. [0..numNodes-1], doesn't include the diagonal
    BoundarySegment *localSegmentMem;   // Array of objects with the boundary segments
    
    const int npgb;  // Global number of horizontal nodes
@@ -1028,6 +1034,7 @@ class Mesh {
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
                    Element **localNodeNeighElemsMem,
+                   double *partCoeffMatrixMem,
                    NodeBoundary *localNodeBoundaryMem,
                    SideBoundary *localSideBoundaryMem,
                    BoundarySegment *localSegmentMem,
@@ -1042,7 +1049,8 @@ class Mesh {
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
                        h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
-                       cs(cs), dcs(dcs)
+                       cs(cs), dcs(dcs),
+                       coeffMatrixMem(partCoeffMatrixMem)
    {
       printf("Mesh constructor for partition %d\n", partNum);
 
