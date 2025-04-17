@@ -1,4 +1,6 @@
 
+#ifdef HARDCODED_CONSTANTS
+// I keep the code for the time being in case it is needed again
 // XXX: Pure constants that are to be set before compiling the code
 constexpr int N_TRACERS = 2;
 
@@ -45,7 +47,7 @@ constexpr double small = 1.0e-10;            // Small positive number or 0
 constexpr int internalNode = -1;
 constexpr int landNode = -2;
 
-constexpr double pi = 3.14159265358979323846;
+
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
@@ -61,18 +63,40 @@ constexpr double velmin_btrack = 0.01; //XXXX
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
+
+
+constexpr double dt = 0.1;  // Time step  XXX 
+#endif
+
+
+constexpr double small1 = 1.0e-10;       // Small non-negative number
+constexpr double small2 = small1*100.0;  // Slightly larger than small1
+constexpr double small = 1.0e-10;            // Small positive number or 0
+
+constexpr int internalNode = -1;
+constexpr int landNode = -2;
+
+constexpr double pi = 3.14159265358979323846;
+
 constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
-constexpr double dt = 0.1;  // Time step  XXX
-
+constexpr double grav        = 9.81;      // [m/s^2]
+constexpr double omega_e     = 7.292e-5;  // [1/s]
 
 // Time ramps ---------------------------------------------------------------------------
 
-double rampbc;
-double rampwind;
-double rampwafo;
-double ramp_ss;
-double ramp;
+__device__ double rampbc;
+__device__ double rampwind;
+__device__ double rampwafo;
+__device__ double ramp_ss;
+__device__ double ramp;
+
+
+// matrix equation variables
+__device__ double rMr_old;
+__device__ double rMr_new;
+__device__ double pAp;
+__device__ double rr;
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
@@ -813,7 +837,7 @@ struct Node {
    Vector3 u2[nvrt];
    double znl[nvrt];
    double lon, lat;
-   double fun_lat[ntip]; // XXXXX CHECK IF THIS MAKES SENSE
+   double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
    double depth;
 
    int kb;       // Bottom index of the node
@@ -865,6 +889,11 @@ struct Node {
    double qel; // RHS
    double coeffDiag; // Diagonal coefficient of the matrix
    double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
+
+   double mP; // Search direction for conjugate gradient method
+   double mR; // Residual for conjugate gradient method
+   double mAp; // Product of matrix and search direction for conjugate gradient method
+   double mX; // Solution for conjugate gradient method
 
    // Meteorological forcing
    Vector2 u_air;
@@ -1221,10 +1250,12 @@ extern "C" {
 
  
 
+   __global__ void computeMatrixProductAndDotProducts(void);
 
-   __global__ void solveWaveEquation(void) {
+   __global__ void updateSolutionAndDotProducts(void);
+
+   __global__ void updateSearchDirection(void);
    
- }
 
    __global__ void computeGradients(void) {
 

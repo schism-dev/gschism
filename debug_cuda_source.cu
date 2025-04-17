@@ -1,5 +1,61 @@
+// BEGIN INCLUDE: constants.h
+constexpr int BLOCK_SIZE = 256;
+
+constexpr int N_TRACERS = 2;
+
+constexpr int ivcor = 2;       // Vertical coordinate system
+constexpr int ics = 1;         // 1: global, 2: local
+constexpr int imm = 0;         // Option to pre-compute vnorm on the element
+constexpr int iveg = 0;        // Vegetation option, 0: no vegetation, 1: vegetation
+constexpr int ihhat = 1;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int ihydraulics = 0; // Option of including hydraulics
+constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
+constexpr int ibc = 0;         // Option to include baroclinic term (0 means yes)
+
+constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
+
+constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
+
+constexpr int    iloadtide = 0;       // Option to use polynomial for discharge boundary
+constexpr double loadtide_coef = 0.1; // Load tide coefficient
+
+constexpr int    inv_atm_bnd = 0;     // Option to use inverse barometric effects at boundary
+constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometric effects
+
+constexpr double veg_lai = 1; // Vegetation drag coefficient
+constexpr double veg_cw = 1.5; // Vegetation drag coefficient
+
+constexpr int ntip = 0;            // Number of tidal potential components
+constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
+
+constexpr int iunder_deep = 0;     // Option of under-deep methods
+constexpr double h1_bcc   = 50;  // Parameters for under-deep methods
+constexpr double h2_bcc   = 100; 
+constexpr double hw_depth = 1000000; 
+constexpr double hw_ratio = 0.5;
+
+constexpr int nvrt = 2; // Number of vertical levels
+constexpr int nzlev = 1; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
+
+constexpr double rearth_eq   = 6378206.4; // [m] 
+constexpr double rearth_pole = 6378206.4; // [m]
+
+constexpr double thetai = 0.6;
+
+constexpr double rho0 = 1000; // [kg/m^3]
+constexpr double dtb_min = 15; //XXXX
+constexpr double dtb_max = 30; //XXXX
+constexpr double velmin_btrack = 0.0001; //XXXX
+
+constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
+
+constexpr double dt = 90;  // Time step  XXX 
+// END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
+#ifdef HARDCODED_CONSTANTS
+// I keep the code for the time being in case it is needed again
 // XXX: Pure constants that are to be set before compiling the code
 constexpr int N_TRACERS = 2;
 
@@ -46,7 +102,7 @@ constexpr double small = 1.0e-10;            // Small positive number or 0
 constexpr int internalNode = -1;
 constexpr int landNode = -2;
 
-constexpr double pi = 3.14159265358979323846;
+
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
@@ -62,18 +118,40 @@ constexpr double velmin_btrack = 0.01; //XXXX
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
+
+
+constexpr double dt = 0.1;  // Time step  XXX 
+#endif
+
+
+constexpr double small1 = 1.0e-10;       // Small non-negative number
+constexpr double small2 = small1*100.0;  // Slightly larger than small1
+constexpr double small = 1.0e-10;            // Small positive number or 0
+
+constexpr int internalNode = -1;
+constexpr int landNode = -2;
+
+constexpr double pi = 3.14159265358979323846;
+
 constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
-constexpr double dt = 0.1;  // Time step  XXX
-
+constexpr double grav        = 9.81;      // [m/s^2]
+constexpr double omega_e     = 7.292e-5;  // [1/s]
 
 // Time ramps ---------------------------------------------------------------------------
 
-double rampbc;
-double rampwind;
-double rampwafo;
-double ramp_ss;
-double ramp;
+__device__ double rampbc;
+__device__ double rampwind;
+__device__ double rampwafo;
+__device__ double ramp_ss;
+__device__ double ramp;
+
+
+// matrix equation variables
+__device__ double rMr_old;
+__device__ double rMr_new;
+__device__ double pAp;
+__device__ double rr;
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
@@ -814,7 +892,7 @@ struct Node {
    Vector3 u2[nvrt];
    double znl[nvrt];
    double lon, lat;
-   double fun_lat[ntip]; // XXXXX CHECK IF THIS MAKES SENSE
+   double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
    double depth;
 
    int kb;       // Bottom index of the node
@@ -866,6 +944,11 @@ struct Node {
    double qel; // RHS
    double coeffDiag; // Diagonal coefficient of the matrix
    double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
+
+   double mP; // Search direction for conjugate gradient method
+   double mR; // Residual for conjugate gradient method
+   double mAp; // Product of matrix and search direction for conjugate gradient method
+   double mX; // Solution for conjugate gradient method
 
    // Meteorological forcing
    Vector2 u_air;
@@ -1222,10 +1305,12 @@ extern "C" {
 
  
 
+   __global__ void computeMatrixProductAndDotProducts(void);
 
-   __global__ void solveWaveEquation(void) {
+   __global__ void updateSolutionAndDotProducts(void);
+
+   __global__ void updateSearchDirection(void);
    
- }
 
    __global__ void computeGradients(void) {
 
@@ -1235,6 +1320,7 @@ extern "C" {
 
 
 // END INCLUDE: meshdata.h
+
 
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr; 
@@ -1444,7 +1530,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
                                              double &dt, Point3 &xt, double zint, Vector3 &u_int) {
 
    printf("Tracking segment goes out of water at element %d\n", curElem->idx);
-
+   
    // When this happens, we stop our algorithm that usually assumes that we move to the next element.
    // Instead, we nudge the intersection point to the barycenter of the element, and nextElement becomes
    // curElement.
@@ -2378,10 +2464,8 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
    }
 
-
-
-   
 }
+
 
 
 extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
@@ -2415,7 +2499,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // \bar{\breve{H}} 
       const double hhatb = elem->mean(&Side::hhat);        
 
-      assert((hhatb >= 0.0 || ihh != 1) && "Invalid hhat");
+      assert((hhatb >= 0.0 || ihhat != 1) && "Invalid hhat");
 
       const int id1 = elem->nodeLocalIdx(node1); 
       const double area = elem->area;
@@ -2664,6 +2748,8 @@ extern "C" {
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
+
+
       if (side->isDry) return;
 
       // Checks that at least one element is not dry
@@ -2671,7 +2757,7 @@ extern "C" {
       const Element *elem2 = side->elems[1];
 
       assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
-
+      
       // XXXXXX
       // !swild_tmp to store global coord. of the starting side
       // swild_tmp(1)=xcj(isd0); swild_tmp(2)=ycj(isd0); swild_tmp(3)=zcj(isd0)
@@ -2720,7 +2806,7 @@ extern "C" {
             
          } else {  // do btrack
 
-            
+          
             // Compute number of sub-divisions based on local gradients 
             // XXX IS THIS NECESSARY?
             double suma = 0.0;
@@ -2762,8 +2848,9 @@ extern "C" {
             const int ndelt = max(ndelt_min, min(ndelt_max, int(suma/icount)*4)); // >=1
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
          
-            // call btrack(l,ipsgb,ifl_bnd,j,iadvf,swild_tmp,swild10_tmp, dtbk,time_rm,time_rm2,uuint,vvint,wwint,nnel,jlev,xt,yt,zt,swild3,ltmp)
+
             Vector3 u_int = {0.0, 0.0, 0.0};
+            printf("XXbacktrackAllNodes: side->idx = %d, kb = %d, nvrt = %d\n", side->idx, kb, nvrt);
             side->btrack(k, dt, dtbk, u_int);
 
             printf("backtrackAllNodes: side->idx = %d, u_int = %f,%f\n", side->idx, u_int.x, u_int.y);
@@ -4655,12 +4742,146 @@ extern "C"
                        localNodePart, localElemPart, localSidePart);
   }
 
+
+
+
 extern "C" 
 __global__ void destroyMeshCPU(void) {
    delete mesh;
 }
 
+
 extern "C"
 __global__ void test(double x, double y, double z) {
    mesh->test(x, y, z);
 }
+
+
+
+__global__ void computeMatrixProductAndDotProducts() {
+   // Computes A*p, r'Mr and p'Ap
+
+   // 1) shared buffer: first half for rMr, second for pAp
+   __shared__ double sdata[2*BLOCK_SIZE];
+   double* s_rMr = sdata;
+   double* s_pAp = sdata + BLOCK_SIZE;
+
+   // 2) get your node pointer
+   NODE(node);  
+   const int tid = threadIdx.x;
+
+   const double diag = node->coeffDiag;
+   const double r    = node->mR;
+   const double p    = node->mP;  
+
+   // apply preconditioner on the fly:
+   const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
+
+
+   // 4) compute sp = A.p
+   double Ap = node->coeffDiag * node->mP;
+   #pragma unroll
+   for (int j = 0; j < node->numNodes; ++j) {
+      const Node *nbNode = node->nodes[j];
+      Ap += node->coeffMatrix[j] * nbNode->mP;
+   }
+   node->mAp = Ap;
+    
+
+   // 5) dot-products individual products (r'Mr, p'Ap)
+   const double l_rMr = r*Mr;  // r'Mr
+   const double l_pAp = p*Ap;  // p'Ap
+
+   // 6) write into shared mem
+   s_rMr[tid] = l_rMr;
+   s_pAp[tid] = l_pAp;
+   __syncthreads();
+
+   // 7) block-wide tree reduction
+   for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
+      if (tid < stride) {
+         s_rMr[tid] += s_rMr[tid + stride];
+         s_pAp[tid] += s_pAp[tid + stride];
+      }
+      __syncthreads();
+   }
+
+   // 8) thread 0 atomically accumulates into the globals
+   // XXX: This is slower than it needs to be, but it is simple and works
+   if (tid == 0) {
+      atomicAdd(&rMr_old, s_rMr[0]);
+      atomicAdd(&pAp, s_pAp[0]);
+   }   
+}
+
+
+__global__ void updateSolutionAndDotProducts() {
+    extern __shared__ double sdata[];       // 2*BLOCK_SIZE doubles
+    double* s_rMr = sdata;                  // [0 .. BLOCK_SIZE-1]
+    double* s_rr  = sdata + BLOCK_SIZE;     // [BLOCK_SIZE .. 2*BLOCK_SIZE-1]
+
+    // get node & bounds-check:
+    NODE(node);
+    const int tid = threadIdx.x;
+
+    // Compute alpha
+    const double alpha = rMr_old/pAp;
+
+    // load scalars
+    const double diag = node->coeffDiag;
+    const double p    = node->mP;
+    const double Ap   = node->mAp;
+    const double x    = node->mX;
+    const double r    = node->mR;
+
+    // 1) update solution & residual
+    const double x_new = x + alpha*p;
+    const double r_new = r - alpha*Ap;
+    node->mX = x_new;
+    node->mR = r_new;
+
+    // 2) apply Jacobi preconditioner on the fly
+    const double Mr_new = r_new/diag;
+
+    // 3) local contributions for the two dot-products
+    const double l_rMr = r_new*Mr_new;  // r'M^-1r
+    const double l_rr  = r_new*r_new;   // r'r
+
+    // 4) write into shared-mem
+    s_rMr[tid] = l_rMr;
+    s_rr [tid] = l_rr;
+    __syncthreads();
+
+    // 5) block-wide tree reduction (O(log BLOCK_SIZE))
+    for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            s_rMr[tid] += s_rMr[tid + stride];
+            s_rr [tid] += s_rr [tid  + stride];
+        }
+        __syncthreads();
+    }
+
+    // 6) thread 0 atomically folds into the global accumulators
+    if (tid == 0) {
+        atomicAdd(&rMr_new, s_rMr[0]);
+        atomicAdd(&rr,      s_rr [0]);
+    }
+}
+
+
+__global__ void updateSearchDirection() {
+    NODE(node);
+
+    // recompute z on-the-fly
+    const double z = node->mR / node->coeffDiag;
+    const double p = node->mP;
+
+    const double beta = rMr_new/rMr_old;
+
+    // p =z + beta*p
+    node->mP = z + beta*p;
+}
+
+
+
+

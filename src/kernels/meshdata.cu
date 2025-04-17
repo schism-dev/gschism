@@ -1,4 +1,6 @@
+#include "constants.h"
 #include "meshdata.h"
+
 
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr; 
@@ -208,7 +210,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
                                              double &dt, Point3 &xt, double zint, Vector3 &u_int) {
 
    printf("Tracking segment goes out of water at element %d\n", curElem->idx);
-
+   
    // When this happens, we stop our algorithm that usually assumes that we move to the next element.
    // Instead, we nudge the intersection point to the barycenter of the element, and nextElement becomes
    // curElement.
@@ -1142,10 +1144,8 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
    }
 
-
-
-   
 }
+
 
 
 extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
@@ -1179,7 +1179,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // \bar{\breve{H}} 
       const double hhatb = elem->mean(&Side::hhat);        
 
-      assert((hhatb >= 0.0 || ihh != 1) && "Invalid hhat");
+      assert((hhatb >= 0.0 || ihhat != 1) && "Invalid hhat");
 
       const int id1 = elem->nodeLocalIdx(node1); 
       const double area = elem->area;
@@ -1428,6 +1428,8 @@ extern "C" {
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
+
+
       if (side->isDry) return;
 
       // Checks that at least one element is not dry
@@ -1435,7 +1437,7 @@ extern "C" {
       const Element *elem2 = side->elems[1];
 
       assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
-
+      
       // XXXXXX
       // !swild_tmp to store global coord. of the starting side
       // swild_tmp(1)=xcj(isd0); swild_tmp(2)=ycj(isd0); swild_tmp(3)=zcj(isd0)
@@ -1484,7 +1486,7 @@ extern "C" {
             
          } else {  // do btrack
 
-            
+          
             // Compute number of sub-divisions based on local gradients 
             // XXX IS THIS NECESSARY?
             double suma = 0.0;
@@ -1526,8 +1528,9 @@ extern "C" {
             const int ndelt = max(ndelt_min, min(ndelt_max, int(suma/icount)*4)); // >=1
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
          
-            // call btrack(l,ipsgb,ifl_bnd,j,iadvf,swild_tmp,swild10_tmp, dtbk,time_rm,time_rm2,uuint,vvint,wwint,nnel,jlev,xt,yt,zt,swild3,ltmp)
+
             Vector3 u_int = {0.0, 0.0, 0.0};
+            printf("XXbacktrackAllNodes: side->idx = %d, kb = %d, nvrt = %d\n", side->idx, kb, nvrt);
             side->btrack(k, dt, dtbk, u_int);
 
             printf("backtrackAllNodes: side->idx = %d, u_int = %f,%f\n", side->idx, u_int.x, u_int.y);
@@ -3419,12 +3422,147 @@ extern "C"
                        localNodePart, localElemPart, localSidePart);
   }
 
+
+
+
 extern "C" 
 __global__ void destroyMeshCPU(void) {
    delete mesh;
 }
 
+
 extern "C"
 __global__ void test(double x, double y, double z) {
    mesh->test(x, y, z);
 }
+
+
+
+__global__ void computeMatrixProductAndDotProducts() {
+   // Computes A*p, r'Mr and p'Ap
+
+   // 1) shared buffer: first half for rMr, second for pAp
+   __shared__ double sdata[2*BLOCK_SIZE];
+   double* s_rMr = sdata;
+   double* s_pAp = sdata + BLOCK_SIZE;
+
+   // 2) get your node pointer
+   NODE(node);  
+   const int tid = threadIdx.x;
+
+   const double diag = node->coeffDiag;
+   const double r    = node->mR;
+   const double p    = node->mP;  
+
+   // apply preconditioner on the fly:
+   const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
+
+
+   // 4) compute Ap = A.p
+   double Ap = node->coeffDiag * node->mP;
+   #pragma unroll
+   for (int j = 0; j < node->numNodes; ++j) {
+      const Node *nbNode = node->nodes[j];
+      Ap += node->coeffMatrix[j] * nbNode->mP;
+   }
+   node->mAp = Ap;
+    
+
+   // 5) dot-products individual products (r'Mr, p'Ap)
+   const double l_rMr = r*Mr;  // r'Mr
+   const double l_pAp = p*Ap;  // p'Ap
+
+   // 6) write into shared mem
+   s_rMr[tid] = l_rMr;
+   s_pAp[tid] = l_pAp;
+   __syncthreads();
+
+   // 7) block-wide tree reduction
+   for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
+      if (tid < stride) {
+         s_rMr[tid] += s_rMr[tid + stride];
+         s_pAp[tid] += s_pAp[tid + stride];
+      }
+      __syncthreads();
+   }
+
+   // 8) thread 0 atomically accumulates into the globals
+   // XXX: This is slower than it needs to be, but it is simple and works
+   if (tid == 0) {
+      atomicAdd(&rMr_old, s_rMr[0]);
+      atomicAdd(&pAp, s_pAp[0]);
+   }   
+}
+
+
+__global__ void updateSolutionAndDotProducts() {
+    extern __shared__ double sdata[];       // 2*BLOCK_SIZE doubles
+    double* s_rMr = sdata;                  // [0 .. BLOCK_SIZE-1]
+    double* s_rr  = sdata + BLOCK_SIZE;     // [BLOCK_SIZE .. 2*BLOCK_SIZE-1]
+
+    // get node & bounds-check:
+    NODE(node);
+    const int tid = threadIdx.x;
+
+    // Compute alpha
+    const double alpha = rMr_old/pAp;
+
+    // load scalars
+    const double diag = node->coeffDiag;
+    const double p    = node->mP;
+    const double Ap   = node->mAp;
+    const double x    = node->mX;
+    const double r    = node->mR;
+
+    // 1) update solution & residual
+    const double x_new = x + alpha*p;
+    const double r_new = r - alpha*Ap;
+    node->mX = x_new;
+    node->mR = r_new;
+
+    // 2) apply Jacobi preconditioner on the fly
+    const double Mr_new = r_new/diag;
+
+    // 3) local contributions for the two dot-products
+    const double l_rMr = r_new*Mr_new;  // r'M^-1r
+    const double l_rr  = r_new*r_new;   // r'r
+
+    // 4) write into shared-mem
+    s_rMr[tid] = l_rMr;
+    s_rr [tid] = l_rr;
+    __syncthreads();
+
+    // 5) block-wide tree reduction (O(log BLOCK_SIZE))
+    for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            s_rMr[tid] += s_rMr[tid + stride];
+            s_rr [tid] += s_rr [tid  + stride];
+        }
+        __syncthreads();
+    }
+
+    // 6) thread 0 atomically folds into the global accumulators
+    if (tid == 0) {
+        atomicAdd(&rMr_new, s_rMr[0]);
+        atomicAdd(&rr,      s_rr [0]);
+    }
+}
+
+
+__global__ void updateSearchDirection() {
+    NODE(node);
+
+    // recompute z on-the-fly
+    const double z = node->mR / node->coeffDiag;
+    const double p = node->mP;
+
+    const double beta = rMr_new/rMr_old;
+
+    // p =z + beta*p
+    node->mP = z + beta*p;
+}
+
+
+
+
+

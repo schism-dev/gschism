@@ -87,7 +87,7 @@ class CudaSourceManager:
         # Process the file
         processed_source = []
         
-        with open(filepath, 'r') as f:
+        with open(filepath, 'r', encoding='utf-8') as f:
             file_lines = f.readlines()
             
             for line_num, line in enumerate(file_lines, 1):
@@ -301,10 +301,10 @@ class CudaSourceManager:
 
     def save_combined_source(self, combined_source, output_file):
         """Save the combined source to a file for debugging."""
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write(combined_source)
             
         # Also save a version with line numbers for easier debugging
-        with open(f"{output_file}.numbered", 'w') as f:
+        with open(f"{output_file}.numbered", 'w', encoding='utf-8') as f:
             for i, line in enumerate(combined_source.split('\n'), 1):
                 f.write(f"{i:5d}: {line}\n") 

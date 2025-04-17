@@ -1,0 +1,52 @@
+constexpr int BLOCK_SIZE = __BLOCK_SIZE__;
+
+constexpr int N_TRACERS = __N_TRACERS__;
+
+constexpr int ivcor = __IVCOR__;       // Vertical coordinate system
+constexpr int ics = __ICS__;         // 1: global, 2: local
+constexpr int imm = __IMM__;         // Option to pre-compute vnorm on the element
+constexpr int iveg = __IVEG__;        // Vegetation option, 0: no vegetation, 1: vegetation
+constexpr int ihhat = __IHHAT__;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int ihydraulics = __IHYDRAULICS__; // Option of including hydraulics
+constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
+constexpr int ibc = __IBC__;         // Option to include baroclinic term (0 means yes)
+
+constexpr int nchi = __NCHI__;  // Option to compute drag coefficients chi and chi2
+
+constexpr int nramp_elev = __NRAMP_ELEV__; // Option to use ramp for elevation boundary conditions
+
+constexpr int    iloadtide = __ILOADTIDE__;       // Option to use polynomial for discharge boundary
+constexpr double loadtide_coef = __LOADTIDE_COEF__; // Load tide coefficient
+
+constexpr int    inv_atm_bnd = __INV_ATM_BND__;     // Option to use inverse barometric effects at boundary
+constexpr double prmsl_ref = __PRMSL_REF__; // Reference pressure for inverse barometric effects
+
+constexpr double veg_lai = __VEG_LAI__; // Vegetation drag coefficient
+constexpr double veg_cw = __VEG_CW__; // Vegetation drag coefficient
+
+constexpr int ntip = __NTIP__;            // Number of tidal potential components
+constexpr double tip_dp = __TIP_DP__;   // cut-off depth for applying tidal potential
+
+constexpr int iunder_deep = __IUNDER_DEEP__;     // Option of under-deep methods
+constexpr double h1_bcc   = __H1_BCC__;  // Parameters for under-deep methods
+constexpr double h2_bcc   = __H2_BCC__; 
+constexpr double hw_depth = __HW_DEPTH__; 
+constexpr double hw_ratio = __HW_RATIO__;
+
+constexpr int nvrt = __NVRT__; // Number of vertical levels
+constexpr int nzlev = __NZLEV__; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = __NSIGLEV__; // Number of sigma levels (in contrast to z levels)
+
+constexpr double rearth_eq   = __REARTH_EQ__; // [m] 
+constexpr double rearth_pole = __REARTH_POLE__; // [m]
+
+constexpr double thetai = __THETAI__;
+
+constexpr double rho0 = __RHO0__; // [kg/m^3]
+constexpr double dtb_min = __DTB_MIN__; //XXXX
+constexpr double dtb_max = __DTB_MAX__; //XXXX
+constexpr double velmin_btrack = __VELMIN_BTRACK__; //XXXX
+
+constexpr double dzb_min = __DZB_MIN__; // Min. bottom boundary layer thickness [m]
+
+constexpr double dt = __DT__;  // Time step  XXX 

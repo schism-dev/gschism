@@ -26,8 +26,10 @@ computeDensityGradient = None
 computeBaroclinicTerm = None
 computeElemAverageGhat = None
 setupCoefficientMatrixAndRHS = None
-solveWaveEquation = None
 computeGradients = None
+computeMatrixProductAndDotProducts = None
+updateSolutionAndDotProducts = None
+updateSearchDirection = None
 test = None
 
 def initializeCudaKernelManager(_project_root):
@@ -74,8 +76,8 @@ def initializeCudaFunctions(sizes):
     global getBoundaryConditions, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat
-    global setupCoefficientMatrixAndRHS, solveWaveEquation, computeGradients, backtrackAllNodes, test
-
+    global setupCoefficientMatrixAndRHS, computeGradients, backtrackAllNodes, test
+    global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
  
     # Get kernel functions with better error handling
     try:
@@ -93,7 +95,9 @@ def initializeCudaFunctions(sizes):
         computeBaroclinicTerm               = mod.get_function('computeBaroclinicTerm',               sizes, kernel_type='sides')
         computeElemAverageGhat              = mod.get_function('computeElemAverageGhat',              sizes, kernel_type='elements')
         setupCoefficientMatrixAndRHS        = mod.get_function('setupCoefficientMatrixAndRHS',        sizes, kernel_type='nodes')
-        solveWaveEquation                   = mod.get_function('solveWaveEquation',                   sizes, kernel_type='global')
+        computeMatrixProductAndDotProducts  = mod.get_function('computeMatrixProductAndDotProducts',  sizes, kernel_type='nodes')
+        updateSolutionAndDotProducts        = mod.get_function('updateSolutionAndDotProducts',        sizes, kernel_type='nodes')
+        updateSearchDirection               = mod.get_function('updateSearchDirection',               sizes, kernel_type='nodes')
         computeGradients                    = mod.get_function('computeGradients',                    sizes, kernel_type='global')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
 

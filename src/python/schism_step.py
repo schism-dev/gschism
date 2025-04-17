@@ -1,6 +1,45 @@
-
 import python.cuda_functions as cufunc
 import iop.readSflux as readSflux
+import cupy as cp
+# from cupy import cudaMemcpyFromSymbol
+
+
+def solveWaveEquation(maxIter=1000, tol=1e-6):
+    """
+    Solve wave equation using Conjugate Gradient method.
+    Assumes all arrays are already stored in Node as doubles.
+    """
+    iterCount = 0
+    rTr0      = None
+
+    # Checks that there's only one GPU device, otherwise it will fail
+    if cp.cuda.runtime.getDeviceCount() > 1:
+        raise ValueError("This function is not YET parallelized for multiple GPUs. Reductions need to be extended to all devices.")
+
+    # XXX Include essential b.c.
+    while iterCount < maxIter:
+        # compute Ap, rMr, pAp, α on GPU
+        cufunc.computeMatrixProductAndDotProducts()
+
+        # update x,r,z and accumulate rr_new on GPU
+        cufunc.updateSolutionAndDotProducts()
+
+        # fetch rr_new = <r, r> from the device
+        rr_new = cudaMemcpyFromSymbol(d_rr_accum)
+
+        if rTr0 is None:
+            rTr0 = rr_new
+
+        if rr_new <= tol*tol * rTr0:
+            break
+
+        # update p ← z + beta*p on GPU
+        cufunc.updateSearchDirection()
+
+        iterCount += 1
+
+    return iterCount
+
 
 
 def computeMeteorologicalForcing(time, sflux):
@@ -138,7 +177,7 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # Backtracking/upwind for momentum
     cufunc.backtrackAllNodes()              # Lines 4161-5029
-# XXX CHANGE TO SIDES!!!
+
 
     # Vertical advection 
     # computeVerticalAdvection()        # Lines 5030-5122
@@ -173,7 +212,7 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     #  Solve the wave equation
-    cufunc.solveWaveEquation()
+    solveWaveEquation()
 
 
     # Momentum equations	
@@ -189,3 +228,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     # Optional calculations
 
     # I/O
+
+
+
+    
