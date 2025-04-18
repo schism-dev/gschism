@@ -73,6 +73,7 @@
         "__nullptr": "cpp",
         "__node_handle": "cpp",
         "__locale": "cpp",
-        "__string": "cpp"
+        "__string": "cpp",
+        "map": "cpp"
     }
 }

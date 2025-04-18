@@ -39,6 +39,7 @@ tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
 in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Small_test/Small_grid'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -123,7 +124,7 @@ def compile_and_import(module_name, cpp_file):
         class BuildExt(build_ext):
             def build_extensions(self):
                 for ext in self.extensions:
-                    ext.extra_compile_args = ["-std=c++17", "-g", "-march=native", "-DDEBUG"]
+                    ext.extra_compile_args = ["-std=c++17", "-g", "-O0", "-fno-omit-frame-pointer", "-march=native", "-DDEBUG"]
                 super().build_extensions()
 
         setup(

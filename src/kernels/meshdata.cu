@@ -2,6 +2,7 @@
 #include "meshdata.h"
 
 
+
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr; 
 
@@ -146,6 +147,7 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
       // Check if the segment is parallel to the initial side
       printf("XXX %f\n", dot(x2 - x1, side->n1->p2() - side->n2->p2()));
       if (abs(dot(x2 - x1, side->n1->p2() - side->n2->p2())) < small) {
+         assert(false && "Segment is parallel to the initial side");
          found_intersection = true;
          nextElement = side->otherElem(this);
          tIntersect = t;
@@ -165,6 +167,8 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
 
+double minDelta = 1e10;
+double btt1, btt2;
    for (int i = 0; i < i34; i++) {
 
       Side *side2 = sides[i];
@@ -185,7 +189,13 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
          const double tt2 = delta2/delta;
 
-         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0) {
+if (abs(delta) < minDelta) {
+   minDelta = abs(delta);
+   btt1 = tt1;
+   btt2 = tt2;
+}
+double small = 1e-7;
+         if (tt1 >= -small && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
             nextElement = side->otherElem(this);
@@ -199,7 +209,36 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
 
    }
 
-   assert(found_intersection && "No intersection found");
+   if (!found_intersection) {
+      printf("ZZZ %p\n", nextElement);
+      
+      printf("ZZ No intersection found:\n"
+           "Element %p\n"
+           "in = %d\n"
+           "minDelta = %e\n"
+           "tt1 = %e, tt2 = %e\n"
+           "segment: (%f, %f)-(%f, %f)\n"
+           "Vertices:\n"
+         //   "  Nodes nextElement: (%f, %f), (%f, %f), (%f, %f),(%f, %f)\n"
+           "  Nodes curElement: (%f, %f), (%f, %f), (%f, %f),(%f, %f)\n",
+           nextElement,
+           (btt1 >= -small && btt2 >= -small && btt2 <= 1.0 + small && btt1 <= 1.0 + small),
+           minDelta,
+           btt1, btt2,
+           x1.x, x1.y,
+           x2.x, x2.y,
+         //   nextElement->nodes[0]->p.x, nextElement->nodes[0]->p.y,
+         //   nextElement->nodes[1]->p.x, nextElement->nodes[1]->p.y,
+         //   nextElement->nodes[2]->p.x, nextElement->nodes[2]->p.y,
+         //   nextElement->nodes[0]->p.x, nextElement->nodes[0]->p.y,
+           nodes[0]->p.x, nodes[0]->p.y,
+           nodes[1]->p.x, nodes[1]->p.y,
+           nodes[2]->p.x, nodes[2]->p.y,
+           nodes[0]->p.x, nodes[0]->p.y);
+           printf("ZZZ\n");
+   }
+
+   // assert(found_intersection && "No intersection found");
 
    // found_intersection should always be true, since we checked all the sides.  
    return found_intersection;
@@ -210,7 +249,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
                                              double &dt, Point3 &xt, double zint, Vector3 &u_int) {
 
    printf("Tracking segment goes out of water at element %d\n", curElem->idx);
-   
+
    // When this happens, we stop our algorithm that usually assumes that we move to the next element.
    // Instead, we nudge the intersection point to the barycenter of the element, and nextElement becomes
    // curElement.
@@ -305,7 +344,6 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    const double len2 = (xt.x - x0.x)*(xt.x - x0.x) + (xt.y - x0.y)*(xt.y - x0.y);   
    assert(len2 > 0.0 && "Zero length track"); 
    
-
    const int MAX_ITERATIONS = 1000;
    
    double t;
@@ -317,6 +355,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
+
    if (!found_intersection) {
       printf("No intersection found:\n"
            "Element %d\n"
@@ -339,13 +378,14 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    // if the tracking segment goes out of water (either dry or edge boundary)
    if (isEdgeBoundary(nextSide) || (nextElem->isDry)) {
+
+
       trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
       nextElem = this;
-      
       // Returns "early", meaning that we stopped before we were able to reach the target point.
       // In this case, the caller (btrack) needs to take into account the remaining time.
       return true;    
-      }
+   }
 
    // Keeps searching for the next intersection until we find xt, yt inside nextElem.
    int iterations = 0;
@@ -369,7 +409,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
          trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
 
          nextElem = curElem;
-
+         printf("MMMM, nextElem = %p\n", nextElem);
          // Returns "early", meaning that we stopped before we were able to reach the target point.
          // In this case, the caller (btrack) needs to take into account the remaining time.
          return true;
@@ -380,7 +420,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    }
 
-
+   printf("LLLL, iterations = %d\n", iterations);
    assert(iterations < MAX_ITERATIONS && "Iteration limit reached");  
 
  
@@ -655,9 +695,9 @@ __inline__ __device__ bool Side::btrack(
    // Initial velocities
    u_int = {u2[jlev].x, u2[jlev].y, 0.5*(n1->u2[jlev].z + n2->u2[jlev].z)};
 
+
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards({u_int.x, u_int.y});
-
 
    const int MAX_ITERATIONS = 1000; 
    Element* nextElem = curElem;
@@ -674,8 +714,6 @@ __inline__ __device__ bool Side::btrack(
 // printf("<>T = %f, %f %f %f\n", time_rm - dtb, xt, yt, zt);
       time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
                       // then time_rm needs to be increased by the unused time.
-
-
       if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0
 
       // The current point becomes the next segment's starting point.
@@ -1259,7 +1297,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          Vector3 ubed;
          // update_bdef(time, elem->center, elem->depth, ubed); XXX
 
-         Vector3 gradP(0.0, 0.0, 1.0);
+         Vector3 gradP = {0.0, 0.0, 1.0};
          for (int m=0; m < elem->i34; m++) {
            const Vector2 gradP_2D = elem->nodes[m]->depth*elem->gradPhi[m];
            gradP += toVector3(gradP_2D, 0.0);
@@ -1530,7 +1568,6 @@ extern "C" {
          
 
             Vector3 u_int = {0.0, 0.0, 0.0};
-            printf("XXbacktrackAllNodes: side->idx = %d, kb = %d, nvrt = %d\n", side->idx, kb, nvrt);
             side->btrack(k, dt, dtbk, u_int);
 
             printf("backtrackAllNodes: side->idx = %d, u_int = %f,%f\n", side->idx, u_int.x, u_int.y);

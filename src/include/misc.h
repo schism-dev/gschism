@@ -49,6 +49,7 @@ std::vector<int> readInts(std::ifstream& file) {
   // Read a list of integers from the file. The rest of the line is ignored.
   std::string line;
   std::getline(file, line);
+  printf("line = %s\n", line.c_str());
   try {
     std::istringstream iss(line);
     std::vector<int> values;
@@ -98,6 +99,8 @@ void progressBar(const std::string& desc, int current, int total, const std::str
   // Print a progress bar to the console, tqdm style. Colors are found in ansi.hpp.
   // The bar is updated only if the percentage has changed.
     static int currentPercent = 0;
+
+    total = (total <= 1)?2:total; // Edge case where total is 1.
 
     int percent = static_cast<int>(current * 100.0 / (total - 1));
     if (percent != currentPercent) {

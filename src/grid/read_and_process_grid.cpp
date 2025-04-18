@@ -832,9 +832,11 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
 
     // Process open boundary segments
     for (int k = 0; k < nope; k++) {
+
         progressBar("Reading open boundaries", k, nope, "\033[33m", 20);
 
         int nn = readInt(file);  // number of nodes in this segment
+     
         mnond = std::max(mnond, nn);
         nt += nn;
         // Read node indices for this segment
