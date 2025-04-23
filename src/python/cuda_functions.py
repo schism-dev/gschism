@@ -13,6 +13,7 @@ project_root = None
 createMesh = None
 populateMesh = None
 getStructSizes = None
+printMatrix = None
 scaleGravity = None
 computeTimeRamps = None
 computeBedDeformation = None
@@ -59,6 +60,7 @@ def initializeCudaKernelManager(_project_root):
             populateMesh   = mod.get_function('populateMesh',   sizes, kernel_type='global')
             getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='global')
 
+
         except Exception as e:
             print(f"Error getting CUDA functions: {e}")
             # Continue with error handling or exit
@@ -78,6 +80,7 @@ def initializeCudaFunctions(sizes):
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat
     global setupCoefficientMatrixAndRHS, computeGradients, backtrackAllNodes, test
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
+    global initializePreconditionedResidual, printMatrix
  
     # Get kernel functions with better error handling
     try:
@@ -98,8 +101,10 @@ def initializeCudaFunctions(sizes):
         computeMatrixProductAndDotProducts  = mod.get_function('computeMatrixProductAndDotProducts',  sizes, kernel_type='nodes')
         updateSolutionAndDotProducts        = mod.get_function('updateSolutionAndDotProducts',        sizes, kernel_type='nodes')
         updateSearchDirection               = mod.get_function('updateSearchDirection',               sizes, kernel_type='nodes')
+        initializePreconditionedResidual    = mod.get_function('initializePreconditionedResidual',    sizes, kernel_type='nodes')
         computeGradients                    = mod.get_function('computeGradients',                    sizes, kernel_type='global')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
+        printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='nodes')
 
         test = mod.get_function('test', sizes, kernel_type='global')
     except Exception as e:

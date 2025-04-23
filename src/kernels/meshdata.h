@@ -92,11 +92,11 @@ __device__ double ramp_ss;
 __device__ double ramp;
 
 
-// matrix equation variables
-__device__ double rMr_old;
-__device__ double rMr_new;
-__device__ double pAp;
-__device__ double rr;
+// matrix solver scalars
+__device__ double *rMr_old;
+__device__ double *rMr_new;
+__device__ double *pAp;
+
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
@@ -932,6 +932,7 @@ struct Node {
       
       if (node == this) {
          coeffDiag += value;
+printf("addToSparseMatrix: node == this, value = %f\n", coeffDiag);         
       } else {
          // Search (linearly)the index of the node in the array of nodes
          // XXX: This is not efficient, see if we can improve this
@@ -1188,17 +1189,9 @@ __device__ __inline__ int nxq(int index, int size) {
 
 
 extern "C" {
-   __global__ void getStructSizes(int* sizes)  {
-      // Get the size of each struct. This is used to allocate memory for the structs in the host code.
-       sizes[0] = (int)sizeof(Node);
-       sizes[1] = (int)sizeof(Element);
-       sizes[2] = (int)sizeof(Side);
-       sizes[3] = (int)sizeof(NodeBoundary);
-       sizes[4] = (int)sizeof(SideBoundary);
-       sizes[5] = (int)sizeof(BoundarySegment);
-   }
+   __global__ void getStructSizes(int* sizes);
 
-
+   __global__ void printMatrix(void);
    
 
    __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
@@ -1249,6 +1242,7 @@ extern "C" {
    }
 
  
+   __global__ void initializePreconditionedResidual(double *scalars);
 
    __global__ void computeMatrixProductAndDotProducts(void);
 
@@ -1256,7 +1250,6 @@ extern "C" {
 
    __global__ void updateSearchDirection(void);
    
-
    __global__ void computeGradients(void) {
 
    }  

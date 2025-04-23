@@ -2,6 +2,7 @@
 #include "meshdata.h"
 
 
+#define IDX(ptr) (ptr == nullptr ? -1 : (ptr->idx))
 
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr; 
@@ -96,7 +97,6 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
    
 
    Side *nextSide = nullptr;
-
    for (int i = 0; i < i34; i++) {
 
       // Element's i-th side 
@@ -135,6 +135,8 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
       }
 
    }
+   
+printf("AAA 1, found_intersection = %d, nextSide = %p, nextElement = %p\n", found_intersection, nextSide, nextElement);
 
 
    // found_intersection should always be true, since we checked all the sides.  
@@ -143,18 +145,19 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
 // if (nextElement == nullptr)  printf("$$$  0, %d, %.5f, %.5f\n",  side->idx, side->x(t), side->y(t));
 // else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(t), side->y(t));
 // }   
-   if (!found_intersection) {
-      // Check if the segment is parallel to the initial side
-      printf("XXX %f\n", dot(x2 - x1, side->n1->p2() - side->n2->p2()));
-      if (abs(dot(x2 - x1, side->n1->p2() - side->n2->p2())) < small) {
-         assert(false && "Segment is parallel to the initial side");
-         found_intersection = true;
-         nextElement = side->otherElem(this);
-         tIntersect = t;
-         t = 0.0;
-         found_intersection = true;
-      }
-   }
+   // if (!found_intersection) {
+   //    // Check if the segment is parallel to the initial side
+   //    printf("XXX segment: side = %p\n", side);
+   //    printf("XXX %f\n", dot(x2 - x1, side->n1->p2() - side->n2->p2()));
+   //    if (abs(dot(x2 - x1, side->n1->p2() - side->n2->p2())) < small) {
+   //       assert(false && "Segment is parallel to the initial side");
+   //       found_intersection = true;
+   //       nextElement = side->otherElem(this);
+   //       tIntersect = t;
+   //       t = 0.0;
+   //       found_intersection = true;
+   //    }
+   // }
    return found_intersection;
 }
 
@@ -210,7 +213,6 @@ double small = 1e-7;
    }
 
    if (!found_intersection) {
-      printf("ZZZ %p\n", nextElement);
       
       printf("ZZ No intersection found:\n"
            "Element %p\n"
@@ -235,7 +237,7 @@ double small = 1e-7;
            nodes[1]->p.x, nodes[1]->p.y,
            nodes[2]->p.x, nodes[2]->p.y,
            nodes[0]->p.x, nodes[0]->p.y);
-           printf("ZZZ\n");
+
    }
 
    // assert(found_intersection && "No intersection found");
@@ -281,12 +283,12 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // Compute the new "tracked" time based on the remaining segment length and the original velocity.
    const double len2 = length(intersection - toPoint2(xt));
    const double vel2 = u_int.x*u_int.x + u_int.y*u_int.y;        
-   assert(vel2 > 0.0 && "Zero velocity found");
-   dt = dt - sqrt(len2/vel2); 
+   if (vel2 > 0.0) dt = dt - sqrt(len2/vel2); 
+   else            dt = 0.0;
 
    // The end of this tracking segment is now the intersection point.
    xt = {intersection.x, intersection.y, zint};
-   
+printf("BBB u_int = %f,%f,%f\n", us, vs, ws);   
    u_int = {us, vs, ws};
    
 }
@@ -329,6 +331,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    // First thing is to check if the target point is inside the element. If it is there is nothing
    // else to do.
+
    if (containsPoint(toPoint2(xt))) {
       nextElem->interpolateVelocities(xt, u_int);
       return true;
@@ -342,7 +345,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    // Checks if track has a zero length.
    const double len2 = (xt.x - x0.x)*(xt.x - x0.x) + (xt.y - x0.y)*(xt.y - x0.y);   
-   assert(len2 > 0.0 && "Zero length track"); 
+   // assert(len2 > 0.0 && "Zero length track"); 
    
    const int MAX_ITERATIONS = 1000;
    
@@ -354,30 +357,32 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // Horizontal tracking loop
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
+Element *tmpElem = nextElem;
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
 
    if (!found_intersection) {
       printf("No intersection found:\n"
-           "Element %d\n"
-           "Start point: (%f, %f)\n"
-           "Target point: (%f, %f)\n"
-           "Vertices:\n"
-           "  Node 0: (%f, %f)\n"
-           "  Node 1: (%f, %f)\n"
-           "  Node 2: (%f, %f)\n",
-           nextElem->idx,
+           "Elements %d, %d\n"
+           "Side %d\n"
+           "segment: (%f, %f),(%f, %f)\n"
+           "triangle node indices: %d, %d, %d\n"
+           "triangle: (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n",
+           IDX(tmpElem), IDX(nextElem),
+           IDX(nextSide),
            x0.x, x0.y,
            xt.x, xt.y,
-           nextElem->nodes[0]->p.x, nextElem->nodes[0]->p.y,
-           nextElem->nodes[1]->p.x, nextElem->nodes[1]->p.y,
-           nextElem->nodes[2]->p.x, nextElem->nodes[2]->p.y);
+           tmpElem->nodes[0]->idx, tmpElem->nodes[1]->idx, tmpElem->nodes[2]->idx,
+           tmpElem->nodes[0]->p.x, tmpElem->nodes[0]->p.y,
+           tmpElem->nodes[1]->p.x, tmpElem->nodes[1]->p.y,
+           tmpElem->nodes[2]->p.x, tmpElem->nodes[2]->p.y,
+           tmpElem->nodes[0]->p.x, tmpElem->nodes[0]->p.y);
    }
    assert(found_intersection && "No intersection found at %d");
 
    zint = (1 - tIntersect)*zint + tIntersect*xt.z;
 
    // if the tracking segment goes out of water (either dry or edge boundary)
-   if (isEdgeBoundary(nextSide) || (nextElem->isDry)) {
+   if (isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
 
 
       trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
@@ -387,6 +392,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
       return true;    
    }
 
+
    // Keeps searching for the next intersection until we find xt, yt inside nextElem.
    int iterations = 0;
    while (iterations < MAX_ITERATIONS) {
@@ -395,6 +401,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
       Element *curElem = nextElem;
 
       bool found_intersection = curElem->findNextIntersection(toPoint2(xt), nextSide, nextElem, t, tIntersect);
+
       zint = (1 - tIntersect)*zint + tIntersect*xt.z;
 
       // If we are already in the target element, we are done.
@@ -402,14 +409,15 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
       if (!found_intersection) break;
 
 
-  
+
       // if the tracking segment goes out of water (either dry or edge boundary).
-      if (curElem->isEdgeBoundary(nextSide) || (nextElem->isDry)) {
+      if (curElem->isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
 
          trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
 
          nextElem = curElem;
-         printf("MMMM, nextElem = %p\n", nextElem);
+
+
          // Returns "early", meaning that we stopped before we were able to reach the target point.
          // In this case, the caller (btrack) needs to take into account the remaining time.
          return true;
@@ -420,7 +428,6 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    }
 
-   printf("LLLL, iterations = %d\n", iterations);
    assert(iterations < MAX_ITERATIONS && "Iteration limit reached");  
 
  
@@ -695,10 +702,11 @@ __inline__ __device__ bool Side::btrack(
    // Initial velocities
    u_int = {u2[jlev].x, u2[jlev].y, 0.5*(n1->u2[jlev].z + n2->u2[jlev].z)};
 
+// printf("YY 1, u_int = %f,%f\n", u_int.x, u_int.y);
 
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards({u_int.x, u_int.y});
-
+// printf("YY 2, curElem = %p\n", curElem);
    const int MAX_ITERATIONS = 1000; 
    Element* nextElem = curElem;
    int iter = 0;
@@ -708,8 +716,9 @@ __inline__ __device__ bool Side::btrack(
 
       // Next point in the backtracking curve
       Point3 xt = x0 - dtb*u_int;
-
+// printf("YY 3, dtb = %f, curElem = %p, u_int = %f,%f,%f\n", dtb, curElem, u_int.x, u_int.y, u_int.z);
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb);
+// printf("YY 4, found = %d\n", found);
       assert(found && "Backtracking failed in btrack");
 // printf("<>T = %f, %f %f %f\n", time_rm - dtb, xt, yt, zt);
       time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
@@ -978,11 +987,13 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.p.z   = node_coords[i * 3 + 2];  // XXX this is probably wrong
       node.depth = node_coords[i * 3 + 2];
 
-      // printf("ZZ elemsPtr = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
+
 
       // Links the node to the boundary information
       if (isbnd[i] >= 0) {
          node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
+         node.nodeBnd->node = &node;
+
          if (isbnd[i]>0) {
 
             node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
@@ -1105,7 +1116,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
          const int idxNode = elnode[i*4 + j];  
          const int idxSide = elside[i*4 + j];
          
-         elem.nodes[j] = (Node *)&(nodes[localElemPart[idxNode]][localElemIndices[idxNode]]);
+         elem.nodes[j] = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
          elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
 
 
@@ -1459,20 +1470,24 @@ extern "C" {
       // Removed all references to swild98 XXX
       // swild98=0.d0 !init
 
+
       SIDE(side);
 
       const int kb = side->kb;
+
+      printf("backtrackAllNodes: side->idx = %d, nvrt = %d\n", side->idx, nvrt);
 
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
 
-
       if (side->isDry) return;
+
 
       // Checks that at least one element is not dry
       const Element *elem1 = side->elems[0];
       const Element *elem2 = side->elems[1];
+
 
       assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
       
@@ -1521,6 +1536,7 @@ extern "C" {
             // No activity 
 
             side->btu[k] = side->u2[k];
+
             
          } else {  // do btrack
 
@@ -1564,13 +1580,13 @@ extern "C" {
 
             // '4' is somewhat arbitrary
             const int ndelt = max(ndelt_min, min(ndelt_max, int(suma/icount)*4)); // >=1
+
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
          
 
             Vector3 u_int = {0.0, 0.0, 0.0};
-            side->btrack(k, dt, dtbk, u_int);
 
-            printf("backtrackAllNodes: side->idx = %d, u_int = %f,%f\n", side->idx, u_int.x, u_int.y);
+            side->btrack(k, dt, dtbk, u_int);
 
                
          } // if vmag (do backtrack)
@@ -1899,7 +1915,6 @@ extern "C" {
 
       Node *node = nodeBnd->node;
 
-      printf("computeTidalPotential: nodeIdx = %d, ntip = %d\n", node->idx, ntip);
       node->ETP = 0.0;
 
       for (int j=0; j<ntip; j++) {
@@ -3462,17 +3477,52 @@ extern "C"
 
 
 
-extern "C" 
-__global__ void destroyMeshCPU(void) {
+extern "C"  __global__ void destroyMeshCPU(void) {
    delete mesh;
 }
 
 
-extern "C"
-__global__ void test(double x, double y, double z) {
+extern "C" __global__ void test(double x, double y, double z) {
    mesh->test(x, y, z);
 }
 
+
+__global__ void getStructSizes(int* sizes)  {
+   // Get the size of each struct. This is used to allocate memory for the structs in the host code.
+      sizes[0] = (int)sizeof(Node);
+      sizes[1] = (int)sizeof(Element);
+      sizes[2] = (int)sizeof(Side);
+      sizes[3] = (int)sizeof(NodeBoundary);
+      sizes[4] = (int)sizeof(SideBoundary);
+      sizes[5] = (int)sizeof(BoundarySegment);
+}
+
+__global__ void printMatrix(void) {
+
+
+   // Let only one thread per block print at a time 
+
+   if (threadIdx.x == 0) {
+      for (int ithread = 0; ithread < blockDim.x; ithread++) {
+         const int idx_node = ithread + blockIdx.x * blockDim.x;
+         if (idx_node >= mesh->np) return;
+
+         printf("idx_node = %d\n", idx_node);
+         const Node *node = mesh->localNodeData + idx_node;
+         printf("node = %p,  numNodes = %d\n", node, node->numNodes);
+
+         for (int j = 0; j < node->numNodes; j++) {
+            Node* nbNode = node->nodes[j];
+            printf("%d:%g ", nbNode->idx, node->coeffMatrix[j]);
+         }
+
+         printf("] diag=%g\n", node->coeffDiag);
+      }
+   }
+
+
+
+}
 
 
 __global__ void computeMatrixProductAndDotProducts() {
@@ -3501,9 +3551,11 @@ __global__ void computeMatrixProductAndDotProducts() {
    for (int j = 0; j < node->numNodes; ++j) {
       const Node *nbNode = node->nodes[j];
       Ap += node->coeffMatrix[j] * nbNode->mP;
+// printf("computeMatrixProductAndDotProducts: coeff = %f, mp = %f\n", node->coeffMatrix[j], nbNode->mP);
    }
    node->mAp = Ap;
     
+// printf("YYYY: tid = %d, diag = %f, r = %f\n", tid, diag, r);    
 
    // 5) dot-products individual products (r'Mr, p'Ap)
    const double l_rMr = r*Mr;  // r'Mr
@@ -3512,77 +3564,83 @@ __global__ void computeMatrixProductAndDotProducts() {
    // 6) write into shared mem
    s_rMr[tid] = l_rMr;
    s_pAp[tid] = l_pAp;
+
+// printf("crrr omputeMatrixProductAndDotProducts: tid = %d, l_rMr = %f, l_pAp = %f\n", tid, l_rMr, l_pAp);
+
    __syncthreads();
 
    // 7) block-wide tree reduction
    for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
-      if (tid < stride) {
-         s_rMr[tid] += s_rMr[tid + stride];
-         s_pAp[tid] += s_pAp[tid + stride];
-      }
+      if (tid < stride)  s_pAp[tid] += s_pAp[tid + stride];
       __syncthreads();
    }
 
    // 8) thread 0 atomically accumulates into the globals
    // XXX: This is slower than it needs to be, but it is simple and works
-   if (tid == 0) {
-      atomicAdd(&rMr_old, s_rMr[0]);
-      atomicAdd(&pAp, s_pAp[0]);
-   }   
+   if (tid == 0) atomicAdd(pAp, s_pAp[0]);
+
+   // if (*rMr_new != 0.0) *rMr_old = *rMr_new;
+
+   // // Reset these value for the next iteration
+   // *rMr_new = 0.0;
+   
+
+printf("STEP 1: tid = %d, rMr_old = %f, rMr_new = %f, pAp = %f\n", tid, *rMr_old, *rMr_new, *pAp);
 }
 
 
-__global__ void updateSolutionAndDotProducts() {
-    extern __shared__ double sdata[];       // 2*BLOCK_SIZE doubles
-    double* s_rMr = sdata;                  // [0 .. BLOCK_SIZE-1]
-    double* s_rr  = sdata + BLOCK_SIZE;     // [BLOCK_SIZE .. 2*BLOCK_SIZE-1]
+__global__ void updateSolutionAndDotProducts(void) {
+    extern __shared__ double s_rMr[BLOCK_SIZE];       
+
 
     // get node & bounds-check:
     NODE(node);
     const int tid = threadIdx.x;
 
-    // Compute alpha
-    const double alpha = rMr_old/pAp;
 
+
+    // Compute alpha
+    const double alpha = (*rMr_old)/(*pAp);
+// printf("DDD updateSolutionAndDotProducts: alpha = %f\n", alpha);
     // load scalars
     const double diag = node->coeffDiag;
     const double p    = node->mP;
     const double Ap   = node->mAp;
     const double x    = node->mX;
     const double r    = node->mR;
+    
+    assert(diag != 0.0 && "updateSolutionAndDotProducts: diag = 0.0");
 
     // 1) update solution & residual
     const double x_new = x + alpha*p;
     const double r_new = r - alpha*Ap;
     node->mX = x_new;
     node->mR = r_new;
+   //  printf("XXXXX: tid = %d, diag = %f, r_new = %f\n", tid, diag, r_new);
 
     // 2) apply Jacobi preconditioner on the fly
     const double Mr_new = r_new/diag;
 
     // 3) local contributions for the two dot-products
     const double l_rMr = r_new*Mr_new;  // r'M^-1r
-    const double l_rr  = r_new*r_new;   // r'r
 
     // 4) write into shared-mem
     s_rMr[tid] = l_rMr;
-    s_rr [tid] = l_rr;
+
     __syncthreads();
+
 
     // 5) block-wide tree reduction (O(log BLOCK_SIZE))
     for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
-        if (tid < stride) {
-            s_rMr[tid] += s_rMr[tid + stride];
-            s_rr [tid] += s_rr [tid  + stride];
-        }
+        if (tid < stride) s_rMr[tid] += s_rMr[tid + stride];
         __syncthreads();
     }
 
     // 6) thread 0 atomically folds into the global accumulators
-    if (tid == 0) {
-        atomicAdd(&rMr_new, s_rMr[0]);
-        atomicAdd(&rr,      s_rr [0]);
-    }
+    if (tid == 0) atomicAdd(rMr_new, s_rMr[0]);
+
+    
+printf("STEP 2: tid = %d, rMr_new = %f, rMr_old = %f\n", tid,  *rMr_new, *rMr_old);    
 }
 
 
@@ -3590,13 +3648,73 @@ __global__ void updateSearchDirection() {
     NODE(node);
 
     // recompute z on-the-fly
+// printf("updateSearchDirection: node = %d, coeffDiag = %f, rMr_old = %f, rMr_new = %f\n", node, node->coeffDiag, rMr_old, rMr_new);
     const double z = node->mR / node->coeffDiag;
     const double p = node->mP;
 
-    const double beta = rMr_new/rMr_old;
+printf("updateSearchDirection: rMr_new = %f, rMr_old = %f\n", *rMr_new, *rMr_old);
+    const double beta = (*rMr_new)/(*rMr_old);
+
+// printf("ZZZ updateSearchDirection: beta = %f\n", beta);
 
     // p =z + beta*p
     node->mP = z + beta*p;
+
+
+
+}
+
+__global__ void initializePreconditionedResidual(double *scalars) {
+
+    extern __shared__ double s_rMr[BLOCK_SIZE];  
+
+    NODE(node);
+    const int tid = threadIdx.x;
+    // For the first iteration:
+    // 1. Initial solution x = 0 (already set)
+    // 2. Initial residual r = b (stored in qel)
+    // 3. Initial search direction p = M^-1 * r = M^-1 * b
+
+// XXX we should use the guess solution here    
+
+    // Set initial residual r = b (from qel)
+    node->mR = node->qel;
+
+    // Compute z = M^-1 * r (preconditioned residual)
+    const double z = node->mR / node->coeffDiag;
+
+    // Set initial search direction p = z
+    node->mP = z;
+
+    // Initialize other variables needed for CG
+    node->mX = 0.0;  // Initial solution
+    node->mAp = 0.0; // Will be computed in first iteration
+
+    // These point to a cupy array in the host code
+    rMr_old = scalars + 0;
+    rMr_new = scalars + 1;
+    pAp     = scalars + 2;
+
+    // Computes the first r'Mr (reduction)
+    const double l_rMr = node->mR*node->mR/node->coeffDiag;  // r'M^-1r
+
+    // 4) write into shared-mem
+    s_rMr[tid] = l_rMr;
+
+    __syncthreads();
+
+
+    // 5) block-wide tree reduction (O(log BLOCK_SIZE))
+    for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
+        if (tid < stride) s_rMr[tid] += s_rMr[tid + stride];
+        __syncthreads();
+    }
+
+    // 6) thread 0 atomically folds into the global accumulators
+    if (tid == 0) atomicAdd(rMr_new, s_rMr[0]);        
+
+    *rMr_old = 0.0;
+    *pAp = 0.0;
 }
 
 

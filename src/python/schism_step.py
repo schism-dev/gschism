@@ -4,39 +4,55 @@ import cupy as cp
 # from cupy import cudaMemcpyFromSymbol
 
 
-def solveWaveEquation(maxIter=1000, tol=1e-6):
+def solveWaveEquation(maxIter=10000, tol=1e-6):
     """
     Solve wave equation using Conjugate Gradient method.
     Assumes all arrays are already stored in Node as doubles.
     """
     iterCount = 0
-    rTr0      = None
+    rMr0      = None
 
     # Checks that there's only one GPU device, otherwise it will fail
     if cp.cuda.runtime.getDeviceCount() > 1:
         raise ValueError("This function is not YET parallelized for multiple GPUs. Reductions need to be extended to all devices.")
+    
+    cufunc.printMatrix()
 
-    # XXX Include essential b.c.
+    scalars = cp.zeros(3, dtype=cp.float64) # rMr_old, rMr_new, pAp
+
+
+    # Compute initial preconditioned residual Mr
+    cufunc.initializePreconditionedResidual(scalars)
+
+
+# XXX Include essential b.c.
     while iterCount < maxIter:
         # compute Ap, rMr, pAp, α on GPU
+        scalars[2] = 0.0 # pAp
         cufunc.computeMatrixProductAndDotProducts()
 
         # update x,r,z and accumulate rr_new on GPU
+        scalars[0] = scalars[1] # rMr_old = rMr_new
+        scalars[1] = 0.0 # rMr_new
         cufunc.updateSolutionAndDotProducts()
 
+        # Sync to make sure rr reduction is finished
+        cp.cuda.Device().synchronize()
+
         # fetch rr_new = <r, r> from the device
-        rr_new = cudaMemcpyFromSymbol(d_rr_accum)
+        rMr_new = scalars[1].item()
+        rMr_old = scalars[0].item()
 
-        if rTr0 is None:
-            rTr0 = rr_new
 
-        if rr_new <= tol*tol * rTr0:
+        if rMr_new <= tol*tol * rMr_old:
             break
 
         # update p ← z + beta*p on GPU
         cufunc.updateSearchDirection()
 
         iterCount += 1
+
+        print(f"Iteration {iterCount}: rMr_new = {rMr_new}, rMr_old = {rMr_old}")
 
     return iterCount
 
@@ -105,7 +121,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     opt  = namelist.opt
 
     # SAL option: scale gravity
-    cufunc.scaleGravity(opt.loadtide_coef)
+#    cufunc.scaleGravity(opt.loadtide_coef)
 
     dt = core.dt
 

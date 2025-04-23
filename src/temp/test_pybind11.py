@@ -19,7 +19,7 @@ from matplotlib.collections import LineCollection
 nws = 0
 
 # sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-sys.path.append(r'/media/jmg/Elements2/src/gschism/src')  
+sys.path.append(r'/media/jmg/Elements/src/gschism/src')  
 
 from iop.cudamodule import CudaSourceManager
 from iop.processConstantsHeader import processConstants
@@ -27,7 +27,7 @@ from python.schism_init import schism_init
 from python.schism_step import schism_step
 from python.schism_consts import *
 import python.cuda_functions as cufunc
-tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
+tracktest = '/media/jmg/Elements/src/gschism/src/temp/tracktest.txt'
 # tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
@@ -38,8 +38,8 @@ tracktest = '/media/jmg/Elements2/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
-in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Small_test/Small_grid'
+in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -161,7 +161,7 @@ if __name__ == "__main__":
 
 
     # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    test_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
+    test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_CORIE'
 
     namelist = schism_init(test_dir)
 
@@ -286,6 +286,15 @@ if __name__ == "__main__":
         # Plot all nodes
         plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.', alpha=0.3, markersize=.3)
 
+        # Add node labels
+        for i in range(nodeCoords.shape[1]):
+            plt.annotate(f'N{i}', 
+                        (nodeCoords[0,i].get(), nodeCoords[1,i].get()),
+                        xytext=(2, 2),
+                        textcoords='offset points',
+                        color='black',
+                        fontsize=6,
+                        alpha=0.5)
 
         nodes = elnode[:3,:].get()
         # Append the first node to close the triangle
@@ -299,7 +308,7 @@ if __name__ == "__main__":
         x3 = nodeCoords[0, nodes[2, :]].get()
         y3 = nodeCoords[1, nodes[2, :]].get()
         
-        
+        # Plot element edges
         points = np.stack((np.column_stack((x1, y1)), np.column_stack((x2, y2))), axis=1)
         lc = LineCollection(points, colors='r', alpha=0.1)
         ax.add_collection(lc)
@@ -311,93 +320,131 @@ if __name__ == "__main__":
         ax.add_collection(lc)
 
 
-        import re
+        if False:
+            import re
 
-        with open(tracktest, 'r') as f:
-            text = f.read()
-        # Parse the text (assuming it's in a string called 'text')
-        pattern = r'\$\$\$\s+(\d+),\s+(\d+),\s+([-\d.]+),\s+([-\d.]+)'
-        matches = re.findall(pattern, text)
 
-                # New pattern for time points
-        time_pattern = r'<>T = ([\d.]+), ([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)'
-        time_matches = re.findall(time_pattern, text)
+            with open(tracktest, 'r') as f:
+                text = f.read()
+                # Parse the text (assuming it's in a string called 'text')
+                pattern = r'\$\$\$\s+(\d+),\s+(\d+),\s+([-\d.]+),\s+([-\d.]+)'
+                matches = re.findall(pattern, text)
 
-        # Convert time matches to arrays for plotting
-        time_points = []
-        times = []
-        for t, x, y, z in time_matches:
-            time_points.append([float(x), float(y)])
-            times.append(float(t))
+                    # New pattern for time points
+                time_pattern = r'<>T = ([\d.]+), ([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)'
+                time_matches = re.findall(time_pattern, text)
 
-        time_points = np.array(time_points)
+                # Convert time matches to arrays for plotting
+                time_points = []
+                times = []
+                for t, x, y, z in time_matches:
+                    time_points.append([float(x), float(y)])
+                    times.append(float(t))
 
-        # Convert matches to arrays for plotting
-        points = []
-        elem_indices = []
-        side_indices = []
+                time_points = np.array(time_points)
 
-        for elem_idx, side_idx, x, y in matches:
-            points.append([float(x), float(y)])
-            elem_indices.append(int(elem_idx))
-            side_indices.append(int(side_idx))
+                # Convert matches to arrays for plotting
+                points = []
+                elem_indices = []
+                side_indices = []
 
-        points = np.array(points)
+                for elem_idx, side_idx, x, y in matches:
+                    points.append([float(x), float(y)])
+                    elem_indices.append(int(elem_idx))
+                    side_indices.append(int(side_idx))
 
-        # Plot the polyline
-        try:
-            plt.plot(points[:,0], points[:,1], 'g--', label='Path')
-            plt.plot(points[:,0], points[:,1], 'g.')
-        except:
-            pass
+                points = np.array(points)
 
-        # Add labels for elements and sides
-        for i in range(len(points)-1):
-            # Get triangle nodes for element i
-            tri_nodes = elnode[:3,elem_indices[i]].get()
+                # Plot the polyline
+                try:
+                    plt.plot(points[:,0], points[:,1], 'g--', label='Path')
+                    plt.plot(points[:,0], points[:,1], 'g.')
+                except:
+                    pass
+
+                # Add labels for elements and sides
+                for i in range(len(points)-1):
+                    # Get triangle nodes for element i
+                    tri_nodes = elnode[:3,elem_indices[i]].get()
+                    
+                    # Calculate triangle centroid
+                    centroid_x = np.mean(nodeCoords[0,tri_nodes].get())
+                    centroid_y = np.mean(nodeCoords[1,tri_nodes].get())
+                    
+                    # Element label at centroid
+                    plt.annotate(f'E{elem_indices[i]}', 
+                                (centroid_x, centroid_y),
+                                xytext=(0, 0),
+                                textcoords='offset points',
+                                color='green',
+                                fontsize=6,
+                                alpha=0.6)
+                    
+                    # Get side nodes
+                    side_nodes = isidenode[:,side_indices[i]].get()
+                    
+                    # Calculate side midpoint using actual node coordinates
+                    mid_x = np.mean(nodeCoords[0,side_nodes].get())
+                    mid_y = np.mean(nodeCoords[1,side_nodes].get())
+                    
+                    # Side label at true midpoint
+                    plt.annotate(f'S{side_indices[i]}',
+                                (mid_x, mid_y),
+                                xytext=(0, 3),
+                                textcoords='offset points',
+                                color='blue',
+                                fontsize=6,
+                                alpha=0.3)
+                    
+                        # Add time points and labels
+                plt.plot(time_points[:,0], time_points[:,1], 'r.', markersize=8)
+                # for i, (x, y) in enumerate(time_points):
+                #     plt.annotate(f't={times[i]:.3f}', 
+                #             (x, y),
+                #             xytext=(5, 5),
+                #             textcoords='offset points',
+                #             color='red',
+                #             fontsize=8,
+                #             alpha=0.5)
+            
+     
+        # Add element labels at centroids
+        for i in range(elnode.shape[1]):
+            # Get triangle nodes
+            tri_nodes = elnode[:3,i].get()
             
             # Calculate triangle centroid
             centroid_x = np.mean(nodeCoords[0,tri_nodes].get())
             centroid_y = np.mean(nodeCoords[1,tri_nodes].get())
             
             # Element label at centroid
-            plt.annotate(f'E{elem_indices[i]}', 
+            plt.annotate(f'E{i}', 
                         (centroid_x, centroid_y),
                         xytext=(0, 0),
                         textcoords='offset points',
-                        color='green',
+                        color='red',
                         fontsize=6,
                         alpha=0.6)
-            
+
+        # Add side labels
+        for i in range(isidenode.shape[1]):
             # Get side nodes
-            side_nodes = isidenode[:,side_indices[i]].get()
+            side_nodes = isidenode[:,i].get()
             
-            # Calculate side midpoint using actual node coordinates
+            # Calculate side midpoint
             mid_x = np.mean(nodeCoords[0,side_nodes].get())
             mid_y = np.mean(nodeCoords[1,side_nodes].get())
             
-            # Side label at true midpoint
-            plt.annotate(f'S{side_indices[i]}',
+            # Side label at midpoint
+            plt.annotate(f'S{i}',
                         (mid_x, mid_y),
                         xytext=(0, 3),
                         textcoords='offset points',
                         color='blue',
                         fontsize=6,
                         alpha=0.3)
+
             
-                # Add time points and labels
-        plt.plot(time_points[:,0], time_points[:,1], 'r.', markersize=8)
-        # for i, (x, y) in enumerate(time_points):
-        #     plt.annotate(f't={times[i]:.3f}', 
-        #             (x, y),
-        #             xytext=(5, 5),
-        #             textcoords='offset points',
-        #             color='red',
-        #             fontsize=8,
-        #             alpha=0.5)
-        
- 
-        
         # Prevent plot distortion by setting equal aspect ratio
         plt.axis('equal')
         
