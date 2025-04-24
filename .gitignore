@@ -24,3 +24,8 @@
 # vscode
 .vscode/launch.json
 
+*.qdstrm
+*.so
+build/
+src/temp/build/
+
