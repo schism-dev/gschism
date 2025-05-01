@@ -25,7 +25,6 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
     cufunc.initializePreconditionedResidual(scalars)
 
 
-# XXX Include essential b.c.
     while iterCount < maxIter:
         # compute Ap, rMr, pAp, α on GPU
         scalars[2] = 0.0 # pAp
@@ -121,7 +120,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     opt  = namelist.opt
 
     # SAL option: scale gravity
-#    cufunc.scaleGravity(opt.loadtide_coef)
+    cufunc.scaleGravity(opt.loadtide_coef)
 
     dt = core.dt
 
@@ -217,15 +216,16 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     # Elem. average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimension: m^2/s
-    cufunc.computeElemAverageGhat()          # Lines 5533-5783
-
+    cufunc.computeElemAverageGhat()                 # Lines 5533-5783
 
 
     # setup coefficient matrix, sparsem, for the wave equation
     #!...  No elevation essential b.c. are imposed yet but other b.c. is imposed
-    cufunc.setupCoefficientMatrixAndRHS(time)                # Lines 5826-
+    cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-
 
 
+
+    cufunc.setEssentialBC()
 
     #  Solve the wave equation
     solveWaveEquation()

@@ -920,7 +920,7 @@ __device__ double Node::compZCoord(int k) const {
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 double *node_coords, double *wind_rotate_angle, 
                 int *isdel, int *isidenode, int *isbnd,
-                int *nond, int *nlnd, int *iond, int *ilnd,
+                int nond, int nlnd, int *iond, int *ilnd,
                 int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                 int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                 int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
@@ -991,6 +991,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
       // Links the node to the boundary information
       if (isbnd[i] >= 0) {
+       
          node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
          node.nodeBnd->node = &node;
 
@@ -1193,6 +1194,17 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
    }
 
+
+   // Processing the boundary nodes
+   for (int i = 0; i < nond; i++) {
+      NodeBoundary *nodeBnd = &localNodeBoundaryMem[i];
+
+
+      nodeBnd->isEssentialBC = true;
+      nodeBnd->bcValue = 7.0;
+printf("XXXXSXX nodeBnd = %p, IDX = %d, nodeBnd->isEssentialBC = %d\n", nodeBnd, iond[i], nodeBnd->isEssentialBC);
+   }
+
 }
 
 
@@ -1220,6 +1232,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       Element *elem = node1->elements[j];
 
       // Compute the average gravity
+      printf("UUU Node::grav2 = %f, %f, %f\n", elem->nodes[0]->grav2, elem->nodes[1]->grav2, elem->nodes[2]->grav2);
       const double grav3 = elem->mean(&Node::grav2);
 
       // Look at the documentation for the description of the terms in the following integrals
@@ -1227,6 +1240,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // Integral I_1 
       // \bar{\breve{H}} 
       const double hhatb = elem->mean(&Side::hhat);        
+
 
       assert((hhatb >= 0.0 || ihhat != 1) && "Invalid hhat");
 
@@ -1236,7 +1250,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       if (elem->isTri()) {
 
          // To clarify the notation in this section: 
-         //   i standtimes for the node under consideration (node1)
+         //   i stands for the node under consideration (node1)
          //   j (node2) and k (node3) are the other nodes of the triangle.
          const int id2 = elem->nxq(1 + id1);
          const int id3 = elem->nxq(2 + id1);
@@ -1262,11 +1276,15 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
          const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
 
+         printf("grav3 = %f, thetai = %f, dt = %f, hhatb = %f, area = %f, dot1= %f, dot2 = %f, dot3 = %f\n", grav3, thetai, dt, hhatb, area, dot(x3-x2, x3-x2), dot(x3-x2, x1-x3), dot(x1-x3, x1-x3));
+         printf("node idx = %d, x1 + %f, %f, x2 + %f, %f, x3 + %f, %f\n", node1->idx, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y);
+         printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
+
          node1->addToSparseMatrix(node1, I1_ii);
          node1->addToSparseMatrix(node2, I1_ij); 
          node1->addToSparseMatrix(node3, I1_ik);
 
-         printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
+printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
      
       }
       else { // Quad
@@ -1456,6 +1474,9 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       } // for l
 
    } // if isbnd
+
+
+   printf("44444444 idx_node = %d, node1->qel = %f\n", node1->idx, node1->qel);
 
 }
 
@@ -2129,6 +2150,53 @@ extern "C" {
       }
 
    }
+
+
+   __global__ void setEssentialBC(void) {
+      // Set essential boundary conditions 
+      NODE(node); // Each boundary node
+      NodeBoundary *nodeBnd = node->nodeBnd;
+printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, nodeBnd ? nodeBnd->isEssentialBC : -1);
+      
+// nodeBnd->isEssentialBC = true;      
+      // Check if this node has essential BC
+      if (nodeBnd && nodeBnd->isEssentialBC) {
+         // Verify BC value is valid
+         assert(nodeBnd->bcValue >= -9998.0 && "setEssentialBC: wrong b.c. at node");
+
+         printf("XX node IDX = %d, nodeBnd->isEssentialBC = %d\n", node->idx, nodeBnd->isEssentialBC);
+         
+         // Set diagonal to 1 and zero off-diagonals
+         node->coeffDiag = 1.0;
+         printf("ZZZZZZZ node->coeffDiag = %16.9f\n", node->coeffDiag);
+
+         for (int j = 0; j < node->numNodes; j++) {
+               node->coeffMatrix[j] = 0.0;
+               printf("YY node->coeffMatrix[%d, %d] = %f\n", node->idx, node->nodes[j]->idx, node->coeffMatrix[j]);
+         }
+         
+         // Set solution and RHS to BC value
+         node->mX  = nodeBnd->bcValue;
+         node->qel = nodeBnd->bcValue;
+      } else {
+         // Not an essential BC node
+         // Modify RHS for neighbors with essential BCs
+         for (int j = 0; j < node->numNodes; j++) {
+               Node* nbNode = node->nodes[j];
+               const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
+               if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
+                  // Verify neighbor's BC value
+                  assert(nbNodeBnd->bcValue >= -9998.0 && "setEssentialBC: wrong b.c. at node");
+
+                  // Subtract contribution to RHS
+                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->bcValue;
+                  node->coeffMatrix[j] = 0.0;  
+                  printf("ZZ node->coeffMatrix[%d, %d] = %f\n", node->idx, node->nodes[j]->idx, node->coeffMatrix[j]);
+               }
+         }
+      }
+   }
+
 
    __global__ void computeVerticallyIntegratedVelocity(void) {
 
@@ -3457,7 +3525,7 @@ extern "C"
   __global__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
-                   int *nond, int *nlnd, int *iond, int *ilnd,
+                   int nond, int nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
@@ -3506,17 +3574,14 @@ __global__ void printMatrix(void) {
       for (int ithread = 0; ithread < blockDim.x; ithread++) {
          const int idx_node = ithread + blockIdx.x * blockDim.x;
          if (idx_node >= mesh->np) return;
-
-         printf("idx_node = %d\n", idx_node);
          const Node *node = mesh->localNodeData + idx_node;
-         printf("node = %p,  numNodes = %d\n", node, node->numNodes);
-
+         printf("idx_node = %d [%d] diag=%lf14, [", idx_node, node->numNodes, node->coeffDiag);
          for (int j = 0; j < node->numNodes; j++) {
             Node* nbNode = node->nodes[j];
-            printf("%d:%g ", nbNode->idx, node->coeffMatrix[j]);
+            if (node->coeffMatrix[j] != 0.0) printf("%d:%f14,  ", nbNode->idx, node->coeffMatrix[j]);
          }
+         printf("]\n");
 
-         printf("] diag=%g\n", node->coeffDiag);
       }
    }
 
@@ -3547,17 +3612,15 @@ __global__ void computeMatrixProductAndDotProducts() {
 
    // 4) compute Ap = A.p
    double Ap = node->coeffDiag * node->mP;
-   #pragma unroll
    for (int j = 0; j < node->numNodes; ++j) {
       const Node *nbNode = node->nodes[j];
       Ap += node->coeffMatrix[j] * nbNode->mP;
-// printf("computeMatrixProductAndDotProducts: coeff = %f, mp = %f\n", node->coeffMatrix[j], nbNode->mP);
+
    }
    node->mAp = Ap;
     
-// printf("YYYY: tid = %d, diag = %f, r = %f\n", tid, diag, r);    
 
-   // 5) dot-products individual products (r'Mr, p'Ap)
+   // 5) dot-products individual products (r'Mr, p'Ap) (REDUCTION)
    const double l_rMr = r*Mr;  // r'Mr
    const double l_pAp = p*Ap;  // p'Ap
 
@@ -3565,7 +3628,6 @@ __global__ void computeMatrixProductAndDotProducts() {
    s_rMr[tid] = l_rMr;
    s_pAp[tid] = l_pAp;
 
-// printf("crrr omputeMatrixProductAndDotProducts: tid = %d, l_rMr = %f, l_pAp = %f\n", tid, l_rMr, l_pAp);
 
    __syncthreads();
 
@@ -3579,13 +3641,8 @@ __global__ void computeMatrixProductAndDotProducts() {
    // XXX: This is slower than it needs to be, but it is simple and works
    if (tid == 0) atomicAdd(pAp, s_pAp[0]);
 
-   // if (*rMr_new != 0.0) *rMr_old = *rMr_new;
 
-   // // Reset these value for the next iteration
-   // *rMr_new = 0.0;
-   
 
-printf("STEP 1: tid = %d, rMr_old = %f, rMr_new = %f, pAp = %f\n", tid, *rMr_old, *rMr_new, *pAp);
 }
 
 
@@ -3601,7 +3658,7 @@ __global__ void updateSolutionAndDotProducts(void) {
 
     // Compute alpha
     const double alpha = (*rMr_old)/(*pAp);
-// printf("DDD updateSolutionAndDotProducts: alpha = %f\n", alpha);
+
     // load scalars
     const double diag = node->coeffDiag;
     const double p    = node->mP;
@@ -3616,7 +3673,6 @@ __global__ void updateSolutionAndDotProducts(void) {
     const double r_new = r - alpha*Ap;
     node->mX = x_new;
     node->mR = r_new;
-   //  printf("XXXXX: tid = %d, diag = %f, r_new = %f\n", tid, diag, r_new);
 
     // 2) apply Jacobi preconditioner on the fly
     const double Mr_new = r_new/diag;
@@ -3639,8 +3695,7 @@ __global__ void updateSolutionAndDotProducts(void) {
     // 6) thread 0 atomically folds into the global accumulators
     if (tid == 0) atomicAdd(rMr_new, s_rMr[0]);
 
-    
-printf("STEP 2: tid = %d, rMr_new = %f, rMr_old = %f\n", tid,  *rMr_new, *rMr_old);    
+
 }
 
 
@@ -3652,15 +3707,12 @@ __global__ void updateSearchDirection() {
     const double z = node->mR / node->coeffDiag;
     const double p = node->mP;
 
-printf("updateSearchDirection: rMr_new = %f, rMr_old = %f\n", *rMr_new, *rMr_old);
     const double beta = (*rMr_new)/(*rMr_old);
 
 // printf("ZZZ updateSearchDirection: beta = %f\n", beta);
 
     // p =z + beta*p
     node->mP = z + beta*p;
-
-
 
 }
 

@@ -817,10 +817,15 @@ struct NodeBoundary {
    int iettype;   // Type of elevation boundary condition
    double eth;    // Elevation time history
 
+   bool isEssentialBC;
+   double bcValue;
+
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
       return (index == 0) ? sideBnd1 : sideBnd2; 
    }
+
+
 };
 
 struct Node {
@@ -1115,7 +1120,7 @@ class Mesh {
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
-                   int *nond, int *nlnd, int *iond, int *ilnd,
+                   int nond, int nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,

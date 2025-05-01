@@ -9,7 +9,7 @@ constexpr int iveg = 0;        // Vegetation option, 0: no vegetation, 1: vegeta
 constexpr int ihhat = 1;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = 0; // Option of including hydraulics
 constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
-constexpr int ibc = 0;         // Option to include baroclinic term (0 means yes)
+constexpr int ibc = 1;         // Option to include baroclinic term (0 means yes)
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
 
@@ -43,10 +43,10 @@ constexpr double rearth_pole = 6378206.4; // [m]
 constexpr double thetai = 0.6;
 
 constexpr double rho0 = 1000; // [kg/m^3]
-constexpr double dtb_min = 15; //XXXX
+constexpr double dtb_min = 10; //XXXX
 constexpr double dtb_max = 30; //XXXX
 constexpr double velmin_btrack = 0.0001; //XXXX
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 90;  // Time step  XXX 
+constexpr double dt = 300;  // Time step  XXX 

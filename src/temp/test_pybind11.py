@@ -161,12 +161,13 @@ if __name__ == "__main__":
 
 
     # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_CORIE'
+    test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 
     namelist = schism_init(test_dir)
 
+
     from iop.readTides import read_bctides
-    bctides = read_bctides(test_dir, 4, 89, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
+    bctides = read_bctides(test_dir, 1, 4, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
 
     # Test the module
     import cupy as cp
@@ -234,7 +235,7 @@ if __name__ == "__main__":
     # interpolation weights.
 
     # Test the readSflux module
-    nodeCoords[:2,:] = np.deg2rad(nodeCoords[:2,:]) # XXX Why deg2rad?
+    # nodeCoords[:2,:] = np.deg2rad(nodeCoords[:2,:]) # XXX Why deg2rad?  XXX Why was I doing this? Is important in other contexts???
 
     sflux = SFlux(in_dir, r'sflux_inputs.txt', nodeCoords) 
 
@@ -633,7 +634,7 @@ if __name__ == "__main__":
             # of the mesh, including the nodes, elements, sides, and their neighbors.
             cufunc.populateMesh(i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
                                 isdel, isidenode, isbnd,
-                                nond, nlnd, iond, ilnd,
+                                nond[0].item(), nlnd[0].item(), iond, ilnd,
                                 nodeNeighNodesStart, nodeNeighNodes,
                                 nodeNeighElemsStart, nodeNeighElems,
                                 globalNodeIndices, globalElemIndices, globalSideIndices,
@@ -647,7 +648,8 @@ if __name__ == "__main__":
              'nodeBnd': max(numPartBoundaryNodes)}
     cufunc.initializeCudaFunctions(sizes)
 
-    schism_step(0, namelist, bctides, sflux)
+    for t in cp.arange(0, 1000, 1):
+        schism_step(t, namelist, bctides, sflux)
 
     # Launch kernel on each GPU
     # launch_kernel(computeFluxAdvHface, max(numPartSides), n_gpus, 256)
