@@ -1,8 +1,10 @@
 // Data structures to store grid related data.
 // Since C++ can't have 2D arrays we use parenthetical indexing.
 
-#include <execinfo.h>
+#ifndef _WIN32   
+#include <execinfo.h>  // Linux-specific header
 #include <cxxabi.h>
+#endif
 
 #include <sstream>
 #include <string>
@@ -10,6 +12,7 @@
 
 
 inline void printStackTrace(int maxFrames = 10) {
+#ifndef _WIN32
     void* array[maxFrames];
     size_t size = backtrace(array, maxFrames);
     char** strings = backtrace_symbols(array, size);
@@ -39,6 +42,7 @@ inline void printStackTrace(int maxFrames = 10) {
     }
     
     free(strings);
+#endif
 }
 
 #ifdef DEBUG // Define DEBUG in your debug build configuration

@@ -38,7 +38,7 @@ def schism_init(in_dir):
     # Init. # of tracers in models 1:natrm
     # A tracer model is activated iff ntrs()>0
     ntrs = cp.zeros(natrm, dtype=int)
-    ntrs[0:2] = 1  # T,S counted as separate model
+    ntrs[0:2] = cp.array([1, 1])  # T,S counted
     tr_mname = ['TEM', 'SAL']
 
     # Total number of tracers (including T,S)

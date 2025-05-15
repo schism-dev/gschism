@@ -27,6 +27,7 @@ computeDensityGradient = None
 computeBaroclinicTerm = None
 computeElemAverageGhat = None
 setEssentialBC = None
+updateElevation = None
 setupCoefficientMatrixAndRHS = None
 computeGradients = None
 computeMatrixProductAndDotProducts = None
@@ -78,7 +79,7 @@ def initializeCudaFunctions(sizes):
     global computeBedDeformation, computeTidalPotential
     global getBoundaryConditions, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeDensityCubicSplines
-    global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC
+    global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, computeGradients, backtrackAllNodes, test
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix
@@ -99,6 +100,7 @@ def initializeCudaFunctions(sizes):
         computeBaroclinicTerm               = mod.get_function('computeBaroclinicTerm',               sizes, kernel_type='sides')
         computeElemAverageGhat              = mod.get_function('computeElemAverageGhat',              sizes, kernel_type='elements')
         setEssentialBC                      = mod.get_function('setEssentialBC',                      sizes, kernel_type='nodes')
+        updateElevation                     = mod.get_function('updateElevation',                     sizes, kernel_type='nodes')
         setupCoefficientMatrixAndRHS        = mod.get_function('setupCoefficientMatrixAndRHS',        sizes, kernel_type='nodes')
         computeMatrixProductAndDotProducts  = mod.get_function('computeMatrixProductAndDotProducts',  sizes, kernel_type='nodes')
         updateSolutionAndDotProducts        = mod.get_function('updateSolutionAndDotProducts',        sizes, kernel_type='nodes')

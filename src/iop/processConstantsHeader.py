@@ -1,6 +1,7 @@
 from python.schism_consts import *
 
 def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsiglev: int,
+                     nope: int, mnond: int,
                      templatePath="src/kernels/constants_template.h", 
                      outputPath="src/kernels/constants.h"):
     """
@@ -68,10 +69,19 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         '__NVRT__': (nvrt, 'grid'),
         '__NZLEV__': (kz, 'grid'),  # kz is number of z-levels
         '__NSIGLEV__': (nsiglev, 'grid'),
+        '__NOPEN_BOUNDARY_SEGMENTS__': (nope, 'grid'),
+        '__MAX_NODES_PER_OPEN_BOUNDARY_SEGMENT__': (mnond, 'grid'),
         
         # From tidal data
         '__NTIP__': (tidalData.ntip, 'tidal'),
-        '__TIP_DP__': (tidalData.tip_dp, 'tidal')
+        '__TIP_DP__': (tidalData.tip_dp, 'tidal'),
+        '__NBFR__': (tidalData.nbfr, 'tidal'),
+        '__NETTYPE__': (tidalData.nettype, 'tidal'),
+        '__NFLTYPE__': (tidalData.nfltype, 'tidal'),
+        '__NETTYPE2__': (tidalData.nettype2, 'tidal'),
+        '__NFLTYPE2__': (tidalData.nfltype2, 'tidal'),
+        '__NNODE_ET__': (tidalData.nnode_et, 'tidal'),
+        '__NNODE_FL__': (tidalData.nnode_fl, 'tidal')
     }
     
     # Verify all required parameters exist and have valid values

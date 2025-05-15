@@ -27,15 +27,31 @@ constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 constexpr int ntip = 0;            // Number of tidal potential components
 constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
 
+// Boundary forcing frequencies
+constexpr int nbfr = 1;            // Number of boundary forcing frequencies
+
+// Boundary condition types
+constexpr int nettype = 0;      // Total number of type I elevation boundaries
+constexpr int nfltype = 0;      // Total number of type I flow boundaries
+constexpr int nettype2 = 0;    // Total number of type IV elevation boundaries
+constexpr int nfltype2 = 0;    // Total number of type IV flow boundaries
+
+// Boundary nodes
+constexpr int nnode_et = 0;    // Number of nodes requiring elev2D.th.nc
+constexpr int nnode_fl = 0;    // Number of nodes requiring flow2D.th.nc
+
 constexpr int iunder_deep = 0;     // Option of under-deep methods
 constexpr double h1_bcc   = 50;  // Parameters for under-deep methods
 constexpr double h2_bcc   = 100; 
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt = 2; // Number of vertical levels
-constexpr int nzlev = 1; // Number of z levels (in contrast to sigma levels)
+constexpr int nvrt    = 2; // Number of vertical levels
+constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
+
+constexpr int nope  = 1; // Number of open boundary segments
+constexpr int mnond = 3; // Maximum number of nodes per open boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]

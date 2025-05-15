@@ -11,6 +11,8 @@ import pybind11
 import numpy as np
 import timeit
 import sys
+import matplotlib
+matplotlib.use('TkAgg') 
 from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
 
@@ -19,7 +21,7 @@ from matplotlib.collections import LineCollection
 nws = 0
 
 # sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
-sys.path.append(r'/media/jmg/Elements/src/gschism/src')  
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'src'))
 
 from iop.cudamodule import CudaSourceManager
 from iop.processConstantsHeader import processConstants
@@ -38,8 +40,9 @@ tracktest = '/media/jmg/Elements/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 # in_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/gausshill'
 # in_dir = '/media/jmg/Elements2/src/tmp/schism_verification_tests/Test_CORIE'
-in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
-in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
+# in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+# in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
+in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -83,48 +86,48 @@ def compile_and_import(module_name, cpp_file):
     else:
         print("Compiling the C++ code...")
 
-        # # Define the extension
-        # ext_modules = [
-        #     Extension(
-        #         module_name,
-        #         sources=[cpp_file],
-        #         # include_dirs=[pybind11.get_include(), "/apps/intel/2020.0.166/metis/5.2.1/include"],
-        #         include_dirs=[pybind11.get_include(), "/home/jmg/local/include", "/home/jmg/src/lib/metis/METIS/GKlib"],
-        #         language="c++",
-        #         # extra_compile_args=["-std=c++20", "-march=native"],
-        #         extra_link_args=["-lmetis", '-lGKlib'],
-        #         libraries=['metis', 'GKlib'],  # Add METIS to libraries
-        #         # library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],  # Add library directory
-        #         library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],  # Add library directory
-        #         # runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],
-        #         runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],
-        #     )
-        # ]
-
+        # Get vcpkg root directory
+        vcpkg_root = os.path.expanduser("~/vcpkg")
 
         # Define the extension
         ext_modules = [
             Extension(
                 module_name,
                 sources=[cpp_file],
-                include_dirs=[pybind11.get_include(), "/apps/intel/2020.0.166/metis/5.2.1/include"],
-                # include_dirs=[pybind11.get_include(), "/home/jmg/local/include", "/home/jmg/src/lib/metis/METIS/GKlib"],
+                include_dirs=[
+                    pybind11.get_include(),
+                    os.path.join(vcpkg_root, "installed/x64-windows/include"),
+                    "src/include"
+                ],
+                library_dirs=[os.path.join(vcpkg_root, "installed/x64-windows/lib")],
+                libraries=["metis", "GKlib"],
                 language="c++",
-                # extra_compile_args=["-std=c++20", "-march=native"],
-                extra_link_args=["-lmetis"],
-                libraries=['metis'],  # Add METIS to libraries
-                # library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],  # Add library directory
-                library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],  # Add library directory
-                # runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', "/apps/intel/2020.0.166/metis/5.2.1/lib"],
-                runtime_library_dirs=['/usr/lib/x86_64-linux-gnu', '/home/jmg/local/lib', "/home/jmg/src/lib/metis/METIS/GKlib/build/Linux-x86_64"],
+                extra_compile_args=["/std:c++17", "/Zi", "/Od", "/EHsc"],
             )
         ]
+
+        # ext_modules = [
+        #     Extension(
+        #         module_name,
+        #         sources=[cpp_file],
+        #         include_dirs=[
+        #             pybind11.get_include(),
+        #             os.path.join(vcpkg_root, "installed/x64-windows/include"),
+        #             "src/include"
+        #         ],
+        #         library_dirs=[os.path.join(vcpkg_root, "installed/x64-windows/lib")],
+        #         libraries=["metis"],
+        #         language="c++",
+        #         extra_compile_args=["/std:c++17", "/Zi", "/Od", "/EHsc"],
+        #     )
+        # ]        
 
         # Dynamically build the extension
         class BuildExt(build_ext):
             def build_extensions(self):
                 for ext in self.extensions:
-                    ext.extra_compile_args = ["-std=c++17", "-g", "-O0", "-fno-omit-frame-pointer", "-march=native", "-DDEBUG"]
+                    ext.extra_compile_args = ["/std:c++17", "/Zi", "/Od", "/EHsc"]
+                    #  ext.extra_compile_args = ["-std=c++17", "-g", "-O0", "-fno-omit-frame-pointer", "-march=native", "-DDEBUG"]
                 super().build_extensions()
 
         setup(
@@ -135,7 +138,11 @@ def compile_and_import(module_name, cpp_file):
         )
 
     # Find the compiled shared object file
-    module_files = glob.glob(f"{module_name}*.so")
+    if os.name == 'nt':
+        module_files = glob.glob(f"{module_name}*.pyd")
+    else:
+        module_files = glob.glob(f"{module_name}*.so")
+
     if not module_files:
         raise ImportError(f"Compiled shared library for {module_name} not found.")
     module_path = module_files[0]
@@ -161,13 +168,14 @@ if __name__ == "__main__":
 
 
     # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
+    # test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
+    test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
 
     namelist = schism_init(test_dir)
 
 
     from iop.readTides import read_bctides
-    bctides = read_bctides(test_dir, 1, 4, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
+
 
     # Test the module
     import cupy as cp
@@ -213,11 +221,15 @@ if __name__ == "__main__":
     vgrid_file = os.path.join(in_dir, 'vgrid.in')
 
     
-
+    print(hgrid_file, vgrid_file)
     numPartitions = 1
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
         ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
             module.readHGrid(hgrid_file, numPartitions)
+    
+
+    nope, mnond = iond.shape
+    bctides = read_bctides(test_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
     
     print(nodeCoords.shape)
     print(nodeNeighNodes)
@@ -247,7 +259,7 @@ if __name__ == "__main__":
     # sflux.getWind(2452424.0, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
 
 
-    processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev,
+    processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev, nope, mnond,
                      templatePath="src/kernels/constants_template.h", 
                      outputPath="src/kernels/constants.h")
 
@@ -280,7 +292,7 @@ if __name__ == "__main__":
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
     dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
 
-    if False:   
+    if True:   
 
         fig, ax = plt.subplots(figsize=(12, 8))
         
@@ -495,7 +507,9 @@ if __name__ == "__main__":
         print(f"Partition {ipart} has {numPartSides} sides")
        
         # Count the number of boundary nodes in the partition
-        numPartBoundaryNodes.append((partNodes[cp.unique(ilnd)] == ipart).sum().get())
+        idxBndNodes = cp.unique(cp.concatenate([ilnd.flatten(), iond.flatten()]))
+        idxBndNodes = idxBndNodes[idxBndNodes >= 0]
+        numPartBoundaryNodes.append((partNodes[idxBndNodes] == ipart).sum().get())
         print(f"Partition {ipart} has {numPartBoundaryNodes} boundary nodes")
        
         # # Count the number of boundary sides in the partition
@@ -634,7 +648,7 @@ if __name__ == "__main__":
             # of the mesh, including the nodes, elements, sides, and their neighbors.
             cufunc.populateMesh(i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
                                 isdel, isidenode, isbnd,
-                                nond[0].item(), nlnd[0].item(), iond, ilnd,
+                                nond, nlnd, iond, ilnd,
                                 nodeNeighNodesStart, nodeNeighNodes,
                                 nodeNeighElemsStart, nodeNeighElems,
                                 globalNodeIndices, globalElemIndices, globalSideIndices,

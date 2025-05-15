@@ -75,10 +75,9 @@ void print(const std::string& message) {
 
 void printFormatted(const std::string& message, ...) {
   // Print a formatted message to the console.
-
   char buffer[2048];
   va_list args;
-  va_start(args, message);
+  va_start(args, message.c_str());
   vsnprintf(buffer, sizeof(buffer), message.c_str(), args);
   va_end(args);
   py::print(std::string(buffer));
@@ -86,10 +85,9 @@ void printFormatted(const std::string& message, ...) {
 
 void errorMessage(const std::string& message, ...) {
   // Print an error message to the console.
-
   char buffer[2048];
   va_list args;
-  va_start(args, message);
+  va_start(args, message.c_str());
   vsnprintf(buffer, sizeof(buffer), message.c_str(), args);
   va_end(args);
   py::print(std::string(buffer));

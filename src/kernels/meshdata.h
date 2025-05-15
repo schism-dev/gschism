@@ -40,9 +40,9 @@ constexpr int nvrt = 2; // Number of vertical levels
 constexpr int nzlev = 1; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast to z levels)
 
-constexpr double small1 = 1.0e-10;       // Small non-negative number
+constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
-constexpr double small = 1.0e-10;            // Small positive number or 0
+constexpr double small = 1.0e-7;            // Small positive number or 0
 
 constexpr int internalNode = -1;
 constexpr int landNode = -2;
@@ -69,9 +69,9 @@ constexpr double dt = 0.1;  // Time step  XXX
 #endif
 
 
-constexpr double small1 = 1.0e-10;       // Small non-negative number
+constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
-constexpr double small = 1.0e-10;            // Small positive number or 0
+constexpr double small = 1.0e-7;            // Small positive number or 0
 
 constexpr int internalNode = -1;
 constexpr int landNode = -2;
@@ -139,6 +139,10 @@ __device__ __host__ __forceinline__ double2 operator/(const double2& v, double s
 
 __device__ __host__ __forceinline__ double length(const double2& v) {
     return sqrt(v.x*v.x + v.y*v.y);
+}
+
+__device__ __host__ __forceinline__ double2 normalize(const double2& v) {
+    return v / length(v);
 }
 
 __device__ __host__ __forceinline__ double dot(const double2& v, const double2& w) {
@@ -502,7 +506,7 @@ struct Element {
       return res;
    }
 
-   __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4])
+   __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4]) const
    {
       // Interpolate the value at the point (xt,yt) using the shape coordinates and the values at the nodes
       // This function works for both triangular and quadrilateral elements, since shapeCoords[3] is always 0.0 for triangular elements
@@ -510,7 +514,7 @@ struct Element {
       
    }
 
-   __device__ void interpolateVelocities(Point3 xt, Vector3& u_int);
+   __device__ void interpolateVelocities(Point3 xt, Vector3& u_int) const;
 
    // ------------------------------------------------------------------------------------------------
    // These are functions that work on all nodes of the element.
@@ -656,9 +660,25 @@ struct Element {
 
 
 struct BoundarySegment {
-   int ifltype;  // Type of boundary condition
+
    double clen;  // Length of the boundary segment
    double carea; // Area of the boundary segment
+
+   int ifltype;  // Type of flow boundary condition
+   
+   // Elevation boundary condition
+   int iettype;  // Type of elevation boundary condition
+   double eth;   // Elevation time history
+
+   // Flow boundary condition
+   double qthcon;  // Flow time history constant
+   double vobc1;   // Velocity coefficient 1
+   double vobc2;   // Velocity coefficient 2
+
+   // Tracer boundary conditions
+   // double trobc[natrm];    // Tracer boundary condition nudging factor
+   // int  itrtype[natrm];    // Tracer boundary condition type
+
    
 };
 
@@ -819,6 +839,14 @@ struct NodeBoundary {
 
    bool isEssentialBC;
    double bcValue;
+
+   // Arrays for harmonic constituents (if needed)
+   double emo[nbfr];  // Elevation amplitude
+   double efa[nbfr];  // Elevation phase
+   double umo[nbfr];  // U-velocity amplitude
+   double ufa[nbfr];  // U-velocity phase
+   double vmo[nbfr];  // V-velocity amplitude
+   double vfa[nbfr];  // V-velocity phase 
 
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
@@ -1120,7 +1148,7 @@ class Mesh {
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
-                   int nond, int nlnd, int *iond, int *ilnd,
+                   int *nond, int *nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,

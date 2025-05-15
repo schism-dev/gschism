@@ -27,15 +27,31 @@ constexpr double veg_cw = __VEG_CW__; // Vegetation drag coefficient
 constexpr int ntip = __NTIP__;            // Number of tidal potential components
 constexpr double tip_dp = __TIP_DP__;   // cut-off depth for applying tidal potential
 
+// Boundary forcing frequencies
+constexpr int nbfr = __NBFR__;            // Number of boundary forcing frequencies
+
+// Boundary condition types
+constexpr int nettype = __NETTYPE__;      // Total number of type I elevation boundaries
+constexpr int nfltype = __NFLTYPE__;      // Total number of type I flow boundaries
+constexpr int nettype2 = __NETTYPE2__;    // Total number of type IV elevation boundaries
+constexpr int nfltype2 = __NFLTYPE2__;    // Total number of type IV flow boundaries
+
+// Boundary nodes
+constexpr int nnode_et = __NNODE_ET__;    // Number of nodes requiring elev2D.th.nc
+constexpr int nnode_fl = __NNODE_FL__;    // Number of nodes requiring flow2D.th.nc
+
 constexpr int iunder_deep = __IUNDER_DEEP__;     // Option of under-deep methods
 constexpr double h1_bcc   = __H1_BCC__;  // Parameters for under-deep methods
 constexpr double h2_bcc   = __H2_BCC__; 
 constexpr double hw_depth = __HW_DEPTH__; 
 constexpr double hw_ratio = __HW_RATIO__;
 
-constexpr int nvrt = __NVRT__; // Number of vertical levels
-constexpr int nzlev = __NZLEV__; // Number of z levels (in contrast to sigma levels)
+constexpr int nvrt    = __NVRT__; // Number of vertical levels
+constexpr int nzlev   = __NZLEV__; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = __NSIGLEV__; // Number of sigma levels (in contrast to z levels)
+
+constexpr int nope  = __NOPEN_BOUNDARY_SEGMENTS__; // Number of open boundary segments
+constexpr int mnond = __MAX_NODES_PER_OPEN_BOUNDARY_SEGMENT__; // Maximum number of nodes per open boundary segment
 
 constexpr double rearth_eq   = __REARTH_EQ__; // [m] 
 constexpr double rearth_pole = __REARTH_POLE__; // [m]

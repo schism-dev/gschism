@@ -74,6 +74,7 @@
         "__node_handle": "cpp",
         "__locale": "cpp",
         "__string": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "xstring": "cpp"
     }
 }

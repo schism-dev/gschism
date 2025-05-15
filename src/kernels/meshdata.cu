@@ -170,7 +170,7 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
 
-double minDelta = 1e10;
+double minDelta = 1e10; 
 double btt1, btt2;
    for (int i = 0; i < i34; i++) {
 
@@ -183,7 +183,7 @@ double btt1, btt2;
       // delta is 0 if the two lines are parallel. In this case, they do not intersect.
       const double delta = cross(x2 - x1, x3 - x4);
 
-      if (delta != 0.0) {
+      if (abs(delta) > 0) {
 
          const double delta1 = cross(x3 - x1, x3 - x4);
          const double delta2 = cross(x2 - x1, x3 - x1); 
@@ -198,6 +198,7 @@ if (abs(delta) < minDelta) {
    btt2 = tt2;
 }
 double small = 1e-7;
+         printf("RRRRRR tt1 = %e, tt2 = %e\n", tt1, tt2);
          if (tt1 >= -small && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
@@ -208,6 +209,26 @@ double small = 1e-7;
          }
       
       }
+      else {  // parallel segments
+         // // In this case, we theck if they are colinear. if they are, we compute the intersection point as:
+         // // tt2 += length(x1 - x2) * sign(dot(x1 - x2, x3 - x4)) in {0, 1}
+
+         // // Check if the segments are colinear. It is enough to check if x1 is on the line of the side segment.
+
+         // const double dist = dot(x1 - x3, side2->n);
+         // if (abs(dist) < small*length(x3 - x4)) {
+         //    const double2 unitarySide = normalize(x4 - x3);
+         //    const double len = dot(x2 - x1, unitarySide);
+         //    t = t + len;
+         //    t = max(0.0, min(t, 1.0));
+         //    printf("BEEEEEBB t = %.17e, dist = %.17e, len = %.17e, x1 = (%e,%e), x2 = (%e,%e), x3 = (%e,%e), x4 = (%e,%e)\n", t, dist, len, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y, x4.x, x4.y);
+
+
+         //    // tIntersect = max(small, min(tt1, 1.0-small));
+         //    // t = tt2;
+         //    found_intersection = true;
+         // }
+      }
 
 
    }
@@ -215,7 +236,7 @@ double small = 1e-7;
    if (!found_intersection) {
       
       printf("ZZ No intersection found:\n"
-           "Element %p\n"
+           "Element %d\n"
            "in = %d\n"
            "minDelta = %e\n"
            "tt1 = %e, tt2 = %e\n"
@@ -223,7 +244,7 @@ double small = 1e-7;
            "Vertices:\n"
          //   "  Nodes nextElement: (%f, %f), (%f, %f), (%f, %f),(%f, %f)\n"
            "  Nodes curElement: (%f, %f), (%f, %f), (%f, %f),(%f, %f)\n",
-           nextElement,
+           IDX(nextElement),
            (btt1 >= -small && btt2 >= -small && btt2 <= 1.0 + small && btt1 <= 1.0 + small),
            minDelta,
            btt1, btt2,
@@ -332,8 +353,9 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // First thing is to check if the target point is inside the element. If it is there is nothing
    // else to do.
 
+   const Element *curElem = nextElem;
    if (containsPoint(toPoint2(xt))) {
-      nextElem->interpolateVelocities(xt, u_int);
+      curElem->interpolateVelocities(xt, u_int);
       return true;
    }
 
@@ -341,7 +363,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    // 1. Initial checks
    // Verify starting element is valid (wet)
-   assert(!nextElem->isDry && "Starting element is dry");
+   assert(!curElem->isDry && "Starting element is dry");
 
    // Checks if track has a zero length.
    const double len2 = (xt.x - x0.x)*(xt.x - x0.x) + (xt.y - x0.y)*(xt.y - x0.y);   
@@ -357,25 +379,32 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // Horizontal tracking loop
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
-Element *tmpElem = nextElem;
+
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
 
    if (!found_intersection) {
-      printf("No intersection found:\n"
+double shpCoords_0[4];
+double shpCoords_t[4];
+computeShapeCoords(toPoint2(x0), shpCoords_0, false);
+computeShapeCoords(toPoint2(xt), shpCoords_t, false);
+      printf("No intersection found (containsPoint = %d, %d [%.17g, %.17g, %.17g] [%.17g, %.17g, %.17g]):\n"
            "Elements %d, %d\n"
            "Side %d\n"
            "segment: (%f, %f),(%f, %f)\n"
            "triangle node indices: %d, %d, %d\n"
            "triangle: (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n",
-           IDX(tmpElem), IDX(nextElem),
+           containsPoint(toPoint2(x0)), containsPoint(toPoint2(xt)),
+           shpCoords_0[0], shpCoords_0[1], shpCoords_0[2],
+           shpCoords_t[0], shpCoords_t[1], shpCoords_t[2],
+           IDX(curElem), IDX(nextElem),
            IDX(nextSide),
            x0.x, x0.y,
            xt.x, xt.y,
-           tmpElem->nodes[0]->idx, tmpElem->nodes[1]->idx, tmpElem->nodes[2]->idx,
-           tmpElem->nodes[0]->p.x, tmpElem->nodes[0]->p.y,
-           tmpElem->nodes[1]->p.x, tmpElem->nodes[1]->p.y,
-           tmpElem->nodes[2]->p.x, tmpElem->nodes[2]->p.y,
-           tmpElem->nodes[0]->p.x, tmpElem->nodes[0]->p.y);
+           curElem->nodes[0]->idx, curElem->nodes[1]->idx, curElem->nodes[2]->idx,
+           curElem->nodes[0]->p.x, curElem->nodes[0]->p.y,
+           curElem->nodes[1]->p.x, curElem->nodes[1]->p.y,
+           curElem->nodes[2]->p.x, curElem->nodes[2]->p.y,
+           curElem->nodes[0]->p.x, curElem->nodes[0]->p.y);
    }
    assert(found_intersection && "No intersection found at %d");
 
@@ -558,6 +587,8 @@ __device__ bool Element::computeShapeCoords(Point2 xt, double shpCoords[4],
 #endif
    }
 
+   return false;  // Never reached
+
 }
 
 
@@ -575,7 +606,7 @@ __device__ bool Element::computeShapeCoords(Point2 xt, double shpCoords[4],
    4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
       horizontally and vertically.
 **/
-__device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) {
+__device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const {
    // Interpolate the velocities at the point xt. 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
@@ -920,14 +951,14 @@ __device__ double Node::compZCoord(int k) const {
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 double *node_coords, double *wind_rotate_angle, 
                 int *isdel, int *isidenode, int *isbnd,
-                int nond, int nlnd, int *iond, int *ilnd,
+                int *nond, int *nlnd, int *iond, int *ilnd,
                 int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                 int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                 int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                 int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                 int *localNodePart,     int *localElemPart,     int *localSidePart) {
 
-   printf("Populating mesh for partition %d, %d, %d\n", partNum, nond, nlnd);
+   printf("Populating mesh for partition %d\n", partNum);
 
    // Horizontal grid
    printf("Processing %d nodes\n", np);    
@@ -1018,7 +1049,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 // XXXX
 if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
 constexpr double rot_per = 3000.0;
-constexpr double rot_f = 2.0*pi/rot_per;
+constexpr double rot_f = 0.0*2.0*pi/rot_per;
 for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0.0};}
 // XXXXX
    }
@@ -1094,8 +1125,9 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
       side.center = 0.5*(side.n1->p2() + side.n2->p2());
 
 // XXXX
+if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
 constexpr double rot_per=3000.0;
-constexpr double rot_f=2.0*pi/rot_per;
+constexpr double rot_f=0.0*2.0*pi/rot_per;
 for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
 // XXXXX      
 
@@ -1196,13 +1228,19 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
 
    // Processing the boundary nodes
-   for (int i = 0; i < nond; i++) {
-      NodeBoundary *nodeBnd = &localNodeBoundaryMem[i];
+   int idx = 0;
+   for (int iseg = 0; iseg < nope; iseg++) {
+      for (int ilnd = 0; ilnd < nlnd[iseg]; ilnd++) {
 
+         NodeBoundary *nodeBnd = &localNodeBoundaryMem[idx];
 
-      nodeBnd->isEssentialBC = true;
-      nodeBnd->bcValue = 7.0;
-printf("XXXXSXX nodeBnd = %p, IDX = %d, nodeBnd->isEssentialBC = %d\n", nodeBnd, iond[i], nodeBnd->isEssentialBC);
+         nodeBnd->isEssentialBC = true;
+nodeBnd->iettype = 3;
+         nodeBnd->bcValue = 0.0;
+
+         idx++;
+      }
+
    }
 
 }
@@ -1276,15 +1314,17 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
          const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
 
-         printf("grav3 = %f, thetai = %f, dt = %f, hhatb = %f, area = %f, dot1= %f, dot2 = %f, dot3 = %f\n", grav3, thetai, dt, hhatb, area, dot(x3-x2, x3-x2), dot(x3-x2, x1-x3), dot(x1-x3, x1-x3));
-         printf("node idx = %d, x1 + %f, %f, x2 + %f, %f, x3 + %f, %f\n", node1->idx, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y);
-         printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
+if (j==node1->numElements-1) {
+printf("grav3 = %f, thetai = %f, dt = %f, hhatb = %f, area = %f, dot1= %f, dot2 = %f, dot3 = %f\n", grav3, thetai, dt, hhatb, area, dot(x3-x2, x3-x2), dot(x3-x2, x1-x3), dot(x1-x3, x1-x3));
+printf("node idx = %d, x1 = %f, %f, x2 = %f, %f, x3 = %f, %f\n", node1->idx, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y);
+printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
+}
 
          node1->addToSparseMatrix(node1, I1_ii);
          node1->addToSparseMatrix(node2, I1_ij); 
          node1->addToSparseMatrix(node3, I1_ik);
 
-printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
+if (j==node1->numElements-1) printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
      
       }
       else { // Quad
@@ -1317,8 +1357,8 @@ printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
       // Integral of \nabla\phi_i \cdot \pmb{E}
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
      
-      node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);
-      
+      node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
+if (j==node1->numElements-1) printf("MMMMmm  idx_node = %d, I_4_1 = %.15g, I_4_2 = %.15g, node1->qel = %.15g, gradPhi_1 = %.15g, %.15g, elem->ghat1 = %.15g, %.15g\n", node1->idx, I_4_1, I_4_2, node1->qel, gradPhi_1.x, gradPhi_1.y, elem->ghat1.x, elem->ghat1.y);
 
       // Additional terms 
       double vnorm = 0.0;
@@ -1347,6 +1387,7 @@ printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
            
          }
 
+
          if (!elem->isDry) {
            const Vector2 gradEta = elem->nodes[0]->eta2*elem->gradPhi[0] +
                                    elem->nodes[1]->eta2*elem->gradPhi[1] +
@@ -1354,6 +1395,7 @@ printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
 
            node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
          }
+if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->eta2);
 
       } // isTri
       else { // isQuad
@@ -1958,10 +2000,10 @@ extern "C" {
       // XXX IMPLEMENT THIS
       // assert(true && "getBoundaryConditions not implemented");
 
-      printf("getBoundaryConditions: time = %f NOT IMPLEMENTED\n", time);
-      return;
-      NODE_BND(nodeBnd);
 
+      NODE_BND(nodeBnd);
+printf("getBoundaryConditions: time = %f NOT IMPLEMENTED\n", time);
+return;
       const Node *node = nodeBnd->node;
 
     
@@ -2099,7 +2141,7 @@ extern "C" {
    //    endif !nfltype2
    }
 
-   __global__ void computeElevationBoundaryConditions(double time) {
+   __global__ void computeElevationBoundaryConditions(double time, int nbfr, double *amig, double *ff, double *emo, double *efa, double *face) {
       // Compute elevation essential boundary conditions 
 
       NODE_BND(nodeBnd); // Each boundary node.
@@ -2115,16 +2157,22 @@ extern "C" {
       const double r_eth = ramp*nodeBnd->eth;
       double eta1_bar = r_eic;
 
+printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
       // Compute tide elevation
-      if (iettype == 3 || iettype == 5) {
-        
-         // XXX IMPLEMENT TIDE THINGS
-         assert(false && "Tide elevation not implemented");
-         // for (int jfr=0; jfr<nbfr; jfr++) { // For all tide frequencies
-         //    const int ncyc = int(amig[jfr]*time/(2.0*pi));
-         //    const double arg = amig[jfr]*time - 2.0*pi*ncyc + face[jfr] - efa[i,j,jfr];
-         //    eta1_bar += ramp*ff[jfr]*emo[i,j,jfr]*cos(arg);
-         // } // for jfr
+      if (iettype == 3 || iettype == 5) {   
+
+         if constexpr(iloadtide==1) { // loading tide
+            assert(false && "Loading tide not implemented");
+            // node->ETP += node->rloadtide[0,j]*cos(tfreq[j]*time - node->rloadtide[1,j]);
+         }
+         
+         for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
+            printf("++++>> jfr = %d\n", jfr);
+            // const int ncyc = int(amig[jfr]*time/(2.0*pi));
+            // const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa[i, j, jfr];
+            // eta1_bar += ramp*ff[jfr]*emo[i,j,jfr]*cos(arg);
+         } // for jfr
+
       } // if iettype
 
       switch (iettype) {
@@ -2178,6 +2226,7 @@ printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, no
          // Set solution and RHS to BC value
          node->mX  = nodeBnd->bcValue;
          node->qel = nodeBnd->bcValue;
+printf("{{{{ node->mX = %f, node->qel = %f\n", node->mX, node->qel);         
       } else {
          // Not an essential BC node
          // Modify RHS for neighbors with essential BCs
@@ -2195,6 +2244,14 @@ printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, no
                }
          }
       }
+   }
+
+
+   __global__ void updateElevation(void) {
+      NODE(node);
+
+      node->eta2 = node->mX;
+printf("node[%d]->eta2 = %f\n", node->idx, node->eta2);
    }
 
 
@@ -2954,11 +3011,12 @@ extern "C" {
          // Computes the backtracked velocity integrated vertically (full depth and to the top of the canopy)
          Vector2 Ustar       = {0.0, 0.0}; 
          Vector2 Ustar_alpha = {0.0, 0.0}; 
-         for (int k = side->kb; k < nvrt; k++) {
-            if (side->is2D()) {  //2D; no need to compute U^{\star\alpha}
-               Ustar += side->btu[nvrt]*side->Dz(k);
 
-            } else { //3D
+         if (side->is2D()) {  //2D; no need to compute U^{\star\alpha}
+               Ustar += side->btu[nvrt - 1]*side->Dz(nvrt - 1);
+         } else { //3D
+            for (int k = side->kb; k < nvrt; k++) {
+            
                Vector2 w2 = (side->btu[k] + side->btu[k-1])/2.0*side->Dz(k);
                Ustar += w2;
 
@@ -2968,8 +3026,8 @@ extern "C" {
                        Ustar_alpha += zrat*w2; // XXXX
                    }
                }  // if iveg
-            }  //2/3D
-         }  //k
+            }  // for k
+         }  //2D/3D
          
 
          // Add btrack & surface stress terms to \breve{G} first
@@ -3073,7 +3131,7 @@ extern "C" {
 
          tmp += dt*(av_cff1*F - av_cff2*chi*dt*fb - av_cff3*Fa);
       } // for j
-
+printf("$$$ tmp = %.15g, %.15g\n", tmp.x, tmp.y);
       //botf1 etc are already in elem frame
       elem->ghat1 += tmp/i34;
 
@@ -3097,6 +3155,8 @@ extern "C" {
          elem->ghat1 += rampbc*dt*(av_cff1*F - dt*av_cff2_chi*fb - av_cff3*Fa);
 
       } // if ibc
+
+
 
    }
 
@@ -3525,7 +3585,7 @@ extern "C"
   __global__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
-                   int nond, int nlnd, int *iond, int *ilnd,
+                   int *nond, int *nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,

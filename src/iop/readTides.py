@@ -1,6 +1,6 @@
 import cupy as cp
 from os.path import join
-import numpy as np
+
 from python.schism_consts import *
 class TidalData:
     def __init__(self):
@@ -42,7 +42,7 @@ class TidalData:
         self.trth = None
 
 float64 = cp.float64
-int32 = cp.int32
+int32   = cp.int32
 
 def read_values(line, types):
     # Convert Fortran's D notation to E notation for float parsing
@@ -68,7 +68,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
         
         # Read tidal potential parameters
         line = f.readline()
-        tide.ntip, tide.tip_dp = read_values(line, [int, np.float64])
+        tide.ntip, tide.tip_dp = read_values(line, [int, float64])
         
         if tide.ntip > 0:
             tide.tp_name = []
@@ -81,7 +81,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
             for i in range(tide.ntip):
                 tide.tp_name.append(f.readline().strip())
                 line = f.readline()
-                jspc, tamp, tfreq, tnf, tear = read_values(line, [int] + [np.float64]*4)
+                jspc, tamp, tfreq, tnf, tear = read_values(line, [int] + [float64]*4)
                 if jspc < 0 or jspc > 2:
                     raise ValueError(f'Illegal tidal species # {jspc}')
                 tide.jspc[i] = jspc
@@ -96,19 +96,19 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
         
         if tide.nbfr > 0:
             tide.amig = cp.zeros(tide.nbfr, dtype=float64)
-            tide.ff = cp.zeros(tide.nbfr, dtype=float64)
+            tide.ff   = cp.zeros(tide.nbfr, dtype=float64)
             tide.face = cp.zeros(tide.nbfr, dtype=float64)
-            tide.emo = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.efa = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.umo = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.ufa = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.vmo = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.vfa = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
+            tide.emo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
+            tide.efa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
+            tide.umo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
+            tide.ufa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
+            tide.vmo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
+            tide.vfa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
             
             for i in range(tide.nbfr):
                 line = f.readline()  # Skip tag
                 line = f.readline()
-                amig, ff, face = read_values(line, [np.float64]*3)
+                amig, ff, face = read_values(line, [float64]*3)
                 tide.amig[i] = amig
                 tide.ff[i] = ff
                 tide.face[i] = face * cp.pi / 180.0
@@ -165,13 +165,13 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                 nettype += 1
             elif iettype == 2:
                 line = f.readline()
-                tide.eth[k] = read_values(line, [np.float64])[0]
+                tide.eth[k] = read_values(line, [float64])[0]
             elif iettype == 3:
                 for i in range(tide.nbfr):
                     line = f.readline()  # Skip frequency name
                     for j in range(ntmp):
                         line = f.readline()
-                        amp, phase = read_values(line, [np.float64]*2)
+                        amp, phase = read_values(line, [float64]*2)
                         tide.emo[k, j, i] = amp
                         tide.efa[k, j, i] = phase * cp.pi / 180.0
             elif iettype in [4, 5]:
@@ -183,7 +183,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                         line = f.readline()  # Skip frequency name
                         for j in range(ntmp):
                             line = f.readline()
-                            amp, phase = read_values(line, [np.float64]*2)
+                            amp, phase = read_values(line, [float64]*2)
                             tide.emo[k, j, i] = amp
                             tide.efa[k, j, i] = phase * cp.pi / 180.0
             elif iettype != 0:
@@ -194,13 +194,13 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                 nfltype += 1
             elif ifltype == 2:
                 line = f.readline()
-                tide.qthcon[k] = read_values(line, [np.float64])[0]
+                tide.qthcon[k] = read_values(line, [float64])[0]
             elif ifltype == 3:
                 for i in range(tide.nbfr):
                     line = f.readline()  # Skip frequency name
                     for j in range(ntmp):
                         line = f.readline()
-                        u_amp, u_phase, v_amp, v_phase = read_values(line, [np.float64]*4)
+                        u_amp, u_phase, v_amp, v_phase = read_values(line, [float64]*4)
                         tide.umo[k, j, i] = u_amp
                         tide.ufa[k, j, i] = u_phase * cp.pi / 180.0
                         tide.vmo[k, j, i] = v_amp
@@ -210,7 +210,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                     if iettype == 0:
                         raise ValueError(f'vel. obc needs elev. to be specified: {k}')
                     line = f.readline()
-                    tide.vobc1[k], tide.vobc2[k] = read_values(line, [np.float64]*2)
+                    tide.vobc1[k], tide.vobc2[k] = read_values(line, [float64]*2)
                 
                 nfltype2 += 1
                 nnode_fl += ntmp
@@ -220,11 +220,11 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                         line = f.readline()  # Skip frequency name
                         for j in range(ntmp):
                             line = f.readline()
-                            u_amp, u_phase, v_amp, v_phase = read_values(line, [np.float64]*4)
+                            u_amp, u_phase, v_amp, v_phase = read_values(line, [float64]*4)
                             tide.umo[k, j, i] = u_amp
-                            tide.ufa[k, j, i] = u_phase * cp.pi / 180.0
                             tide.vmo[k, j, i] = v_amp
-                            tide.vfa[k, j, i] = v_phase * cp.pi / 180.0
+                            tide.ufa[k, j, i] = cp.deg2rad(u_phase)                            
+                            tide.vfa[k, j, i] = cp.deg2rad(v_phase)
             elif ifltype == -1:  # Flather 1
                 if iettype != 0:
                     raise ValueError(f'Flather obc requires iettype=0: {k}')
@@ -238,7 +238,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                 if iettype != 0:
                     raise ValueError(f'Discharge obc requires iettype=0: {k}')
                 line = f.readline()
-                tide.disch_coef = read_values(line, [np.float64]*4)
+                tide.disch_coef = read_values(line, [float64]*4)
             elif ifltype != 0:
                 raise ValueError(f'Invalid ifltype: {ifltype}')
 
@@ -251,15 +251,15 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                     
                     if tide.itrtype[i,k] == 2:
                         line = f.readline()
-                        trth_values = read_values(line, [np.float64]*(irange_tr[1][i] - irange_tr[0][i] + 1))
+                        trth_values = read_values(line, [float64]*(irange_tr[1][i] - irange_tr[0][i] + 1))
                         tide.trth[irange_tr[0][i]:irange_tr[1][i], 0, 0, k] = trth_values
                         
                         line = f.readline()
-                        tide.trobc[i,k] = read_values(line, [np.float64])[0]
+                        tide.trobc[i,k] = read_values(line, [float64])[0]
                     
                     elif tide.itrtype[i,k] in [1, 3, 4]:
                         line = f.readline()
-                        tide.trobc[i,k] = read_values(line, [np.float64])[0]
+                        tide.trobc[i,k] = read_values(line, [float64])[0]
                         
                         if tide.itrtype[i,k] == 1:
                             ntrtype1[i] += 1

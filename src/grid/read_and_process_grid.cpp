@@ -672,7 +672,9 @@ void partitionNodesAndSides(int nElements, int nNodes, int nSides,
     // Assign sides to partitions
     for (int is = 0; is < nSides; is++) {
 
-        const int le = rand() % 2;
+        int le = rand() % 2;
+        if (isdel(le, is) == -1) le = 1 - le;
+        printf("XXXXX isdel(le, is) = %d\n", isdel(le, is));
         partSides[is] = partitions[isdel(le, is)];
     }
 
@@ -710,10 +712,10 @@ py::tuple toPyArray(const ArrayOfRows<T>& data) {
         return py::array_t<T>();  // Return empty array
     }
 
-    auto array = py::array_t<T>({data.nonzeroCount()});
+    auto array = py::array_t<T>({static_cast<pybind11::ssize_t>(data.nonzeroCount())});
     auto ptr = static_cast<T*>(array.request().ptr);
 
-    auto arrayIndices = py::array_t<T>({data.rows() + 1});
+    auto arrayIndices = py::array_t<T>({static_cast<pybind11::ssize_t>(data.rows() + 1)});
     auto ptrIndices = static_cast<T*>(arrayIndices.request().ptr);
 
     if (ptr == nullptr) {

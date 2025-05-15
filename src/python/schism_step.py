@@ -52,6 +52,7 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
         iterCount += 1
 
         print(f"Iteration {iterCount}: rMr_new = {rMr_new}, rMr_old = {rMr_old}")
+        
 
     return iterCount
 
@@ -167,6 +168,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     # computeFlowBcAreas()                   # Lines 1611-1758
 
 
+    # XXX I think I will combine all BCs into one function
     # # Compute new vel. for flow b.c. (uth,vth)
     # computeFlowBcVelocities()            # Lines 1759-1800
 
@@ -198,7 +200,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     # computeVerticalAdvection()        # Lines 5030-5122
 
 
-    cufunc.computeElevationBoundaryConditions(time)
+    cufunc.computeElevationBoundaryConditions(time, bctides.nbfr, bctides.amig, bctides.ff, bctides.emo, bctides.efa, bctides.face)
 
 
     cufunc.computeVerticallyIntegratedVelocity()       # Lines 5122-5320
@@ -229,6 +231,9 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     #  Solve the wave equation
     solveWaveEquation()
+
+
+    cufunc.updateElevation()
 
 
     # Momentum equations	
