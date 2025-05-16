@@ -70,74 +70,6 @@ constexpr double dt = 300;  // Time step  XXX
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
-#ifdef HARDCODED_CONSTANTS
-// I keep the code for the time being in case it is needed again
-// XXX: Pure constants that are to be set before compiling the code
-constexpr int N_TRACERS = 2;
-
-constexpr int ivcor = 2;       // Vertical coordinate system
-constexpr int ics = 1;         // 1: global, 2: local
-constexpr int ihh = 1;         // Option to limit \hat{H} to enhance stability for large friction in shallow area
-constexpr int imm = 0;         // Option to pre-compute vnorm on the element
-constexpr int iveg = 0;        // Vegetation option, 0: no vegetation, 1: vegetation
-constexpr int ihhat = 1;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
-constexpr int ihydraulics = 0; // Option of including hydraulics
-constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
-constexpr int ibc = 1;         // Option to include baroclinic term (0 means yes)
-
-constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
-
-constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
-
-constexpr int    iloadtide = 0;       // Option to use polynomial for discharge boundary
-constexpr double loadtide_coef = 0.1; // Load tide coefficient
-
-constexpr int    inv_atm_bnd = 0;     // Option to use inverse barometric effects at boundary
-constexpr double prmsl_ref = 101325.0; // Reference pressure for inverse barometric effects
-
-constexpr double veg_lai = 1.0; // Vegetation drag coefficient
-constexpr double veg_cw = 1.5; // Vegetation drag coefficient
-
-constexpr int ntip = 1;            // Number of tidal potential components
-constexpr double tip_dp = 1.0e6;   // cut-off depth for applying tidal potential
-
-constexpr int iunder_deep = 0;     // Option of under-deep methods
-constexpr double h1_bcc   = 50.0;  // Parameters for under-deep methods
-constexpr double h2_bcc   = 100.0; 
-constexpr double hw_depth = 1.0e6; 
-constexpr double hw_ratio = 0.5;
-
-constexpr int nvrt = 2; // Number of vertical levels
-constexpr int nzlev = 1; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast to z levels)
-
-constexpr double small1 = 1.0e-7;       // Small non-negative number
-constexpr double small2 = small1*100.0;  // Slightly larger than small1
-constexpr double small = 1.0e-7;            // Small positive number or 0
-
-constexpr int internalNode = -1;
-constexpr int landNode = -2;
-
-
-
-constexpr double rearth_eq   = 6378206.4; // [m] 
-constexpr double rearth_pole = 6378206.4; // [m]
-constexpr double grav        = 9.81;      // [m/s^2]
-constexpr double omega_e     = 7.292e-5;  // [1/s]
-
-constexpr double thetai = 0.6;
-
-constexpr double rho0 = 1000.0; // [kg/m^3]
-constexpr double dtb_min = 0.1; //XXXX
-constexpr double dtb_max = 1000.0; //XXXX
-constexpr double velmin_btrack = 0.01; //XXXX
-
-constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
-
-
-
-constexpr double dt = 0.1;  // Time step  XXX 
-#endif
 
 
 constexpr double small1 = 1.0e-7;       // Small non-negative number
@@ -163,7 +95,22 @@ __device__ double ramp_ss;
 __device__ double ramp;
 
 
-// matrix solver scalars
+// Tidal Harmonic constituents ---------------------------------------------------------------------------
+
+__device__ double *amig; // Frequency of the harmonic constituent
+__device__ double *face; // Nodal factor of the harmonic constituent
+__device__ double *ff;   // Earth equilibrium argument of the harmonic constituent
+
+
+extern "C" __global__ void initTidalHarmonicConstituents(double *_amig, double *_face, double *_ff) {
+// Initialize the pointers to the tidal harmonic constituents
+
+   amig = _amig;
+   face = _face;
+   ff   = _ff;
+}
+
+// matrix solver scalars ---------------------------------------------------------------------------
 __device__ double *rMr_old;
 __device__ double *rMr_new;
 __device__ double *pAp;
@@ -909,7 +856,7 @@ struct NodeBoundary {
    double eth;    // Elevation time history
 
    bool isEssentialBC;
-   double bcValue;
+
 
    // Arrays for harmonic constituents (if needed)
    double emo[nbfr];  // Elevation amplitude
@@ -919,6 +866,7 @@ struct NodeBoundary {
    double vmo[nbfr];  // V-velocity amplitude
    double vfa[nbfr];  // V-velocity phase 
 
+   
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
       return (index == 0) ? sideBnd1 : sideBnd2; 
@@ -1224,7 +1172,10 @@ class Mesh {
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
-                   int *localNodePart,     int *localElemPart,     int *localSidePart);
+                   int *localNodePart,     int *localElemPart,     int *localSidePart,
+                   double *emo, double *efa, 
+                   double *umo, double *ufa, 
+                   double *vmo, double *vfa);
 
 
    __device__ ~Mesh(void)
@@ -1335,8 +1286,8 @@ extern "C" {
          ramp = 1.0;
       }
 
-      printf("computeTimeRamps: i = %d, nws = %d, if_source = %d, drampbc = %f, drampwind = %f, drampwafo = %f, dramp_ss = %f, dramp = %f\n", 
-             threadIdx.x + blockIdx.x * blockDim.x, nws, if_source, drampbc, drampwind, drampwafo, dramp_ss, dramp);
+      printf("computeTimeRamps: i = %d, time = %f, nws = %d, if_source = %d, ramp = %f, drampbc = %f, drampwind = %f, drampwafo = %f, dramp_ss = %f, dramp = %f\n", 
+             threadIdx.x + blockIdx.x * blockDim.x, time, nws, if_source, ramp, drampbc, drampwind, drampwafo, dramp_ss, dramp);
    }
       
 
@@ -2318,7 +2269,10 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                 int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                 int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
-                int *localNodePart,     int *localElemPart,     int *localSidePart) {
+                int *localNodePart,     int *localElemPart,     int *localSidePart,
+                double *emo, double *efa, 
+                double *umo, double *ufa, 
+                double *vmo, double *vfa) {
 
    printf("Populating mesh for partition %d\n", partNum);
 
@@ -2598,7 +2552,17 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
          nodeBnd->isEssentialBC = true;
 nodeBnd->iettype = 3;
-         nodeBnd->bcValue = 0.0;
+         nodeBnd->elbc = 0.0;
+
+         for (int jfr = 0; jfr < nbfr; jfr++) {
+            nodeBnd->efa[jfr] = efa[jfr + iseg*nbfr];
+            nodeBnd->emo[jfr] = emo[jfr + iseg*nbfr];
+            nodeBnd->umo[jfr] = umo[jfr + iseg*nbfr];
+            nodeBnd->ufa[jfr] = ufa[jfr + iseg*nbfr];
+            nodeBnd->vmo[jfr] = vmo[jfr + iseg*nbfr];
+            nodeBnd->vfa[jfr] = vfa[jfr + iseg*nbfr];
+printf("nodeBnd->efa[%d] = %f, nodeBnd->emo[%d] = %f, nodeBnd->umo[%d] = %f, nodeBnd->ufa[%d] = %f, nodeBnd->vmo[%d] = %f, nodeBnd->vfa[%d] = %f\n", jfr, nodeBnd->efa[jfr], jfr, nodeBnd->emo[jfr], jfr, nodeBnd->umo[jfr], jfr, nodeBnd->ufa[jfr], jfr, nodeBnd->vmo[jfr], jfr, nodeBnd->vfa[jfr]);
+         }
 
          idx++;
       }
@@ -3503,7 +3467,7 @@ return;
    //    endif !nfltype2
    }
 
-   __global__ void computeElevationBoundaryConditions(double time, int nbfr, double *amig, double *ff, double *emo, double *efa, double *face) {
+   __global__ void computeElevationBoundaryConditions(double time) {
       // Compute elevation essential boundary conditions 
 
       NODE_BND(nodeBnd); // Each boundary node.
@@ -3529,10 +3493,15 @@ printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
          }
          
          for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
-            printf("++++>> jfr = %d\n", jfr);
-            // const int ncyc = int(amig[jfr]*time/(2.0*pi));
-            // const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa[i, j, jfr];
-            // eta1_bar += ramp*ff[jfr]*emo[i,j,jfr]*cos(arg);
+
+            const double efa  = nodeBnd->efa[jfr]; 
+            const double emo  = nodeBnd->emo[jfr]; 
+
+            const int ncyc = int(amig[jfr]*time/(2.0*pi));
+            const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa;
+            eta1_bar += ramp*ff[jfr]*emo*cos(arg);
+
+ printf("++++>> jfr = %d, ramp = %f, node->idx = %d, amig = %f, face = %f, ff = %f, efa = %f, emo = %f, arg = %f, eta1_bar = %f\n", jfr, ramp, node->idx, amig[jfr], face[jfr], ff[jfr], efa, emo, arg, eta1_bar);            
          } // for jfr
 
       } // if iettype
@@ -3558,7 +3527,7 @@ printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
       if (iettype != 0 && inv_atm_bnd == 1) {
          nodeBnd->elbc += ramp*(prmsl_ref - node->pr)/grav/rho0;
       }
-
+printf("++++>> nodeBnd->elbc = %f\n", nodeBnd->elbc);
    }
 
 
@@ -3572,7 +3541,7 @@ printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, no
       // Check if this node has essential BC
       if (nodeBnd && nodeBnd->isEssentialBC) {
          // Verify BC value is valid
-         assert(nodeBnd->bcValue >= -9998.0 && "setEssentialBC: wrong b.c. at node");
+         assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
          printf("XX node IDX = %d, nodeBnd->isEssentialBC = %d\n", node->idx, nodeBnd->isEssentialBC);
          
@@ -3586,21 +3555,21 @@ printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, no
          }
          
          // Set solution and RHS to BC value
-         node->mX  = nodeBnd->bcValue;
-         node->qel = nodeBnd->bcValue;
+         node->mX  = nodeBnd->elbc;
+         node->qel = nodeBnd->elbc;
 printf("{{{{ node->mX = %f, node->qel = %f\n", node->mX, node->qel);         
       } else {
-         // Not an essential BC node
-         // Modify RHS for neighbors with essential BCs
+         // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
+
          for (int j = 0; j < node->numNodes; j++) {
                Node* nbNode = node->nodes[j];
                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
-                  assert(nbNodeBnd->bcValue >= -9998.0 && "setEssentialBC: wrong b.c. at node");
+                  assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
                   // Subtract contribution to RHS
-                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->bcValue;
+                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
                   printf("ZZ node->coeffMatrix[%d, %d] = %f\n", node->idx, node->nodes[j]->idx, node->coeffMatrix[j]);
                }
@@ -4952,7 +4921,10 @@ extern "C"
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices, int *localElemIndices, int *localSideIndices,
-                   int *localNodePart,    int *localElemPart,    int *localSidePart) {
+                   int *localNodePart,    int *localElemPart,    int *localSidePart,
+                   double *emo, double *efa, 
+                   double *umo, double *ufa, 
+                   double *vmo, double *vfa) {
 
     mesh->populateMesh(i34, elnode, elside, node_coords, wind_rotate_angle, 
                        isdel, isidenode, isbnd,
@@ -4961,7 +4933,8 @@ extern "C"
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
-                       localNodePart, localElemPart, localSidePart);
+                       localNodePart, localElemPart, localSidePart,
+                       emo, efa, umo, ufa, vmo, vfa);
   }
 
 
@@ -4997,10 +4970,10 @@ __global__ void printMatrix(void) {
          const int idx_node = ithread + blockIdx.x * blockDim.x;
          if (idx_node >= mesh->np) return;
          const Node *node = mesh->localNodeData + idx_node;
-         printf("idx_node = %d [%d] diag=%lf14, [", idx_node, node->numNodes, node->coeffDiag);
+         printf("idx_node = %d [%d] diag=%lf, [", idx_node, node->numNodes, node->coeffDiag);
          for (int j = 0; j < node->numNodes; j++) {
             Node* nbNode = node->nodes[j];
-            if (node->coeffMatrix[j] != 0.0) printf("%d:%f14,  ", nbNode->idx, node->coeffMatrix[j]);
+            if (node->coeffMatrix[j] != 0.0) printf("%d:%f,  ", nbNode->idx, node->coeffMatrix[j]);
          }
          printf("]\n");
 
@@ -5030,7 +5003,6 @@ __global__ void computeMatrixProductAndDotProducts() {
 
    // apply preconditioner on the fly:
    const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
-
 
    // 4) compute Ap = A.p
    double Ap = node->coeffDiag * node->mP;
@@ -5077,7 +5049,6 @@ __global__ void updateSolutionAndDotProducts(void) {
     const int tid = threadIdx.x;
 
 
-
     // Compute alpha
     const double alpha = (*rMr_old)/(*pAp);
 
@@ -5098,6 +5069,7 @@ __global__ void updateSolutionAndDotProducts(void) {
 
     // 2) apply Jacobi preconditioner on the fly
     const double Mr_new = r_new/diag;
+
 
     // 3) local contributions for the two dot-products
     const double l_rMr = r_new*Mr_new;  // r'M^-1r
@@ -5125,7 +5097,6 @@ __global__ void updateSearchDirection() {
     NODE(node);
 
     // recompute z on-the-fly
-// printf("updateSearchDirection: node = %d, coeffDiag = %f, rMr_old = %f, rMr_new = %f\n", node, node->coeffDiag, rMr_old, rMr_new);
     const double z = node->mR / node->coeffDiag;
     const double p = node->mP;
 

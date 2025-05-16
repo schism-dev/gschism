@@ -8,6 +8,8 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
     """
     Solve wave equation using Conjugate Gradient method.
     Assumes all arrays are already stored in Node as doubles.
+
+    NOTATION: rMr and similar variable names stand for the dot product (r^T)Mr.
     """
     iterCount = 0
     rMr0      = None
@@ -24,6 +26,10 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
     # Compute initial preconditioned residual Mr
     cufunc.initializePreconditionedResidual(scalars)
 
+    rMr_new = scalars[1].item()
+    if (rMr_new <= 1e-30):
+        # If the initial residual is already small enough, return 0
+        return 0
 
     while iterCount < maxIter:
         # compute Ap, rMr, pAp, α on GPU
@@ -125,14 +131,14 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     dt = core.dt
 
-    time = it*dt
+    time = (it+1)*dt
 
     # Broadcast to global module (XXX I think this is not needed)
     # time_stamp=time; it_main=it
 
     
     # Compute time ramps for boundary elevation forcing, wind and pressure forcing and tidal potential forcing
-    cufunc.computeTimeRamps(time, opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp)
+    cufunc.computeTimeRamps(time.item(), opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp)
     
 
 
@@ -200,7 +206,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     # computeVerticalAdvection()        # Lines 5030-5122
 
 
-    cufunc.computeElevationBoundaryConditions(time, bctides.nbfr, bctides.amig, bctides.ff, bctides.emo, bctides.efa, bctides.face)
+    cufunc.computeElevationBoundaryConditions(time)
 
 
     cufunc.computeVerticallyIntegratedVelocity()       # Lines 5122-5320

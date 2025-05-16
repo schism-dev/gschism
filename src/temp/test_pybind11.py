@@ -230,6 +230,8 @@ if __name__ == "__main__":
 
     nope, mnond = iond.shape
     bctides = read_bctides(test_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
+
+
     
     print(nodeCoords.shape)
     print(nodeNeighNodes)
@@ -473,6 +475,9 @@ if __name__ == "__main__":
     n_gpus = cp.cuda.runtime.getDeviceCount()
     print(f"Found {n_gpus} GPUs")
 
+
+    cufunc.initTidalHarmonicConstituents(bctides.amig, bctides.face, bctides.ff)
+
     # This list stores references to the device memory of the local arrays. This ensures that the memory is not freed until the mesh is destroyed.
     deviceMemRef = [ztot, sigma_lcl, sigma, cs, dcs]
 
@@ -653,7 +658,10 @@ if __name__ == "__main__":
                                 nodeNeighElemsStart, nodeNeighElems,
                                 globalNodeIndices, globalElemIndices, globalSideIndices,
                                 localNodeIndices, localElemIndices, localSideIndices,
-                                localNodePart, localElemPart, localSidePart)
+                                localNodePart, localElemPart, localSidePart,
+                                bctides.emo, bctides.efa, 
+                                bctides.umo, bctides.ufa,
+                                bctides.vmo, bctides.vfa)
 
             # # test((1,), (1,), (-2.21334,  0.76058, -1.0))
             # cufunc.test(12.0,  1.0, -1.0)

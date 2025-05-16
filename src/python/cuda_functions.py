@@ -13,6 +13,7 @@ project_root = None
 createMesh = None
 populateMesh = None
 getStructSizes = None
+initTidalHarmonicConstituents = None
 printMatrix = None
 scaleGravity = None
 computeTimeRamps = None
@@ -36,7 +37,7 @@ updateSearchDirection = None
 test = None
 
 def initializeCudaKernelManager(_project_root):
-    global createMesh, populateMesh, getStructSizes, cuda_manager, project_root, mod
+    global createMesh, populateMesh, getStructSizes, initTidalHarmonicConstituents, cuda_manager, project_root, mod
 
     project_root = _project_root
 
@@ -61,7 +62,7 @@ def initializeCudaKernelManager(_project_root):
             createMesh     = mod.get_function('createMesh',     sizes, kernel_type='global')
             populateMesh   = mod.get_function('populateMesh',   sizes, kernel_type='global')
             getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='global')
-
+            initTidalHarmonicConstituents = mod.get_function('initTidalHarmonicConstituents', sizes, kernel_type='global')
 
         except Exception as e:
             print(f"Error getting CUDA functions: {e}")

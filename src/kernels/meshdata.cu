@@ -956,7 +956,10 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                 int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                 int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
-                int *localNodePart,     int *localElemPart,     int *localSidePart) {
+                int *localNodePart,     int *localElemPart,     int *localSidePart,
+                double *emo, double *efa, 
+                double *umo, double *ufa, 
+                double *vmo, double *vfa) {
 
    printf("Populating mesh for partition %d\n", partNum);
 
@@ -1236,7 +1239,17 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
          nodeBnd->isEssentialBC = true;
 nodeBnd->iettype = 3;
-         nodeBnd->bcValue = 0.0;
+         nodeBnd->elbc = 0.0;
+
+         for (int jfr = 0; jfr < nbfr; jfr++) {
+            nodeBnd->efa[jfr] = efa[jfr + iseg*nbfr];
+            nodeBnd->emo[jfr] = emo[jfr + iseg*nbfr];
+            nodeBnd->umo[jfr] = umo[jfr + iseg*nbfr];
+            nodeBnd->ufa[jfr] = ufa[jfr + iseg*nbfr];
+            nodeBnd->vmo[jfr] = vmo[jfr + iseg*nbfr];
+            nodeBnd->vfa[jfr] = vfa[jfr + iseg*nbfr];
+printf("nodeBnd->efa[%d] = %f, nodeBnd->emo[%d] = %f, nodeBnd->umo[%d] = %f, nodeBnd->ufa[%d] = %f, nodeBnd->vmo[%d] = %f, nodeBnd->vfa[%d] = %f\n", jfr, nodeBnd->efa[jfr], jfr, nodeBnd->emo[jfr], jfr, nodeBnd->umo[jfr], jfr, nodeBnd->ufa[jfr], jfr, nodeBnd->vmo[jfr], jfr, nodeBnd->vfa[jfr]);
+         }
 
          idx++;
       }
@@ -2141,7 +2154,7 @@ return;
    //    endif !nfltype2
    }
 
-   __global__ void computeElevationBoundaryConditions(double time, int nbfr, double *amig, double *ff, double *emo, double *efa, double *face) {
+   __global__ void computeElevationBoundaryConditions(double time) {
       // Compute elevation essential boundary conditions 
 
       NODE_BND(nodeBnd); // Each boundary node.
@@ -2167,10 +2180,15 @@ printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
          }
          
          for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
-            printf("++++>> jfr = %d\n", jfr);
-            // const int ncyc = int(amig[jfr]*time/(2.0*pi));
-            // const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa[i, j, jfr];
-            // eta1_bar += ramp*ff[jfr]*emo[i,j,jfr]*cos(arg);
+
+            const double efa  = nodeBnd->efa[jfr]; 
+            const double emo  = nodeBnd->emo[jfr]; 
+
+            const int ncyc = int(amig[jfr]*time/(2.0*pi));
+            const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa;
+            eta1_bar += ramp*ff[jfr]*emo*cos(arg);
+
+ printf("++++>> jfr = %d, ramp = %f, node->idx = %d, amig = %f, face = %f, ff = %f, efa = %f, emo = %f, arg = %f, eta1_bar = %f\n", jfr, ramp, node->idx, amig[jfr], face[jfr], ff[jfr], efa, emo, arg, eta1_bar);            
          } // for jfr
 
       } // if iettype
@@ -2196,7 +2214,7 @@ printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
       if (iettype != 0 && inv_atm_bnd == 1) {
          nodeBnd->elbc += ramp*(prmsl_ref - node->pr)/grav/rho0;
       }
-
+printf("++++>> nodeBnd->elbc = %f\n", nodeBnd->elbc);
    }
 
 
@@ -2210,7 +2228,7 @@ printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, no
       // Check if this node has essential BC
       if (nodeBnd && nodeBnd->isEssentialBC) {
          // Verify BC value is valid
-         assert(nodeBnd->bcValue >= -9998.0 && "setEssentialBC: wrong b.c. at node");
+         assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
          printf("XX node IDX = %d, nodeBnd->isEssentialBC = %d\n", node->idx, nodeBnd->isEssentialBC);
          
@@ -2224,21 +2242,21 @@ printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, no
          }
          
          // Set solution and RHS to BC value
-         node->mX  = nodeBnd->bcValue;
-         node->qel = nodeBnd->bcValue;
+         node->mX  = nodeBnd->elbc;
+         node->qel = nodeBnd->elbc;
 printf("{{{{ node->mX = %f, node->qel = %f\n", node->mX, node->qel);         
       } else {
-         // Not an essential BC node
-         // Modify RHS for neighbors with essential BCs
+         // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
+
          for (int j = 0; j < node->numNodes; j++) {
                Node* nbNode = node->nodes[j];
                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
-                  assert(nbNodeBnd->bcValue >= -9998.0 && "setEssentialBC: wrong b.c. at node");
+                  assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
                   // Subtract contribution to RHS
-                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->bcValue;
+                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
                   printf("ZZ node->coeffMatrix[%d, %d] = %f\n", node->idx, node->nodes[j]->idx, node->coeffMatrix[j]);
                }
@@ -3590,7 +3608,10 @@ extern "C"
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices, int *localElemIndices, int *localSideIndices,
-                   int *localNodePart,    int *localElemPart,    int *localSidePart) {
+                   int *localNodePart,    int *localElemPart,    int *localSidePart,
+                   double *emo, double *efa, 
+                   double *umo, double *ufa, 
+                   double *vmo, double *vfa) {
 
     mesh->populateMesh(i34, elnode, elside, node_coords, wind_rotate_angle, 
                        isdel, isidenode, isbnd,
@@ -3599,7 +3620,8 @@ extern "C"
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
-                       localNodePart, localElemPart, localSidePart);
+                       localNodePart, localElemPart, localSidePart,
+                       emo, efa, umo, ufa, vmo, vfa);
   }
 
 
@@ -3635,10 +3657,10 @@ __global__ void printMatrix(void) {
          const int idx_node = ithread + blockIdx.x * blockDim.x;
          if (idx_node >= mesh->np) return;
          const Node *node = mesh->localNodeData + idx_node;
-         printf("idx_node = %d [%d] diag=%lf14, [", idx_node, node->numNodes, node->coeffDiag);
+         printf("idx_node = %d [%d] diag=%lf, [", idx_node, node->numNodes, node->coeffDiag);
          for (int j = 0; j < node->numNodes; j++) {
             Node* nbNode = node->nodes[j];
-            if (node->coeffMatrix[j] != 0.0) printf("%d:%f14,  ", nbNode->idx, node->coeffMatrix[j]);
+            if (node->coeffMatrix[j] != 0.0) printf("%d:%f,  ", nbNode->idx, node->coeffMatrix[j]);
          }
          printf("]\n");
 
@@ -3668,7 +3690,6 @@ __global__ void computeMatrixProductAndDotProducts() {
 
    // apply preconditioner on the fly:
    const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
-
 
    // 4) compute Ap = A.p
    double Ap = node->coeffDiag * node->mP;
@@ -3715,7 +3736,6 @@ __global__ void updateSolutionAndDotProducts(void) {
     const int tid = threadIdx.x;
 
 
-
     // Compute alpha
     const double alpha = (*rMr_old)/(*pAp);
 
@@ -3736,6 +3756,7 @@ __global__ void updateSolutionAndDotProducts(void) {
 
     // 2) apply Jacobi preconditioner on the fly
     const double Mr_new = r_new/diag;
+
 
     // 3) local contributions for the two dot-products
     const double l_rMr = r_new*Mr_new;  // r'M^-1r
@@ -3763,7 +3784,6 @@ __global__ void updateSearchDirection() {
     NODE(node);
 
     // recompute z on-the-fly
-// printf("updateSearchDirection: node = %d, coeffDiag = %f, rMr_old = %f, rMr_new = %f\n", node, node->coeffDiag, rMr_old, rMr_new);
     const double z = node->mR / node->coeffDiag;
     const double p = node->mP;
 

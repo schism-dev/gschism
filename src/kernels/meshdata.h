@@ -1,72 +1,4 @@
 
-#ifdef HARDCODED_CONSTANTS
-// I keep the code for the time being in case it is needed again
-// XXX: Pure constants that are to be set before compiling the code
-constexpr int N_TRACERS = 2;
-
-constexpr int ivcor = 2;       // Vertical coordinate system
-constexpr int ics = 1;         // 1: global, 2: local
-constexpr int ihh = 1;         // Option to limit \hat{H} to enhance stability for large friction in shallow area
-constexpr int imm = 0;         // Option to pre-compute vnorm on the element
-constexpr int iveg = 0;        // Vegetation option, 0: no vegetation, 1: vegetation
-constexpr int ihhat = 1;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
-constexpr int ihydraulics = 0; // Option of including hydraulics
-constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
-constexpr int ibc = 1;         // Option to include baroclinic term (0 means yes)
-
-constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
-
-constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
-
-constexpr int    iloadtide = 0;       // Option to use polynomial for discharge boundary
-constexpr double loadtide_coef = 0.1; // Load tide coefficient
-
-constexpr int    inv_atm_bnd = 0;     // Option to use inverse barometric effects at boundary
-constexpr double prmsl_ref = 101325.0; // Reference pressure for inverse barometric effects
-
-constexpr double veg_lai = 1.0; // Vegetation drag coefficient
-constexpr double veg_cw = 1.5; // Vegetation drag coefficient
-
-constexpr int ntip = 1;            // Number of tidal potential components
-constexpr double tip_dp = 1.0e6;   // cut-off depth for applying tidal potential
-
-constexpr int iunder_deep = 0;     // Option of under-deep methods
-constexpr double h1_bcc   = 50.0;  // Parameters for under-deep methods
-constexpr double h2_bcc   = 100.0; 
-constexpr double hw_depth = 1.0e6; 
-constexpr double hw_ratio = 0.5;
-
-constexpr int nvrt = 2; // Number of vertical levels
-constexpr int nzlev = 1; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = nvrt - nzlev + 1; // Number of sigma levels (in contrast to z levels)
-
-constexpr double small1 = 1.0e-7;       // Small non-negative number
-constexpr double small2 = small1*100.0;  // Slightly larger than small1
-constexpr double small = 1.0e-7;            // Small positive number or 0
-
-constexpr int internalNode = -1;
-constexpr int landNode = -2;
-
-
-
-constexpr double rearth_eq   = 6378206.4; // [m] 
-constexpr double rearth_pole = 6378206.4; // [m]
-constexpr double grav        = 9.81;      // [m/s^2]
-constexpr double omega_e     = 7.292e-5;  // [1/s]
-
-constexpr double thetai = 0.6;
-
-constexpr double rho0 = 1000.0; // [kg/m^3]
-constexpr double dtb_min = 0.1; //XXXX
-constexpr double dtb_max = 1000.0; //XXXX
-constexpr double velmin_btrack = 0.01; //XXXX
-
-constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
-
-
-
-constexpr double dt = 0.1;  // Time step  XXX 
-#endif
 
 
 constexpr double small1 = 1.0e-7;       // Small non-negative number
@@ -92,7 +24,22 @@ __device__ double ramp_ss;
 __device__ double ramp;
 
 
-// matrix solver scalars
+// Tidal Harmonic constituents ---------------------------------------------------------------------------
+
+__device__ double *amig; // Frequency of the harmonic constituent
+__device__ double *face; // Nodal factor of the harmonic constituent
+__device__ double *ff;   // Earth equilibrium argument of the harmonic constituent
+
+
+extern "C" __global__ void initTidalHarmonicConstituents(double *_amig, double *_face, double *_ff) {
+// Initialize the pointers to the tidal harmonic constituents
+
+   amig = _amig;
+   face = _face;
+   ff   = _ff;
+}
+
+// matrix solver scalars ---------------------------------------------------------------------------
 __device__ double *rMr_old;
 __device__ double *rMr_new;
 __device__ double *pAp;
@@ -838,7 +785,7 @@ struct NodeBoundary {
    double eth;    // Elevation time history
 
    bool isEssentialBC;
-   double bcValue;
+
 
    // Arrays for harmonic constituents (if needed)
    double emo[nbfr];  // Elevation amplitude
@@ -848,6 +795,7 @@ struct NodeBoundary {
    double vmo[nbfr];  // V-velocity amplitude
    double vfa[nbfr];  // V-velocity phase 
 
+   
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
       return (index == 0) ? sideBnd1 : sideBnd2; 
@@ -1153,7 +1101,10 @@ class Mesh {
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
-                   int *localNodePart,     int *localElemPart,     int *localSidePart);
+                   int *localNodePart,     int *localElemPart,     int *localSidePart,
+                   double *emo, double *efa, 
+                   double *umo, double *ufa, 
+                   double *vmo, double *vfa);
 
 
    __device__ ~Mesh(void)
@@ -1264,8 +1215,8 @@ extern "C" {
          ramp = 1.0;
       }
 
-      printf("computeTimeRamps: i = %d, nws = %d, if_source = %d, drampbc = %f, drampwind = %f, drampwafo = %f, dramp_ss = %f, dramp = %f\n", 
-             threadIdx.x + blockIdx.x * blockDim.x, nws, if_source, drampbc, drampwind, drampwafo, dramp_ss, dramp);
+      printf("computeTimeRamps: i = %d, time = %f, nws = %d, if_source = %d, ramp = %f, drampbc = %f, drampwind = %f, drampwafo = %f, dramp_ss = %f, dramp = %f\n", 
+             threadIdx.x + blockIdx.x * blockDim.x, time, nws, if_source, ramp, drampbc, drampwind, drampwafo, dramp_ss, dramp);
    }
       
 
