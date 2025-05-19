@@ -66,3 +66,5 @@ constexpr double velmin_btrack = 0.0001; //XXXX
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
 constexpr double dt = 300;  // Time step  XXX 
+
+constexpr double h0 = 0.01;  // Minimum water depth [m]

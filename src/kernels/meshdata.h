@@ -411,6 +411,9 @@ struct Element {
    __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { return z[k+1] - z[k]; }
 
+   // Check if the element is dry using the more up-to-date elevation.
+   __inline__ __device__ bool isDry2(void) const;
+
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
    __inline__ __device__ double computeSignedArea(void) const;
@@ -429,6 +432,17 @@ struct Element {
       if (isQuad()) {
          gx += a[3]*gradPhi[3].x;
          gy += a[3]*gradPhi[3].y;
+      }
+      return {gx, gy};
+   }
+
+   __device__ Vector2 grad(double Node::* field) const
+   {
+      double gx = (nodes[0]->*field)*gradPhi[0].x + (nodes[1]->*field)*gradPhi[1].x + (nodes[2]->*field)*gradPhi[2].x;
+      double gy = (nodes[0]->*field)*gradPhi[0].y + (nodes[1]->*field)*gradPhi[1].y + (nodes[2]->*field)*gradPhi[2].y;
+      if (isQuad()) {
+         gx += (nodes[3]->*field)*gradPhi[3].x;
+         gy += (nodes[3]->*field)*gradPhi[3].y;
       }
       return {gx, gy};
    }

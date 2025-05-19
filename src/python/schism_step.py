@@ -131,14 +131,14 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     dt = core.dt
 
-    time = (it+1)*dt
+    time = (it + 1)*dt
 
     # Broadcast to global module (XXX I think this is not needed)
     # time_stamp=time; it_main=it
 
     
     # Compute time ramps for boundary elevation forcing, wind and pressure forcing and tidal potential forcing
-    cufunc.computeTimeRamps(time.item(), opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp)
+    cufunc.computeTimeRamps(time, opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp)
     
 
 
@@ -255,6 +255,9 @@ def schism_step(it: int, namelist, bctides, sflux):
     # Optional calculations
 
     # I/O
+
+    print("REMEMBER, updateZCoordData is not being called anywhere in the code")
+    print("Where is element->isDry being set?")
 
 
 

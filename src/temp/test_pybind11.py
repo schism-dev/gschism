@@ -670,7 +670,7 @@ if __name__ == "__main__":
              'nodeBnd': max(numPartBoundaryNodes)}
     cufunc.initializeCudaFunctions(sizes)
 
-    for t in cp.arange(0, 1000, 1):
+    for t in range(0, 1000, 1):
         schism_step(t, namelist, bctides, sflux)
 
     # Launch kernel on each GPU

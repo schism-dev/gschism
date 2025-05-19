@@ -66,3 +66,5 @@ constexpr double velmin_btrack = __VELMIN_BTRACK__; //XXXX
 constexpr double dzb_min = __DZB_MIN__; // Min. bottom boundary layer thickness [m]
 
 constexpr double dt = __DT__;  // Time step  XXX 
+
+constexpr double h0 = __H0__;  // Minimum water depth [m]

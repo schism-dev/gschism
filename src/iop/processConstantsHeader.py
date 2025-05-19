@@ -63,6 +63,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         '__DTB_MAX__': (namelist.opt.dtb_max, 'namelist.opt'),
         '__VELMIN_BTRACK__': (namelist.opt.velmin_btrack, 'namelist.opt'),
         '__DZB_MIN__': (namelist.opt.dzb_min, 'namelist.opt'),
+        '__H0__': (namelist.opt.h0, 'namelist.opt'),
         
         # From grid parameters
         '__IVCOR__': (ivcor, 'grid'),

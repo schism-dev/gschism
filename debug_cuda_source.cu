@@ -67,6 +67,8 @@ constexpr double velmin_btrack = 0.0001; //XXXX
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
 constexpr double dt = 300;  // Time step  XXX 
+
+constexpr double h0 = 0.01;  // Minimum water depth [m]
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -482,6 +484,9 @@ struct Element {
    __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { return z[k+1] - z[k]; }
 
+   // Check if the element is dry using the more up-to-date elevation.
+   __inline__ __device__ bool isDry2(void) const;
+
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
    __inline__ __device__ double computeSignedArea(void) const;
@@ -500,6 +505,17 @@ struct Element {
       if (isQuad()) {
          gx += a[3]*gradPhi[3].x;
          gy += a[3]*gradPhi[3].y;
+      }
+      return {gx, gy};
+   }
+
+   __device__ Vector2 grad(double Node::* field) const
+   {
+      double gx = (nodes[0]->*field)*gradPhi[0].x + (nodes[1]->*field)*gradPhi[1].x + (nodes[2]->*field)*gradPhi[2].x;
+      double gy = (nodes[0]->*field)*gradPhi[0].y + (nodes[1]->*field)*gradPhi[1].y + (nodes[2]->*field)*gradPhi[2].y;
+      if (isQuad()) {
+         gx += (nodes[3]->*field)*gradPhi[3].x;
+         gy += (nodes[3]->*field)*gradPhi[3].y;
       }
       return {gx, gy};
    }
@@ -1782,8 +1798,6 @@ computeShapeCoords(toPoint2(xt), shpCoords_t, false);
 }
 
 
-
-
 __inline__ __device__ double Element::computeSignedArea(void) const {
    // Compute the area of the element
 
@@ -1803,6 +1817,14 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
 
    return res;
 }
+
+
+__inline__ __device__ bool Element::isDry2(void) const { return (nodes[0]->eta2 + nodes[0]->depth <= h0) ||
+                                                                (nodes[1]->eta2 + nodes[1]->depth <= h0) ||
+                                                                (nodes[2]->eta2 + nodes[2]->depth <= h0) ||
+                                                                (nodes[3]->eta2 + nodes[3]->depth <= h0);
+}
+
 
 __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const { 
    // In boundary sides, the element 1 is nullptr
@@ -2224,6 +2246,7 @@ __device__ double Node::compZCoord(int k) const {
       // The FORTAN code computes it every time this function is called, but it should be done only 
       // once per time step/node.
       // CHECK: updateZCoordData
+
       if (k == kz)               return -hmod2;
       else if (k == nvrt-1)      return eta2;
       else if (k == kb)          return -depth;
@@ -3501,7 +3524,7 @@ printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
             const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa;
             eta1_bar += ramp*ff[jfr]*emo*cos(arg);
 
- printf("++++>> jfr = %d, ramp = %f, node->idx = %d, amig = %f, face = %f, ff = %f, efa = %f, emo = %f, arg = %f, eta1_bar = %f\n", jfr, ramp, node->idx, amig[jfr], face[jfr], ff[jfr], efa, emo, arg, eta1_bar);            
+ printf("++++>> jfr = %d, time = %f, ramp = %f, node->idx = %d, amig = %f, face = %f, ff = %f, efa = %f, emo = %f, arg = %f, eta1_bar = %f\n", jfr, time, ramp, node->idx, amig[jfr], face[jfr], ff[jfr], efa, emo, arg, eta1_bar);            
          } // for jfr
 
       } // if iettype
@@ -3582,7 +3605,7 @@ printf("{{{{ node->mX = %f, node->qel = %f\n", node->mX, node->qel);
       NODE(node);
 
       node->eta2 = node->mX;
-printf("node[%d]->eta2 = %f\n", node->idx, node->eta2);
+printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
    }
 
 
@@ -4168,6 +4191,65 @@ extern "C" {
       } // for
 
    }
+
+
+
+   __global__ void computeHorGradientAtSide(void) {
+
+      // Compute the horizontal density gradient at each element.
+      // It works in two steps:
+      // 1. Interpolate the density at the neighboring elements at the same zcor as the prism of element i.
+      // 2. Compute the density gradient at elem by averaging the density gradients computed between elem and pairs of neighboring elements.
+      //    To compute one of these gradients (that it later averages), it solves a 2nd rank linear system like:
+      //             gradRho.r1 = rho1 - rho0
+      //             gradRho.r2 = rho2 - rho0
+      //    where r1, r2 are the vectors from the prism center to the neighboring prism centers.
+      // 
+      //  NOTE: We use de-meaned densities.
+
+      SIDE(side);
+
+      if (side->isDry) return;
+
+      Vector2 gradEta1 = {0.0, 0.0};
+      Vector2 gradEta2 = {0.0, 0.0};
+      Vector2 gradETP  = {0.0, 0.0};   
+      Vector2 gradPr   = {0.0, 0.0};
+
+      // These are used to compute the average of the gradients.
+      int icount1 = 0;
+      int icount2 = 0;
+      int icount3 = 0;
+
+      // For both elements that share the side... (or, maybe just one)
+      for (int ie = 0; ie < 2; ie++) {
+         const Element *elem = side->elems[ie];
+         if (elem != nullptr) {
+            if (!(elem->isDry2())) {
+               gradEta2 += elem->grad(Node::eta2);
+               icount2++;
+            }
+            if (!(elem->isDry)) {
+
+               if (elem->depth >= tip_dp) {
+                  icount3++;
+                  gradETP  += elem->grad(Node::ETP);
+               }
+               icount1++;                  
+               gradEta1 += elem->grad(Node::eta1); 
+               gradPr   += elem->grad(Node::pr);
+            }
+         }
+      }
+
+
+      if constexpr(ics == 2) {
+         // XXX IMPLEMENT THIS
+         assert(false && "computeHorGradientAtSide: ics = 2 not implemented");
+      }
+
+   }
+
 
 } // extern "C"
 
