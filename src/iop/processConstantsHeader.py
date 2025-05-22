@@ -58,6 +58,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         '__REARTH_EQ__': (namelist.opt.rearth_eq, 'namelist.opt'),
         '__REARTH_POLE__': (namelist.opt.rearth_pole, 'namelist.opt'),
         '__THETAI__': (namelist.opt.thetai, 'namelist.opt'),
+        '__RMAXVEL__': (namelist.opt.rmaxvel, 'namelist.opt'),
         '__RHO0__': (namelist.opt.rho0, 'namelist.opt'),
         '__DTB_MIN__': (namelist.opt.dtb_min, 'namelist.opt'),
         '__DTB_MAX__': (namelist.opt.dtb_max, 'namelist.opt'),

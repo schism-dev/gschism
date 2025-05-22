@@ -30,7 +30,7 @@ computeElemAverageGhat = None
 setEssentialBC = None
 updateElevation = None
 setupCoefficientMatrixAndRHS = None
-computeGradients = None
+computeHorGradientAtSide = None
 computeMatrixProductAndDotProducts = None
 updateSolutionAndDotProducts = None
 updateSearchDirection = None
@@ -81,7 +81,7 @@ def initializeCudaFunctions(sizes):
     global getBoundaryConditions, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
-    global setupCoefficientMatrixAndRHS, computeGradients, backtrackAllNodes, test
+    global setupCoefficientMatrixAndRHS, computeHorGradientAtSide, backtrackAllNodes, test
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix
  
@@ -107,7 +107,7 @@ def initializeCudaFunctions(sizes):
         updateSolutionAndDotProducts        = mod.get_function('updateSolutionAndDotProducts',        sizes, kernel_type='nodes')
         updateSearchDirection               = mod.get_function('updateSearchDirection',               sizes, kernel_type='nodes')
         initializePreconditionedResidual    = mod.get_function('initializePreconditionedResidual',    sizes, kernel_type='nodes')
-        computeGradients                    = mod.get_function('computeGradients',                    sizes, kernel_type='global')
+        computeHorGradientAtSide            = mod.get_function('computeHorGradientAtSide',            sizes, kernel_type='sides')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
         printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='nodes')
 

@@ -45,6 +45,22 @@ __device__ double *rMr_new;
 __device__ double *pAp;
 
 
+// Simple math functions ---------------------------------------------------------------------------
+
+template<int grade>
+__device__ __host__ __forceinline__ double pow(double x);
+
+template<>
+__device__ __host__ __forceinline__ double pow<2>(double x) {
+    return x*x;
+}
+
+template<>
+__device__ __host__ __forceinline__ double pow<3>(double x) {
+    return x*x*x;
+}
+
+
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
 using Vector2 = double2; 
@@ -98,6 +114,10 @@ __device__ __host__ __forceinline__ double dot(const double2& v, const double2& 
 
 __device__ __host__ __forceinline__ double cross(const double2& v, const double2& w) {
     return v.x*w.y - v.y*w.x;
+}
+
+__device__ __host__ __forceinline__ double2 rot90(const double2& a) {
+    return make_double2(a.y, -a.x);
 }
 
 __device__ __host__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
@@ -336,7 +356,9 @@ struct Element {
    Frame frame;
 
    Vector2 gradPhi[4];       // Derivatives of shape functions
-   Vector2 gradEta[nvrt];    // Gradient of free surface elevation
+   Vector2 gradEta;          // Gradient of free surface elevation
+   Vector2 gradPr;           // Gradient of pressure    
+   Vector2 gradETP;          // Gradient of Earth Tidal Potential    XXXXX Really used?
 
    bool isDry;                  // True if the element is dry
    int kbe;                   // Bottom index of the element
@@ -425,7 +447,7 @@ struct Element {
 
    __device__ bool computeShapeCoords(Point2 xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
 
-   __device__ Vector2 grad(double *a) const
+   __device__ Vector2 grad2(double *a) const
    {
       double gx = a[0]*gradPhi[0].x + a[1]*gradPhi[1].x + a[2]*gradPhi[2].x;
       double gy = a[0]*gradPhi[0].y + a[1]*gradPhi[1].y + a[2]*gradPhi[2].y;
@@ -436,7 +458,7 @@ struct Element {
       return {gx, gy};
    }
 
-   __device__ Vector2 grad(double Node::* field) const
+   __device__ Vector2 grad2(double Node::* field) const
    {
       double gx = (nodes[0]->*field)*gradPhi[0].x + (nodes[1]->*field)*gradPhi[1].x + (nodes[2]->*field)*gradPhi[2].x;
       double gy = (nodes[0]->*field)*gradPhi[0].y + (nodes[1]->*field)*gradPhi[1].y + (nodes[2]->*field)*gradPhi[2].y;
@@ -682,6 +704,12 @@ struct Side {
 
    Vector2 bcc[nvrt];           // Baroclinic term
 
+   Vector2 gradEta1;             // Gradient of elevation at previous timestep
+   Vector2 gradEta2;             // Gradient of elevation at current timestep
+   Vector2 gradPr;              // Gradient of pressure
+   Vector2 gradETP;             // Gradient of Earth Tidal Potential
+
+
    double hhat;                 // \breve{H} in notes
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
@@ -704,19 +732,25 @@ struct Side {
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
    __inline__ __device__ double Dz(int k)       const { return zc[k] - zc[k-1]; }
 
+   __device__ Vector2 grad2(double Node::* field, bool (*condition)(const Element*)) const;
+
    __forceinline__ __device__ Vector2 t(void) const { return {-n.y, n.x}; } // Tangent vector
 
    __inline__ __device__ bool isBnd(void) const { return sideBnd != nullptr; } // True if the side is a boundary side
 
    __inline__ __device__ int iadv(void) const;
 
+   __inline__ __device__ double grav3(void) const;
+   
    __inline__ __device__ double eta2(void) const;
    __inline__ __device__ double depth(void) const;
-   __inline__ __device__ double htot(void) const { return eta2() + depth(); }
+   __inline__ __device__ double htot2(void) const { return eta2() + depth(); }
+   __inline__ __device__ double htot1(void) const { return zc[nvrt - 1] - zc[kb]; }
 
    __inline__ __device__ double veg_h(void)  const;
    __inline__ __device__ double veg_nv(void) const;
    __inline__ __device__ double veg_alpha_vert_mean(void) const;
+   __inline__ __device__ double veg_alpha3D(int k) const;
    __inline__ __device__ double veg_c(void)  const { return veg_c2/(1.0 + veg_c2); }
 
    __inline__ __device__ double Cd(void) const;
@@ -732,7 +766,7 @@ struct Side {
       return max(0.0, min(1.0, (zTopCanopy() - zc[k-1])/Dz(k))); 
    } 
    __inline__ __device__ bool hasVegetation(int k) const { return zTopCanopy() > zc[k]; }
-   __inline__ __device__ bool isSubmerged(void)    const { return veg_h() < 0.99*htot(); }
+   __inline__ __device__ bool isSubmerged(void)    const { return veg_h() < 0.99*htot2(); }
    __inline__ __device__ bool is2D(void) const { return kb == nvrt - 1; }
    __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
 
@@ -912,7 +946,7 @@ struct Node {
    __host__ __device__ double sigmaTransitionDepth(void) const;
 
    __inline__ __device__ double Dz(int k) const { return znl[k] - znl[k-1]; }
-   __inline__ __device__ double htot(void) const { return eta2 + depth; }
+   __inline__ __device__ double htot2(void) const { return eta2 + depth; }
    __inline__ __device__ double zTopCanopy(void) const { return znl[kb] + veg_h; } 
 
    __device__ void clearMatrixRow(void) {
@@ -1248,9 +1282,7 @@ extern "C" {
 
    __global__ void updateSearchDirection(void);
    
-   __global__ void computeGradients(void) {
-
-   }  
+   __global__ void computeHorGradientAtSide(void);  
 
 }
 

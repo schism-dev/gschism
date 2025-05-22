@@ -294,7 +294,7 @@ if __name__ == "__main__":
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
     dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
 
-    if True:   
+    if False:   
 
         fig, ax = plt.subplots(figsize=(12, 8))
         

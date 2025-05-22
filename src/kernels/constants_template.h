@@ -58,6 +58,10 @@ constexpr double rearth_pole = __REARTH_POLE__; // [m]
 
 constexpr double thetai = __THETAI__;
 
+constexpr double rmaxvel = __RMAXVEL__; // Maximum velocity for the x-component
+constexpr double rmaxvel1 = rmaxvel;       // Maximum velocity for the x-component
+constexpr double rmaxvel2 = rmaxvel*1.013; // Maximum velocity for the y-component
+
 constexpr double rho0 = __RHO0__; // [kg/m^3]
 constexpr double dtb_min = __DTB_MIN__; //XXXX
 constexpr double dtb_max = __DTB_MAX__; //XXXX

@@ -31,7 +31,7 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
         # If the initial residual is already small enough, return 0
         return 0
 
-    while iterCount < maxIter:
+    while iterCount < 10+0*maxIter:
         # compute Ap, rMr, pAp, α on GPU
         scalars[2] = 0.0 # pAp
         cufunc.computeMatrixProductAndDotProducts()
@@ -245,9 +245,11 @@ def schism_step(it: int, namelist, bctides, sflux):
     # Momentum equations	
      
     # Precompute elevation gradient, atmo. pressure and earth tidal potential 
-    cufunc.computeGradients()  # lines -7296
+    cufunc.computeHorGradientAtSide()  # lines -7296
 
 
+    cufunc.solveMomentumEquations()
+    
     # Transport    lines 7388-8111
 
     # Update bed deformation and depth info  lines 8156-

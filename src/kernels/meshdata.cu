@@ -493,7 +493,7 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
 __inline__ __device__ bool Element::isDry2(void) const { return (nodes[0]->eta2 + nodes[0]->depth <= h0) ||
                                                                 (nodes[1]->eta2 + nodes[1]->depth <= h0) ||
                                                                 (nodes[2]->eta2 + nodes[2]->depth <= h0) ||
-                                                                (nodes[3]->eta2 + nodes[3]->depth <= h0);
+                                                                (i34==4 && nodes[3]->eta2 + nodes[3]->depth <= h0);
 }
 
 
@@ -683,19 +683,46 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
 
 
 
-__inline__ __device__ double Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
-__inline__ __device__ double Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
-__inline__ __device__ Point2 Side::p_t(double t) const { return {x(t), y(t)}; }
-__inline__ __device__ int    Side::iadv(void)    const { return min(n1->iadv, n2->iadv); }   
-__inline__ __device__ double Side::eta2(void)    const { return 0.5*(n1->eta2 + n2->eta2); }
-__inline__ __device__ double Side::depth(void)   const { return 0.5*(n1->depth + n2->depth); }
+__inline__ __device__ double  Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
+__inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
+__inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
+__inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition)(const Element*)) const {
+   Vector2 grad = {0.0, 0.0};
+   int count = 0;
 
-__inline__ __device__ double Side::veg_h(void)   const { return 0.5*(n1->veg_h  + n2->veg_h); }
-__inline__ __device__ double Side::veg_nv(void)  const { return 0.5*(n1->veg_nv + n2->veg_nv); }
-__inline__ __device__ double Side::veg_alpha_vert_mean(void) const { return 0.5*(n1->veg_alpha_vert_mean + n2->veg_alpha_vert_mean); }
+   if constexpr(ics == 2) assert(false && "computeHorGradientAtSide: ics = 2 not implemented");
+
+   // First element
+   if (elems[0] != nullptr && condition(elems[0])) {
+      grad += elems[0]->grad2(field);
+      count++;
+   }
+
+   // Second element
+   if (elems[1] != nullptr && condition(elems[1])) {
+      grad += elems[1]->grad2(field);
+      count++;
+   }
+
+   if (count > 0) {
+      grad = grad/count;
+   }
+   
+   return grad;
+}
+
+__inline__ __device__ double  Side::grav3(void)   const { return 0.5*(n1->grav2 + n2->grav2); }
+__inline__ __device__ int     Side::iadv(void)    const { return min(n1->iadv, n2->iadv); }   
+__inline__ __device__ double  Side::eta2(void)    const { return 0.5*(n1->eta2 + n2->eta2); }
+__inline__ __device__ double  Side::depth(void)   const { return 0.5*(n1->depth + n2->depth); } 
+
+__inline__ __device__ double  Side::veg_h(void)   const { return 0.5*(n1->veg_h  + n2->veg_h); }
+__inline__ __device__ double  Side::veg_nv(void)  const { return 0.5*(n1->veg_nv + n2->veg_nv); }
+__inline__ __device__ double  Side::veg_alpha_vert_mean(void) const { return 0.5*(n1->veg_alpha_vert_mean + n2->veg_alpha_vert_mean); }
+__inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D(k) + n2->veg_alpha3D(k)); }
 
 
-__inline__ __device__ double Side::Cd(void)      const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
+__inline__ __device__ double  Side::Cd(void)      const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
 
 __inline__ __device__ Vector2 Side::tau(void)    const { return 0.5*(n1->tau + n2->tau); }
 
@@ -1653,8 +1680,8 @@ extern "C" {
                   }
                } // for jj
 
-               const Vector2 grad_u = elem->grad(utmp); 
-               const Vector2 grad_v = elem->grad(vtmp);
+               const Vector2 grad_u = elem->grad2(utmp); 
+               const Vector2 grad_v = elem->grad2(vtmp);
 
                suma += dt*sqrt(dot(grad_u, grad_u) + dot(grad_v, grad_v));
             } // for ii
@@ -2307,7 +2334,7 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
       NODE(node);
 
       const int    kb      = node->kb;
-      const double htot    = node->htot();
+      const double htot    = node->htot2();
       const double rough   = node->rough;
 
 
@@ -2468,7 +2495,7 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
       
       SIDE(side);
 
-      const double htot = side->htot();
+      const double htot = side->htot2();
       const int    kb   = side->kb;
 
       assert(htot > 0.0 && "computeVegetationModelParameters: htot <= 0");
@@ -2561,7 +2588,7 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
          if (ihhat == 1) side->hhat = max(0.0, side->hhat);
       } // if 3D
 
-      printf("computeVegetationAndDragParameters: sideIdx = %d, side->htot = %f, side->hhat = %f\n", side->idx, side->htot(), side->hhat);
+      printf("computeVegetationAndDragParameters: sideIdx = %d, side->htot = %f, side->hhat = %f\n", side->idx, side->htot2(), side->hhat);
 
         
    }
@@ -2857,7 +2884,7 @@ extern "C" {
          // Integrate (using a central Gauss point) the density gradient from the surface to the bottom 
          // multiplied by -rampbc*(g/rho0)  (In ll if ics=2)
          // CHECK INDICES!!! XXX
-         const double grav3 = 0.5*(side->n1->grav2 + side->n2->grav2);
+         const double grav3 = side->grav3();
          side->bcc[k] = side->bcc[k + 1] - (rampbc*grav3/rho0)*side->Dz(k + 1)*gradRho;
       } // for
 
@@ -2882,46 +2909,203 @@ extern "C" {
 
       if (side->isDry) return;
 
-      Vector2 gradEta1 = {0.0, 0.0};
-      Vector2 gradEta2 = {0.0, 0.0};
-      Vector2 gradETP  = {0.0, 0.0};   
-      Vector2 gradPr   = {0.0, 0.0};
+      // Computes the gradient of the variables at the side center.
+      auto isWet1 = [](const Element* e) { return !(e->isDry); };
+      auto isWet2 = [](const Element* e) { return !(e->isDry2()); };
+      auto isWet3 = [](const Element* e) { return !(e->depth >= tip_dp); };
 
-      // These are used to compute the average of the gradients.
-      int icount1 = 0;
-      int icount2 = 0;
-      int icount3 = 0;
-
-      // For both elements that share the side... (or, maybe just one)
-      for (int ie = 0; ie < 2; ie++) {
-         const Element *elem = side->elems[ie];
-         if (elem != nullptr) {
-            if (!(elem->isDry2())) {
-               gradEta2 += elem->grad(Node::eta2);
-               icount2++;
-            }
-            if (!(elem->isDry)) {
-
-               if (elem->depth >= tip_dp) {
-                  icount3++;
-                  gradETP  += elem->grad(Node::ETP);
-               }
-               icount1++;                  
-               gradEta1 += elem->grad(Node::eta1); 
-               gradPr   += elem->grad(Node::pr);
-            }
-         }
-      }
+      side->gradEta1 = side->grad2(&Node::eta1, isWet1);
+      side->gradEta2 = side->grad2(&Node::eta2, isWet2);
+      side->gradETP  = side->grad2(&Node::ETP,  isWet3);
+      side->gradPr   = side->grad2(&Node::pr,   isWet1);
 
 
-      if constexpr(ics == 2) {
-         // XXX IMPLEMENT THIS
-         assert(false && "computeHorGradientAtSide: ics = 2 not implemented");
-      }
+      printf("gradEta1: %e, %e, gradEta2: %e, %e, gradETP: %e, %e, gradPr: %e, %e\n", 
+         side->gradEta1.x, side->gradEta1.y, 
+         side->gradEta2.x, side->gradEta2.y, 
+         side->gradETP.x, side->gradETP.y, 
+         side->gradPr.x, side->gradPr.y);
+
 
    }
 
 
+   __global__ void solveMomentumEquations(void) {
+
+      double alow[nvrt], cupp[nvrt], bdia[nvrt];
+
+      SIDE(side);
+
+      if (side->isDry) 
+      {
+         for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};         
+
+         return;
+      }
+
+      const Node *n1 = side->nodes[0];
+      const Node *n2 = side->nodes[1];
+
+      const int kb = side->kb;
+
+      const double veg_h = side->veg_h();
+      const double grav3 = side->grav3();
+
+      if (side->is2D()) {
+         // Warning: Do not use htot2, which is updated.
+         const double htot = side->htot1();
+         const double hhat = side->hhat;
+
+         assert(hhat > 0.0 && htot > 0.0 && "Impossible dry 55:");
+
+         Vector2 tau2 = {0.0, 0.0};
+          
+         if constexpr(ics==1) {
+            tau2 = side->tau();
+
+         } else {
+            assert(false && "Not implemented: ics == 2");
+            // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
+            // call project_hvec(tau(1,node2),tau(2,node2),pframe(:,:,node2),sframe2(:,:,j),tt1,ss1)
+            // taux2=(vn1+tt1)*0.5d0
+            // tauy2=(vn2+ss1)*0.5d0
+         } // if ics         
+
+         // hat_gam has units of m/s
+
+         const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
+         Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
+                           side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 - thetai*side->gradEta2));
+
+         hat_gam += dt*side->d2uv[nvrt-1];  // XXXX compute d2uv
+
+         for (int k=0; k<nvrt; k++) {
+            side->u2[k] = hat_gam*hhat/htot;
+
+            // Limits the velocity components to their maximum values
+            side->u2[k].x = max(-rmaxvel1, min(rmaxvel1, side->u2[k].x));
+            side->u2[k].y = max(-rmaxvel2, min(rmaxvel2, side->u2[k].y));
+         }
+
+      }
+      else { // 3D
+
+         // For 3D it is necessary to solve an implicit tridiagonal system.
+         // 
+         // Each line of the tridiagonal system include variables for layers k-1, k, k+1.
+         // However, for the vegetation terms, the canopy complicates things, because the vertical 
+         // integration is only done up to the canopy. In this case we use the notation "t" (top)
+         // to indicate the "top" level, which may not coincide with a layer. "t" can stand for both
+         // k+1 and k.
+
+
+         // // Define layer thickness & viscosity
+         // for (int k=kb + 1; k<nvrt; k++) {
+         //    const double dzz = side->Dz(k - 1);
+
+         //    assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
+
+         //    // Vertical viscosity at the face center
+         //    dfz(k) = 0.25*(n1->dfv[k] + n2->dfv[k] + n1->dfv[k-1] + n2->dfv[k-1]);
+        
+         // }
+
+
+         const int ndim = nvrt - kb;
+         const double zTopCanopy = side->zTopCanopy();
+
+         // Initialize the tridiagonal system
+         for (int k=kb+1; k<nvrt; k++) {
+            
+            const int kin = k - kb;
+
+            // Vertical viscosity at the face center
+            const double dfz = 0.25*(side->dfv[k] + side->dfv[k+1]);
+            const double dzz = side->Dz(k);
+
+            assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
+
+
+            alow[kin] = 0.0;
+            cupp[kin] = 0.0;
+            bdia[kin] = 0.0;
+
+            // Vegetation term: alpha*|u^n|*dt*H(dv-d)*u^{n+1}
+            if constexpr(iveg != 0) {	CHECK IF CFF1 IS USED EVEN IF IVEG = 0   
+
+               // We divide the code into two parts, one that deals with layers k, k+1, and another that deals with k-1, k.
+               // There is a special case when k is the bottom layer, where the bottom drag is applied.
+               // Notice that the top boundary is not included implicitly, because it depends on tau, but not on u.
+
+               // First part: layers k, k+1
+               if (k < nvrt - 1) {
+                  double cff1 = 1.0; //init \bar{c^{k+1}}              
+ 
+                  // If there is vegetation at this level...
+                  if (zTopCanopy > side->zc[k]) {
+                     // If the canopy is above the k layer...
+                     
+                     // Computes the velocity at the level above (typically layer k+1, unless the canopy is below it)
+                     const double zt = min(zTopCanopy, side->zc[k + 1]);
+                     const double zrat = (zt - side->zc[k])/side->Dz(k + 1); // value in (0,1], 1 means that the canopy is above zt.
+                     const Vector2 ut2 = (1.0 - zrat)*side->u2[k] + zrat*side->u2[k + 1];
+
+                     // Computes the velocity magnitude at the face center (the section of the face covered by the vegetation)
+                     const double vmag2 = length(ut2);
+                     const double vmag1 = length(side->u2[k]);
+                     const double vmag = 0.5*(vmag1 + vmag2);
+                     
+                     // Computes the vegetation alpha at the face center
+                     const double veg_alpha_sd = 0.5*(side->veg_alpha3D(k) + side->veg_alpha3D(k+1));
+
+                     cff1 += veg_alpha_sd*dt*vmag;
+                  } // if iveg
+
+                  const double tmp = dt*dfz/dzz
+                  cupp[kin] += cff1*dzz/6.0 - tmp
+                  bdia[kin] += cff1*dzz/3.0 + tmp
+               
+               }
+
+
+               // Second part: layers k-1, k
+               if (k > kb + 1) {
+
+                  double cff1 = 1.0; //init \bar{c^k}
+
+                  // If there is vegetation at this level...
+                  if (zTopCanopy > side->zc[k-1]) {
+                     const double zz1 = min(zTopCanopy, side->zc[k]);
+                     const double zrat = (zz1 - side->zc[k-1])/side->Dz(k); // value in (0,1]
+
+                     const Vector2 ut2 = (1.0 - zrat)*side->u2[k-1] + zrat*side->u2[k];
+
+                     const double vmag2 = length(ut2);
+                     const double vmag1 = length(side->u2[k-1]);
+                     const double vmag = 0.5*(vmag1 + vmag2);
+
+                     // Computes the vegetation alpha at the face center
+                     const double veg_alpha_sd = 0.5*(side->veg_alpha3D(k) + side->veg_alpha3D(k-1));
+                     cff1 += veg_alpha_sd*dt*vmag;
+                  } // if zTopCanopy
+
+                  const double tmp = dt*dfz/dzz;
+                  alow[kin] += cff1*dzz/6.0 - tmp;
+                  bdia[kin] += cff1*dzz/3.0 + tmp;
+
+               } else { // Bottom boundary
+                  // This occurs at the bottom, where the bottom drag is applied.
+
+                  bdia[kin] += dt*side->chi2;
+
+               } // if (k > kb + 1)
+
+
+
+            }
+         }
+      }
+   }
 } // extern "C"
 
 #ifdef DONTCOMPILE
@@ -3011,9 +3195,9 @@ extern "C" {
       // Remember to update both fb and F 
       // If ics=2, ghat1 are in eframe (ll)
       // cff1-3: coefficients for 2D/3D
-      Vector2 gradEta = {0.0, 0.0};  // \nabla \eta
-      Vector2 gradPr  = {0.0, 0.0};  // \nabla pressure
-      Vector2 gradETP = {0.0, 0.0};  // \nabla etp
+      elem->gradEta = {0.0, 0.0};  // \nabla \eta
+      elem->gradPr  = {0.0, 0.0};  // \nabla pressure
+      elem->gradETP = {0.0, 0.0};  // \nabla etp
 
       double av_cff1 = 0.0;  // av. for cff1
       double av_cff2 = 0.0;  // av. for cff2
@@ -3038,15 +3222,15 @@ extern "C" {
          const double veg_c    = veg_c2/(1.0 + veg_c2);  // veg_c2 = \alpha*|u|*dt
 
          // Node - const in elem
-         gradEta += node->eta2*elem->gradPhi[j];  // in eframe if ics=2
-         gradPr  += node->pr  *elem->gradPhi[j];
+         elem->gradEta += node->eta2*elem->gradPhi[j];  // in eframe if ics=2
+         elem->gradPr  += node->pr  *elem->gradPhi[j];
 
          if (elem->depth >= tip_dp) {
-           gradETP += node->ETP*elem->gradPhi[j];
+           elem->gradETP += node->ETP*elem->gradPhi[j];
          }
 
          
-         const double htot  = side->htot();        // Total depth at the side
+         const double htot  = side->htot2();        // Total depth at the side
          const double zctr2 = side->zTopCanopy();  
 
          double cff1; 
@@ -3199,7 +3383,7 @@ extern "C" {
          
       // Finish off terms in F, F^\alpha and f_b
       const double grav3 = elem->mean(&Node::grav2);
-      const Vector2 fb = grav3*gradETP - gradPr/rho0; //const in each elem
+      const Vector2 fb = grav3*elem->gradETP - elem->gradPr/rho0; //const in each elem
 
 
       Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
@@ -3208,7 +3392,7 @@ extern "C" {
          const Side *side = elem->sides[j];
          const double chi = side->chi;
 
-         const double htot = side->htot();
+         const double htot = side->htot2();
          const double veg_h = side->veg_h();
          const Vector2 F  = htot*fb;
          const Vector2 Fa = min(htot, veg_h)*fb;
@@ -3746,6 +3930,9 @@ __global__ void computeMatrixProductAndDotProducts() {
    double* s_rMr = sdata;
    double* s_pAp = sdata + BLOCK_SIZE;
 
+   s_rMr[threadIdx.x] = 0.0;
+   s_pAp[threadIdx.x] = 0.0;
+
    // 2) get your node pointer
    NODE(node);  
    const int tid = threadIdx.x;
@@ -3775,7 +3962,6 @@ __global__ void computeMatrixProductAndDotProducts() {
    s_rMr[tid] = l_rMr;
    s_pAp[tid] = l_pAp;
 
-
    __syncthreads();
 
    // 7) block-wide tree reduction
@@ -3789,58 +3975,59 @@ __global__ void computeMatrixProductAndDotProducts() {
    if (tid == 0) atomicAdd(pAp, s_pAp[0]);
 
 
-
 }
 
 
 __global__ void updateSolutionAndDotProducts(void) {
-    extern __shared__ double s_rMr[BLOCK_SIZE];       
+   extern __shared__ double s_rMr[BLOCK_SIZE];       
+
+   s_rMr[threadIdx.x] = 0.0;
 
 
-    // get node & bounds-check:
-    NODE(node);
-    const int tid = threadIdx.x;
+   // get node & bounds-check:
+   NODE(node);
+   const int tid = threadIdx.x;
 
 
-    // Compute alpha
-    const double alpha = (*rMr_old)/(*pAp);
+   // Compute alpha
+   const double alpha = (*rMr_old)/(*pAp);
 
-    // load scalars
-    const double diag = node->coeffDiag;
-    const double p    = node->mP;
-    const double Ap   = node->mAp;
-    const double x    = node->mX;
-    const double r    = node->mR;
-    
-    assert(diag != 0.0 && "updateSolutionAndDotProducts: diag = 0.0");
+   // load scalars
+   const double diag = node->coeffDiag;
+   const double p    = node->mP;
+   const double Ap   = node->mAp;
+   const double x    = node->mX;
+   const double r    = node->mR;
+   
+   assert(diag != 0.0 && "updateSolutionAndDotProducts: diag = 0.0");
 
-    // 1) update solution & residual
-    const double x_new = x + alpha*p;
-    const double r_new = r - alpha*Ap;
-    node->mX = x_new;
-    node->mR = r_new;
+   // 1) update solution & residual
+   const double x_new = x + alpha*p;
+   const double r_new = r - alpha*Ap;
+   node->mX = x_new;
+   node->mR = r_new;
 
-    // 2) apply Jacobi preconditioner on the fly
-    const double Mr_new = r_new/diag;
-
-
-    // 3) local contributions for the two dot-products
-    const double l_rMr = r_new*Mr_new;  // r'M^-1r
-
-    // 4) write into shared-mem
-    s_rMr[tid] = l_rMr;
-
-    __syncthreads();
+   // 2) apply Jacobi preconditioner on the fly
+   const double Mr_new = r_new/diag;
 
 
-    // 5) block-wide tree reduction (O(log BLOCK_SIZE))
-    for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
-        if (tid < stride) s_rMr[tid] += s_rMr[tid + stride];
-        __syncthreads();
-    }
+   // 3) local contributions for the two dot-products
+   const double l_rMr = r_new*Mr_new;  // r'M^-1r
 
-    // 6) thread 0 atomically folds into the global accumulators
-    if (tid == 0) atomicAdd(rMr_new, s_rMr[0]);
+   // 4) write into shared-mem
+   s_rMr[tid] = l_rMr;
+
+   __syncthreads();
+
+
+   // 5) block-wide tree reduction (O(log BLOCK_SIZE))
+   for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
+      if (tid < stride) s_rMr[tid] += s_rMr[tid + stride];
+      __syncthreads();
+   }
+
+   // 6) thread 0 atomically folds into the global accumulators
+   if (tid == 0) atomicAdd(rMr_new, s_rMr[0]);
 
 
 }
@@ -3865,6 +4052,8 @@ __global__ void updateSearchDirection() {
 __global__ void initializePreconditionedResidual(double *scalars) {
 
     extern __shared__ double s_rMr[BLOCK_SIZE];  
+
+    s_rMr[threadIdx.x] = 0.0;
 
     NODE(node);
     const int tid = threadIdx.x;
