@@ -76,6 +76,7 @@
         "__string": "cpp",
         "map": "cpp",
         "xstring": "cpp",
-        "xlocale": "cpp"
+        "xlocale": "cpp",
+        "xutility": "cpp"
     }
 }

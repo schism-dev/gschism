@@ -24,6 +24,10 @@ __device__ Mesh* mesh = nullptr;
                            NodeBoundary *node_bnd = &(mesh->localNodeBoundaryMem[idx_node_bnd]); \
                            if (idx_node_bnd >= mesh->nbp) return;
 
+#define SIDE_BND(side_bnd) const int idx_side_bnd = threadIdx.x + blockIdx.x * blockDim.x; \
+                           SideBoundary *side_bnd = &(mesh->localSideBoundaryMem[idx_side_bnd]); \
+                           if (idx_side_bnd >= mesh->nbs) return;                           
+
 Polynomial<4> *polyDischarge; // XXX read from file
 
 //===============================================================================
@@ -1131,6 +1135,8 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
       }
       else side.sideBnd = nullptr;
 
+      nbs = idxSideBoundary;
+
       // finding the pointer to the elements that share the side
       const int idx_e1 = isdel[globalSideIndices[i]*2];
       const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
@@ -1689,7 +1695,7 @@ extern "C" {
             assert(icount > 0 && "Impossible 77");
 
             // '4' is somewhat arbitrary
-            const int ndelt = max(ndelt_min, min(ndelt_max, int(suma/icount)*4)); // >=1
+            const int ndelt = clamp(int(suma/icount)*4, ndelt_min, ndelt_max); 
 
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
          
@@ -2722,7 +2728,7 @@ __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Eleme
 
       if (iunder_deep==0) {
 
-         const double weight = max(0.0, min(1.0, (depth1 - h1_bcc)/(h2_bcc - h1_bcc))); // weight
+         const double weight = clamp((depth1 - h1_bcc)/(h2_bcc - h1_bcc), 0.0, 1.0); // weight
 
          rho = (1.0 - weight)*rho + weight*elem->demeanedDensity(k);
 
@@ -2974,18 +2980,16 @@ extern "C" {
          // hat_gam has units of m/s
 
          const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
+
          Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
                            side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 - thetai*side->gradEta2));
 
          hat_gam += dt*side->d2uv[nvrt-1];  // XXXX compute d2uv
 
-         for (int k=0; k<nvrt; k++) {
-            side->u2[k] = hat_gam*hhat/htot;
+         const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvel1, rmaxvel1);
+         const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvel2, rmaxvel2);
 
-            // Limits the velocity components to their maximum values
-            side->u2[k].x = max(-rmaxvel1, min(rmaxvel1, side->u2[k].x));
-            side->u2[k].y = max(-rmaxvel2, min(rmaxvel2, side->u2[k].y));
-         }
+         for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
 
       }
       else { // 3D
@@ -3104,7 +3108,192 @@ extern "C" {
 
             }
          }
+
+
+         // Computes the RHS.
+         // -----------------
+
+         //	BC to be imposed at the end.
+
+         const Vector2 gradETP  = side->gradETP;
+         const Vector2 gradPr   = side->gradPr;
+         const Vector2 gradEta1 = side->gradEta1;
+         const Vector2 gradEta2 = side->gradEta2;
+
+
+         for (int k = kb + 1; k<nvrt; k++) {
+            const int kin = k - kb;
+
+            const double dz_0 = side->Dz(k);
+            const double dz_1 = side->Dz(k+1);  
+
+            rrhs[kin] = {0.0, 0.0};
+            double dz = 0.0;
+
+            // dz is the distance between the center of the k-th layer and the center of the (k+1)-th layer
+            // In the boundary layers, it is the distance between the center of the layer and the boundary.
+            if (k < nvrt  ) dz += 0.5*dz_1;
+            if (k > kb + 1) dz += 0.5*dz_0;
+
+            // Elevation gradient, atmospheric pressure and tidal potential
+            rrhs[kin] = -dz*dt*(grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0)
+
+            // Coriolis, advection, wind stress, and horizontal viscosity
+            if (k<nvrt) {
+               const Vector2 *ubt = side->ubt;
+               const Vector2 *u2  = side->u2;
+               const double coriolis = side->cori;
+               const Vector2 *d2uv = side->d2uv;
+
+               rrhs[kin] += (dz_1/6.0)*(2.0*ubt[k] + ubt[k + 1] + 
+                                        (dt*coriolis)*rot90(2.0*u2[k] + u2[k + 1]) + 
+                                        dt*(2.0*d2uv[k] + d2uv[k + 1]))
+
+               //diff stress tensors 1006
+               if constexpr(itur==5) {  // 1018:itur==5 XXX What is itur?
+                  // Does it make sense to have dz_1 multiplying and dividing? XXX
+                  rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
+               }
+
+            } else { // k=nvrt
+               if constexpr(ics==1) {
+                  tau2 = (side->tau())
+               } else {
+                  assert(false && "Not implemented: ics == 2");
+                  // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
+                  // call project_hvec(tau(1,node2),tau(2,node2),pframe(:,:,node2),sframe2(:,:,j),tt1,ss1)
+                  // taux2=(vn1+tt1)*0.5d0
+                  // tauy2=(vn2+ss1)*0.5d0
+               } // if ics
+
+               rrhs[kin] += dt*tau2
+
+            } // if k<nvrt
+
+            if (k > kbs + 1) {
+               rrhs[kin] += (dz_1/6.0)*(2.0*ubt[k] + ubt[k - 1] + 
+                                       (dt*coriolis)*rot90(2.0*u2[k] + u2[k - 1]) + 
+                                       dt*(2.0*d2uv[k] + d2uv[k - 1]))
+
+
+               // diff stress tensors 1006
+               if constexpr(itur==5) { // 1018:itur==5 XXX What is itur?
+                  // Does it make sense to have dz_0 multiplying and dividing? XXXX
+                  rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0
+               }
+
+            } // if k>kbs + 1
+
+            // Baroclinic
+            Vector2 *bcc = side->bcc;
+            if constexpr(ibc == 0) {
+               if (k < nvrt  ) rrhs[kin] += (dz_1*dt/6.0)*(2.0*bcc[k] + bcc[k+1]);
+
+               if (k > kb + 1) rrhs[kin] += (dz_0*dt/6.0)*(2.0*bcc[k] + bcc[k-1]);
+
+            } // if ibc==0
+
+
+         } // k=kb + 1,nvrt
+
+         tridag_sch(nvrt,2,ndim,2,alow,bdia,cupp,rrhs,soln,gam)
+
+         for (int k=kbs+1; k<nvrt; k++) {
+            const int kin = k - kbs;
+
+            // Velocity is always clamped to maximum values
+            side->u2[k] = {clamp(soln[kin].x, -rmaxvel1, rmaxvel1), clamp(soln[kin].y, -rmaxvel2, rmaxvel2)};
+         } // k
       }
+
+      // Impose velocity boundary conditions at the bottom
+      if constexpr(imm == 2) { //no slip
+         double dep;
+         Vector2 vel;
+
+         update_bdef(time, x0, y0, dep, vel)
+         side->u2[kb] = vel;
+
+      } else {
+         if (Cd(j)==0.0) {
+            side->u2[kb] = side->u2[kb+1];
+         } else if (nvrt > kb + 1) { // 3D no slip bottom
+            side->u2[kb] = {0.0, 0.0};
+         }
+          
+      } // if imm
+
+      // XXX aren't we undoing what was done here: for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
+      for (int k=0; k < kb; k++) side->u2[k] = {0.0, 0.0};
+      
+
+   }
+
+
+   __device__ void applyMomentumBC(void) {
+
+      SIDE_BND(side_bnd);
+
+      const Side *side = side_bnd->side;
+      const BoundarySegment *segment = side_bnd->segment;
+      const Node *n1 = side->nodes[0];
+      const Node *n2 = side->nodes[1];
+
+      const int kb = side->kb;
+
+      if (segment->ifltype != 0) {
+         const Vector2 *uth = side->uth;
+
+         for (int k=kb; k < nvrt; k++) {
+            assert(segment->ifltype == -2 || (uth[k].x >= -98 && uth[k].y >= -98) && "Momentum BC: Side has no velocity boundary conditions");
+
+            Vector2 uth = side->uth[k];
+
+            if (segment->ifltype == -1) {
+               // Flather 1
+
+               const double depth = side->depth;
+
+               assert(n1->eta_mean >= -98 && n2->eta_mean >= -98 && "Flather bnd elevation not assigned");
+               assert(depth > 0.0 && "Flather bnd has 0 or negative depth");
+
+               const double vnorm = sqrt(grav/depth)*(side->eta2() - side->eta_mean()) + dot(uth, side->n);
+
+               side->u2[k] = vnorm*side->n;
+
+            } else if (segment->ifltype == -2) { // Discharge
+
+
+               const double eta1 = side->eta1();
+               const double eta2 = side->eta2();
+               const double htot = side->htot2();
+
+               Discharge is a polynomial. See disch_coef in readTides. We must implement this.
+               const double disch = discharge(eta1);
+               tmp1 = side->eta2();
+
+               
+
+               assert(htot > 0.0 && "Discharge bc has 0 or negative depth");
+
+               const double vnorm = disch*eta2/htot;
+
+               side->u2[k] = vnorm*side->n;
+
+
+
+
+!              if(ics==1) then
+              su2(k,j)=vnorm*snx(j)
+              sv2(k,j)=vnorm*sny(j)
+            }
+
+         }
+
+      }
+
+
+      // Impose velocity boundary conditions at the bottom
    }
 } // extern "C"
 
@@ -3290,7 +3479,7 @@ extern "C" {
 
                if constexpr(iveg != 0) {
                    if (zctr2 > side->zc[k-1]) {  // XXX CHECK INDICES!!! 
-                       const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k)); // For the top of the canopy, ratio of the level that is below the canopy
+                       const double zrat = clamp((zctr2 - side->zc[k-1])/side->Dz(k), 0.0, 1.0); // For the top of the canopy, ratio of the level that is below the canopy
                        Ustar_alpha += zrat*w2; // XXXX
                    }
                }  // if iveg
@@ -3341,7 +3530,7 @@ extern "C" {
             for (int k = side->kb; k < nvrt; k++) {
                if (zctr2 > side->zc[k-1]) {
                    const Vector2 w2 = side->Dz(k)*(side->u2[k] + side->u2[k-1])/2.0;
-                   const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k));
+                   const double zrat = clamp((zctr2 - side->zc[k-1])/side->Dz(k), 0.0, 1.0);
                    Fa +=  coriolis*w2*zrat;
                } // if zctr2
             } // k
@@ -3356,7 +3545,7 @@ extern "C" {
             // Vegetation term
             if constexpr(iveg!=0) {
                if (nvrt > side->kb + 1 && zctr2 > side->zc[k-1]) { // 3D
-                  const double zrat = min(1.0, (zctr2 - side->zc[k-1])/side->Dz(k));
+                  const double zrat = clamp((zctr2 - side->zc[k-1])/side->Dz(k), 0.0, 1.0);
                   Fa += levelHorVisc*zrat;
                } 
             } // if iveg

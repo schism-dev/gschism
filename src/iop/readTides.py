@@ -229,6 +229,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                 if iettype != 0:
                     raise ValueError(f'Flather obc requires iettype=0: {k}')
                 line = f.readline()  # Skip 'eta_mean'
+                IMPLEMENT THIS
                 for _ in range(ntmp):
                     line = f.readline()  # Skip eta_m0
                 line = f.readline()  # Skip 'vn_mean'

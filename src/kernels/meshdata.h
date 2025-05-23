@@ -61,6 +61,10 @@ __device__ __host__ __forceinline__ double pow<3>(double x) {
 }
 
 
+__device__ __host__ __forceinline__ double clamp(double x, double min, double max) {
+    return fmin(fmax(x, min), max);
+}
+
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
 using Vector2 = double2; 
@@ -394,8 +398,8 @@ struct Element {
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
 
-   __inline__ __device__ bool is2D(void) const { return kb == nvrt - 1; }
-   __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
+   __inline__ __device__ bool is2D(void) const { return kb == nvrt - 2; }
+   __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 2; }
 
    __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
    __inline__ __device__ int nodeLocalIdx(Node *node) const {
@@ -1045,6 +1049,7 @@ class Mesh {
    const int ns;   // Local number of sides
 
    int nbp;  // Local number of boundary nodes
+   int nbs;  // Local number of boundary sides
 
    const int max_np; // Maximum number of horizontal nodes per partition (shared by all partitions)
    const int max_ne; // Maximum number of elements per partition (shared by all partitions)
