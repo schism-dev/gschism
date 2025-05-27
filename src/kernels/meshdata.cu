@@ -3234,14 +3234,19 @@ extern "C" {
 
       SIDE_BND(side_bnd);
 
-      const Side *side = side_bnd->side;
+      Side *side = side_bnd->side;
       const BoundarySegment *segment = side_bnd->segment;
       const Node *n1 = side->nodes[0];
       const Node *n2 = side->nodes[1];
 
+      // REMEMEBER, this is a trick, segment can be a pointer or (-1, -2)
+      const bool isLand     = ((int)segment == landSegment);
+      const bool isInternal = ((int)segment == internalSegment);
+
+      assert(!isInternal && "applyMomentumBC: Shouldn't be an internal side");
       const int kb = side->kb;
 
-      if (segment->ifltype != 0) {
+      if (!isLand && segment->ifltype != 0) {
          const Vector2 *uth = side->uth;
 
          for (int k=kb; k < nvrt; k++) {
@@ -3268,33 +3273,1038 @@ extern "C" {
                const double eta2 = side->eta2();
                const double htot = side->htot2();
 
-               Discharge is a polynomial. See disch_coef in readTides. We must implement this.
-               const double disch = discharge(eta1);
-               tmp1 = side->eta2();
-
+               // Discharge is a polynomial. See disch_coef in readTides. We must implement this.
+               const double dischrg = discharge(eta1);
                
 
-               assert(htot > 0.0 && "Discharge bc has 0 or negative depth");
+               assert(htot > 0.0 && "Discharge bc has 0 or negative htot");
 
-               const double vnorm = disch*eta2/htot;
+               const double vnorm = dischrg*eta2/htot;
 
                side->u2[k] = vnorm*side->n;
 
 
-
-
-!              if(ics==1) then
-              su2(k,j)=vnorm*snx(j)
-              sv2(k,j)=vnorm*sny(j)
             }
+            else if (segment->ifltype == -4 || segment->ifltype == -5) { // 3D radiation
+               const double vnorm = dot(side->u2[k], side->n);
+
+               double rat;
+               if (vnorm <= 0.0) rat = vobc1(isbs(j)); // incoming
+               else              rat = vobc2(isbs(j)); // outgoing
+
+               side->u2[k] = (1.0 - rat)*side->u2[k] + rat*uths;
+            }
+            else { // not Flather or 3D radiation
+               side->u2[k] = uths;
+
+            } // if (segment->ifltype...
 
          }
 
       }
+      else if (isLand) { // land bnd
+         if constexpr(islip == 0) { // free slip
+            for (int k=kb; k < nvrt; k++) {
+               double vnorm = 0.0; // for most cases
+               const double vtan = dot(side->u2[k], side->t());
+               side->u2[k] = vtan*side->t() - vnorm*side->n;
+            }
+
+         } else { // no slip
+            for (int k=kb; k < nvrt; k++) side->u2[k] = {0.0, 0.0};
+
+         }
+      } // if (side segment type...
+
+      
 
 
-      // Impose velocity boundary conditions at the bottom
+
    }
+
+
+   __device__ void shapiroFilter1(void) {
+      // First step of the Shapiro filter (normally used if indvel<=0)
+      // Computes the filtered values and stores them in bcc (as a temporary array).
+
+      if constexpr(ishapiro == 0) return;
+
+      SIDE(side);
+
+      const bool isInternal = ((int)side->segment == internalSegment);
+
+      if (side->isDry || isInternal ) return;
+
+      const int kb = side->kb;
+
+      for (int mm = 1; mm <= niter_shap; mm++) {
+
+
+         // Internal wet sides
+         for (int k = kb + 1; k < nvrt; k++) {
+            // WARNING: reusing bcc as a temporary array to store the suru values.
+            side->bcc[k] = {0.0, 0.0};
+            Vector2 suru = {0.0, 0.0};
+
+            for (int j=0; j<4; j++) {
+
+               const Side *nSide = side->neigh(j); // Every internal side has 4 neighbors
+               
+               int kin = k;
+               if (!(nSide->isDry)) kin = max(k, nSide->kb + 1);
+               
+               if constexpr(ics==1) {
+                  suru += side->u2[kin];
+               } else {
+                  assert(false && "Not implemented: ics == 2");
+                  // Vector2 vn1, vn2;
+                  // project_hvec(side->u2[kin], side->v2[kin], nSide->sframe, side->sframe, vn1, vn2);
+                  // suru=suru+vn1;
+                  // surv=surv+vn2;
+               }
+            }
+
+            side->bcc[k] = side->u2[k] + side->shapiro*(0.25*suru - side->u2[k]); // sframe2 if ics=2
+
+         }
+      }
+   }
+
+   __device__ void shapiroFilter2(void) {
+      // Second step of the Shapiro filter. Assigns to u2 the values stored in bcc.
+
+      if constexpr(ishapiro == 0) return;
+
+      SIDE(side);
+
+      const bool isInternal = ((int)side->segment == internalSegment);
+
+      if (side->isDry || isInternal ) return;
+
+      const int kb = side->kb;
+
+      for (int k = 0; k < kb - 1; k++) side->u2[k] = {0.0, 0.0};
+
+      if (side->is2D()) {
+         side->u2[kb] = side->u2[nvrt - 1];
+         
+      } else {
+         // 3D
+         for (int k = kb + 1; k < nvrt; k++) side->u2[k] = side->bcc[k];
+         
+      }
+
+   }
+
+
+   __device__ void updateLevels0(void) {
+      // Routine to update level indices and wetting and drying.
+      
+      const bool cwtime = (it != iths);
+
+      NODE(node);
+      
+
+      if(node->htot2() <= h0) { // if dry...
+
+         node->idry2 = true;
+
+         assert((ivcor != 2) && (node->depth < h_s) && "Deep depth dry");
+
+         if constexpr(ivcor != 1) node->kb = 0;
+
+      } else {
+         node->idry2 = false;
+         zcoor(0, node, node->kb, node->znl);
+      } // if wet or dry
+
+
+
+            do i=1,nea
+        idry_e2(i)=maxval(idry2(elnode(1:i34(i),i)))
+      enddo !i
+
+            idry2=1 !dry unless wet
+!$OMP end workshare
+
+!$OMP do
+      do i=1,np
+        do j=1,nne(i)
+          ie=indel(j,i)
+          if(idry_e2(ie)==0) then
+            idry2(i)=0; exit
+          endif
+        enddo !j
+      enddo !i
+
+
+       kbe=0
+
+      do i=1,nea
+        if(idry_e2(i)/=0) cycle
+
+!       Wet
+        n1=elnode(1,i); n2=elnode(2,i); n3=elnode(3,i)
+        if(maxval(idry2(elnode(1:i34(i),i)))/=0) then
+          write(errmsg,*)'level0: Element-node inconsistency (0):',ielg(i),idry_e2(i), &
+     &iplg(elnode(1:i34(i),i)),idry2(elnode(1:i34(i),i)),idry(elnode(1:i34(i),i))
+          call parallel_abort(errmsg)
+        endif
+        kbe(i)=minval(kbp(elnode(1:i34(i),i)))
+        do k=kbe(i),nvrt
+          ze(k,i)=znl(max(k,kbp(n1)),n1)+znl(max(k,kbp(n2)),n2)+znl(max(k,kbp(n3)),n3)
+          if(i34(i)==4) then
+            n4=elnode(4,i)
+            ze(k,i)=ze(k,i)+znl(max(k,kbp(n4)),n4)
+          endif
+          ze(k,i)=ze(k,i)/real(i34(i),rkind)
+          if(k>=kbe(i)+1) then; if(ze(k,i)-ze(k-1,i)<=0._rkind) then
+            write(errmsg,*)'Weird element (2):',k,i,ze(k,i),ze(k-1,i)
+            call parallel_abort(errmsg)
+          endif; endif
+        enddo !k
+      enddo !i
+!$OMP end do
+
+!     Compute vel., S,T for re-wetted nodes (q2 and xl are fine)
+      if(it/=iths) then
+!$OMP   do
+        do i=1,np
+          if(idry(i)==1.and.idry2(i)==0) then !rewetted
+            do k=1,nvrt
+              !uu2(k,i)=0
+              !vv2(k,i)=0
+              utmp=0._rkind
+              vtmp=0._rkind
+              ttmp=0._rkind
+              stmp=0._rkind
+              icount=0
+              do j=1,nnp(i)
+                nd=indnd(j,i) !must be inside the aug. domain
+!               Wet nbrs not affected by this part and so each sub-domain should use same values
+                if(idry(nd)==0) then !all indices extended
+                  icount=icount+1
+                  !Assume small element size in wet/dry zone so pframes are close to each other
+                  utmp=utmp+uu2(k,nd)
+                  vtmp=vtmp+vv2(k,nd)
+                  ttmp=ttmp+tr_nd(1,k,nd) !tnd(k,nd)
+                  stmp=stmp+tr_nd(2,k,nd) !snd(k,nd)
+                endif
+              enddo !j
+              if(icount==0) then
+!                if(ifort12(7)==0) then
+!                  ifort12(7)=1
+!                  write(12,*)'Isolated rewetted node:',iplg(i)
+!                endif
+!                tr_nd(1,k,i)=(k,i)
+!                tr_nd(2,k,i)=(k,i)
+              else
+                uu2(k,i)=utmp/real(icount,rkind)
+                vv2(k,i)=vtmp/real(icount,rkind)
+                tr_nd(1,k,i)=ttmp/real(icount,rkind)
+                tr_nd(2,k,i)=stmp/real(icount,rkind)
+              endif
+            enddo !k=1,nvrt
+          endif !rewetted
+        enddo !i=1,npa
+!$OMP   end do
+      endif !it/=iths
+
+!...  z-coor. for sides
+!...  A side is wet if and only if at least one of its elements is wet
+!$OMP workshare
+      idry_s2=1 !reinitialize to wipe out previous temp. storage
+!$OMP end workshare
+
+!$OMP do
+      do i=1,ns
+        do j=1,2 !elements
+          ie=isdel(j,i)
+          if(ie/=0.and.idry_e2(max(1,ie))==0) idry_s2(i)=0
+        enddo !j
+      enddo !i
+!$OMP end do
+
+
+      do i=1,nsa
+        n1=isidenode(1,i)
+        n2=isidenode(2,i)
+        kbs(i)=0 !dry
+        if(idry_s2(i)==0) then !wet side with 2 wet nodes
+          if(idry2(n1)/=0.or.idry2(n2)/=0) then
+            write(errmsg,*)'Side-node inconsistency (1):',it,islg(i),'node:',iplg(n1),iplg(n2), &
+!
+             &eta2(n1),eta2(n2),idry2(n1),idry2(n2),';element:', &
+             &(isdel(j,i),ielg(isdel(j,i)),idry_e2(isdel(j,i)),j=1,2)
+            call parallel_abort(errmsg)
+          endif
+          if(dps(i)+(eta2(n1)+eta2(n2))/2._rkind<=h0) then
+            write(errmsg,*)'Weird side (2):',islg(i),iplg(n1),iplg(n2),eta2(n1),eta2(n2)
+            call parallel_abort(errmsg)
+          endif
+          kbs(i)=min(kbp(n1),kbp(n2))
+          do k=kbs(i),nvrt
+            zs(k,i)=(znl(max(k,kbp(n1)),n1)+znl(max(k,kbp(n2)),n2))/2._rkind
+            if(k>=kbs(i)+1) then; if(zs(k,i)-zs(k-1,i)<=0._rkind) then
+              write(errmsg,*)'Weird side (3):',k,iplg(n1),iplg(n2),znl(max(k,kbp(n1)),n1), &
+     &znl(max(k,kbp(n2)),n2),znl(max(k-1,kbp(n1)),n1),znl(max(k-1,kbp(n2)),n2)
+              call parallel_abort(errmsg)
+            endif; endif
+          enddo !k
+        endif !wet side
+      enddo !i=1,nsa
+
+
+!     Compute vel., S,T for re-wetted sides 
+      if(it/=iths) then
+
+        do i=1,ns
+          if(idry_s(i)==1.and.idry_s2(i)==0) then
+            n1=isidenode(1,i)
+            n2=isidenode(2,i)
+            do k=1,nvrt
+              utmp=0._rkind
+              vtmp=0._rkind
+              !ttmp=0
+              !stmp=0
+              icount=0
+              do j=1,2
+                ie=isdel(j,i)
+                if(ie/=0) then
+                  if(ie<0) call parallel_abort('levels0: ghost element')
+                  do jj=1,i34(ie) !side; in the aug. domain
+                    isd=elside(jj,ie)
+                    if(idry_s(isd)==0) then
+                      icount=icount+1
+
+                      utmp=utmp+su2(k,isd)
+                      vtmp=vtmp+sv2(k,isd)
+                    endif
+                  enddo !jj
+                endif !ie/=0
+              enddo !j
+              if(icount==0) then
+              else
+                su2(k,i)=utmp/real(icount,rkind)
+                sv2(k,i)=vtmp/real(icount,rkind)
+              endif
+            enddo !k
+          endif !rewetted
+        enddo !i=1,ns
+
+      endif !it/=iths
+
+
+
+   DOMAIN EXCHANGE
+      // Check wet/dry in ghost zone
+//       prwt_xchng(1)=.false. !node
+//       srwt_xchng(1)=.false. !side
+
+//       if(it/=iths) then
+//         do i=np+1,npa !check ghosts wet/dry
+//           if(idry(i)==1.and.idry2(i)==0) then
+//             prwt_xchng(1)=.true. !ghost rewetted; need exchange
+//             exit
+//           endif
+
+// !          if(idry(i)==1.and.idry2(i)==0) then
+// !            if(.not.prwt_xchng(1).and.i>np) prwt_xchng(1)=.true. !ghost rewetted; need exchange
+// !            if(i>np) cycle !do rest for residents
+//         enddo !i
+  
+//         do i=ns+1,nsa !ghost
+//           if(idry_s(i)==1.and.idry_s2(i)==0) then
+//             srwt_xchng(1)=.true.
+//             exit
+//           endif
+ 
+// !          if(idry_s(i)==1.and.idry_s2(i)==0) then
+// !            if(.not.srwt_xchng(1).and.i>ns) srwt_xchng(1)=.true. !rewetted ghost side; needs exchange
+// !            if(i>ns) cycle !do the rest only for residents
+//         enddo !i
+      // endif !it/
+
+//       if(nproc>1) then
+// #ifdef INCLUDE_TIMING
+//         if(cwtime) cwtmp=mpi_wtime()
+// #endif
+// !       See if the node/side exchange is needed
+//         call mpi_allreduce(prwt_xchng,prwt_xchng_gb,1,MPI_LOGICAL,MPI_LOR,comm,ierr)
+//         if(ierr/=MPI_SUCCESS) call parallel_abort('levels0: allreduce prwt_xchng_gb',ierr)
+//         call mpi_allreduce(srwt_xchng,srwt_xchng_gb,1,MPI_LOGICAL,MPI_LOR,comm,ierr)
+//         if(ierr/=MPI_SUCCESS) call parallel_abort('levels0: allreduce srwt_xchng_gb',ierr)
+// !
+
+// !       Allocate temporary array
+//         if(prwt_xchng_gb(1).or.srwt_xchng_gb(1)) then
+//           allocate(swild(4,nvrt,nsa),stat=istat)
+//           if(istat/=0) call parallel_abort('Levels0: fail to allocate swild')
+// !
+//         endif
+
+// !       update ghost nodes
+//         if(prwt_xchng_gb(1)) then
+//           swild(1,:,1:npa)=uu2(:,:)
+//           swild(2,:,1:npa)=vv2(:,:)
+//           swild(3,:,1:npa)=tr_nd(1,:,:) !tnd(:,:)
+//           swild(4,:,1:npa)=tr_nd(2,:,:) !snd(:,:)
+// #ifdef INCLUDE_TIMING
+//           if(cwtime) cwtmp=mpi_wtime()
+// #endif
+//           call exchange_p3d_4(swild)
+// #ifdef INCLUDE_TIMING
+//           if(cwtime) wtimer(10,2)=wtimer(10,2)+mpi_wtime()-cwtmp
+// #endif
+          uu2(:,:)=swild(1,:,1:npa)
+          vv2(:,:)=swild(2,:,1:npa)
+          tr_nd(1,:,:)=swild(3,:,1:npa)
+          tr_nd(2,:,:)=swild(4,:,1:npa)
+        endif
+
+!       update ghost sides
+        if(srwt_xchng_gb(1)) then
+          swild(1,:,:)=su2(:,:)
+          swild(2,:,:)=sv2(:,:)
+          swild(3,:,:)=0 !tsd(:,:) - not used
+          swild(4,:,:)=0 !ssd(:,:)
+#ifdef INCLUDE_TIMING
+          if(cwtime) cwtmp=mpi_wtime()
+#endif
+          call exchange_s3d_4(swild)
+#ifdef INCLUDE_TIMING
+          if(cwtime) wtimer(10,2)=wtimer(10,2)+mpi_wtime()-cwtmp
+#endif
+          su2(:,:)=swild(1,:,:)
+          sv2(:,:)=swild(2,:,:)
+          !tsd(:,:)=swild(3,:,:)
+          !ssd(:,:)=swild(4,:,:)
+        endif
+
+        if(prwt_xchng_gb(1).or.srwt_xchng_gb(1)) deallocate(swild)
+      endif !nproc>1
+
+!      close(10)
+
+!     Update flags
+      idry=idry2
+      idry_s=idry_s2
+      idry_e=idry_e2
+   }
+
+
+//    __device__ void updateLevels1(void) {
+//       // Routine to update level indices and wetting and drying.
+//       // Used when resolution is fine enough.
+//       // ONLY WORKS WITH PURE TRIs
+
+
+//       ELEM(elem);
+
+//       const int i34 = elem->i34;
+
+//       // Flag for comm timing
+//       const bool cwtime = (it != iths);
+
+//       // An element is wet if and only if depths at all nodes >h0 
+//       // A node is wet if and only if at least one surrounding element is wet
+//       // A side is wet if and only if at least one surrounding element is wet
+
+//       // Initialize element flags for first step
+
+//       if (it == iths) {
+//          elem->isDry = false;
+
+//          for (int j = 0; j < i34; j++) {
+//             // For all nodes in the element...
+
+//             const Node *node = elem->node(j);
+//             const double htot = node->htot();
+               
+//             // For an element to be dry, at least one node must be dry
+//             if (htot <= h0) elem->isDry = true;
+//             break;
+//          }
+//       }
+
+//       //  Wetting/drying algorithm
+//       const double isDry2 = elem->isDry; // starting from step n's indices
+
+//       if (it != iths) {
+
+//          // XXXX removed a fragment of code that that recomputed elem->isDry2, but didn't do anything different
+
+//          // istop: 1- ready for final extrap. stage; 2- ready for final
+//          // checks and exit loop15
+//          int istop = 0;
+//          int itr = 0;
+//          while (true) {
+//             itr = itr + 1;
+//             assert(itr <= 100 && "LEVELS1: Too many iterations in wet/dry");
+
+//             int icolor2 = 0; //interface sides
+
+          
+//             const Element *elem1 = side->elem[1];
+//             const Element *elem2 = side->elem[2];
+//             if (elem2 == nullptr && elem1->isDry2 + elem2->isDry2)) {
+//                side->icolor2 = 1;
+//             }
+          
+
+
+//             // Aug. shoreline sides (must be internal sides)
+//             int nsdf = 0;
+//             if (side->icolor2==1) {
+//                nsdf=nsdf+1
+//                isdf(nsdf)=i
+//             }
+          
+
+//          REDUCE 
+//          call mpi_allreduce(nsdf,nsdf_gb,1,itype,MPI_SUM,comm,ierr)
+//          if (nsdf_gb==0) return // all wet
+
+//          // Final extrapolation
+//          srwt_xchng(1) = (istop == 1)
+//          call mpi_allreduce(srwt_xchng,srwt_xchng_gb,1,MPI_LOGICAL,MPI_LAND,comm,ierr)
+//          if(srwt_xchng_gb(1)) then // all ranks ready
+//             if(myrank==0) write(16,*)'doing final extrapolation in levels1...'
+
+//             icolor=0 // frontier nodes for extrapolation
+//             inew=0 // for initializing and counting su2 sv2
+//             for (int i=0; i<nsdf; i++) {
+//                const int isd = isdf[i];
+
+//                if (isdel(1,isd)==0.or.isdel(2,isd)==0) then
+//                   write(errmsg,*) 'LEVELS1: bnd side (2):',isdel(:,isd),iplg(isidenode(1:2,isd))
+//                   call parallel_abort(errmsg)
+//                endif
+
+
+//                // Try to find a dry elem (to take care of some odd cases where
+//                // nodeA is interface btw sub-domains)
+//                for (int m = 0; m <= 1; m++) {
+                  
+//                   Element *elem = side->elem[m];
+//                   if (elem != nullptr) {
+//                      if (elem->isDry2) {
+
+//                         break;
+//                      }
+//                   }
+
+//                } //m
+
+//                if(elem == nullptr) return;
+
+//                Node *n1 = side->node[0];
+//                Node *n2 = side->node[1];
+
+//                // TRICK: finds the node of elem that is not n1 or n2. To do so, adds the pointer values of all the nodes (as ints)
+//                // and subtracts the pointer values of n1 and n2.
+//                Node *nodeA = (Node *)((int)elem->node[0] + (int)elem->node[1] + (int)elem->node[2] - (int)n1 - (int)n2);
+
+//                if(nodeA->icolor == 1) return;  //this node is done
+
+//                nodeA->icolor = 1; // this node will be done
+
+
+//                inun=0 // inundation flag
+//                for (int j=0; j<nodeA->nne; j++) {
+//                   Element *elem2 = nodeA->elem[j];
+//                   Side *side2 = nodeA->side[j];
+
+//                   // int id = nodeA->elem[j]->iself;
+//                   // int isd2 = nodeA->elem[j]->elside;
+//                   if(elem2->icolor2 == 1) {
+
+//                      double tmp = dot(side2->u2[isd2], side2->n);
+//                      double flux_t = -tmp*ssign(id,ie2) // inward normal
+//                      if(flux_t > 0.0) {
+
+//                      const double etm = max(side2->n1->eta2(), side2->n2->eta2());
+//                      if (etm + dp(nodeA) > h0) {}
+//                      WHY depth at node????
+//                         inun=1;
+//                         exit;
+//                      }
+//                   } // flux_t>0
+
+//                } //icolor2(isd2)==1
+               
+//             } //j
+
+//             if(inun==1) then
+//                eta2(nodeA) = max(eta2(nodeA),-dp(nodeA)+2._rkind*h0)
+
+//                 do j=1,nne(nodeA)
+//                   ie2=indel(j,nodeA)
+//                   id=iself(j,nodeA)
+//                   isd2=elside(id,ie2)
+//                   if(icolor2(isd2)==1) then
+//                     do l=1,3
+//                       nd=elnode(l,ie2)
+//                       if(eta2(nd)+dp(nd)<=h0) then 
+//                         write(errmsg,*)'LEVELS1: Failed to wet element:',ielg(ie2),iplg(nodeA)
+//                         call parallel_abort(errmsg)
+//                       endif
+//                     enddo !l=1,3
+//                     idry_e2(ie2)=0
+//                     do l=1,2 !sides sharing nodeA
+//                       id1=elside(nx(id,l),ie2)
+
+//                       swild2(1,1:nvrt)=su2(1:nvrt,isd2)
+//                       swild2(2,1:nvrt)=sv2(1:nvrt,isd2)
+
+//                       if(inew(id1)==0) then
+//                         su2(1:nvrt,id1)=swild2(1,1:nvrt)
+//                         sv2(1:nvrt,id1)=swild2(2,1:nvrt)
+//                         inew(id1)=1
+//                       else
+//                         su2(1:nvrt,id1)=su2(1:nvrt,id1)+swild2(1,1:nvrt)
+//                         sv2(1:nvrt,id1)=sv2(1:nvrt,id1)+swild2(2,1:nvrt)
+//                         inew(id1)=inew(id1)+1
+//                       endif
+//                     enddo !l=1,2
+//                   endif !icolor2(isd2)==1
+//                 enddo !j=1,nne(nodeA)
+//               endif !inun==1
+//             enddo !i=1,nsdf
+
+//             call exchange_e2di(idry_e2)
+//             call exchange_p2d(eta2)
+
+
+//             ltmp=.false. // flag for wetting occurring
+
+//             do i=1,ns
+//               ltmp=ltmp.or.inew(i)/=0
+//               if(inew(i)/=0) then
+
+//                 su2(1:nvrt,i)=su2(1:nvrt,i)/dble(inew(i))
+//                 sv2(1:nvrt,i)=sv2(1:nvrt,i)/dble(inew(i))
+//               endif
+//             enddo !i
+
+//             srwt_xchng(1)=ltmp
+
+//             istop=2
+
+//           endif // srwt_xchng_gb; final extrapolation
+
+//           if(istop/=2) then
+
+//             istop=1 // stop iteration and go to extrapolation stage; initialize first
+//             do i=1,nsdf // aug.
+//               isd=isdf(i)
+//               do j=1,2
+//                 nd=isidenode(j,isd)
+//                 if (eta2(nd)+dp(nd)<=h0) then
+
+
+//                   istop=0
+//                   do l=1,nne(nd)
+//                     ie=indel(l,nd)
+//                     if(ie>0) idry_e2(ie)=1
+//                   enddo !l
+//                 endif
+//               enddo !j=1,2 nodes
+//             enddo !i=1,nsdf
+//             call exchange_e2di(idry_e2)
+
+//           //  Wetting
+//             inew=0 !for initializing and counting su2 sv2
+//             srwt_xchng(1)=.false. !flag for wetting occurring
+//             do i=1,nsdf !aug. domain for updating vel. at interfacial sides (between 2 sub-domains)
+//               isd=isdf(i) !must be internal side
+//               if(isdel(1,isd)<0.or.isdel(2,isd)<0) cycle !neither element can have interfacial sides
+//               if(isdel(1,isd)==0.or.isdel(2,isd)==0) then
+//                 write(errmsg,*)'LEVELS1: bnd side:',isdel(:,isd),iplg(isidenode(1:2,isd))
+//                 call parallel_abort(errmsg)
+//               endif
+//               if(idry_e2(isdel(1,isd))+idry_e2(isdel(2,isd))/=1) cycle
+//               // 2 end nodes have total depths > h0
+
+//               if(idry_e2(isdel(1,isd))==1) then
+//                 ie=isdel(1,isd) !>0
+//               else
+//                 ie=isdel(2,isd) !>0
+//               endif
+//               n1=isidenode(1,isd)
+//               n2=isidenode(2,isd)
+//               nodeA=elnode(1,ie)+elnode(2,ie)+elnode(3,ie)-n1-n2   ! eli: is the 2,ie one right?
+//               l0=lindex(nodeA,ie)
+
+//               if(l0==0.or.nodeA==n1.or.nodeA==n2) then
+//                 write(errmsg,*)'Frontier node outside, or on the interface:', &
+//        &l0,iplg(nodeA),iplg(n1),iplg(n2),itr,it,iths !icolor(nodeA)
+
+//                 write(12,*)'LEVELS1: fatal error message'
+//                 do l=1,ns
+//                   if(icolor2(l)==1) then
+//                     write(12,*)l,iplg(isidenode(1:2,l))
+//                     write(12,*)l,ielg(isdel(1:2,l)),idry_e2(isdel(1:2,l)),idry_e(isdel(1:2,l))
+//                   endif
+//                 enddo //l
+//                 do l=1,nea
+//                   write(12,*)l,idry_e2(l),idry_e(l)
+//                 enddo //l
+//                 call parallel_abort(errmsg)
+//               endif // end fatal
+
+//               if(eta2(nodeA)+dp(nodeA)>h0) then !all 3 nodes have depths > h0
+//                // Check
+//                 do j=1,3
+//                   nd=elnode(j,ie)
+//                   if(eta2(nd)+dp(nd)<=h0) then
+//                     write(errmsg,*)'Failed to wet element (13):',ielg(ie),iplg(nd),iplg(nodeA)
+//                     call parallel_abort(errmsg)
+//                   endif
+//                 enddo !j
+
+
+//                 srwt_xchng(1)=.true.
+//                 istop=0
+//                 idry_e2(ie)=0
+
+//                 do j=1,2 !sides sharing nodeA
+//                   id1=elside(nx(l0,j),ie)
+//                   if(icolor2(id1)==0) then
+
+//                   swild2(1,1:nvrt)=su2(1:nvrt,isd)
+//                   swild2(2,1:nvrt)=sv2(1:nvrt,isd)
+
+//                   if(inew(id1)==0) then
+//                       !vel. only accurate in resident domain
+//                       su2(1:nvrt,id1)=swild2(1,1:nvrt) !su2(1:nvrt,isd)
+//                       sv2(1:nvrt,id1)=swild2(2,1:nvrt) !sv2(1:nvrt,isd)
+//                       inew(id1)=1
+//                   else
+//                       su2(1:nvrt,id1)=su2(1:nvrt,id1)+swild2(1,1:nvrt)
+//                       sv2(1:nvrt,id1)=sv2(1:nvrt,id1)+swild2(2,1:nvrt)
+//                       inew(id1)=inew(id1)+1
+//                     endif
+//                   endif // icolor2(id)==0
+//                 enddo // j=1,2
+//               endif // eta2(nodeA)+dp(nodeA)>h0
+//             enddo // i=1,nsdf; shoreline sides
+
+//             // Compute average vel. for rewetted sides
+//             do i=1,ns
+//               if(inew(i)/=0) then
+//                 su2(1:nvrt,i)=su2(1:nvrt,i)/real(inew(i),rkind)
+//                 sv2(1:nvrt,i)=sv2(1:nvrt,i)/real(inew(i),rkind)
+//               endif !inew(i)/=0
+//             enddo // i=1,ns
+
+//           endif //istop/=2
+
+
+//           ltmp = false; // for vel. exchange
+
+
+//           // Enforce wet/dry flag consistency between nodes and elements due to added wet elements
+
+//           idry2=1
+
+
+//           do i=1,np
+//             do j=1,nne(i)
+//               if(idry_e2(indel(j,i))==0) then
+//                 idry2(i)=0; exit
+//               endif
+//             enddo !j
+//           enddo !i
+
+//           do i=1,nea
+//             inew(i)=0 !use for temp. storage of new element wet/dry flags
+//             do j=1,3
+//               if(idry2(elnode(j,i))==1) inew(i)=1
+//             enddo !j
+//           enddo !i=1,nea
+
+
+//           do i=1,ns
+//             if(.not.(idry_e2(isdel(1,i))==1.and.(isdel(2,i)==0.or.isdel(2,i)>0.and.idry_e2(max(1,isdel(2,i)))==1))) cycle
+//             // Dry side that may need new vel.
+
+//             iwet=0 // flag
+//             do j=1,2
+//               ie=isdel(j,i)
+//               if(ie>0.and.idry_e2(max(1,ie))==1.and.inew(max(1,ie))==0) iwet=1
+//             enddo !j
+
+//             if(iwet==1) then !vel. as average
+//               sutmp=0._rkind; svtmp=0._rkind; icount=0
+//               do m=1,2 !2 elements
+//                 ie=isdel(m,i)
+//                 if(ie<=0) cycle
+
+//                 do jj=1,3 !3 sides
+//                   !Find wet side
+//                   isd2=elside(jj,ie)
+//                   if(isdel(1,isd2)>0.and.idry_e2(max(1,isdel(1,isd2)))==0.or. &
+//      &isdel(2,isd2)>0.and.idry_e2(max(1,isdel(2,isd2)))==0) then !at least one wet element
+//                     icount=icount+1
+
+
+//                     sutmp(1:nvrt)=sutmp(1:nvrt)+su2(1:nvrt,isd2)
+//                     svtmp(1:nvrt)=svtmp(1:nvrt)+sv2(1:nvrt,isd2)
+//                   endif
+//                 enddo !jj
+//               enddo !m=1,2; 2 elements
+
+//               ltmp=ltmp.or.icount/=0
+//               if(icount/=0) then
+// !                srwt_xchng(1)=.true.
+//                 su2(1:nvrt,i)=sutmp(1:nvrt)/real(icount,rkind)
+//                 sv2(1:nvrt,i)=svtmp(1:nvrt)/real(icount,rkind)
+//               endif
+//             endif !iwet
+//           enddo !i=1,ns
+
+
+//           idry_e2(1:nea)=inew(1:nea)
+//           srwt_xchng(1)=ltmp
+
+//           call mpi_allreduce(srwt_xchng,srwt_xchng_gb,1,MPI_LOGICAL,MPI_LOR,comm,ierr)
+//           if(srwt_xchng_gb(1)) then
+//             allocate(swild(2,nvrt,nsa),stat=istat)
+//             if(istat/=0) call parallel_abort('Levels1: fail to allocate (8)')
+
+//             swild(1,:,:)=su2(:,:)
+//             swild(2,:,:)=sv2(:,:)
+
+
+//             su2(:,:)=swild(1,:,:)
+//             sv2(:,:)=swild(2,:,:)
+//             deallocate(swild)
+          
+
+//          // Sync
+//          call parallel_barrier
+
+//          if(istop==2) exit loop15
+
+//       end do loop15
+
+
+//       endif !it/=iths
+
+
+
+//       do i=1,ne
+//         do j=1,i34(i)
+//           nd=elnode(j,i)
+//           if(eta2(nd)+dp(nd)<=h0) then
+//             idry_e2(i)=1
+//             exit
+//           endif
+//         enddo !j
+//       enddo !i
+
+
+//       // Wet/dry flags for nodes/sides
+//       idry2=1; 
+//       idry_s2=1
+//       do i=1,nea
+//         if(idry_e2(i)==0) then
+//           idry2(elnode(1:3,i))=0
+//         endif
+//       enddo !i
+
+//       do i=1,np
+//         do j=1,nne(i)
+//           if(idry_e2(indel(j,i))==0) then
+//             idry2(i)=0; exit
+//           endif
+//         enddo !j
+//       enddo !i
+
+
+
+//       do i=1,ns
+//         do j=1,2
+//           if(isdel(j,i)>0) then; if(idry_e2(isdel(j,i))==0) then
+//             idry_s2(i)=0; exit
+//           endif; endif
+//         enddo !j
+//       enddo !i
+
+
+
+//       // Reset vel. at dry sides
+
+//       do i=1,nsa
+//         if(idry_s2(i)==1) then
+//           su2(1:nvrt,i)=0._rkind
+//           sv2(1:nvrt,i)=0._rkind
+//         endif
+//       enddo !i
+
+
+//       // Limit elevation at dry nodes
+//       do i=1,npa
+//         if(idry2(i)==1) then
+//           !eta2(i)=min(0.d0,-dp(i))
+//           eta2(i)=min(eta2(i),-dp(i))
+//         endif
+//       enddo !i
+
+
+//       // z-coordinates for nodes
+
+//       do i=1,npa
+//         if(ivcor==2) then; if(eta2(i)<=h0-h_s) then
+//           write(errmsg,*)'Deep depth dry:',iplg(i)
+//           call parallel_abort(errmsg)
+//         endif; endif
+
+//         if (idry2(i)==1) then
+//           if(ivcor/=1) kbp(i)=0
+//         else !wet
+//           call zcoor(1,i,kbp(i),znl(:,i))
+//         endif !wet ot dry
+//       enddo !i=1,npa
+
+//       // Compute element bottom index
+//       elem->kb = 0;
+
+
+//       do i=1,nea
+//         if(idry_e2(i)/=0) cycle
+
+// !       Wet
+//         n1=elnode(1,i); n2=elnode(2,i); n3=elnode(3,i)
+//         if(idry2(n1)/=0.or.idry2(n2)/=0.or.idry2(n3)/=0) then
+//           write(errmsg,*)'level1: Element-node inconsistency (0):',ielg(i),idry_e(i), &
+//      &iplg(elnode(1:3,i)),idry2(elnode(1:3,i))
+//           call parallel_abort(errmsg)
+//         endif
+//         kbe(i)=min(kbp(n1),kbp(n2),kbp(n3))
+//         do k=kbe(i),nvrt
+//           ze(k,i)=(znl(max(k,kbp(n1)),n1)+znl(max(k,kbp(n2)),n2)+znl(max(k,kbp(n3)),n3))/3._rkind
+//           if(k>=kbe(i)+1) then; if(ze(k,i)-ze(k-1,i)<=0._rkind) then
+//             write(errmsg,*)'Weird element (1):',k,i,ze(k,i),ze(k-1,i)
+//             call parallel_abort(errmsg)
+//           endif; endif
+//         enddo !k
+//       enddo !i
+
+
+//       // Compute side bottom index. For wet side and its wet adjacent element,
+//       // kbs>=kbe
+//       do i=1,nsa
+//         kbs(i)=0 !dry
+//         if(idry_s2(i)==0) then !wet side with 2 wet nodes
+//           n1=isidenode(1,i)
+//           n2=isidenode(2,i)
+//           if(idry2(n1)/=0.or.idry2(n2)/=0) then
+//             write(errmsg,*)'Side-node inconsistency:',it,islg(i),'node:',iplg(n1),iplg(n2), &
+//      &eta2(n1),eta2(n2),idry2(n1),idry2(n2),';element:', &
+//      &(isdel(j,i),ielg(isdel(j,i)),idry_e2(isdel(j,i)),j=1,2)
+//             call parallel_abort(errmsg)
+//           endif
+//           if(dps(i)+(eta2(n1)+eta2(n2))/2._rkind<=h0) then
+//             write(errmsg,*)'Weird side (0):',islg(i),iplg(n1),iplg(n2),eta2(n1),eta2(n2)
+//             call parallel_abort(errmsg)
+//           endif
+//           kbs(i)=min(kbp(n1),kbp(n2))
+//           do k=kbs(i),nvrt
+//             zs(k,i)=(znl(max(k,kbp(n1)),n1)+znl(max(k,kbp(n2)),n2))/2
+//             if(k>=kbs(i)+1) then; if(zs(k,i)-zs(k-1,i)<=0._rkind) then
+//               write(errmsg,*)'Weird side (1):',k,iplg(n1),iplg(n2),znl(max(k,kbp(n1)),n1), &
+//      &znl(max(k,kbp(n2)),n2),znl(max(k-1,kbp(n1)),n1),znl(max(k-1,kbp(n2)),n2)
+//               call parallel_abort(errmsg)
+//             endif; endif
+//           enddo !k
+//         endif !wet side
+//       enddo !i=1,nsa
+
+
+//       // Compute vel., S,T for re-wetted nodes (q2 and xl are fine)
+//       if(it/=iths) then
+//         do i=1,np 
+//           if(idry(i)==1.and.idry2(i)==0) then
+//             do k=1,nvrt
+//               uu2(k,i)=0._rkind
+//               vv2(k,i)=0._rkind
+//               ttmp=0._rkind
+//               stmp=0._rkind
+//               icount=0
+//               do j=1,nnp(i)
+//                 nd=indnd(j,i) !must be inside the aug. domain
+// !               Wet nbrs not affected by this part and so each sub-domain should use same values
+//                 if(idry(nd)==0) then !all indices extended
+//                   icount=icount+1
+//                   uu2(k,i)=uu2(k,i)+uu2(k,nd)
+//                   vv2(k,i)=vv2(k,i)+vv2(k,nd)
+//                   ttmp=ttmp+tr_nd(1,k,nd) !tnd(k,nd)
+//                   stmp=stmp+tr_nd(2,k,nd) !snd(k,nd)
+//                 endif
+//               enddo !j
+//               if(icount==0) then
+//                 !Use last wet value
+//               else
+//                 uu2(k,i)=uu2(k,i)/real(icount,rkind)
+//                 vv2(k,i)=vv2(k,i)/real(icount,rkind)
+//                 tr_nd(1,k,i)=ttmp/real(icount,rkind)
+//                 tr_nd(2,k,i)=stmp/real(icount,rkind)
+//               endif
+//             enddo !k=1,nvrt
+//           endif !rewetted
+//         enddo !i=1,np
+
+//       endif !it/=iths
+
+
+//       // Check wet/dry in ghost zone
+//       prwt_xchng(1)=.false.
+//       if(it/=iths) then
+//         do i=np+1,npa !check ghosts wet/dry
+//           if(idry(i)==1.and.idry2(i)==0) then
+//             prwt_xchng(1)=.true. !ghost rewetted; need exchange
+//             exit
+//           endif
+
+
+//         enddo !i
+//       endif !it/=iths
+
+ 
+
+//       // update ghost nodes
+//       if(prwt_xchng_gb(1)) then
+//           allocate(swild(4,nvrt,nsa),stat=istat)
+//           if(istat/=0) call parallel_abort('Levels0: fail to allocate swild')
+
+//           swild(1,:,1:npa)=uu2(:,:)
+//           swild(2,:,1:npa)=vv2(:,:)
+//           swild(3,:,1:npa)=tr_nd(1,:,:) !tnd(:,:)
+//           swild(4,:,1:npa)=tr_nd(2,:,:) !snd(:,:)
+
+ 
+//           uu2(:,:)=swild(1,:,1:npa)
+//           vv2(:,:)=swild(2,:,1:npa)
+//           tr_nd(1,:,:)=swild(3,:,1:npa)
+//           tr_nd(2,:,:)=swild(4,:,1:npa)
+
+//         endif !prwt_xchng_gb
+//       endif !nproc>1
+
+//       close(10)
+
+//       // Update wet/dry flags
+//       idry=idry2
+//       idry_s=idry_s2
+//       idry_e=idry_e2
+
+
+
+// !===============================================================================
+// !===============================================================================
+
 } // extern "C"
 
 #ifdef DONTCOMPILE

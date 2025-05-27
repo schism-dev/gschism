@@ -249,8 +249,16 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     cufunc.solveMomentumEquations()
-    
+
     # Transport    lines 7388-8111
+
+    cufunc.shapiroFilter1()
+    cufunc.shapiroFilter2()
+
+
+    cufunc.updateBedDeformation()
+
+    cufunc.updateLevels()
 
     # Update bed deformation and depth info  lines 8156-
 

@@ -11,6 +11,8 @@ constexpr int ihydraulics = 0; // Option of including hydraulics
 constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
 constexpr int ibc = 1;         // Option to include baroclinic term (0 means yes)
 
+constexpr int islip = 0;       // Option to include slip boundary conditions
+
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions

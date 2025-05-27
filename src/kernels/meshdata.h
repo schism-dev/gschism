@@ -5,8 +5,8 @@ constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
 
-constexpr int internalNode = -1;
-constexpr int landNode = -2;
+constexpr int internalSegment = -1;
+constexpr int landSegment = -2;
 
 constexpr double pi = 3.14159265358979323846;
 
@@ -413,6 +413,18 @@ struct Element {
       return res;
    }
 
+   __inline__ __device__ int sideLocalIdx(const Side *side) const {
+      // Find the local index of the side in the element (0,1,2,3)
+      int res = __ffs((sides[0] == side) | 
+                     ((sides[1] == side) << 1) | 
+                     ((sides[2] == side) << 2) | 
+                     ((sides[3] == side) << 3)) - 1;
+      
+      assert(res >= 0 && res < i34 && sides[res] == side && "sideLocalIdx: side not found in element");
+      return res;
+   }
+
+
    __inline__ __device__ int findLevel(double z1, int k) const {
       // Starting at index k, find sequentially the level that contains z
 
@@ -735,6 +747,22 @@ struct Side {
    __inline__ __device__ Point3 center3D(int k) const { return {center.x, center.y, zc[k]}; }
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
    __inline__ __device__ double Dz(int k)       const { return zc[k] - zc[k-1]; }
+
+   __inline__ __device__ Side* neigh(int index) const { 
+      // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
+      assert(index >= 0 && index < 4); 
+      assert(elems[0] != nullptr && elems[1] != nullptr);
+
+      const int ielem = index & 1;           // 0 or 1
+      const int iside = 2*(index >> 1) - 1;  // -1 or 1
+
+      const Element* elem = elems[ielem];
+
+      const int locSideIdx = elem->sideLocalIdx(this); // Local index of this side in the element
+
+      return elem->sides[elem->nxq(locSideIdx + iside)];
+
+   }
 
    __device__ Vector2 grad2(double Node::* field, bool (*condition)(const Element*)) const;
 
