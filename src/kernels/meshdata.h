@@ -31,6 +31,15 @@ __device__ double *face; // Nodal factor of the harmonic constituent
 __device__ double *ff;   // Earth equilibrium argument of the harmonic constituent
 
 
+// Union to store different types of variables in the same memory location. This is used to define temporary 
+// variables that can be used to store different types of variables.
+union TempVar {
+    double d;
+    int i;
+    bool b;
+};
+
+
 extern "C" __global__ void initTidalHarmonicConstituents(double *_amig, double *_face, double *_ff) {
 // Initialize the pointers to the tidal harmonic constituents
 
@@ -769,7 +778,7 @@ struct Side {
    __forceinline__ __device__ Vector2 t(void) const { return {-n.y, n.x}; } // Tangent vector
 
    __inline__ __device__ bool isBnd(void) const { return sideBnd != nullptr; } // True if the side is a boundary side
-
+   __inline__ __device__ bool isBnd2(void) const { return elems[0] == nullptr; } // This is a different type of being boundary. XXXXX CHECK IF THIS THE SAME
    __inline__ __device__ int iadv(void) const;
 
    __inline__ __device__ double grav3(void) const;
@@ -909,6 +918,8 @@ struct Node {
 
    NodeBoundary *nodeBnd; // Pointer to additional boundary information. For non-boundary nodes, 
 
+   TempVar tmp; // Temporary variable to store different types of variables
+
    // Physical information
    Tracers tr_nd0[nvrt]; // Initial tracer conc. at nodes
 
@@ -919,7 +930,6 @@ struct Node {
 
    double ETP;  // Earth Tidal Potential
 
-   
    double pr;    // Air pressure
    double grav2; // Gravity 
    
@@ -980,6 +990,8 @@ struct Node {
    __inline__ __device__ double Dz(int k) const { return znl[k] - znl[k-1]; }
    __inline__ __device__ double htot2(void) const { return eta2 + depth; }
    __inline__ __device__ double zTopCanopy(void) const { return znl[kb] + veg_h; } 
+
+   __inline__ __device__ bool isDry2(void) const { return htot2() <= h0; } // isDry, but updated to use eta2
 
    __device__ void clearMatrixRow(void) {
       // Clear the matrix row for this node

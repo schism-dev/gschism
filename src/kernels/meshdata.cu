@@ -494,10 +494,10 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
 }
 
 
-__inline__ __device__ bool Element::isDry2(void) const { return (nodes[0]->eta2 + nodes[0]->depth <= h0) ||
-                                                                (nodes[1]->eta2 + nodes[1]->depth <= h0) ||
-                                                                (nodes[2]->eta2 + nodes[2]->depth <= h0) ||
-                                                                (i34==4 && nodes[3]->eta2 + nodes[3]->depth <= h0);
+__inline__ __device__ bool Element::isDry2(void) const { return (nodes[0]->isDry2()) ||
+                                                                (nodes[1]->isDry2()) ||
+                                                                (nodes[2]->isDry2()) ||
+                                                                (i34==4 && nodes[3]->isDry2());
 }
 
 
@@ -611,7 +611,7 @@ __device__ bool Element::computeShapeCoords(Point2 xt, double shpCoords[4],
 
    1. Find the shape coordinates for the final position in the element.
    2. Interpolate the z level of the top and bottom levels at xt, yt. 
-   3. Perform a *binary search* to find the vertical level containing zt. It will have to interpolate the 
+   3. Perform a binary search to find the vertical level containing zt. It will have to interpolate the 
       z levels at xt, yt at each step.   
    4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
       horizontally and vertically.
@@ -928,6 +928,53 @@ __inline__ __device__ bool Side::btrack(
 
 __host__ __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
 
+
+__device__ void Node::updateKb(void) {
+   // Updates the bottom level of the node.
+   // This is done by finding the first level where the node is wet.
+   
+   if (depth <= mesh->h_s) {
+      kb = mesh->kz;
+   }
+   else {
+      // Find bottom index
+          kbpl=0
+          do k=1,kz-1
+            if(-dp(inode)>=ztot(k).and.-dp(inode)<ztot(k+1)) then
+              kbpl=k
+              exit
+            endif
+          enddo !k
+          !todo: assert
+          if(kbpl==0) then
+            write(errmsg,*)'ZCOOR: Cannot find a bottom level:',dp(inode),itag
+            call parallel_abort(errmsg)
+          endif
+          ztmp(kbpl)=-dp(inode)
+          do k=kbpl+1,kz-1
+            ztmp(k)=ztot(k)
+          enddo !k
+        endif !dep<=h_s
+
+      else if(ivcor==1) then !localized simga
+!        if(eta<=-hsm(m_pws)) then
+!          write(errmsg,*)'ZCOOR: elev<hsm:',eta,itag
+!          call parallel_abort(errmsg)
+!        endif
+
+        kbpl=kbp(inode)
+        do k=kbpl+1,nvrt-1
+          ztmp(k)=(eta2(inode)+dp(inode))*sigma_lcl(k,inode)+eta2(inode)
+        enddo !k
+
+        ztmp(kbpl)=-dp(inode) !to avoid underflow
+        ztmp(nvrt)=eta2(inode) !to avoid underflow
+      else
+        call parallel_abort('ZCOOR: unknown z-coor.')
+      endif !ivcor
+
+}
+
 __device__ double Node::compZCoord(int k) const {
    // Computes the z coordinate at level k.
    // Depending on the vertical coordinate system, the z coordinate is computed differently.
@@ -937,7 +984,7 @@ __device__ double Node::compZCoord(int k) const {
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
       
-   if (isDry)  return 0.0;
+   if (isDry) return 0.0;
 
    if constexpr(ivcor == 2) {
 
@@ -977,7 +1024,7 @@ __device__ double Node::compZCoord(int k) const {
       if (k == kb) return -depth;
       else if (k == nvrt-1) return eta2;
       else if (k >= kb) {
-            return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
+         return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
       }
    }
    
@@ -3397,202 +3444,216 @@ extern "C" {
    }
 
 
-   __device__ void updateLevels0(void) {
-      // Routine to update level indices and wetting and drying.
+   __device__ void ul0UpdateZCoords(void) {
+   // For wet nodes updates the nodes z-coordinates and bottom index, kb.
       
-      const bool cwtime = (it != iths);
+      NODE(node);      
 
-      NODE(node);
-      
-
-      if(node->htot2() <= h0) { // if dry...
-
-         node->idry2 = true;
+      if (node->isDry2()) { 
 
          assert((ivcor != 2) && (node->depth < h_s) && "Deep depth dry");
 
          if constexpr(ivcor != 1) node->kb = 0;
 
       } else {
-         node->idry2 = false;
-         zcoor(0, node, node->kb, node->znl);
+
+         node->updateKb();
+         for (int k = node->kb; k < nvrt; k++) node->compZCoord(k); 
+
       } // if wet or dry
 
+      // We use the temp.b field to store the previous state of isDry.
+      node->tmp.b = node->isDry;
+
+      // In the next step we will compute which nodes are wet, so we first assume that all nodes are dry.
+      node->isDry = true;
+
+   }
+
+   __device__ void ul0ComputeDryElementsAndNodes(void)
+   // Updates isDry based on eta2 for the nodes. Also computes the element's kb and z.
+   {
+      ELEM(elem);
+
+      elem->isDry = elem->isDry2(); // Element is dry if any of its nodes are dry (based on eta2, not on isDry)
+
+      // All the nodes of a wet element are wet.
+      if (!elem->isDry) {
+         elem->nodes[0]->isDry = false;
+         elem->nodes[1]->isDry = false;
+         elem->nodes[2]->isDry = false;
+         if (elem->isQuad()) elem->nodes[3]->isDry = false;
+
+      }
 
 
-            do i=1,nea
-        idry_e2(i)=maxval(idry2(elnode(1:i34(i),i)))
-      enddo !i
+      elem->kb = 0;
 
-            idry2=1 !dry unless wet
-!$OMP end workshare
+      if (elem->idry) return;
 
-!$OMP do
-      do i=1,np
-        do j=1,nne(i)
-          ie=indel(j,i)
-          if(idry_e2(ie)==0) then
-            idry2(i)=0; exit
-          endif
-        enddo !j
-      enddo !i
+      // Wet
+      const Node *n1 = elem->nodes[0];
+      const Node *n2 = elem->nodes[1];
+      const Node *n3 = elem->nodes[2];  
+      const Node *n4 = elem->nodes[3]; // nullptr for triangles
 
-
-       kbe=0
-
-      do i=1,nea
-        if(idry_e2(i)/=0) cycle
-
-!       Wet
-        n1=elnode(1,i); n2=elnode(2,i); n3=elnode(3,i)
-        if(maxval(idry2(elnode(1:i34(i),i)))/=0) then
-          write(errmsg,*)'level0: Element-node inconsistency (0):',ielg(i),idry_e2(i), &
-     &iplg(elnode(1:i34(i),i)),idry2(elnode(1:i34(i),i)),idry(elnode(1:i34(i),i))
-          call parallel_abort(errmsg)
-        endif
-        kbe(i)=minval(kbp(elnode(1:i34(i),i)))
-        do k=kbe(i),nvrt
-          ze(k,i)=znl(max(k,kbp(n1)),n1)+znl(max(k,kbp(n2)),n2)+znl(max(k,kbp(n3)),n3)
-          if(i34(i)==4) then
-            n4=elnode(4,i)
-            ze(k,i)=ze(k,i)+znl(max(k,kbp(n4)),n4)
-          endif
-          ze(k,i)=ze(k,i)/real(i34(i),rkind)
-          if(k>=kbe(i)+1) then; if(ze(k,i)-ze(k-1,i)<=0._rkind) then
-            write(errmsg,*)'Weird element (2):',k,i,ze(k,i),ze(k-1,i)
-            call parallel_abort(errmsg)
-          endif; endif
-        enddo !k
-      enddo !i
-!$OMP end do
-
-!     Compute vel., S,T for re-wetted nodes (q2 and xl are fine)
-      if(it/=iths) then
-!$OMP   do
-        do i=1,np
-          if(idry(i)==1.and.idry2(i)==0) then !rewetted
-            do k=1,nvrt
-              !uu2(k,i)=0
-              !vv2(k,i)=0
-              utmp=0._rkind
-              vtmp=0._rkind
-              ttmp=0._rkind
-              stmp=0._rkind
-              icount=0
-              do j=1,nnp(i)
-                nd=indnd(j,i) !must be inside the aug. domain
-!               Wet nbrs not affected by this part and so each sub-domain should use same values
-                if(idry(nd)==0) then !all indices extended
-                  icount=icount+1
-                  !Assume small element size in wet/dry zone so pframes are close to each other
-                  utmp=utmp+uu2(k,nd)
-                  vtmp=vtmp+vv2(k,nd)
-                  ttmp=ttmp+tr_nd(1,k,nd) !tnd(k,nd)
-                  stmp=stmp+tr_nd(2,k,nd) !snd(k,nd)
-                endif
-              enddo !j
-              if(icount==0) then
-!                if(ifort12(7)==0) then
-!                  ifort12(7)=1
-!                  write(12,*)'Isolated rewetted node:',iplg(i)
-!                endif
-!                tr_nd(1,k,i)=(k,i)
-!                tr_nd(2,k,i)=(k,i)
-              else
-                uu2(k,i)=utmp/real(icount,rkind)
-                vv2(k,i)=vtmp/real(icount,rkind)
-                tr_nd(1,k,i)=ttmp/real(icount,rkind)
-                tr_nd(2,k,i)=stmp/real(icount,rkind)
-              endif
-            enddo !k=1,nvrt
-          endif !rewetted
-        enddo !i=1,npa
-!$OMP   end do
-      endif !it/=iths
-
-!...  z-coor. for sides
-!...  A side is wet if and only if at least one of its elements is wet
-!$OMP workshare
-      idry_s2=1 !reinitialize to wipe out previous temp. storage
-!$OMP end workshare
-
-!$OMP do
-      do i=1,ns
-        do j=1,2 !elements
-          ie=isdel(j,i)
-          if(ie/=0.and.idry_e2(max(1,ie))==0) idry_s2(i)=0
-        enddo !j
-      enddo !i
-!$OMP end do
+   //    if(elem->isDry2()) {
+   //        write(errmsg,*)'level0: Element-node inconsistency (0):',ielg(i),idry_e2(i), &
+   //   &iplg(elnode(1:i34(i),i)),idry2(elnode(1:i34(i),i)),idry(elnode(1:i34(i),i))
+   //        call parallel_abort(errmsg)
+   //    }
 
 
-      do i=1,nsa
-        n1=isidenode(1,i)
-        n2=isidenode(2,i)
-        kbs(i)=0 !dry
-        if(idry_s2(i)==0) then !wet side with 2 wet nodes
-          if(idry2(n1)/=0.or.idry2(n2)/=0) then
-            write(errmsg,*)'Side-node inconsistency (1):',it,islg(i),'node:',iplg(n1),iplg(n2), &
-!
-             &eta2(n1),eta2(n2),idry2(n1),idry2(n2),';element:', &
-             &(isdel(j,i),ielg(isdel(j,i)),idry_e2(isdel(j,i)),j=1,2)
-            call parallel_abort(errmsg)
-          endif
-          if(dps(i)+(eta2(n1)+eta2(n2))/2._rkind<=h0) then
-            write(errmsg,*)'Weird side (2):',islg(i),iplg(n1),iplg(n2),eta2(n1),eta2(n2)
-            call parallel_abort(errmsg)
-          endif
-          kbs(i)=min(kbp(n1),kbp(n2))
-          do k=kbs(i),nvrt
-            zs(k,i)=(znl(max(k,kbp(n1)),n1)+znl(max(k,kbp(n2)),n2))/2._rkind
-            if(k>=kbs(i)+1) then; if(zs(k,i)-zs(k-1,i)<=0._rkind) then
-              write(errmsg,*)'Weird side (3):',k,iplg(n1),iplg(n2),znl(max(k,kbp(n1)),n1), &
-     &znl(max(k,kbp(n2)),n2),znl(max(k-1,kbp(n1)),n1),znl(max(k-1,kbp(n2)),n2)
-              call parallel_abort(errmsg)
-            endif; endif
-          enddo !k
-        endif !wet side
-      enddo !i=1,nsa
+      // Computes element's kb as the minimum of the nodes' kb.
+      const int kb1 = n1->kb;
+      const int kb2 = n2->kb;
+      const int kb3 = n3->kb;
+      const int kb4 = (elem->isQuad()) ? n4->kb : INT_MAX;
+
+      elem->kb = min(kb1, kb2, kb3, kb4);
 
 
-!     Compute vel., S,T for re-wetted sides 
-      if(it/=iths) then
+      // Computes the element z as the mean of the nodes z.
+      for (int k = elem->kb; k < nvrt; k++) {
 
-        do i=1,ns
-          if(idry_s(i)==1.and.idry_s2(i)==0) then
-            n1=isidenode(1,i)
-            n2=isidenode(2,i)
-            do k=1,nvrt
-              utmp=0._rkind
-              vtmp=0._rkind
-              !ttmp=0
-              !stmp=0
-              icount=0
-              do j=1,2
-                ie=isdel(j,i)
-                if(ie/=0) then
-                  if(ie<0) call parallel_abort('levels0: ghost element')
-                  do jj=1,i34(ie) !side; in the aug. domain
-                    isd=elside(jj,ie)
-                    if(idry_s(isd)==0) then
-                      icount=icount+1
+         // Compute the element z as the mean of the nodes z.
+         elem->z[k] = (n1->znl[max(k, kb1)] + n2->znl[max(k, kb2)] + n3->znl[max(k, kb3)]);
+         if (elem->isQuad()) elem->z[k] += n4->znl[max(k, kb4)];          
+         elem->z[k] /= elem->i34;
 
-                      utmp=utmp+su2(k,isd)
-                      vtmp=vtmp+sv2(k,isd)
-                    endif
-                  enddo !jj
-                endif !ie/=0
-              enddo !j
-              if(icount==0) then
-              else
-                su2(k,i)=utmp/real(icount,rkind)
-                sv2(k,i)=vtmp/real(icount,rkind)
-              endif
-            enddo !k
-          endif !rewetted
-        enddo !i=1,ns
 
-      endif !it/=iths
+         assert(((k < elem->kb + 1)  || (elem->z[k] - elem->z[k-1] > 0.0)) && "Weird element z");
+      }
+                  
+   }
+
+   __device__ void ul0UpdateRewettedNodes(void)
+   {
+      NODE(node);
+      // Compute velocity, S, T for re-wetted nodes (q2 and xl are fine)
+
+      if (it == iths) return;
+
+
+      if(!node->isDry && node->tmp.b) { // rewetted
+         for (int k=0; k < nvrt; k++) {
+
+            utmp=0.0;
+
+            ttmp=0.0;
+            stmp=0.0;
+            icount=0;
+            for (j = 0; j < elem->numNodes; j++) {
+
+
+               // Wet nbrs not affected by this part and so each sub-domain should use same values
+               if (!node->idry) { // all indices extended
+                  icount++;
+
+                  // Assume small element size in wet/dry zone so pframes are close to each other
+                  utmp += node->u2[k];
+                  
+                  ttmp += node->tr[0,k]; // tnd(k,nd)
+                  stmp += node->tr[1,k]; // snd(k,nd)
+               }
+            }
+
+            if(icount > 0) {
+               const double inv_icount = 1.0/icount;
+               node->u2[k]     = inv_icount*utmp;
+               node->tr[0,k]   = inv_icount*ttmp;
+               node->tr[1,k]   = inv_icount*stmp;
+            }
+         }
+
+   }
+
+
+   __device__ void ul0UpdateSides(void) {
+
+      SIDE(side);
+
+      // A side is wet if and only if at least one of its elements is wet.
+      const bool isWet = !side->elem[0]->isDry || (!side->isBnd2() && !side->elem[1]->isDry);
+
+      const Node *n1 = side->n1;
+      const Node *n2 = side->n2;
+      const int kb1 = n1->kb;
+      const int kb2 = n2->kb;
+
+      side->kb = 0; // dry
+
+      if (isWet) 
+
+         assert((n1->idry || n2->idry) && "Side-node inconsistency. At least one node of a wet side is dry.");
+
+         assert(side->htot2() <= h0 && "Weird side. Total depth is smaller than h0.");
+
+         side->kb = min(kb1, kb2);
+
+         for (int k = side->kb; k < nvrt; k++) {
+            side->zc[k] = 0.5*(n1->znl[max(k, kb1)] + n2->znl[max(k, kb2)]);
+
+         
+            if ((k >= side->kb + 1) && (side->zc[k] - side->zc[k-1] <= 0.0)) {
+               write(errmsg,*)'Weird side (3):',k,iplg(n1),iplg(n2),znl(max(k,kbp(n1)),n1), &
+                  &znl(max(k,kbp(n2)),n2),znl(max(k-1,kbp(n1)),n1),znl(max(k-1,kbp(n2)),n2)
+               call parallel_abort(errmsg)
+            }
+
+
+            // Compute velocity, S and T for re-wetted sides 
+            if ((it != iths) && (side->isDry && isWet)) {
+            
+               Vector2 utmp={0.0, 0.0};
+               double ttmp=0.0;
+               double stmp=0.0;
+               int icount=0;
+
+               // For all the sides on the two elements that share this side
+               for (int j=0; j < 2; j++) {
+                  const Element *elem = side->elems[j];
+                  if (elem == nullptr) continue;
+
+                  for (int jj=0; jj < elem->i34; jj++) {
+                     const Side *nSide = elem->sides(jj);
+                     if (nSide->isDry) continue;
+
+                     icount++;
+                     utmp += nSide->u2[k];
+                     ttmp += nSide->tr[0,k];
+                     stmp += nSide->tr[1,k];
+                     
+                  }
+               }
+                  
+               assert(icount > 0 && "No wet sides around this side");
+               if (icount > 0) {
+                  side->u2[k] = utmp/icount;
+                  side->tr[0,k] = ttmp/icount;
+                  side->tr[1,k] = stmp/icount;
+               } // if icount > 0
+
+            } // if ((it != iths) && (side->isDry && isWet))
+
+         } // for k
+
+      } // if isWet
+   
+      side->isDry = !isWet;
+
+   }
+
+ 
+   __device__ void updateLevels0(void) {
+      // Routine to update level indices and wetting and drying.
+      
+      const bool cwtime = (it != iths);
+
+     
+
+
+
 
 
 

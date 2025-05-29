@@ -232,6 +232,8 @@ def schism_step(it: int, namelist, bctides, sflux):
     cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-
 
 
+    ETA1=ETA2
+
 
     cufunc.setEssentialBC()
 
