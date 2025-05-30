@@ -15,6 +15,8 @@ constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
 
+#define INT_MAX 2147483647
+
 // Time ramps ---------------------------------------------------------------------------
 
 __device__ double rampbc;
@@ -784,9 +786,12 @@ struct Side {
    __inline__ __device__ double grav3(void) const;
    
    __inline__ __device__ double eta2(void) const;
+   __inline__ __device__ double eta1(void) const;
    __inline__ __device__ double depth(void) const;
    __inline__ __device__ double htot2(void) const { return eta2() + depth(); }
    __inline__ __device__ double htot1(void) const { return zc[nvrt - 1] - zc[kb]; }
+
+   __inline__ __device__ double dfv(int k) const;
 
    __inline__ __device__ double veg_h(void)  const;
    __inline__ __device__ double veg_nv(void) const;
@@ -924,6 +929,7 @@ struct Node {
    Tracers tr_nd0[nvrt]; // Initial tracer conc. at nodes
 
    double rho[nvrt];     // Density
+   double dfv[nvrt];     // Vertical viscosity
 
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
@@ -1052,6 +1058,8 @@ printf("addToSparseMatrix: node == this, value = %f\n", coeffDiag);
 #endif   
 
    __device__ double compZCoord(int k) const;
+
+   __device__ void updateKb(void);
 
 
 

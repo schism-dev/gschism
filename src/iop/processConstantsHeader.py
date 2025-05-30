@@ -65,6 +65,10 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         '__VELMIN_BTRACK__': (namelist.opt.velmin_btrack, 'namelist.opt'),
         '__DZB_MIN__': (namelist.opt.dzb_min, 'namelist.opt'),
         '__H0__': (namelist.opt.h0, 'namelist.opt'),
+        '__ITUR__': (namelist.opt.itur, 'namelist.opt'),
+        '__ISHAPIRO__': (namelist.opt.ishapiro, 'namelist.opt'),
+        '__SHAPIRO0__': (namelist.opt.shapiro0, 'namelist.opt'),
+        '__NITER_SHAP__': (namelist.opt.niter_shap, 'namelist.opt'),
         
         # From grid parameters
         '__IVCOR__': (ivcor, 'grid'),

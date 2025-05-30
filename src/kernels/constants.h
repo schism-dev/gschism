@@ -2,16 +2,19 @@ constexpr int BLOCK_SIZE = 256;
 
 constexpr int N_TRACERS = 2;
 
-constexpr int ivcor = 2;       // Vertical coordinate system
-constexpr int ics = 1;         // 1: global, 2: local
-constexpr int imm = 0;         // Option to pre-compute vnorm on the element
-constexpr int iveg = 0;        // Vegetation option, 0: no vegetation, 1: vegetation
-constexpr int ihhat = 1;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int ivcor = 2;              // Vertical coordinate system
+constexpr int ics = 1;                 // 1: global, 2: local
+constexpr int imm = 0;                 // Option to pre-compute vnorm on the element
+constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
+constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = 0; // Option of including hydraulics
-constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
-constexpr int ibc = 1;         // Option to include baroclinic term (0 means yes)
+constexpr int nhtblocks = 0;                 // Number of hydraulic structures (zero for the moment)
+constexpr int ibc = 1;                 // Option to include baroclinic term (0 means yes)
+constexpr int itur = 0;               // Turbulence closure model
+constexpr int ishapiro = 1;       // Option to include Shapiro filter
+constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
+constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
 
-constexpr int islip = 0;       // Option to include slip boundary conditions
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
 

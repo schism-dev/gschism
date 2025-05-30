@@ -2,14 +2,19 @@ constexpr int BLOCK_SIZE = __BLOCK_SIZE__;
 
 constexpr int N_TRACERS = __N_TRACERS__;
 
-constexpr int ivcor = __IVCOR__;       // Vertical coordinate system
-constexpr int ics = __ICS__;         // 1: global, 2: local
-constexpr int imm = __IMM__;         // Option to pre-compute vnorm on the element
-constexpr int iveg = __IVEG__;        // Vegetation option, 0: no vegetation, 1: vegetation
-constexpr int ihhat = __IHHAT__;       // Option to limit \hat{H} to enhance stability for large friction in shallow area
+constexpr int ivcor = __IVCOR__;              // Vertical coordinate system
+constexpr int ics = __ICS__;                 // 1: global, 2: local
+constexpr int imm = __IMM__;                 // Option to pre-compute vnorm on the element
+constexpr int iveg = __IVEG__;               // Vegetation option, 0: no vegetation, 1: vegetation
+constexpr int ihhat = __IHHAT__;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = __IHYDRAULICS__; // Option of including hydraulics
-constexpr int nhtblocks = 0;   // Number of hydraulic structures (zero for the moment)
-constexpr int ibc = __IBC__;         // Option to include baroclinic term (0 means yes)
+constexpr int nhtblocks = 0;                 // Number of hydraulic structures (zero for the moment)
+constexpr int ibc = __IBC__;                 // Option to include baroclinic term (0 means yes)
+constexpr int itur = __ITUR__;               // Turbulence closure model
+constexpr int ishapiro = __ISHAPIRO__;       // Option to include Shapiro filter
+constexpr double shapiro0 = __SHAPIRO0__;    // Shapiro filter parameter
+constexpr int niter_shap = __NITER_SHAP__;   // Number of iterations for Shapiro filter
+
 
 constexpr int nchi = __NCHI__;  // Option to compute drag coefficients chi and chi2
 

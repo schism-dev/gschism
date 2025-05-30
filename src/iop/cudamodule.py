@@ -29,9 +29,10 @@ This module bridges the gap between CuPy's raw CUDA capabilities and a more deve
 making CUDA kernel development and debugging significantly easier in Python applications.
 """
 
-import os
+import os   
 import re
 import cupy as cp
+import sys
 
 import iop.cudaKernelWrapper as ckw
 
@@ -193,7 +194,11 @@ class CudaSourceManager:
                 
                 # Process compilation errors in temporary files
                 # Pattern matches: /tmp/path/file.cu(line): error message
-                temp_file_pattern = r'(/tmp/[^(]+)\((\d+)\):\s*(.+)'
+                # Choose pattern based on platform
+                if sys.platform.startswith('win'):  # Windows
+                    temp_file_pattern = r'([A-Za-z]:\\.*?\\[^(]+)\((\d+)\):\s*(.+)'
+                elif sys.platform.startswith('linux'):  # Linux
+                    temp_file_pattern = r'(/tmp/[^(]+)\((\d+)\):\s*(.+)'
                 matches = re.finditer(temp_file_pattern, error_msg)
                 
                 has_line_errors = False

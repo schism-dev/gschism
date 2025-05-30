@@ -2,6 +2,7 @@
 #include "meshdata.h"
 
 
+
 #define IDX(ptr) (ptr == nullptr ? -1 : (ptr->idx))
 
 // Each device has a global mesh object
@@ -718,12 +719,14 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
 __inline__ __device__ double  Side::grav3(void)   const { return 0.5*(n1->grav2 + n2->grav2); }
 __inline__ __device__ int     Side::iadv(void)    const { return min(n1->iadv, n2->iadv); }   
 __inline__ __device__ double  Side::eta2(void)    const { return 0.5*(n1->eta2 + n2->eta2); }
+__inline__ __device__ double  Side::eta1(void)    const { return 0.5*(n1->eta1 + n2->eta1); }
 __inline__ __device__ double  Side::depth(void)   const { return 0.5*(n1->depth + n2->depth); } 
+__inline__ __device__ double  Side::dfv(int k)    const { return 0.5*(n1->dfv[k] + n2->dfv[k]); }
 
 __inline__ __device__ double  Side::veg_h(void)   const { return 0.5*(n1->veg_h  + n2->veg_h); }
 __inline__ __device__ double  Side::veg_nv(void)  const { return 0.5*(n1->veg_nv + n2->veg_nv); }
 __inline__ __device__ double  Side::veg_alpha_vert_mean(void) const { return 0.5*(n1->veg_alpha_vert_mean + n2->veg_alpha_vert_mean); }
-__inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D(k) + n2->veg_alpha3D(k)); }
+__inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D[k] + n2->veg_alpha3D[k]); }
 
 
 __inline__ __device__ double  Side::Cd(void)      const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
@@ -929,51 +932,48 @@ __inline__ __device__ bool Side::btrack(
 __host__ __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
 
 
+
 __device__ void Node::updateKb(void) {
-   // Updates the bottom level of the node.
-   // This is done by finding the first level where the node is wet.
-   
-   if (depth <= mesh->h_s) {
-      kb = mesh->kz;
-   }
-   else {
-      // Find bottom index
-          kbpl=0
-          do k=1,kz-1
-            if(-dp(inode)>=ztot(k).and.-dp(inode)<ztot(k+1)) then
-              kbpl=k
-              exit
-            endif
-          enddo !k
-          !todo: assert
-          if(kbpl==0) then
-            write(errmsg,*)'ZCOOR: Cannot find a bottom level:',dp(inode),itag
-            call parallel_abort(errmsg)
-          endif
-          ztmp(kbpl)=-dp(inode)
-          do k=kbpl+1,kz-1
-            ztmp(k)=ztot(k)
-          enddo !k
-        endif !dep<=h_s
+// Updates the node's kb index. Must be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
-      else if(ivcor==1) then !localized simga
-!        if(eta<=-hsm(m_pws)) then
-!          write(errmsg,*)'ZCOOR: elev<hsm:',eta,itag
-!          call parallel_abort(errmsg)
-!        endif
+   if constexpr(ivcor == 1) return;
 
-        kbpl=kbp(inode)
-        do k=kbpl+1,nvrt-1
-          ztmp(k)=(eta2(inode)+dp(inode))*sigma_lcl(k,inode)+eta2(inode)
-        enddo !k
 
-        ztmp(kbpl)=-dp(inode) !to avoid underflow
-        ztmp(nvrt)=eta2(inode) !to avoid underflow
-      else
-        call parallel_abort('ZCOOR: unknown z-coor.')
-      endif !ivcor
+   // Check if node is wet
+   const bool isDry = (htot2() <= h0);  // XXX Check if we are doing this elsewhere
 
+   if (isDry) return;
+
+   if constexpr(ivcor == 2) {  // SZ coordinates
+      
+      // Compute bottom level index
+      if (depth <= mesh->h_s) {
+         kb = mesh->kz - 1;
+      } else {
+         kb = -1;
+         int L = 0;
+         int R = mesh->kz - 2;  // We check up to kz-2 since we access i+1
+         
+         while (L <= R) {
+            int M = (R + L) / 2;
+
+            assert((-depth >= mesh->ztot[L] && -depth < mesh->ztot[R]) && "ZCOOR: invalid depth\n");
+            
+            if (-depth >= mesh->ztot[L] && -depth < mesh->ztot[M]) {
+               R = M;
+            } else {
+               L = M;
+            }
+
+            if (R - L == 1) {
+               kb = L;
+               break;
+            }
+         }
+      }
+   } 
 }
+
 
 __device__ double Node::compZCoord(int k) const {
    // Computes the z coordinate at level k.
@@ -984,12 +984,15 @@ __device__ double Node::compZCoord(int k) const {
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
       
-   if (isDry) return 0.0;
+   assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
    if constexpr(ivcor == 2) {
 
       const double hmod2 = sigmaTransitionDepth(); // Depth transition between z and sigma levels
       const int kz = mesh->kz;
+      const double h_c = mesh->h_c;
+      const double theta_f = mesh->theta_f;
+      const double sinh_theta_f = mesh->sinh_theta_f;
 
       // TODO: Here we are assuming that the bottom level, kbpl, was found in a previous step.
       // The FORTAN code computes it every time this function is called, but it should be done only 
@@ -1003,32 +1006,30 @@ __device__ double Node::compZCoord(int k) const {
       else if (k > kz) {
          const int ksig = k - kz + 1;
 
-         if (hmod2 <= mesh->h_c) {
+         if (hmod2 <= h_c) {
             return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
          } 
-         else if (eta2 <= - mesh->h_c - (depth - mesh->h_c) * mesh->theta_f/mesh->sinh_theta_f) {
-            printf("Please choose larger h_c: %f %f\n", eta2, mesh->h_c);
-            Error("ZCOOR: invalid h_c\n");
+         else if (eta2 <= - h_c - (depth - h_c) * theta_f/sinh_theta_f) {
+            printf("Please choose larger h_c: %f %f\n", eta2, h_c);
+            assert(false && "ZCOOR: invalid h_c\n");
          } 
          else {
             return eta2*(1.0 + mesh->sigma[ksig]) + 
-                         mesh->h_c * mesh->sigma[ksig] + 
-                         (hmod2 - mesh->h_c) * mesh->cs[ksig];
+                         h_c * mesh->sigma[ksig] + 
+                         (hmod2 - h_c) * mesh->cs[ksig];
          }
       } else { 
-         Error("ZCOOR: invalid level or coordinate system\n");
+         assert(false && "ZCOOR: invalid level or coordinate system\n");
       }
 
    }
    else if constexpr(ivcor == 1) {
       if (k == kb) return -depth;
       else if (k == nvrt-1) return eta2;
-      else if (k >= kb) {
-         return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
-      }
+      else if (k >= kb) return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
    }
    
-   printf("ZCOOR: invalid level or coordinate system\n");
+   assert(false && "ZCOOR: invalid level or coordinate system\n");
    return 0.0;
 }
 
@@ -2986,6 +2987,7 @@ extern "C" {
    __global__ void solveMomentumEquations(void) {
 
       double alow[nvrt], cupp[nvrt], bdia[nvrt];
+      Vector2 rrhs[nvrt];
 
       SIDE(side);
 
@@ -2996,8 +2998,8 @@ extern "C" {
          return;
       }
 
-      const Node *n1 = side->nodes[0];
-      const Node *n2 = side->nodes[1];
+      const Node *n1 = side->n1;
+      const Node *n2 = side->n2;
 
       const int kb = side->kb;
 
@@ -3071,18 +3073,18 @@ extern "C" {
             const int kin = k - kb;
 
             // Vertical viscosity at the face center
-            const double dfz = 0.25*(side->dfv[k] + side->dfv[k+1]);
+            const double dfz = 0.25*(side->dfv(k) + side->dfv(k + 1));
             const double dzz = side->Dz(k);
 
             assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
-
 
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
             bdia[kin] = 0.0;
 
+            double cff1 = 1.0; //init \bar{c^{k+1}}              
             // Vegetation term: alpha*|u^n|*dt*H(dv-d)*u^{n+1}
-            if constexpr(iveg != 0) {	CHECK IF CFF1 IS USED EVEN IF IVEG = 0   
+            if constexpr(iveg != 0) {	
 
                // We divide the code into two parts, one that deals with layers k, k+1, and another that deals with k-1, k.
                // There is a special case when k is the bottom layer, where the bottom drag is applied.
@@ -3090,7 +3092,7 @@ extern "C" {
 
                // First part: layers k, k+1
                if (k < nvrt - 1) {
-                  double cff1 = 1.0; //init \bar{c^{k+1}}              
+                             
  
                   // If there is vegetation at this level...
                   if (zTopCanopy > side->zc[k]) {
@@ -3112,9 +3114,9 @@ extern "C" {
                      cff1 += veg_alpha_sd*dt*vmag;
                   } // if iveg
 
-                  const double tmp = dt*dfz/dzz
-                  cupp[kin] += cff1*dzz/6.0 - tmp
-                  bdia[kin] += cff1*dzz/3.0 + tmp
+                  const double tmp = dt*dfz/dzz;
+                  cupp[kin] += cff1*dzz/6.0 - tmp;
+                  bdia[kin] += cff1*dzz/3.0 + tmp;
                
                }
 
@@ -3167,6 +3169,11 @@ extern "C" {
          const Vector2 gradEta1 = side->gradEta1;
          const Vector2 gradEta2 = side->gradEta2;
 
+         const Vector2 *btu = side->btu;
+         const Vector2 *u2  = side->u2;
+         const double coriolis = side->coriolis;
+         const Vector2 *d2uv = side->d2uv;
+
 
          for (int k = kb + 1; k<nvrt; k++) {
             const int kin = k - kb;
@@ -3183,28 +3190,27 @@ extern "C" {
             if (k > kb + 1) dz += 0.5*dz_0;
 
             // Elevation gradient, atmospheric pressure and tidal potential
-            rrhs[kin] = -dz*dt*(grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0)
+            rrhs[kin] = -dz*dt*(grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0);
 
             // Coriolis, advection, wind stress, and horizontal viscosity
             if (k<nvrt) {
-               const Vector2 *ubt = side->ubt;
-               const Vector2 *u2  = side->u2;
-               const double coriolis = side->cori;
-               const Vector2 *d2uv = side->d2uv;
 
-               rrhs[kin] += (dz_1/6.0)*(2.0*ubt[k] + ubt[k + 1] + 
+
+               rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
                                         (dt*coriolis)*rot90(2.0*u2[k] + u2[k + 1]) + 
-                                        dt*(2.0*d2uv[k] + d2uv[k + 1]))
+                                        dt*(2.0*d2uv[k] + d2uv[k + 1]));
 
                //diff stress tensors 1006
                if constexpr(itur==5) {  // 1018:itur==5 XXX What is itur?
                   // Does it make sense to have dz_1 multiplying and dividing? XXX
-                  rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
+                  assert(false && "Not implemented: itur == 5");
+                  // rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
                }
 
             } else { // k=nvrt
+               Vector2 tau2 = {0.0, 0.0};
                if constexpr(ics==1) {
-                  tau2 = (side->tau())
+                  tau2 = side->tau();
                } else {
                   assert(false && "Not implemented: ics == 2");
                   // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
@@ -3213,20 +3219,20 @@ extern "C" {
                   // tauy2=(vn2+ss1)*0.5d0
                } // if ics
 
-               rrhs[kin] += dt*tau2
+               rrhs[kin] += dt*tau2;
 
             } // if k<nvrt
 
-            if (k > kbs + 1) {
-               rrhs[kin] += (dz_1/6.0)*(2.0*ubt[k] + ubt[k - 1] + 
+            if (k > kb + 1) {
+               rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k - 1] + 
                                        (dt*coriolis)*rot90(2.0*u2[k] + u2[k - 1]) + 
-                                       dt*(2.0*d2uv[k] + d2uv[k - 1]))
+                                       dt*(2.0*d2uv[k] + d2uv[k - 1]));
 
 
                // diff stress tensors 1006
                if constexpr(itur==5) { // 1018:itur==5 XXX What is itur?
                   // Does it make sense to have dz_0 multiplying and dividing? XXXX
-                  rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0
+                  rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0;
                }
 
             } // if k>kbs + 1
@@ -3235,7 +3241,6 @@ extern "C" {
             Vector2 *bcc = side->bcc;
             if constexpr(ibc == 0) {
                if (k < nvrt  ) rrhs[kin] += (dz_1*dt/6.0)*(2.0*bcc[k] + bcc[k+1]);
-
                if (k > kb + 1) rrhs[kin] += (dz_0*dt/6.0)*(2.0*bcc[k] + bcc[k-1]);
 
             } // if ibc==0
@@ -3243,10 +3248,10 @@ extern "C" {
 
          } // k=kb + 1,nvrt
 
-         tridag_sch(nvrt,2,ndim,2,alow,bdia,cupp,rrhs,soln,gam)
+         tridag_sch(nvrt,2,ndim,2,alow,bdia,cupp,rrhs,soln,gam);
 
-         for (int k=kbs+1; k<nvrt; k++) {
-            const int kin = k - kbs;
+         for (int k=kb + 1; k<nvrt; k++) {
+            const int kin = k - kb;
 
             // Velocity is always clamped to maximum values
             side->u2[k] = {clamp(soln[kin].x, -rmaxvel1, rmaxvel1), clamp(soln[kin].y, -rmaxvel2, rmaxvel2)};
@@ -3258,7 +3263,7 @@ extern "C" {
          double dep;
          Vector2 vel;
 
-         update_bdef(time, x0, y0, dep, vel)
+         update_bdef(time, x0, y0, dep, vel);
          side->u2[kb] = vel;
 
       } else {
@@ -3283,8 +3288,8 @@ extern "C" {
 
       Side *side = side_bnd->side;
       const BoundarySegment *segment = side_bnd->segment;
-      const Node *n1 = side->nodes[0];
-      const Node *n2 = side->nodes[1];
+      const Node *n1 = side->n1;
+      const Node *n2 = side->n2;
 
       // REMEMEBER, this is a trick, segment can be a pointer or (-1, -2)
       const bool isLand     = ((int)segment == landSegment);
@@ -3304,7 +3309,7 @@ extern "C" {
             if (segment->ifltype == -1) {
                // Flather 1
 
-               const double depth = side->depth;
+               const double depth = side->depth();
 
                assert(n1->eta_mean >= -98 && n2->eta_mean >= -98 && "Flather bnd elevation not assigned");
                assert(depth > 0.0 && "Flather bnd has 0 or negative depth");
@@ -3378,7 +3383,7 @@ extern "C" {
 
       SIDE(side);
 
-      const bool isInternal = ((int)side->segment == internalSegment);
+      const bool isInternal = ((int)side->sideBnd->segment == internalSegment);
 
       if (side->isDry || isInternal ) return;
 
@@ -3424,7 +3429,7 @@ extern "C" {
 
       SIDE(side);
 
-      const bool isInternal = ((int)side->segment == internalSegment);
+      const bool isInternal = ((int)side->sideBnd->segment == internalSegment);
 
       if (side->isDry || isInternal ) return;
 
@@ -3451,14 +3456,14 @@ extern "C" {
 
       if (node->isDry2()) { 
 
-         assert((ivcor != 2) && (node->depth < h_s) && "Deep depth dry");
+         assert((ivcor != 2) && (node->depth < mesh->h_s) && "Deep depth dry");
 
          if constexpr(ivcor != 1) node->kb = 0;
 
       } else {
 
          node->updateKb();
-         for (int k = node->kb; k < nvrt; k++) node->compZCoord(k); 
+         for (int k = node->kb; k < nvrt; k++) node->znl[k] = node->compZCoord(k); 
 
       } // if wet or dry
 
@@ -3489,7 +3494,7 @@ extern "C" {
 
       elem->kb = 0;
 
-      if (elem->idry) return;
+      if (elem->isDry) return;
 
       // Wet
       const Node *n1 = elem->nodes[0];
@@ -3510,7 +3515,7 @@ extern "C" {
       const int kb3 = n3->kb;
       const int kb4 = (elem->isQuad()) ? n4->kb : INT_MAX;
 
-      elem->kb = min(kb1, kb2, kb3, kb4);
+      elem->kb = min(min(kb1, kb2), min(kb3, kb4));
 
 
       // Computes the element z as the mean of the nodes z.
@@ -3538,16 +3543,16 @@ extern "C" {
       if(!node->isDry && node->tmp.b) { // rewetted
          for (int k=0; k < nvrt; k++) {
 
-            utmp=0.0;
+            Vector2 utmp={0.0, 0.0};
 
-            ttmp=0.0;
-            stmp=0.0;
-            icount=0;
-            for (j = 0; j < elem->numNodes; j++) {
+            double ttmp=0.0;
+            double dstmp=0.0;
+            int icount=0;
+            for (int j = 0; j < node->numNodes; j++) {
 
 
                // Wet nbrs not affected by this part and so each sub-domain should use same values
-               if (!node->idry) { // all indices extended
+               if (!node->isDry) { // all indices extended
                   icount++;
 
                   // Assume small element size in wet/dry zone so pframes are close to each other
@@ -3565,7 +3570,7 @@ extern "C" {
                node->tr[1,k]   = inv_icount*stmp;
             }
          }
-
+      }
    }
 
 
@@ -3574,7 +3579,7 @@ extern "C" {
       SIDE(side);
 
       // A side is wet if and only if at least one of its elements is wet.
-      const bool isWet = !side->elem[0]->isDry || (!side->isBnd2() && !side->elem[1]->isDry);
+      const bool isWet = !side->elems[0]->isDry || (!side->isBnd2() && !side->elems[1]->isDry);
 
       const Node *n1 = side->n1;
       const Node *n2 = side->n2;
@@ -3583,9 +3588,9 @@ extern "C" {
 
       side->kb = 0; // dry
 
-      if (isWet) 
+      if (isWet) {
 
-         assert((n1->idry || n2->idry) && "Side-node inconsistency. At least one node of a wet side is dry.");
+         assert((n1->isDry || n2->isDry) && "Side-node inconsistency. At least one node of a wet side is dry.");
 
          assert(side->htot2() <= h0 && "Weird side. Total depth is smaller than h0.");
 
@@ -3616,7 +3621,7 @@ extern "C" {
                   if (elem == nullptr) continue;
 
                   for (int jj=0; jj < elem->i34; jj++) {
-                     const Side *nSide = elem->sides(jj);
+                     const Side *nSide = elem->sides[jj];
                      if (nSide->isDry) continue;
 
                      icount++;
@@ -3645,114 +3650,7 @@ extern "C" {
    }
 
  
-   __device__ void updateLevels0(void) {
-      // Routine to update level indices and wetting and drying.
-      
-      const bool cwtime = (it != iths);
-
-     
-
-
-
-
-
-
-   DOMAIN EXCHANGE
-      // Check wet/dry in ghost zone
-//       prwt_xchng(1)=.false. !node
-//       srwt_xchng(1)=.false. !side
-
-//       if(it/=iths) then
-//         do i=np+1,npa !check ghosts wet/dry
-//           if(idry(i)==1.and.idry2(i)==0) then
-//             prwt_xchng(1)=.true. !ghost rewetted; need exchange
-//             exit
-//           endif
-
-// !          if(idry(i)==1.and.idry2(i)==0) then
-// !            if(.not.prwt_xchng(1).and.i>np) prwt_xchng(1)=.true. !ghost rewetted; need exchange
-// !            if(i>np) cycle !do rest for residents
-//         enddo !i
   
-//         do i=ns+1,nsa !ghost
-//           if(idry_s(i)==1.and.idry_s2(i)==0) then
-//             srwt_xchng(1)=.true.
-//             exit
-//           endif
- 
-// !          if(idry_s(i)==1.and.idry_s2(i)==0) then
-// !            if(.not.srwt_xchng(1).and.i>ns) srwt_xchng(1)=.true. !rewetted ghost side; needs exchange
-// !            if(i>ns) cycle !do the rest only for residents
-//         enddo !i
-      // endif !it/
-
-//       if(nproc>1) then
-// #ifdef INCLUDE_TIMING
-//         if(cwtime) cwtmp=mpi_wtime()
-// #endif
-// !       See if the node/side exchange is needed
-//         call mpi_allreduce(prwt_xchng,prwt_xchng_gb,1,MPI_LOGICAL,MPI_LOR,comm,ierr)
-//         if(ierr/=MPI_SUCCESS) call parallel_abort('levels0: allreduce prwt_xchng_gb',ierr)
-//         call mpi_allreduce(srwt_xchng,srwt_xchng_gb,1,MPI_LOGICAL,MPI_LOR,comm,ierr)
-//         if(ierr/=MPI_SUCCESS) call parallel_abort('levels0: allreduce srwt_xchng_gb',ierr)
-// !
-
-// !       Allocate temporary array
-//         if(prwt_xchng_gb(1).or.srwt_xchng_gb(1)) then
-//           allocate(swild(4,nvrt,nsa),stat=istat)
-//           if(istat/=0) call parallel_abort('Levels0: fail to allocate swild')
-// !
-//         endif
-
-// !       update ghost nodes
-//         if(prwt_xchng_gb(1)) then
-//           swild(1,:,1:npa)=uu2(:,:)
-//           swild(2,:,1:npa)=vv2(:,:)
-//           swild(3,:,1:npa)=tr_nd(1,:,:) !tnd(:,:)
-//           swild(4,:,1:npa)=tr_nd(2,:,:) !snd(:,:)
-// #ifdef INCLUDE_TIMING
-//           if(cwtime) cwtmp=mpi_wtime()
-// #endif
-//           call exchange_p3d_4(swild)
-// #ifdef INCLUDE_TIMING
-//           if(cwtime) wtimer(10,2)=wtimer(10,2)+mpi_wtime()-cwtmp
-// #endif
-          uu2(:,:)=swild(1,:,1:npa)
-          vv2(:,:)=swild(2,:,1:npa)
-          tr_nd(1,:,:)=swild(3,:,1:npa)
-          tr_nd(2,:,:)=swild(4,:,1:npa)
-        endif
-
-!       update ghost sides
-        if(srwt_xchng_gb(1)) then
-          swild(1,:,:)=su2(:,:)
-          swild(2,:,:)=sv2(:,:)
-          swild(3,:,:)=0 !tsd(:,:) - not used
-          swild(4,:,:)=0 !ssd(:,:)
-#ifdef INCLUDE_TIMING
-          if(cwtime) cwtmp=mpi_wtime()
-#endif
-          call exchange_s3d_4(swild)
-#ifdef INCLUDE_TIMING
-          if(cwtime) wtimer(10,2)=wtimer(10,2)+mpi_wtime()-cwtmp
-#endif
-          su2(:,:)=swild(1,:,:)
-          sv2(:,:)=swild(2,:,:)
-          !tsd(:,:)=swild(3,:,:)
-          !ssd(:,:)=swild(4,:,:)
-        endif
-
-        if(prwt_xchng_gb(1).or.srwt_xchng_gb(1)) deallocate(swild)
-      endif !nproc>1
-
-!      close(10)
-
-!     Update flags
-      idry=idry2
-      idry_s=idry_s2
-      idry_e=idry_e2
-   }
-
 
 //    __device__ void updateLevels1(void) {
 //       // Routine to update level indices and wetting and drying.

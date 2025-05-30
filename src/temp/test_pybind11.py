@@ -3,14 +3,26 @@ import glob
 import importlib.util
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
+import sys
 
+# Enable verbose output
+os.environ['DISTUTILS_DEBUG'] = '1'
+os.environ['VERBOSE'] = '1'
 
-
+# Print diagnostic information
+print("Python version:", sys.version)
+print("Include paths:")
+for path in [
+    r'C:\Users\jmgonzalez\AppData\Local\miniconda3\envs\gschism\Lib\site-packages\pybind11\include',
+    r'C:\Users\jmgonzalez\apps\vcpkg\installed\x64-windows\include',
+    'src/include'
+]:
+    print(f"  {path} exists: {os.path.exists(path)}")
 
 import pybind11
 import numpy as np
 import timeit
-import sys
+
 import matplotlib
 matplotlib.use('TkAgg') 
 from matplotlib import pyplot as plt
@@ -87,7 +99,7 @@ def compile_and_import(module_name, cpp_file):
         print("Compiling the C++ code...")
 
         # Get vcpkg root directory
-        vcpkg_root = os.path.expanduser("~/vcpkg")
+        vcpkg_root = os.path.expanduser("~/apps/vcpkg")
 
         # Define the extension
         ext_modules = [
@@ -262,8 +274,8 @@ if __name__ == "__main__":
 
 
     processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev, nope, mnond,
-                     templatePath="src/kernels/constants_template.h", 
-                     outputPath="src/kernels/constants.h")
+                     templatePath="kernels/constants_template.h", 
+                     outputPath="kernels/constants.h")
 
     
     # convert arrays to cupy
