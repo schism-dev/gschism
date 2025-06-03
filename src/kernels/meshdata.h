@@ -720,6 +720,8 @@ struct Side {
  
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
+   Tracers tracers[nvrt];   // Tracer concentrations at nodes
+
    // Physical information
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
    double  w2[nvrt];            // Vertical velocity at each vertical level
@@ -730,14 +732,17 @@ struct Side {
    Vector2 d2uv[nvrt];          // divergence of (nu*grad u) XXX COMPUTE!!
 
    Vector2 bcc[nvrt];           // Baroclinic term
+   Vector2 bcc_TDz[nvrt];       // Baroclinic term at previous timestep
 
    Vector2 gradEta1;             // Gradient of elevation at previous timestep
    Vector2 gradEta2;             // Gradient of elevation at current timestep
-   Vector2 gradPr;              // Gradient of pressure
-   Vector2 gradETP;             // Gradient of Earth Tidal Potential
+   Vector2 gradPr;               // Gradient of pressure
+   Vector2 gradETP;              // Gradient of Earth Tidal Potential
 
 
    double hhat;                 // \breve{H} in notes
+
+   double shapiro;
 
    double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
@@ -798,6 +803,8 @@ struct Side {
    __inline__ __device__ double veg_alpha_vert_mean(void) const;
    __inline__ __device__ double veg_alpha3D(int k) const;
    __inline__ __device__ double veg_c(void)  const { return veg_c2/(1.0 + veg_c2); }
+
+   __inline__ __device__ double etaMeanBnd(void) const;
 
    __inline__ __device__ double Cd(void) const;
 
@@ -878,6 +885,8 @@ struct NodeBoundary {
    int iettype;   // Type of elevation boundary condition
    double eth;    // Elevation time history
 
+   double eta_mean; // Mean elevation at nodes
+
    bool isEssentialBC;
 
 
@@ -910,7 +919,7 @@ struct Node {
 
    Point3 p;
    Vector3 u2[nvrt];
-   double znl[nvrt];
+   double z[nvrt];
    double lon, lat;
    double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
    double depth;
@@ -926,7 +935,8 @@ struct Node {
    TempVar tmp; // Temporary variable to store different types of variables
 
    // Physical information
-   Tracers tr_nd0[nvrt]; // Initial tracer conc. at nodes
+   Tracers tr0[nvrt];       // Initial tracer conc. at nodes
+   Tracers tracers[nvrt];   // Tracer concentrations at nodes
 
    double rho[nvrt];     // Density
    double dfv[nvrt];     // Vertical viscosity
@@ -993,9 +1003,9 @@ struct Node {
 
    __host__ __device__ double sigmaTransitionDepth(void) const;
 
-   __inline__ __device__ double Dz(int k) const { return znl[k] - znl[k-1]; }
+   __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
    __inline__ __device__ double htot2(void) const { return eta2 + depth; }
-   __inline__ __device__ double zTopCanopy(void) const { return znl[kb] + veg_h; } 
+   __inline__ __device__ double zTopCanopy(void) const { return z[kb] + veg_h; } 
 
    __inline__ __device__ bool isDry2(void) const { return htot2() <= h0; } // isDry, but updated to use eta2
 

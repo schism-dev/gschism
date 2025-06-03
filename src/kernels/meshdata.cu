@@ -1,6 +1,8 @@
 #include "constants.h"
 #include "meshdata.h"
 
+#include <cuda_runtime.h>
+
 
 
 #define IDX(ptr) (ptr == nullptr ? -1 : (ptr->idx))
@@ -728,6 +730,9 @@ __inline__ __device__ double  Side::veg_nv(void)  const { return 0.5*(n1->veg_nv
 __inline__ __device__ double  Side::veg_alpha_vert_mean(void) const { return 0.5*(n1->veg_alpha_vert_mean + n2->veg_alpha_vert_mean); }
 __inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D[k] + n2->veg_alpha3D[k]); }
 
+__inline__ __device__ double  Side::etaMeanBnd(void) const { assert(n1->nodeBnd != nullptr && n2->nodeBnd != nullptr && "etaMeanBnd not assigned"); 
+                                                             return 0.5*(n1->nodeBnd->eta_mean + n2->nodeBnd->eta_mean); }
+
 
 __inline__ __device__ double  Side::Cd(void)      const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
 
@@ -1223,7 +1228,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 // XXXXX      
 
       // Compute the z level at the center of the side
-      for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->znl[k] + side.n2->znl[k]);
+      for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);
 
       // Compute the length of the side
       const Vector2 vLen = side.n2->p2() - side.n1->p2();
@@ -1624,7 +1629,17 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
 }
 
 
+
 extern "C" {
+   __global__ void rollUpElevation(void) {
+
+      NODE(node);
+
+      node->eta2 += node->eta1;
+
+   }
+
+
    __global__ void backtrackAllNodes(void) {
 
       // max/min # of sub-divisions
@@ -1765,11 +1780,11 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 
 // Solves a tridiagonal system. It was adapted from "Numerical Recipes in FORTRAN (pp.43 ).
 //
-// a,b,c,r: input vectors and are not modified by this program.
+// a,b,c,rhs: input vectors and are not modified by this program.
 // b is the main diagonal, a below and c above. a(1) and c(n) are not used.
-// r is the r.h.s.
+// rhs is the r.h.s.
 // n: actual rank of the system.
-// rows in u() and r();
+// rows in u() and rhs();
 // u: output with nc columns (transposed to rows)
 // gam: a working array.
 //
@@ -1813,7 +1828,6 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
       }
    }
 }
-
 
 
 
@@ -2419,7 +2433,7 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
 
          } else { //roughness >0 
             
-            const double bthick_ori = node->znl[kb + 1] - node->znl[kb];  // thickness of bottom bnd layer
+            const double bthick_ori = node->z[kb + 1] - node->z[kb];  // thickness of bottom bnd layer
             const double bthick = max(dzb_min, bthick_ori);
 
             assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
@@ -2462,7 +2476,7 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
          int kbin = 0; // bin index
          for (int k = kb; k < nvrt; k++) {
             // Computes node height above the bottom level
-            const double tmp_h = node->znl[k] - node->znl[kb]; // >=0
+            const double tmp_h = node->z[k] - node->z[kb]; // >=0
             assert(false && "Vertical variation of vegetation not implemented");
 
             // if (tmp_h >= veg_vert_z[nbins_veg_vert]) {
@@ -2472,7 +2486,7 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
             // } else {
             //    // Find the bin at which the current vertical level is
             //    while (kbin<nbins_veg_vert) {
-            //       const double zn = node->znl[kbin];
+            //       const double zn = node->z[kbin];
             //       if (tmp_h >= veg_vert_z[kbin] && tmp_h <= veg_vert_z[kbin+1]) {
             //          break;
             //       } // if
@@ -2526,7 +2540,7 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
          double sum1=0.0;
          double sum2=0.0;
          // Integrate over each level under the canopy...
-         for (int k=kb; k<nvrt-1 && node->znl[k+1] <= ztop; k++) { /// XXX CHECK INDICES
+         for (int k=kb; k<nvrt-1 && node->z[k+1] <= ztop; k++) { /// XXX CHECK INDICES
             const double Dz = node->Dz(k);
 
             sum1 += 0.5*(node->veg_alpha3D[k] + node->veg_alpha3D[k+1])*Dz;
@@ -2984,10 +2998,10 @@ extern "C" {
    }
 
 
-   __global__ void solveMomentumEquations(void) {
+   __global__ void solveMomentumEquations(double time) {
 
       double alow[nvrt], cupp[nvrt], bdia[nvrt];
-      Vector2 rrhs[nvrt];
+      Vector2 rrhs[nvrt], u[nvrt], soln[nvrt], gam[nvrt];
 
       SIDE(side);
 
@@ -3076,6 +3090,8 @@ extern "C" {
             const double dfz = 0.25*(side->dfv(k) + side->dfv(k + 1));
             const double dzz = side->Dz(k);
 
+            printf("k: %d, side->zc[0]: %e, side->n1->z[0]: %e, side->n2->z[0]: %e, dzz: %e, dfz: %e\n",k, side->zc[0], side->n1->z[0], side->n2->z[0], dzz, dfz);
+            printf("k: %d, side->zc[1]: %e, side->n1->z[1]: %e, side->n2->z[1]: %e, dzz: %e, dfz: %e\n",k, side->zc[1], side->n1->z[1], side->n2->z[1], dzz, dfz);
             assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
 
             alow[kin] = 0.0;
@@ -3193,7 +3209,7 @@ extern "C" {
             rrhs[kin] = -dz*dt*(grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0);
 
             // Coriolis, advection, wind stress, and horizontal viscosity
-            if (k<nvrt) {
+            if (k < nvrt - 1) {
 
 
                rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
@@ -3231,8 +3247,9 @@ extern "C" {
 
                // diff stress tensors 1006
                if constexpr(itur==5) { // 1018:itur==5 XXX What is itur?
+                  assert(false && "Not implemented: itur == 5");
                   // Does it make sense to have dz_0 multiplying and dividing? XXXX
-                  rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0;
+                  // rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0;
                }
 
             } // if k>kbs + 1
@@ -3247,14 +3264,14 @@ extern "C" {
 
 
          } // k=kb + 1,nvrt
-
-         tridag_sch(nvrt,2,ndim,2,alow,bdia,cupp,rrhs,soln,gam);
+// tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
+         tridag_sch<2>(nvrt, alow, bdia, cupp, (double *)rrhs, (double *)u, (double *)gam);
 
          for (int k=kb + 1; k<nvrt; k++) {
             const int kin = k - kb;
 
             // Velocity is always clamped to maximum values
-            side->u2[k] = {clamp(soln[kin].x, -rmaxvel1, rmaxvel1), clamp(soln[kin].y, -rmaxvel2, rmaxvel2)};
+            side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvel1, rmaxvel1), clamp(soln[kin].y, -rmaxvel2, rmaxvel2));
          } // k
       }
 
@@ -3263,12 +3280,13 @@ extern "C" {
          double dep;
          Vector2 vel;
 
-         update_bdef(time, x0, y0, dep, vel);
-         side->u2[kb] = vel;
+         assert(false && "Not implemented: imm == 2");
+         //update_bdef(time, x0, y0, dep, vel);
+         // side->u2[kb] = vel;
 
       } else {
-         if (Cd(j)==0.0) {
-            side->u2[kb] = side->u2[kb+1];
+         if (side->Cd() == 0.0) {
+            side->u2[kb] = side->u2[kb + 1];
          } else if (nvrt > kb + 1) { // 3D no slip bottom
             side->u2[kb] = {0.0, 0.0};
          }
@@ -3292,8 +3310,8 @@ extern "C" {
       const Node *n2 = side->n2;
 
       // REMEMEBER, this is a trick, segment can be a pointer or (-1, -2)
-      const bool isLand     = ((int)segment == landSegment);
-      const bool isInternal = ((int)segment == internalSegment);
+      const bool isLand     = (segment == (BoundarySegment *)landSegment);
+      const bool isInternal = (segment == (BoundarySegment *)internalSegment);
 
       assert(!isInternal && "applyMomentumBC: Shouldn't be an internal side");
       const int kb = side->kb;
@@ -3311,10 +3329,10 @@ extern "C" {
 
                const double depth = side->depth();
 
-               assert(n1->eta_mean >= -98 && n2->eta_mean >= -98 && "Flather bnd elevation not assigned");
+               assert(n1->nodeBnd->eta_mean >= -98 && n2->nodeBnd->eta_mean >= -98 && "Flather bnd elevation not assigned");
                assert(depth > 0.0 && "Flather bnd has 0 or negative depth");
 
-               const double vnorm = sqrt(grav/depth)*(side->eta2() - side->eta_mean()) + dot(uth, side->n);
+               const double vnorm = sqrt(grav/depth)*(side->eta2() - side->etaMeanBnd()) + dot(uth, side->n);
 
                side->u2[k] = vnorm*side->n;
 
@@ -3326,7 +3344,9 @@ extern "C" {
                const double htot = side->htot2();
 
                // Discharge is a polynomial. See disch_coef in readTides. We must implement this.
-               const double dischrg = discharge(eta1);
+               assert(false && "Not implemented: Discharge bc");
+               // const double dischrg = discharge(eta1);
+               const double dischrg = 0.0; // XXX REMOVE
                
 
                assert(htot > 0.0 && "Discharge bc has 0 or negative htot");
@@ -3341,13 +3361,13 @@ extern "C" {
                const double vnorm = dot(side->u2[k], side->n);
 
                double rat;
-               if (vnorm <= 0.0) rat = vobc1(isbs(j)); // incoming
-               else              rat = vobc2(isbs(j)); // outgoing
+               if (vnorm <= 0.0) rat = segment->vobc1; // incoming
+               else              rat = segment->vobc2; // outgoing
 
-               side->u2[k] = (1.0 - rat)*side->u2[k] + rat*uths;
+               side->u2[k] = (1.0 - rat)*side->u2[k] + rat*uth;
             }
             else { // not Flather or 3D radiation
-               side->u2[k] = uths;
+               side->u2[k] = uth;
 
             } // if (segment->ifltype...
 
@@ -3383,7 +3403,7 @@ extern "C" {
 
       SIDE(side);
 
-      const bool isInternal = ((int)side->sideBnd->segment == internalSegment);
+      const bool isInternal = (side->sideBnd->segment == (BoundarySegment *)internalSegment);
 
       if (side->isDry || isInternal ) return;
 
@@ -3429,7 +3449,7 @@ extern "C" {
 
       SIDE(side);
 
-      const bool isInternal = ((int)side->sideBnd->segment == internalSegment);
+      const bool isInternal = (side->sideBnd->segment == (BoundarySegment *)internalSegment);
 
       if (side->isDry || isInternal ) return;
 
@@ -3449,7 +3469,7 @@ extern "C" {
    }
 
 
-   __device__ void ul0UpdateZCoords(void) {
+   __global__ void ul0UpdateZCoords(void) {
    // For wet nodes updates the nodes z-coordinates and bottom index, kb.
       
       NODE(node);      
@@ -3463,7 +3483,7 @@ extern "C" {
       } else {
 
          node->updateKb();
-         for (int k = node->kb; k < nvrt; k++) node->znl[k] = node->compZCoord(k); 
+         for (int k = node->kb; k < nvrt; k++) node->z[k] = node->compZCoord(k); 
 
       } // if wet or dry
 
@@ -3475,7 +3495,7 @@ extern "C" {
 
    }
 
-   __device__ void ul0ComputeDryElementsAndNodes(void)
+   __global__ void ul0ComputeDryElementsAndNodes(void)
    // Updates isDry based on eta2 for the nodes. Also computes the element's kb and z.
    {
       ELEM(elem);
@@ -3522,8 +3542,8 @@ extern "C" {
       for (int k = elem->kb; k < nvrt; k++) {
 
          // Compute the element z as the mean of the nodes z.
-         elem->z[k] = (n1->znl[max(k, kb1)] + n2->znl[max(k, kb2)] + n3->znl[max(k, kb3)]);
-         if (elem->isQuad()) elem->z[k] += n4->znl[max(k, kb4)];          
+         elem->z[k] = (n1->z[max(k, kb1)] + n2->z[max(k, kb2)] + n3->z[max(k, kb3)]);
+         if (elem->isQuad()) elem->z[k] += n4->z[max(k, kb4)];          
          elem->z[k] /= elem->i34;
 
 
@@ -3532,7 +3552,7 @@ extern "C" {
                   
    }
 
-   __device__ void ul0UpdateRewettedNodes(void)
+   __global__ void ul0UpdateRewettedNodes(int it, int iths)
    {
       NODE(node);
       // Compute velocity, S, T for re-wetted nodes (q2 and xl are fine)
@@ -3543,10 +3563,10 @@ extern "C" {
       if(!node->isDry && node->tmp.b) { // rewetted
          for (int k=0; k < nvrt; k++) {
 
-            Vector2 utmp={0.0, 0.0};
+            Vector3 utmp={0.0, 0.0, 0.0};
 
             double ttmp=0.0;
-            double dstmp=0.0;
+            double stmp=0.0;
             int icount=0;
             for (int j = 0; j < node->numNodes; j++) {
 
@@ -3558,23 +3578,23 @@ extern "C" {
                   // Assume small element size in wet/dry zone so pframes are close to each other
                   utmp += node->u2[k];
                   
-                  ttmp += node->tr[0,k]; // tnd(k,nd)
-                  stmp += node->tr[1,k]; // snd(k,nd)
+                  ttmp += node->tracers[k].tracer[0]; 
+                  stmp += node->tracers[k].tracer[1]; 
                }
             }
 
             if(icount > 0) {
                const double inv_icount = 1.0/icount;
                node->u2[k]     = inv_icount*utmp;
-               node->tr[0,k]   = inv_icount*ttmp;
-               node->tr[1,k]   = inv_icount*stmp;
+               node->tracers[k].tracer[0]   = inv_icount*ttmp;
+               node->tracers[k].tracer[1]   = inv_icount*stmp;
             }
          }
       }
    }
 
 
-   __device__ void ul0UpdateSides(void) {
+   __global__ void ul0UpdateSides(int it, int iths) {
 
       SIDE(side);
 
@@ -3597,22 +3617,16 @@ extern "C" {
          side->kb = min(kb1, kb2);
 
          for (int k = side->kb; k < nvrt; k++) {
-            side->zc[k] = 0.5*(n1->znl[max(k, kb1)] + n2->znl[max(k, kb2)]);
+            side->zc[k] = 0.5*(n1->z[max(k, kb1)] + n2->z[max(k, kb2)]);
 
          
-            if ((k >= side->kb + 1) && (side->zc[k] - side->zc[k-1] <= 0.0)) {
-               write(errmsg,*)'Weird side (3):',k,iplg(n1),iplg(n2),znl(max(k,kbp(n1)),n1), &
-                  &znl(max(k,kbp(n2)),n2),znl(max(k-1,kbp(n1)),n1),znl(max(k-1,kbp(n2)),n2)
-               call parallel_abort(errmsg)
-            }
+            assert((k < side->kb + 1) || (side->zc[k] - side->zc[k-1] <= 0.0) && "Weird side (3)");
 
-
-            // Compute velocity, S and T for re-wetted sides 
+            // Compute velocity for re-wetted sides 
             if ((it != iths) && (side->isDry && isWet)) {
             
                Vector2 utmp={0.0, 0.0};
-               double ttmp=0.0;
-               double stmp=0.0;
+
                int icount=0;
 
                // For all the sides on the two elements that share this side
@@ -3625,20 +3639,13 @@ extern "C" {
                      if (nSide->isDry) continue;
 
                      icount++;
-                     utmp += nSide->u2[k];
-                     ttmp += nSide->tr[0,k];
-                     stmp += nSide->tr[1,k];
-                     
+                     utmp += nSide->u2[k];                     
                   }
                }
                   
                assert(icount > 0 && "No wet sides around this side");
-               if (icount > 0) {
-                  side->u2[k] = utmp/icount;
-                  side->tr[0,k] = ttmp/icount;
-                  side->tr[1,k] = stmp/icount;
-               } // if icount > 0
-
+               if (icount > 0)  side->u2[k] = utmp/icount;
+                  
             } // if ((it != iths) && (side->isDry && isWet))
 
          } // for k
@@ -3649,8 +3656,7 @@ extern "C" {
 
    }
 
- 
-  
+
 
 //    __device__ void updateLevels1(void) {
 //       // Routine to update level indices and wetting and drying.
@@ -4123,7 +4129,7 @@ extern "C" {
 //         if (idry2(i)==1) then
 //           if(ivcor/=1) kbp(i)=0
 //         else !wet
-//           call zcoor(1,i,kbp(i),znl(:,i))
+//           call zcoor(1,i,kbp(i),z(:,i))
 //         endif !wet ot dry
 //       enddo !i=1,npa
 
@@ -4143,7 +4149,7 @@ extern "C" {
 //         endif
 //         kbe(i)=min(kbp(n1),kbp(n2),kbp(n3))
 //         do k=kbe(i),nvrt
-//           ze(k,i)=(znl(max(k,kbp(n1)),n1)+znl(max(k,kbp(n2)),n2)+znl(max(k,kbp(n3)),n3))/3._rkind
+//           ze(k,i)=(z(max(k,kbp(n1)),n1)+z(max(k,kbp(n2)),n2)+z(max(k,kbp(n3)),n3))/3._rkind
 //           if(k>=kbe(i)+1) then; if(ze(k,i)-ze(k-1,i)<=0._rkind) then
 //             write(errmsg,*)'Weird element (1):',k,i,ze(k,i),ze(k-1,i)
 //             call parallel_abort(errmsg)
@@ -4171,10 +4177,10 @@ extern "C" {
 //           endif
 //           kbs(i)=min(kbp(n1),kbp(n2))
 //           do k=kbs(i),nvrt
-//             zs(k,i)=(znl(max(k,kbp(n1)),n1)+znl(max(k,kbp(n2)),n2))/2
+//             zs(k,i)=(z(max(k,kbp(n1)),n1)+z(max(k,kbp(n2)),n2))/2
 //             if(k>=kbs(i)+1) then; if(zs(k,i)-zs(k-1,i)<=0._rkind) then
-//               write(errmsg,*)'Weird side (1):',k,iplg(n1),iplg(n2),znl(max(k,kbp(n1)),n1), &
-//      &znl(max(k,kbp(n2)),n2),znl(max(k-1,kbp(n1)),n1),znl(max(k-1,kbp(n2)),n2)
+//               write(errmsg,*)'Weird side (1):',k,iplg(n1),iplg(n2),z(max(k,kbp(n1)),n1), &
+//      &z(max(k,kbp(n2)),n2),z(max(k-1,kbp(n1)),n1),z(max(k-1,kbp(n2)),n2)
 //               call parallel_abort(errmsg)
 //             endif; endif
 //           enddo !k

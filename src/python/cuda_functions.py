@@ -30,7 +30,13 @@ computeElemAverageGhat = None
 setEssentialBC = None
 updateElevation = None
 setupCoefficientMatrixAndRHS = None
+rollUpElevation = None
 computeHorGradientAtSide = None
+solveMomentumEquations = None
+ul0UpdateZCoords = None
+ul0ComputeDryElementsAndNodes = None
+ul0UpdateRewettedNodes = None
+ul0UpdateSides = None
 computeMatrixProductAndDotProducts = None
 updateSolutionAndDotProducts = None
 updateSearchDirection = None
@@ -81,10 +87,11 @@ def initializeCudaFunctions(sizes):
     global getBoundaryConditions, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
-    global setupCoefficientMatrixAndRHS, computeHorGradientAtSide, backtrackAllNodes, test
+    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, backtrackAllNodes, test
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix
- 
+    global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
+
     # Get kernel functions with better error handling
     try:
         scaleGravity                        = mod.get_function('scaleGravity',                        sizes, kernel_type='nodes')
@@ -103,11 +110,17 @@ def initializeCudaFunctions(sizes):
         setEssentialBC                      = mod.get_function('setEssentialBC',                      sizes, kernel_type='nodes')
         updateElevation                     = mod.get_function('updateElevation',                     sizes, kernel_type='nodes')
         setupCoefficientMatrixAndRHS        = mod.get_function('setupCoefficientMatrixAndRHS',        sizes, kernel_type='nodes')
+        rollUpElevation                     = mod.get_function('rollUpElevation',                     sizes, kernel_type='nodes')
         computeMatrixProductAndDotProducts  = mod.get_function('computeMatrixProductAndDotProducts',  sizes, kernel_type='nodes')
         updateSolutionAndDotProducts        = mod.get_function('updateSolutionAndDotProducts',        sizes, kernel_type='nodes')
         updateSearchDirection               = mod.get_function('updateSearchDirection',               sizes, kernel_type='nodes')
         initializePreconditionedResidual    = mod.get_function('initializePreconditionedResidual',    sizes, kernel_type='nodes')
         computeHorGradientAtSide            = mod.get_function('computeHorGradientAtSide',            sizes, kernel_type='sides')
+        solveMomentumEquations              = mod.get_function('solveMomentumEquations',              sizes, kernel_type='nodes')
+        ul0UpdateZCoords                    = mod.get_function('ul0UpdateZCoords',                    sizes, kernel_type='nodes')
+        ul0ComputeDryElementsAndNodes       = mod.get_function('ul0ComputeDryElementsAndNodes',       sizes, kernel_type='elements')
+        ul0UpdateRewettedNodes              = mod.get_function('ul0UpdateRewettedNodes',              sizes, kernel_type='nodes')
+        ul0UpdateSides                      = mod.get_function('ul0UpdateSides',                      sizes, kernel_type='sides')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
         printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='nodes')
 

@@ -232,7 +232,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-
 
 
-    ETA1=ETA2
+    cufunc.rollUpElevation()
 
 
     cufunc.setEssentialBC()
@@ -250,7 +250,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     cufunc.computeHorGradientAtSide()  # lines -7296
 
 
-    cufunc.solveMomentumEquations()
+    cufunc.solveMomentumEquations(time)
 
     # Transport    lines 7388-8111
 

@@ -1118,7 +1118,6 @@ readVGrid(const std::string& filename, int nNodes) {
         Array2D<double> sigma_lcl(nvrt, nNodes);
         std::vector<double> ztot(nNodes);
     
-            
         for (int i = 0; i < nNodes; i++) {
             int node_number;
             file >> node_number;
@@ -1157,8 +1156,10 @@ readVGrid(const std::string& filename, int nNodes) {
         int kz;
 
         file >> nvrt >> kz >> h_s >> dummy;  
+printFormatted(ansi::red("nvrt = %d, kz = %d, h_s = %f"), nvrt, kz, h_s);              
 
         std::getline(file,  dummy);  
+        
         std::getline(file,  dummy);  // Skip "Z levels" comment
 
         int nsiglev = nvrt - kz + 1;
@@ -1177,23 +1178,27 @@ readVGrid(const std::string& filename, int nNodes) {
         std::vector<double> sigma(nvrt);
         std::vector<double> cs(nvrt);
         std::vector<double> dcs(nvrt);
-        std::vector<double> ztot(nNodes);
-        
+        std::vector<double> ztot(nvrt);
+printFormatted(ansi::red("kz = %d"), kz);        
         // Read the z levels
-        for (int k = 0; k < kz - 1; k++) {
+        for (int k = 0; k < kz; k++) {
             int level_number;
-            file >> level_number >> ztot[k];
+            double ztmp;
+            file >> level_number >> ztmp;
+            ztot[k] = -ztmp;
+printFormatted(ansi::red("level_number = %d, ztot[%d] = %f"), level_number, k, ztot[k]);
 
             
             if (level_number != k + 1) {  // Convert to 0-based indexing
                 throw std::runtime_error("Invalid level number in vgrid file");
             }
 
-            if(ztot[k]>=-h_s) {
+printFormatted(ansi::red("level_number = %d, ztot[%d] = %f, hs = %f, ztot[%d]>-hs = %d"), level_number, k, ztot[k], h_s, ztot[k] > -h_s);
+            if (ztmp > -h_s) {
                 throw std::runtime_error("Illegal Z level: " + std::to_string(k) + " ztot = " + std::to_string(ztot[k]) + " h_s = " + std::to_string(h_s));
             }
 
-            if (k>1 && ztot[k]<=ztot[k-1]) {
+            if (k>1 && ztot[k] <= ztot[k-1]) {
                 throw std::runtime_error("z-level inverted: " + std::to_string(k));
             }
         }

@@ -1,5 +1,7 @@
 import sys
 import os
+import python.cuda_functions as cufunc
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.dirname(current_dir)  # go up two levels to reach src/
 sys.path.append(src_dir)
@@ -19,6 +21,7 @@ def schism_init(in_dir):
     nml = readParam(in_dir)
 
     core = nml.core
+    opt  = nml.opt
 
     # Count the number of tracer models and tracers
     # Each trace module has a pre-defined ID as follows:
@@ -60,6 +63,27 @@ def schism_init(in_dir):
     # True b-tropic model cannot have tracer models (to ensure T,S always come first in arrays)
     if(core.ibc == 1 and core.ibtp == 0 and ntracers > 2):
         error('INIT: true barotropic model cannot have tracer models')
+
+
+    if(opt.inunfl==0):
+
+    
+        cufunc.ul0UpdateZCoords()
+        
+        # cufunc.ul0ComputeDryElementsAndNodes()
+        
+        # cufunc.ul0UpdateRewettedNodes(0, 0)
+        
+        # cufunc.ul0UpdateSides(0, 0)
+        pass
+
+        
+
+    else:
+        print("inunfl = 1 not implemented")
+        sys.exit()
+        # levels1(0, 0)
+
 
     return nml
 

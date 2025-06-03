@@ -11,6 +11,7 @@ constexpr int ihydraulics = __IHYDRAULICS__; // Option of including hydraulics
 constexpr int nhtblocks = 0;                 // Number of hydraulic structures (zero for the moment)
 constexpr int ibc = __IBC__;                 // Option to include baroclinic term (0 means yes)
 constexpr int itur = __ITUR__;               // Turbulence closure model
+constexpr int islip = __ISLIP__;             // Option to include slip horizontal boundary conditions
 constexpr int ishapiro = __ISHAPIRO__;       // Option to include Shapiro filter
 constexpr double shapiro0 = __SHAPIRO0__;    // Shapiro filter parameter
 constexpr int niter_shap = __NITER_SHAP__;   // Number of iterations for Shapiro filter

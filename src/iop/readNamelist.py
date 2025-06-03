@@ -114,6 +114,7 @@ def readParam(pathNamelist):
         'iwind_form': 1,
         'iwindoff': 0,
         'drampwind': 1.0,
+        'islip': 0,
         
         # Conservation parameters
         'ihconsv': 0,

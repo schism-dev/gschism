@@ -13,7 +13,8 @@
             "justMyCode": true,
             "python": "C:/Users/jmgonzalez/AppData/Local/miniconda3/envs/gschism/python.exe",
             "env": {
-                "PYTHONPATH": "${workspaceFolder}"
+                "PYTHONPATH": "${workspaceFolder}",
+                "PATH": "${env:PATH};C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin"
             }
         }
     ]
