@@ -40,6 +40,9 @@ ul0UpdateSides = None
 computeMatrixProductAndDotProducts = None
 updateSolutionAndDotProducts = None
 updateSearchDirection = None
+updateBedDeformation = None
+shapiroFilter1 = None
+shapiroFilter2 = None
 test = None
 
 def initializeCudaKernelManager(_project_root):
@@ -88,6 +91,7 @@ def initializeCudaFunctions(sizes):
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, backtrackAllNodes, test
+    global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix
     global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
@@ -117,6 +121,9 @@ def initializeCudaFunctions(sizes):
         initializePreconditionedResidual    = mod.get_function('initializePreconditionedResidual',    sizes, kernel_type='nodes')
         computeHorGradientAtSide            = mod.get_function('computeHorGradientAtSide',            sizes, kernel_type='sides')
         solveMomentumEquations              = mod.get_function('solveMomentumEquations',              sizes, kernel_type='nodes')
+        # updateBedDeformation                = mod.get_function('updateBedDeformation',                sizes, kernel_type='nodes')
+        shapiroFilter1                      = mod.get_function('shapiroFilter1',                      sizes, kernel_type='nodes')
+        shapiroFilter2                      = mod.get_function('shapiroFilter2',                      sizes, kernel_type='nodes')
         ul0UpdateZCoords                    = mod.get_function('ul0UpdateZCoords',                    sizes, kernel_type='nodes')
         ul0ComputeDryElementsAndNodes       = mod.get_function('ul0ComputeDryElementsAndNodes',       sizes, kernel_type='elements')
         ul0UpdateRewettedNodes              = mod.get_function('ul0UpdateRewettedNodes',              sizes, kernel_type='nodes')

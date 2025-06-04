@@ -820,8 +820,8 @@ struct Side {
    } 
    __inline__ __device__ bool hasVegetation(int k) const { return zTopCanopy() > zc[k]; }
    __inline__ __device__ bool isSubmerged(void)    const { return veg_h() < 0.99*htot2(); }
-   __inline__ __device__ bool is2D(void) const { return kb == nvrt - 1; }
-   __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 1; }
+   __inline__ __device__ bool is2D(void) const { return kb == nvrt - 2; }
+   __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 2; }
 
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {
@@ -1181,7 +1181,7 @@ class Mesh {
                    double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
                    double *cs, double *dcs
                    ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
-                       np(np), ne(ne), ns(ns),
+                       np(np), ne(ne), ns(ns), kz(kz),
                        max_np(max_np), max_ne(max_ne), max_ns(max_ns),
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),

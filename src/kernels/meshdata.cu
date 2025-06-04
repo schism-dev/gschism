@@ -1004,8 +1004,9 @@ __device__ double Node::compZCoord(int k) const {
       // once per time step/node.
       // CHECK: updateZCoordData
 
-      if (k == kz)               return -hmod2;
-      else if (k == nvrt-1)      return eta2;
+printf("$$$$$ (k == nvrt-1) =k = %d, kz = %d, nvrt = %d, kb = %d, hc = %f, hmod2 = %f, eta2 = %f, depth = %f\n", k, kz, nvrt, kb, h_c, hmod2, eta2, depth);
+      if      (k == nvrt-1)      {printf("$$$$$ (k == nvrt-1) = %f\n", eta2); return eta2; }
+      else if (k == kz)          return -hmod2;
       else if (k == kb)          return -depth;
       else if (k < kz && k >= 0) return mesh->ztot[k];
       else if (k > kz) {
@@ -3020,6 +3021,7 @@ extern "C" {
       const double veg_h = side->veg_h();
       const double grav3 = side->grav3();
 
+printf("###>>>#side->is2D() = %d\n", side->is2D());
       if (side->is2D()) {
          // Warning: Do not use htot2, which is updated.
          const double htot = side->htot1();
@@ -3054,6 +3056,8 @@ extern "C" {
 
          for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
 
+printf("###>>>#side->u2[%d] = %e, %e\n", nvrt-1, side->u2[nvrt-1].x, side->u2[nvrt-1].y);
+
       }
       else { // 3D
 
@@ -3082,7 +3086,7 @@ extern "C" {
          const double zTopCanopy = side->zTopCanopy();
 
          // Initialize the tridiagonal system
-         for (int k=kb+1; k<nvrt; k++) {
+         for (int k = kb + 1; k<nvrt; k++) {
             
             const int kin = k - kb;
 
@@ -3100,16 +3104,16 @@ extern "C" {
 
             double cff1 = 1.0; //init \bar{c^{k+1}}              
             // Vegetation term: alpha*|u^n|*dt*H(dv-d)*u^{n+1}
-            if constexpr(iveg != 0) {	
 
-               // We divide the code into two parts, one that deals with layers k, k+1, and another that deals with k-1, k.
-               // There is a special case when k is the bottom layer, where the bottom drag is applied.
-               // Notice that the top boundary is not included implicitly, because it depends on tau, but not on u.
+            // We divide the code into two parts, one (L) that deals with layers k, k+1, and another (R) that deals with k-1, k.
+            // There is a special case when k is the bottom layer, where the bottom drag is applied.
+            // Notice that the top boundary is not included implicitly, because it depends on tau, but not on u.
 
-               // First part: layers k, k+1
-               if (k < nvrt - 1) {
+            // First part: layers k, k+1
+            if (k < nvrt - 1) {
                              
- 
+               if constexpr(iveg != 0) {
+
                   // If there is vegetation at this level...
                   if (zTopCanopy > side->zc[k]) {
                      // If the canopy is above the k layer...
@@ -3128,20 +3132,23 @@ extern "C" {
                      const double veg_alpha_sd = 0.5*(side->veg_alpha3D(k) + side->veg_alpha3D(k+1));
 
                      cff1 += veg_alpha_sd*dt*vmag;
-                  } // if iveg
 
-                  const double tmp = dt*dfz/dzz;
-                  cupp[kin] += cff1*dzz/6.0 - tmp;
-                  bdia[kin] += cff1*dzz/3.0 + tmp;
-               
-               }
+                  } // if (zTopCanopy
+               } // if iveg
+
+               const double tmp = dt*dfz/dzz;
+               cupp[kin] += cff1*dzz/6.0 - tmp;
+               bdia[kin] += cff1*dzz/3.0 + tmp;
+printf("####cff1 = %f, dzz = %f, tmp = %f, cupp[%d] = %f, bdia[%d] = %f\n", cff1, dzz, tmp, cupp[kin], kin, bdia[kin]);               
+            }
 
 
-               // Second part: layers k-1, k
-               if (k > kb + 1) {
+            // Second part: layers k-1, k
+            if (k > kb + 1) {
 
-                  double cff1 = 1.0; //init \bar{c^k}
+               double cff1 = 1.0; //init \bar{c^k}
 
+               if constexpr(iveg != 0) {
                   // If there is vegetation at this level...
                   if (zTopCanopy > side->zc[k-1]) {
                      const double zz1 = min(zTopCanopy, side->zc[k]);
@@ -3158,21 +3165,23 @@ extern "C" {
                      cff1 += veg_alpha_sd*dt*vmag;
                   } // if zTopCanopy
 
-                  const double tmp = dt*dfz/dzz;
-                  alow[kin] += cff1*dzz/6.0 - tmp;
-                  bdia[kin] += cff1*dzz/3.0 + tmp;
+               } // if iveg
 
-               } else { // Bottom boundary
-                  // This occurs at the bottom, where the bottom drag is applied.
+               const double tmp = dt*dfz/dzz;
+               alow[kin] += cff1*dzz/6.0 - tmp;
+               bdia[kin] += cff1*dzz/3.0 + tmp;
+printf("####cff1 = %f, dzz = %f, tmp = %f, alow[%d] = %f, bdia[%d] = %f\n", cff1, dzz, tmp, alow[kin], kin, bdia[kin]);               
+            } else { // Bottom boundary
+               // This occurs at the bottom, where the bottom drag is applied.
 
-                  bdia[kin] += dt*side->chi2;
+               bdia[kin] += dt*side->chi2;
+printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia[%d] = %f\n", k, kb + 1, nvrt - 1, side->chi2, kin, alow[kin], kin, bdia[kin]);               
+            } // if (k > kb + 1)
 
-               } // if (k > kb + 1)
 
 
+         } // for (int k
 
-            }
-         }
 
 
          // Computes the RHS.
@@ -3213,8 +3222,8 @@ extern "C" {
 
 
                rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
-                                        (dt*coriolis)*rot90(2.0*u2[k] + u2[k + 1]) + 
-                                        dt*(2.0*d2uv[k] + d2uv[k + 1]));
+                                          (dt*coriolis)*rot90(2.0*u2[k] + u2[k + 1]) + 
+                                          dt*(2.0*d2uv[k] + d2uv[k + 1]));
 
                //diff stress tensors 1006
                if constexpr(itur==5) {  // 1018:itur==5 XXX What is itur?
@@ -3264,7 +3273,9 @@ extern "C" {
 
 
          } // k=kb + 1,nvrt
-// tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
+
+   printf("#### bdia[0] = %f, bdia[1] = %f, bdia[2] = %f, bdia[3] = %f\n", bdia[0], bdia[1], bdia[2], bdia[3]);         
+   // tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
          tridag_sch<2>(nvrt, alow, bdia, cupp, (double *)rrhs, (double *)u, (double *)gam);
 
          for (int k=kb + 1; k<nvrt; k++) {
@@ -3273,7 +3284,9 @@ extern "C" {
             // Velocity is always clamped to maximum values
             side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvel1, rmaxvel1), clamp(soln[kin].y, -rmaxvel2, rmaxvel2));
          } // k
-      }
+
+      } // if side->is2D()
+      
 
       // Impose velocity boundary conditions at the bottom
       if constexpr(imm == 2) { //no slip
@@ -3484,6 +3497,7 @@ extern "C" {
 
          node->updateKb();
          for (int k = node->kb; k < nvrt; k++) node->z[k] = node->compZCoord(k); 
+for (int k = node->kb; k < nvrt; k++) printf("k = %d, node->kb = %d, node->z[k] = %f\n", k, node->kb, node->z[k]);
 
       } // if wet or dry
 
@@ -3535,6 +3549,8 @@ extern "C" {
       const int kb3 = n3->kb;
       const int kb4 = (elem->isQuad()) ? n4->kb : INT_MAX;
 
+printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
+
       elem->kb = min(min(kb1, kb2), min(kb3, kb4));
 
 
@@ -3545,7 +3561,6 @@ extern "C" {
          elem->z[k] = (n1->z[max(k, kb1)] + n2->z[max(k, kb2)] + n3->z[max(k, kb3)]);
          if (elem->isQuad()) elem->z[k] += n4->z[max(k, kb4)];          
          elem->z[k] /= elem->i34;
-
 
          assert(((k < elem->kb + 1)  || (elem->z[k] - elem->z[k-1] > 0.0)) && "Weird element z");
       }
@@ -3610,9 +3625,9 @@ extern "C" {
 
       if (isWet) {
 
-         assert((n1->isDry || n2->isDry) && "Side-node inconsistency. At least one node of a wet side is dry.");
+         assert(~(n1->isDry || n2->isDry) && "Side-node inconsistency. At least one node of a wet side is dry.");
 
-         assert(side->htot2() <= h0 && "Weird side. Total depth is smaller than h0.");
+         assert(side->htot2() > h0 && "Weird side. Total depth is smaller than h0.");
 
          side->kb = min(kb1, kb2);
 
@@ -3620,7 +3635,7 @@ extern "C" {
             side->zc[k] = 0.5*(n1->z[max(k, kb1)] + n2->z[max(k, kb2)]);
 
          
-            assert((k < side->kb + 1) || (side->zc[k] - side->zc[k-1] <= 0.0) && "Weird side (3)");
+            assert((k < side->kb + 1) || (side->zc[k] - side->zc[k-1] > 0.0) && "Weird side (3)");
 
             // Compute velocity for re-wetted sides 
             if ((it != iths) && (side->isDry && isWet)) {

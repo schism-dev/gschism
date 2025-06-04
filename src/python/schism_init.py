@@ -14,14 +14,15 @@ from python.schism_consts import *
 from python.schism_consts import *
 
 
-
-def schism_init(in_dir):
-
+def readNamelist(in_dir):
     # Reads the namelist file params.nml
     nml = readParam(in_dir)
 
-    core = nml.core
-    opt  = nml.opt
+    return nml
+
+def schism_init(core, opt):
+
+
 
     # Count the number of tracer models and tracers
     # Each trace module has a pre-defined ID as follows:
@@ -70,12 +71,12 @@ def schism_init(in_dir):
     
         cufunc.ul0UpdateZCoords()
         
-        # cufunc.ul0ComputeDryElementsAndNodes()
+        cufunc.ul0ComputeDryElementsAndNodes()
         
-        # cufunc.ul0UpdateRewettedNodes(0, 0)
+        cufunc.ul0UpdateRewettedNodes(0, 0)
         
-        # cufunc.ul0UpdateSides(0, 0)
-        pass
+        cufunc.ul0UpdateSides(0, 0)
+        
 
         
 
@@ -85,5 +86,5 @@ def schism_init(in_dir):
         # levels1(0, 0)
 
 
-    return nml
+    
 

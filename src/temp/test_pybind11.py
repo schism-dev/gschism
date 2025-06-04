@@ -37,7 +37,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__f
 
 from iop.cudamodule import CudaSourceManager
 from iop.processConstantsHeader import processConstants
-from python.schism_init import schism_init
+from python.schism_init import readNamelist, schism_init
 from python.schism_step import schism_step
 from python.schism_consts import *
 import python.cuda_functions as cufunc
@@ -55,6 +55,11 @@ tracktest = '/media/jmg/Elements/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
+
+
+# test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
+# test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
+test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -178,14 +183,6 @@ if __name__ == "__main__":
     module = compile_and_import("test", cpp_file)
 
 
-
-    # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-    # test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
-    test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
-
-    namelist = schism_init(test_dir)
-
-
     from iop.readTides import read_bctides
 
 
@@ -225,8 +222,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Failed to compile CUDA code: {e}")
             sys.exit(1)
-
-
 
 
     hgrid_file = os.path.join(in_dir, 'hgrid.gr3')
@@ -271,6 +266,14 @@ if __name__ == "__main__":
     t_air_node = np.zeros(nodeCoords.shape[1])
     q_air_node = np.zeros(nodeCoords.shape[1])
     # sflux.getWind(2452424.0, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
+
+
+
+    # Initialize the CUDA functions
+    cufunc.initializeCudaKernelManager(project_root)
+
+    namelist = readNamelist(test_dir)
+
 
 
     processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev, nope, mnond,
@@ -480,8 +483,7 @@ if __name__ == "__main__":
 
     # js         = cp.array(js)
     
-    # Initialize the CUDA functions
-    cufunc.initializeCudaKernelManager(project_root)
+
 
     # Get number of GPUs
     n_gpus = cp.cuda.runtime.getDeviceCount()
@@ -504,6 +506,9 @@ if __name__ == "__main__":
     cufunc.getStructSizes(sizes)
     [nodesSize, elemsSize, sidesSize, boundaryNodesSize, sideBoundarySize, segmentSize] = sizes.tolist()
 
+
+
+    
     # Compute the maximum number of nodes, elements, and sides per partition
     numPartElements = []
     numPartNodes = []
@@ -681,6 +686,8 @@ if __name__ == "__main__":
     sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
              'nodeBnd': max(numPartBoundaryNodes)}
     cufunc.initializeCudaFunctions(sizes)
+
+    schism_init(namelist.core, namelist.opt)
 
     for t in range(0, 1000, 1):
         schism_step(t, namelist, bctides, sflux)
