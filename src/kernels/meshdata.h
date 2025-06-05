@@ -59,20 +59,20 @@ __device__ double *pAp;
 // Simple math functions ---------------------------------------------------------------------------
 
 template<int grade>
-__device__ __host__ __forceinline__ double pow(double x);
+__device__ __forceinline__ double pow(double x);
 
 template<>
-__device__ __host__ __forceinline__ double pow<2>(double x) {
+__device__ __forceinline__ double pow<2>(double x) {
     return x*x;
 }
 
 template<>
-__device__ __host__ __forceinline__ double pow<3>(double x) {
+__device__ __forceinline__ double pow<3>(double x) {
     return x*x*x;
 }
 
 
-__device__ __host__ __forceinline__ double clamp(double x, double min, double max) {
+__device__ __forceinline__ double clamp(double x, double min, double max) {
     return fmin(fmax(x, min), max);
 }
 
@@ -83,102 +83,110 @@ using Vector3 = double3;
 using Point2  = double2;
 using Point3  = double3;
 
-__device__ __host__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
+__device__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
     return make_double2(a.x + b.x, a.y + b.y);
 }
 
-__device__ __host__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
+__device__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
     a.x += b.x;
     a.y += b.y;
     return a;
 }
 
-__device__ __host__ __forceinline__ double2 operator-(const double2& a, const double2& b) {
+__device__ __forceinline__ double2 operator-(const double2& a, const double2& b) {
     return make_double2(a.x - b.x, a.y - b.y);
 }
 
-__device__ __host__ __forceinline__ double2 operator-=(double2& a, const double2& b) {
+__device__ __forceinline__ double2 operator-=(double2& a, const double2& b) {
     a.x -= b.x;
     a.y -= b.y;
     return a;
 }
 
-__device__ __host__ __forceinline__ double2 operator*(const double2& v, const double s) {
+__device__ __forceinline__ double2 operator*(const double2& v, const double s) {
     return make_double2(v.x * s, v.y * s);
 }
 
-__device__ __host__ __forceinline__ double2 operator*(const double s, const double2& v) {
+__device__ __forceinline__ double2 operator*(const double s, const double2& v) {
     return v * s;  // reuse the previous operator
 }
 
-__device__ __host__ __forceinline__ double2 operator/(const double2& v, double s) {
+__device__ __forceinline__ double2 operator/(const double2& v, double s) {
     return make_double2(v.x / s, v.y / s);
 }
 
-__device__ __host__ __forceinline__ double length(const double2& v) {
+__device__ __forceinline__ double norm2(const double2& v) {
+    return v.x*v.x + v.y*v.y;
+}
+
+__device__ __forceinline__ double length(const double2& v) {
     return sqrt(v.x*v.x + v.y*v.y);
 }
 
-__device__ __host__ __forceinline__ double2 normalize(const double2& v) {
+__device__ __forceinline__ double2 normalize(const double2& v) {
     return v / length(v);
 }
 
-__device__ __host__ __forceinline__ double dot(const double2& v, const double2& w) {
+__device__ __forceinline__ double dot(const double2& v, const double2& w) {
     return v.x*w.x + v.y*w.y;
 }
 
-__device__ __host__ __forceinline__ double cross(const double2& v, const double2& w) {
+__device__ __forceinline__ double cross(const double2& v, const double2& w) {
     return v.x*w.y - v.y*w.x;
 }
 
-__device__ __host__ __forceinline__ double2 rot90(const double2& a) {
+__device__ __forceinline__ double2 rot90(const double2& a) {
     return make_double2(a.y, -a.x);
 }
 
-__device__ __host__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
+__device__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
     return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
 
-__device__ __host__ __forceinline__ double3 operator+=(double3& a, const double3& b) {
+__device__ __forceinline__ double3 operator+=(double3& a, const double3& b) {
     a.x += b.x;
     a.y += b.y;
     a.z += b.z;
     return a;
 }
 
-__device__ __host__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
+__device__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
     return make_double3(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
-__device__ __host__ __forceinline__ double3 operator*(const double3& v, double s) {
+__device__ __forceinline__ double3 operator*(const double3& v, double s) {
     return make_double3(v.x * s, v.y * s, v.z * s);
 }
 
-__device__ __host__ __forceinline__ double3 operator*(double s, const double3& v) {
+__device__ __forceinline__ double3 operator*(double s, const double3& v) {
     return v * s;
 }
 
-__device__ __host__ __forceinline__ double3 operator/(const double3& v, double s) {
+__device__ __forceinline__ double3 operator/(const double3& v, double s) {
     return make_double3(v.x / s, v.y / s, v.z / s);
 }
 
-__device__ __host__ __forceinline__ double dot(const double3& v, const double3& w) {
+__device__ __forceinline__ double dot(const double3& v, const double3& w) {
     return v.x*w.x + v.y*w.y + v.z*w.z;
 }
 
-__device__ __host__ __forceinline__ Vector2 toVector2(const double3& v) {
+__device__ __forceinline__ double norm2(const double3& v) {
+    return v.x*v.x + v.y*v.y + v.z*v.z;
+}
+
+__device__ __forceinline__ Vector2 toVector2(const double3& v) {
     return make_double2(v.x, v.y);
 }
 
-__device__ __host__ __forceinline__ double3 toVector3(const double2& v, double w) {
+__device__ __forceinline__ double3 toVector3(const double2& v, double w) {
     return make_double3(v.x, v.y, w);
 }
 
-__device__ __host__ __forceinline__ Point2 toPoint2(const double3& p) {
+__device__ __forceinline__ Point2 toPoint2(const double3& p) {
     return make_double2(p.x, p.y);
 }
 
-__device__ __host__ __forceinline__ Point3 toPoint3(const double2& p, double z) {
+__device__ __forceinline__ Point3 toPoint3(const double2& p, double z) {
     return make_double3(p.x, p.y, z);
 }
 
@@ -198,9 +206,9 @@ struct Polynomial<4> {
    double a0, a1, a2, a3, a4; // Coefficients a0, a1, a2, a3, a4 for a4*x^4 + a3*x^3 + a2*x^2 + a1*x + a0
 
    // Constructor from coefficients
-   __device__ __host__ __forceinline__ Polynomial(double a0, double a1, double a2, double a3, double a4) : a0(a0), a1(a1), a2(a2), a3(a3), a4(a4) {}
+   __device__ __forceinline__ Polynomial(double a0, double a1, double a2, double a3, double a4) : a0(a0), a1(a1), a2(a2), a3(a3), a4(a4) {}
 
-   __device__ __host__ __forceinline__ double eval(double x) const {
+   __device__ __forceinline__ double eval(double x) const {
       return a0 + x*(a1 + x*(a2 + x*(a3 + x*a4)));
    }
 };
@@ -989,7 +997,7 @@ struct Node {
    double q_air;
    double wind_angle;  // Wind rotation angle
 
-   __host__ __device__ void setWind(Vector2 &u) {
+   __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the wind rotation angle
    
       const double dir = atan2(-u.x,-u.y);
@@ -999,9 +1007,9 @@ struct Node {
       u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
    }
 
-   __host__ __device__ Point2 p2(void) const { return {p.x, p.y}; }
+   __device__ Point2 p2(void) const { return {p.x, p.y}; }
 
-   __host__ __device__ double sigmaTransitionDepth(void) const;
+   __device__ double sigmaTransitionDepth(void) const;
 
    __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
    __inline__ __device__ double htot2(void) const { return eta2 + depth; }
@@ -1233,9 +1241,7 @@ class Mesh {
             Element *elem = &localElemData[i];
             
             Vector3 u_int;
-            // auto res = elem->trackThroughElementsAndLevels(x,y,z, 
-            //                                                x+0.01,y+0.01,z,
-            //                                                uuint, vvint, wwint, elem);
+
             // Choose the first side
             Side *side = elem->sides[0];
             int jlev = 5;  

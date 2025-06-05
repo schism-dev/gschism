@@ -260,7 +260,19 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # cufunc.updateBedDeformation()
 
-    # cufunc.updateLevels()
+    cufunc.ul0UpdateZCoords()
+    
+    cufunc.ul0ComputeDryElementsAndNodes()
+    
+    cufunc.ul0UpdateRewettedNodes(0, 0)
+    
+    cufunc.ul0UpdateSides(0, 0)
+
+    # Adjust mass after level change
+    # XXXXXXXXX IMPLEMENT THIS
+
+    cufunc.zeroNodalVelocities()
+    cufunc.computeNodalVelocities()
 
     # Update bed deformation and depth info  lines 8156-
 
