@@ -269,8 +269,7 @@ if __name__ == "__main__":
 
 
 
-    # Initialize the CUDA functions
-    cufunc.initializeCudaKernelManager(project_root)
+    
 
     namelist = readNamelist(test_dir)
 
@@ -279,6 +278,9 @@ if __name__ == "__main__":
     processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev, nope, mnond,
                      templatePath="kernels/constants_template.h", 
                      outputPath="kernels/constants.h")
+    
+    # Initialize the CUDA functions
+    cufunc.initializeCudaKernelManager(project_root)
 
     
     # convert arrays to cupy

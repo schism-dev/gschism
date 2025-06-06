@@ -39,6 +39,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         # From namelist OPT section
         '__ICS__': (namelist.opt.ics, 'namelist.opt'),
         '__IMM__': (namelist.opt.imm, 'namelist.opt'),
+        '__INDVEL__': (namelist.opt.indvel, 'namelist.opt'),
         '__IVEG__': (namelist.opt.iveg, 'namelist.opt'),
         '__IHHAT__': (namelist.opt.ihhat, 'namelist.opt'),
         '__IHYDRAULICS__': (namelist.opt.ihydraulics, 'namelist.opt'),

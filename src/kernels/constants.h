@@ -5,6 +5,7 @@ constexpr int N_TRACERS = 2;
 constexpr int ivcor = 2;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: global, 2: local
 constexpr int imm = 0;                 // Option to pre-compute vnorm on the element
+constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
 constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = 0; // Option of including hydraulics

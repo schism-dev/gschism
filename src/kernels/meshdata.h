@@ -907,6 +907,16 @@ struct NodeBoundary {
    double vfa[nbfr];  // V-velocity phase 
 
    
+   __forceinline__ __device__ int numSidesForAverage() const {
+   // Returns the number of sides that are connected to the node and have the same segment.
+   // This is used to compute the average velocity at the node for open boundary nodes.
+      int res = 0;
+      if (sideBnd1 != nullptr && sideBnd1->segment == segment) res++;
+      if (sideBnd2 != nullptr && sideBnd2->segment == segment) res++;
+      return res;
+   }
+
+
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
       return (index == 0) ? sideBnd1 : sideBnd2; 
@@ -923,7 +933,9 @@ struct Node {
    int numNodes;   // Number of nodes neighbors of this node
 
    Element **elements; // Array of pointers to the elements that share this node
-   int numElements;   // Number of elements that share this node
+   int numElements;    // Number of elements that share this node
+
+   int numSides;       // Number of sides that are connected to this node
 
    Point3 p;
    Vector3 u2[nvrt];
@@ -939,6 +951,7 @@ struct Node {
    int iadv;     // Advection flag
 
    NodeBoundary *nodeBnd; // Pointer to additional boundary information. For non-boundary nodes, 
+                          // this is nullptr
 
    TempVar tmp; // Temporary variable to store different types of variables
 

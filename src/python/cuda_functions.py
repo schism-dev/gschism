@@ -37,6 +37,12 @@ ul0UpdateZCoords = None
 ul0ComputeDryElementsAndNodes = None
 ul0UpdateRewettedNodes = None
 ul0UpdateSides = None
+zeroNodalVelocities = None
+computeNodalVerticalVelocities1 = None
+computeNodalVerticalVelocities2 = None
+computeNodalHorizontalVelocities = None
+resetVelocityOpenBndNodes = None
+setVelocityOpenBndNodes = None
 computeMatrixProductAndDotProducts = None
 updateSolutionAndDotProducts = None
 updateSearchDirection = None
@@ -95,6 +101,7 @@ def initializeCudaFunctions(sizes):
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix
     global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
+    global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities, resetVelocityOpenBndNodes, setVelocityOpenBndNodes
 
     # Get kernel functions with better error handling
     try:
@@ -128,6 +135,12 @@ def initializeCudaFunctions(sizes):
         ul0ComputeDryElementsAndNodes       = mod.get_function('ul0ComputeDryElementsAndNodes',       sizes, kernel_type='elements')
         ul0UpdateRewettedNodes              = mod.get_function('ul0UpdateRewettedNodes',              sizes, kernel_type='nodes')
         ul0UpdateSides                      = mod.get_function('ul0UpdateSides',                      sizes, kernel_type='sides')
+        zeroNodalVelocities                 = mod.get_function('zeroNodalVelocities',                 sizes, kernel_type='nodes')
+        computeNodalVerticalVelocities1     = mod.get_function('computeNodalVerticalVelocities1',     sizes, kernel_type='elements')
+        computeNodalVerticalVelocities2     = mod.get_function('computeNodalVerticalVelocities2',     sizes, kernel_type='nodes')
+        computeNodalHorizontalVelocities    = mod.get_function('computeNodalHorizontalVelocities',    sizes, kernel_type='nodes')
+        resetVelocityOpenBndNodes           = mod.get_function('resetVelocityOpenBndNodes',           sizes, kernel_type='nodeBnd')
+        setVelocityOpenBndNodes             = mod.get_function('setVelocityOpenBndNodes',             sizes, kernel_type='nodeBnd')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
         printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='nodes')
 

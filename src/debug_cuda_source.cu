@@ -6,6 +6,7 @@ constexpr int N_TRACERS = 2;
 constexpr int ivcor = 2;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: global, 2: local
 constexpr int imm = 0;                 // Option to pre-compute vnorm on the element
+constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
 constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = 0; // Option of including hydraulics
@@ -142,20 +143,20 @@ __device__ double *pAp;
 // Simple math functions ---------------------------------------------------------------------------
 
 template<int grade>
-__device__ __host__ __forceinline__ double pow(double x);
+__device__ __forceinline__ double pow(double x);
 
 template<>
-__device__ __host__ __forceinline__ double pow<2>(double x) {
+__device__ __forceinline__ double pow<2>(double x) {
     return x*x;
 }
 
 template<>
-__device__ __host__ __forceinline__ double pow<3>(double x) {
+__device__ __forceinline__ double pow<3>(double x) {
     return x*x*x;
 }
 
 
-__device__ __host__ __forceinline__ double clamp(double x, double min, double max) {
+__device__ __forceinline__ double clamp(double x, double min, double max) {
     return fmin(fmax(x, min), max);
 }
 
@@ -166,110 +167,110 @@ using Vector3 = double3;
 using Point2  = double2;
 using Point3  = double3;
 
-__device__ __host__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
+__device__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
     return make_double2(a.x + b.x, a.y + b.y);
 }
 
-__device__ __host__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
+__device__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
     a.x += b.x;
     a.y += b.y;
     return a;
 }
 
-__device__ __host__ __forceinline__ double2 operator-(const double2& a, const double2& b) {
+__device__ __forceinline__ double2 operator-(const double2& a, const double2& b) {
     return make_double2(a.x - b.x, a.y - b.y);
 }
 
-__device__ __host__ __forceinline__ double2 operator-=(double2& a, const double2& b) {
+__device__ __forceinline__ double2 operator-=(double2& a, const double2& b) {
     a.x -= b.x;
     a.y -= b.y;
     return a;
 }
 
-__device__ __host__ __forceinline__ double2 operator*(const double2& v, const double s) {
+__device__ __forceinline__ double2 operator*(const double2& v, const double s) {
     return make_double2(v.x * s, v.y * s);
 }
 
-__device__ __host__ __forceinline__ double2 operator*(const double s, const double2& v) {
+__device__ __forceinline__ double2 operator*(const double s, const double2& v) {
     return v * s;  // reuse the previous operator
 }
 
-__device__ __host__ __forceinline__ double2 operator/(const double2& v, double s) {
+__device__ __forceinline__ double2 operator/(const double2& v, double s) {
     return make_double2(v.x / s, v.y / s);
 }
 
-__device__ __host__ __forceinline__ double norm2(const double2& v) {
+__device__ __forceinline__ double norm2(const double2& v) {
     return v.x*v.x + v.y*v.y;
 }
 
-__device__ __host__ __forceinline__ double length(const double2& v) {
+__device__ __forceinline__ double length(const double2& v) {
     return sqrt(v.x*v.x + v.y*v.y);
 }
 
-__device__ __host__ __forceinline__ double2 normalize(const double2& v) {
+__device__ __forceinline__ double2 normalize(const double2& v) {
     return v / length(v);
 }
 
-__device__ __host__ __forceinline__ double dot(const double2& v, const double2& w) {
+__device__ __forceinline__ double dot(const double2& v, const double2& w) {
     return v.x*w.x + v.y*w.y;
 }
 
-__device__ __host__ __forceinline__ double cross(const double2& v, const double2& w) {
+__device__ __forceinline__ double cross(const double2& v, const double2& w) {
     return v.x*w.y - v.y*w.x;
 }
 
-__device__ __host__ __forceinline__ double2 rot90(const double2& a) {
+__device__ __forceinline__ double2 rot90(const double2& a) {
     return make_double2(a.y, -a.x);
 }
 
-__device__ __host__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
+__device__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
     return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
 
-__device__ __host__ __forceinline__ double3 operator+=(double3& a, const double3& b) {
+__device__ __forceinline__ double3 operator+=(double3& a, const double3& b) {
     a.x += b.x;
     a.y += b.y;
     a.z += b.z;
     return a;
 }
 
-__device__ __host__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
+__device__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
     return make_double3(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
-__device__ __host__ __forceinline__ double3 operator*(const double3& v, double s) {
+__device__ __forceinline__ double3 operator*(const double3& v, double s) {
     return make_double3(v.x * s, v.y * s, v.z * s);
 }
 
-__device__ __host__ __forceinline__ double3 operator*(double s, const double3& v) {
+__device__ __forceinline__ double3 operator*(double s, const double3& v) {
     return v * s;
 }
 
-__device__ __host__ __forceinline__ double3 operator/(const double3& v, double s) {
+__device__ __forceinline__ double3 operator/(const double3& v, double s) {
     return make_double3(v.x / s, v.y / s, v.z / s);
 }
 
-__device__ __host__ __forceinline__ double dot(const double3& v, const double3& w) {
+__device__ __forceinline__ double dot(const double3& v, const double3& w) {
     return v.x*w.x + v.y*w.y + v.z*w.z;
 }
 
-__device__ __host__ __forceinline__ double norm2(const double3& v) {
+__device__ __forceinline__ double norm2(const double3& v) {
     return v.x*v.x + v.y*v.y + v.z*v.z;
 }
 
-__device__ __host__ __forceinline__ Vector2 toVector2(const double3& v) {
+__device__ __forceinline__ Vector2 toVector2(const double3& v) {
     return make_double2(v.x, v.y);
 }
 
-__device__ __host__ __forceinline__ double3 toVector3(const double2& v, double w) {
+__device__ __forceinline__ double3 toVector3(const double2& v, double w) {
     return make_double3(v.x, v.y, w);
 }
 
-__device__ __host__ __forceinline__ Point2 toPoint2(const double3& p) {
+__device__ __forceinline__ Point2 toPoint2(const double3& p) {
     return make_double2(p.x, p.y);
 }
 
-__device__ __host__ __forceinline__ Point3 toPoint3(const double2& p, double z) {
+__device__ __forceinline__ Point3 toPoint3(const double2& p, double z) {
     return make_double3(p.x, p.y, z);
 }
 
@@ -289,9 +290,9 @@ struct Polynomial<4> {
    double a0, a1, a2, a3, a4; // Coefficients a0, a1, a2, a3, a4 for a4*x^4 + a3*x^3 + a2*x^2 + a1*x + a0
 
    // Constructor from coefficients
-   __device__ __host__ __forceinline__ Polynomial(double a0, double a1, double a2, double a3, double a4) : a0(a0), a1(a1), a2(a2), a3(a3), a4(a4) {}
+   __device__ __forceinline__ Polynomial(double a0, double a1, double a2, double a3, double a4) : a0(a0), a1(a1), a2(a2), a3(a3), a4(a4) {}
 
-   __device__ __host__ __forceinline__ double eval(double x) const {
+   __device__ __forceinline__ double eval(double x) const {
       return a0 + x*(a1 + x*(a2 + x*(a3 + x*a4)));
    }
 };
@@ -990,6 +991,16 @@ struct NodeBoundary {
    double vfa[nbfr];  // V-velocity phase 
 
    
+   __forceinline__ __device__ int numSidesForAverage() const {
+   // Returns the number of sides that are connected to the node and have the same segment.
+   // This is used to compute the average velocity at the node for open boundary nodes.
+      int res = 0;
+      if (sideBnd1 != nullptr && sideBnd1->segment == segment) res++;
+      if (sideBnd2 != nullptr && sideBnd2->segment == segment) res++;
+      return res;
+   }
+
+
    __forceinline__ __device__ SideBoundary *sideBnd(int index) { 
       assert(index == 0 || index == 1); 
       return (index == 0) ? sideBnd1 : sideBnd2; 
@@ -1006,7 +1017,9 @@ struct Node {
    int numNodes;   // Number of nodes neighbors of this node
 
    Element **elements; // Array of pointers to the elements that share this node
-   int numElements;   // Number of elements that share this node
+   int numElements;    // Number of elements that share this node
+
+   int numSides;       // Number of sides that are connected to this node
 
    Point3 p;
    Vector3 u2[nvrt];
@@ -1022,6 +1035,7 @@ struct Node {
    int iadv;     // Advection flag
 
    NodeBoundary *nodeBnd; // Pointer to additional boundary information. For non-boundary nodes, 
+                          // this is nullptr
 
    TempVar tmp; // Temporary variable to store different types of variables
 
@@ -1080,7 +1094,7 @@ struct Node {
    double q_air;
    double wind_angle;  // Wind rotation angle
 
-   __host__ __device__ void setWind(Vector2 &u) {
+   __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the wind rotation angle
    
       const double dir = atan2(-u.x,-u.y);
@@ -1090,9 +1104,9 @@ struct Node {
       u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
    }
 
-   __host__ __device__ Point2 p2(void) const { return {p.x, p.y}; }
+   __device__ Point2 p2(void) const { return {p.x, p.y}; }
 
-   __host__ __device__ double sigmaTransitionDepth(void) const;
+   __device__ double sigmaTransitionDepth(void) const;
 
    __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
    __inline__ __device__ double htot2(void) const { return eta2 + depth; }
@@ -2381,8 +2395,7 @@ printf(" ________#iter22 = %d, jlev = %d, side.idx = %d, u_int = %.17g,%.17g,%.1
 //     results[sid].exitedDomain = exitedDomain;
 // }
 
-__host__ __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
-
+__device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
 
 
 __device__ void Node::updateKb(void) {
@@ -2559,13 +2572,14 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       node.p.z   = node_coords[i * 3 + 2];  // XXX this is probably wrong
       node.depth = node_coords[i * 3 + 2];
 
-
+      node.numSides = 0;
 
       // Links the node to the boundary information
       if (isbnd[i] >= 0) {
        
          node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
          node.nodeBnd->node = &node;
+
 
          if (isbnd[i]>0) {
 
@@ -2587,12 +2601,14 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
          node.nodeBnd = nullptr;
       }
 
-// XXXX
-if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
-constexpr double rot_per = 3000.0;
-constexpr double rot_f = 0.0*2.0*pi/rot_per;
-for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0.0};}
-// XXXXX
+      // XXXX GAUSSIAN HILL VELOCITIES
+#ifdef GAUSSIAN_HILL_VELOCITIES
+         if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+         constexpr double rot_per = 3000.0;
+         constexpr double rot_f = 0.0*2.0*pi/rot_per;
+         for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0.0}; }
+      // XXXXX
+#endif
    }
 
    nbp = idxNodeBoundary;
@@ -2614,6 +2630,10 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
 
       side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
       side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
+
+      // Counts the number of sides connected to each node
+      side.n1->numSides++;
+      side.n2->numSides++;
 
       // Normal, unitary vector to the side
       side.n = {- (side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
@@ -2666,13 +2686,14 @@ for (int k = 0; k < nvrt; k++) {node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0
       // Compute the center of the side
       side.center = 0.5*(side.n1->p2() + side.n2->p2());
 
+#ifdef GAUSSIAN_HILL_VELOCITIES
 // XXXX
 if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
 constexpr double rot_per=3000.0;
 constexpr double rot_f=0.0*2.0*pi/rot_per;
 for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
 // XXXXX      
-
+#endif
       // Compute the z level at the center of the side
       for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);
 
@@ -5117,6 +5138,110 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
       side->isDry = !isWet;
 
    }
+
+
+   __global__ void zeroNodalVelocities(void) {
+      NODE(node);
+
+      for (int k = 0; k < nvrt; k++) {
+         node->u2[k] = {0.0, 0.0, 0.0};
+         node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
+      }
+   }
+
+   __global__ void computeNodalVerticalVelocities1(void) {
+   // Compute node's vertical velocities from element's vertical velocities at WHOLE levels.
+   // Adds the element's vertical velocity times the element's area.
+      ELEM(elem);
+
+      for (int j = 0; j < elem->i34; j++) {
+         Node *node = elem->nodes[j];
+
+         for (int k = node->kb; k < nvrt; k++) {
+            node->u2[k].z += elem->w[k]*elem->area;
+            node->tmp.d += elem->area;
+         }
+      }
+   }
+
+   __global__ void computeNodalVerticalVelocities2(void) {
+   // Compute node's vertical velocities from element's vertical velocities at WHOLE levels.
+   // Divides by the total area of the elements sharing the    node.
+      ELEM(elem);
+
+      for (int j = 0; j < elem->i34; j++) {
+         Node *node = elem->nodes[j];
+
+         for (int k = node->kb; k < nvrt; k++) node->u2[k].z /= node->tmp.d;  // node->tmp.d contains the total area of the elements sharing the node
+      }
+   }
+
+   __global__ void computeNodalHorizontalVelocities(void) {
+   // Compute node's horizonal velocities from side velocities at WHOLE levels.
+   // It goes for each side and adds to the nodes the velocity divided by the number of sides.
+   // It does it for all nodes, including boundary nodes. Afterwards, the open boundary nodes are set to a different value.
+
+      assert(indvel == 0 && "computeNodalVelocities only works with indvel = 0. IMPLEMENT THIS FOR INDVEL <= 0");
+
+      SIDE(side);
+
+      const int kb = side->kb;
+
+      Node *n1 = side->n1;
+      Node *n2 = side->n2;
+
+      for (int k = kb; k < nvrt; k++) {
+
+         // Cast the u2 vector into a Vector2 
+         Vector2& n1_u2 = *reinterpret_cast<Vector2*>(&n1->u2[k]);
+         Vector2& n2_u2 = *reinterpret_cast<Vector2*>(&n2->u2[k]);
+
+         n1_u2 += side->u2[k]/n1->numSides;
+         n2_u2 += side->u2[k]/n2->numSides;
+
+      }
+
+
+   }
+
+   __global__ void resetVelocityOpenBndNodes(void) {
+   // Set velocity to zero for open boundary nodes where the velocity is imposed.
+
+      NODE_BND(nodebnd);
+
+      if (nodebnd->segment != nullptr && nodebnd->segment->ifltype != 0) {
+         for (int k = 0; k < nvrt; k++) nodebnd->node->u2[k] = {0.0, 0.0, 0.0};
+      }
+
+   }
+
+
+   __global__ void setVelocityOpenBndNodes(void) {
+   // For open boundary nodes sets their velocity to the imposed values.
+
+      SIDE_BND(sidebnd);
+
+      if (sidebnd->segment != nullptr && sidebnd->segment->ifltype != 0) {
+         // If the sidebnd is an open boundary, set the velocity of the nodes that belong
+         // to its segment to the average of the side velocity.
+
+         for (int k = 0; k < nvrt; k++) {
+            Node *n1 = sidebnd->side->n1;
+            Node *n2 = sidebnd->side->n2;
+
+            // Cast the u2 vector into a Vector2 
+            Vector2& n1_u2 = *reinterpret_cast<Vector2*>(&n1->u2[k]);
+            Vector2& n2_u2 = *reinterpret_cast<Vector2*>(&n2->u2[k]);
+
+            if (n1->nodeBnd->segment == sidebnd->segment) n1_u2 += sidebnd->side->u2[k]/n1->nodeBnd->numSidesForAverage();
+            if (n2->nodeBnd->segment == sidebnd->segment) n2_u2 += sidebnd->side->u2[k]/n2->nodeBnd->numSidesForAverage();
+         }
+      }
+
+   }
+
+
+
 
 
 
