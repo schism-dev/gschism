@@ -178,7 +178,7 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
    bool found_intersection = false;
 
 double minDelta = 1e10; 
-double btt1, btt2;
+double btt1 = 1e10, btt2;
    for (int i = 0; i < i34; i++) {
 
       Side *side2 = sides[i];
@@ -199,13 +199,13 @@ double btt1, btt2;
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
          const double tt2 = delta2/delta;
 
-if (abs(delta) < minDelta) {
+if (abs(tt1) < abs(btt1)) {
    minDelta = abs(delta);
    btt1 = tt1;
    btt2 = tt2;
 }
-double small = 1e-7;
-         printf("RRRRRR delta = %e, delta1 = %e, delta2 = %e, tt1 = %e, tt2 = %e\n", delta, delta1, delta2, tt1, tt2);
+
+if (idx == 0) printf("RRRRRR delta = %e, delta1 = %e, delta2 = %e, tt1 = %e, tt2 = %e\n", delta, delta1, delta2, tt1, tt2);
          if (tt1 >= -small && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
@@ -242,7 +242,7 @@ double small = 1e-7;
 
    if (!found_intersection) {
       
-      printf("ZZ No intersection found:\n"
+if (idx == 0) printf("ZZ No intersection found:\n"
            "Element %d\n"
            "in = %d\n"
            "minDelta = %e\n"
@@ -278,7 +278,7 @@ double small = 1e-7;
 __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
                                              double &dt, Point3 &xt, double zint, Vector3 &u_int) {
 
-   printf("Tracking segment goes out of water at element %d\n", curElem->idx);
+   printf("Tracking segment goes out of water at element %i, nextSide = %i, xt = %.17g, yt = %.17g, ux = %.17g, uy = %.17g\n", curElem->idx, nextSide->idx, xt.x, xt.y, u_int.x, u_int.y);
 
    // When this happens, we stop our algorithm that usually assumes that we move to the next element.
    // Instead, we nudge the intersection point to the barycenter of the element, and nextElement becomes
@@ -357,14 +357,14 @@ printf("BBB u_int = %f,%f,%f\n", us, vs, ws);
 __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
                                                        Element *&nextElem, int &jlev, double &dt) {
 
-   // First thing is to check if the target point is inside the element. If it is there is nothing
+   // First thing is to check if the target point is inside the element. If it is, there is nothing
    // else to do.
-
+   // If it is, nudges the point to be inside the element.
    const Element *curElem = nextElem;
-   if (containsPoint(toPoint2(xt))) {
-printf(" ___BBB0_____ idx = %d, u_int = %.17g,%.17g,%.17g\n", curElem->idx, u_int.x, u_int.y, u_int.z);            
+   if (containsPoint(toPoint2(xt), true)) {
+
       curElem->interpolateVelocities(xt, u_int);
-printf(" ___BBB_____ idx = %d, u_int = %.17g,%.17g,%.17g\n", curElem->idx, u_int.x, u_int.y, u_int.z);      
+
       return true;
    }
 
@@ -391,30 +391,6 @@ printf(" ___BBB_____ idx = %d, u_int = %.17g,%.17g,%.17g\n", curElem->idx, u_int
 
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
 
-   if (!found_intersection) {
-double shpCoords_0[4];
-double shpCoords_t[4];
-computeShapeCoords(toPoint2(x0), shpCoords_0, false);
-computeShapeCoords(toPoint2(xt), shpCoords_t, false);
-      printf("No intersection found (containsPoint = %d, %d [%.17g, %.17g, %.17g] [%.17g, %.17g, %.17g]):\n"
-           "Elements %d, %d\n"
-           "Side %d\n"
-           "segment: (%f, %f),(%f, %f)\n"
-           "triangle node indices: %d, %d, %d\n"
-           "triangle: (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n",
-           containsPoint(toPoint2(x0)), containsPoint(toPoint2(xt)),
-           shpCoords_0[0], shpCoords_0[1], shpCoords_0[2],
-           shpCoords_t[0], shpCoords_t[1], shpCoords_t[2],
-           IDX(curElem), IDX(nextElem),
-           IDX(nextSide),
-           x0.x, x0.y,
-           xt.x, xt.y,
-           curElem->nodes[0]->idx, curElem->nodes[1]->idx, curElem->nodes[2]->idx,
-           curElem->nodes[0]->p.x, curElem->nodes[0]->p.y,
-           curElem->nodes[1]->p.x, curElem->nodes[1]->p.y,
-           curElem->nodes[2]->p.x, curElem->nodes[2]->p.y,
-           curElem->nodes[0]->p.x, curElem->nodes[0]->p.y);
-   }
    assert(found_intersection && "No intersection found at %d");
 
    zint = (1 - tIntersect)*zint + tIntersect*xt.z;
@@ -424,6 +400,7 @@ computeShapeCoords(toPoint2(xt), shpCoords_t, false);
 
 
       trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
+
       nextElem = this;
       // Returns "early", meaning that we stopped before we were able to reach the target point.
       // In this case, the caller (btrack) needs to take into account the remaining time.
@@ -441,7 +418,7 @@ computeShapeCoords(toPoint2(xt), shpCoords_t, false);
       bool found_intersection = curElem->findNextIntersection(toPoint2(xt), nextSide, nextElem, t, tIntersect);
 
       zint = (1 - tIntersect)*zint + tIntersect*xt.z;
-printf(" ___CCC_____ idx = %d, zint = %.17g\n", curElem->idx, zint);      
+
       // If we are already in the target element, we are done.
       // Remember that, if we are here, the point (xt,yt) is inside curElem.
       if (!found_intersection) break;
@@ -454,7 +431,6 @@ printf(" ___CCC_____ idx = %d, zint = %.17g\n", curElem->idx, zint);
          trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
 
          nextElem = curElem;
-
 
          // Returns "early", meaning that we stopped before we were able to reach the target point.
          // In this case, the caller (btrack) needs to take into account the remaining time.
@@ -472,7 +448,6 @@ printf(" ___CCC_____ idx = %d, zint = %.17g\n", curElem->idx, zint);
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
    nextElem->interpolateVelocities(xt, u_int);
-printf(" ___AAA_____ u_int = %.17g,%.17g,%.17g\n", u_int.x, u_int.y, u_int.z);      
 
 
    return true;
@@ -521,7 +496,7 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
-__device__ bool Element::computeShapeCoords(Point2 xt, double shpCoords[4],
+__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
                                             bool fixNegshpCoord) const {
 
    // Compute the shape coordinates of the point xt in the element.
@@ -608,6 +583,21 @@ __device__ bool Element::computeShapeCoords(Point2 xt, double shpCoords[4],
 }
 
 
+__device__ void Element::shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const {
+// Convert shape coordinates to cartesian coordinates
+
+   if (i34 == 3) {
+      // Triangular element
+      double xcoords[3] = {nodes[0]->p2().x, nodes[1]->p2().x, nodes[2]->p2().x};
+      double ycoords[3] = {nodes[0]->p2().y, nodes[1]->p2().y, nodes[2]->p2().y};
+   }
+   else {
+      assert(false && "shapeCoordsToXY: quadrilateral element not implemented");
+   }
+
+}
+
+
 /**  Interpolate velocities at a given point (xt,yt,zt)
 
    @param xt, yt, zt: coordinates of the point to interpolate
@@ -627,7 +617,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
 
-printf(" ___BBB02____ idx = %d, u_int = %.17g,%.17g,%.17g, u1 = %.17g,%.17g,%.17g, u2 = %.17g,%.17g,%.17g, u3 = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z, nodes[0]->u2[0].x, nodes[0]->u2[0].y, nodes[0]->u2[0].z, nodes[1]->u2[0].x, nodes[1]->u2[0].y, nodes[1]->u2[0].z, nodes[2]->u2[0].x, nodes[2]->u2[0].y, nodes[2]->u2[0].z);         
+// printf(" ___BBB02____ idx = %d, u_int = %.17g,%.17g,%.17g, u1 = %.17g,%.17g,%.17g, u2 = %.17g,%.17g,%.17g, u3 = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z, nodes[0]->u2[0].x, nodes[0]->u2[0].y, nodes[0]->u2[0].z, nodes[1]->u2[0].x, nodes[1]->u2[0].y, nodes[1]->u2[0].z, nodes[2]->u2[0].x, nodes[2]->u2[0].y, nodes[2]->u2[0].z);         
    // First step is to compute the shape coordinates of (xt,yt)
    computeShapeCoords(toVector2(xt), shpCoord, false);
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
@@ -682,13 +672,9 @@ printf(" ___BBB02____ idx = %d, u_int = %.17g,%.17g,%.17g, u1 = %.17g,%.17g,%.17
       wght1 = 1.0 - wght2;
    }
 
-
-// printf("$$$ wght1 = %f, wght2 = %f, zt = %f, zL = %f, zR = %f\n", wght1, wght2, xt.z, zL, zR);
-// printf("$$$ shpCoord = %f, %f, %f, %f\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
    // Interpolate horizontally and vertically the velocities at the two levels L, R
-
    u_int = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
-printf(" ___BBB2____ idx = %d, wght1 = %.17g, wght2 = %.17g, u1 = %.17g,%.17g,%.17g, u2 = %.17g,%.17g,%.17g, u_int = %.17g,%.17g,%.17g\n", idx, wght1, wght2, interpolate(L, shpCoord, &Node::u2).x, interpolate(L, shpCoord, &Node::u2).y, interpolate(L, shpCoord, &Node::u2).z, interpolate(R, shpCoord, &Node::u2).x, interpolate(R, shpCoord, &Node::u2).y, interpolate(R, shpCoord, &Node::u2).z, u_int.x, u_int.y, u_int.z);      
+
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
 
@@ -785,9 +771,20 @@ __inline__ __device__ bool Side::btrack(
    u_int = {u2[jlev].x, u2[jlev].y, 0.5*(n1->u2[jlev].z + n2->u2[jlev].z)};
 
    // Find the element that is in the direction opposite to the velocity
-   Element* curElem = findElementTowards({u_int.x, u_int.y});
+   Element* curElem = findElementTowards(toVector2(u_int));
 
-   const int MAX_ITERATIONS = 2; // XXXXXXXXXXXX 1000!!!!
+   // If it starts at a boundary side, we should start with a velocity parallel to the side.
+   if (curElem == nullptr) {
+      // Make velocity parallel to the side
+      const Vector2 u2parallel = dot(toVector2(u_int), t())*t();
+      u_int = {u2parallel.x, u2parallel.y, u_int.z};
+      curElem = otherElem(curElem);
+      
+   }
+
+
+
+   const int MAX_ITERATIONS = 1000; 
    Element* nextElem = curElem;
    int iter = 0;
    while(true) {
@@ -798,12 +795,10 @@ __inline__ __device__ bool Side::btrack(
       // Next point in the backtracking curve
       Point3 xt = x0 - dtb*u_int;
 
-printf(" ________#iter11 = %d, jlev = %d, side.idx = %d, u_int = %.17g,%.17g,%.17g, x0 = %.17g,%.17g,%.17g, xt = %.17g,%.17g,%.17g\n", iter, jlev, idx, u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);      
 
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb);
-printf(" ________#iter22 = %d, jlev = %d, side.idx = %d, u_int = %.17g,%.17g,%.17g, x0 = %.17g,%.17g,%.17g, xt = %.17g,%.17g,%.17g\n", iter, jlev, idx, u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);      
       assert(found && "Backtracking failed in btrack");
-// printf("<>T = %f, %f %f %f\n", time_rm - dtb, xt, yt, zt);
+
       time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
                       // then time_rm needs to be increased by the unused time.
       if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0
@@ -1210,9 +1205,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
          const int locidx_e1 = localElemIndices[idx_e1];
          const int part_e1 =  localElemPart[idx_e1];
          side.elems[0] = elems[part_e1] + locidx_e1;
-         // printf("s@@ part_e1 = %d, locidx_e1 = %d, elems[part_e1] = %p\n", part_e1, locidx_e1, elems[part_e1]);
-         // // printf("s-- side.elems[0] = %p idx = %d i34 = %d (x,y,z) = (%f,%f,%f) size = %d\n", side.elems[0], side.elems[0]->idx, side.elems[0]->i34, side.elems[0]->center.x, side.elems[0]->center.y, side.elems[0]->center.z, sizeof(Element));
-         // printf("o-- elems = %p, *elems = %p, localElemData = %p, *localElemData = %p\n", elems, *elems, localElemData, *localElemData);
+
       }
       else {
          side.elems[0] = nullptr;
@@ -1245,7 +1238,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
       // Compute the length of the side
       const Vector2 vLen = side.n2->p2() - side.n1->p2();
-      side.length = sqrt(dot(vLen, vLen));
+      side.len = sqrt(dot(vLen, vLen));
 
    }
 
@@ -1354,7 +1347,7 @@ nodeBnd->iettype = 3;
             nodeBnd->ufa[jfr] = ufa[jfr + iseg*nbfr];
             nodeBnd->vmo[jfr] = vmo[jfr + iseg*nbfr];
             nodeBnd->vfa[jfr] = vfa[jfr + iseg*nbfr];
-printf("nodeBnd->efa[%d] = %f, nodeBnd->emo[%d] = %f, nodeBnd->umo[%d] = %f, nodeBnd->ufa[%d] = %f, nodeBnd->vmo[%d] = %f, nodeBnd->vfa[%d] = %f\n", jfr, nodeBnd->efa[jfr], jfr, nodeBnd->emo[jfr], jfr, nodeBnd->umo[jfr], jfr, nodeBnd->ufa[jfr], jfr, nodeBnd->vmo[jfr], jfr, nodeBnd->vfa[jfr]);
+
          }
 
          idx++;
@@ -1389,7 +1382,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       Element *elem = node1->elements[j];
 
       // Compute the average gravity
-      printf("UUU Node::grav2 = %f, %f, %f\n", elem->nodes[0]->grav2, elem->nodes[1]->grav2, elem->nodes[2]->grav2);
       const double grav3 = elem->mean(&Node::grav2);
 
       // Look at the documentation for the description of the terms in the following integrals
@@ -1508,9 +1500,7 @@ if (j==node1->numElements-1) printf("MMMMmm  idx_node = %d, I_4_1 = %.15g, I_4_2
 
 
          if (!elem->isDry) {
-           const Vector2 gradEta = elem->nodes[0]->eta2*elem->gradPhi[0] +
-                                   elem->nodes[1]->eta2*elem->gradPhi[1] +
-                                   elem->nodes[2]->eta2*elem->gradPhi[2];
+           const Vector2 gradEta = elem->grad2(&Node::eta2);
 
            node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
          }
@@ -1584,7 +1574,7 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
                      Vn += 0.5*(side->zc[k+1] - side->zc[k])*(vn1 + vn2);
                   }
 
-                  ri3 = 0.5*side->length*Vn;
+                  ri3 = 0.5*side->len*Vn;
                }
 
                if (sideSegment->ifltype == -1) { // Flather 1
@@ -1592,7 +1582,7 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
                   assert(node1->eta2 >= -98.0 && node2->eta2 >= -98.0 && "Mismatch 1") ;
                   assert(side->depth() > 0.0 && "Negative depth at Flather boundary");
 
-                  const double con0 = (1.0/6.0)*side->length*sqrt(grav*side->depth()); // For coefficient matrix
+                  const double con0 = (1.0/6.0)*side->len*sqrt(grav*side->depth()); // For coefficient matrix
                   ri3 -= con0*(2.0*node1->eta2 + node2->eta2);
                   
                   node1->addToSparseMatrix(node1, (thetai*dt*con0)*2.0);
@@ -1610,7 +1600,7 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
                   const double tmp = polyDischarge->eval(etam)/sideSegment->clen; // XXXX IMPLEMENT Poly. It may need the grade (4 in this case)
                   assert(tmp >= 0.0 && "bar{f} < 0 at discharge boundary");
 
-                  const double con0 = (1.0/6.0)*side->length*tmp*thetai*dt;
+                  const double con0 = (1.0/6.0)*side->len*tmp*thetai*dt;
                   node1->addToSparseMatrix(node1, con0*2.0);
                   node1->addToSparseMatrix(node2, con0);
 
@@ -1626,7 +1616,7 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
 
                const double Unbar = dot(side->U, side->n);
 
-               node1->qel -= 0.5*(1.0 - thetai)*dt*side->length*Unbar;
+               node1->qel -= 0.5*(1.0 - thetai)*dt*side->len*Unbar;
                
             } // I_5
 
@@ -1667,7 +1657,7 @@ extern "C" {
 
       const int kb = side->kb;
 
-      printf("backtrackAllNodes: side->idx = %d, nvrt = %d\n", side->idx, nvrt);
+
 
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
@@ -1724,17 +1714,13 @@ extern "C" {
          
          const double vmag = length(toVector2(u_int));
 
-printf("XXX backtrackAllNodes: side->idx = %d, vmag = %f\n", side->idx, vmag);
-
          if (vmag <= velmin_btrack) {
             // No activity 
 
             side->btu[k] = side->u2[k];
-
             
          } else {  // do btrack
 
-          
             // Compute number of sub-divisions based on local gradients 
             // XXX IS THIS NECESSARY?
             double suma = 0.0;
@@ -1781,7 +1767,6 @@ printf("XXX backtrackAllNodes: side->idx = %d, vmag = %f\n", side->idx, vmag);
             Vector3 u_int = {0.0, 0.0, 0.0};
 
             side->btrack(k, dt, dtbk, u_int);
-
                
          } // if vmag (do backtrack)
 
@@ -3785,6 +3770,69 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
       }
 
    }
+
+
+   __global__ void computeVerticalVelocity(void) {
+      // Computes the vertical velocity at the (2D) element's centroid.
+      // In this function we will be considering volumetric elements, with side faces and a 
+      // bottom and a top face. We will call them SFs, BF and TF.
+      // It computes the flux coming from BF and the SFs.
+      // If the bed is moving, it takes that into account.
+      // Since water is incompressible, the TF = - BF - sum(SFs).
+      // It then computes the horizontal velocity at the center of TF.
+      // The vertical velocity W_TF at the center of TF is computed by knowing that:
+      //    (U_TF, V_TF, W_TF) = TF*n_TF/area(TF)
+      // where n_TF is the normal vector to TF (3D) and area(TF) is the area of TF (also 3D).
+      ELEM(elem);
+
+      if (elem->isDry) return;
+
+      const int kb = elem->kb;
+      const bool isTri = elem->isTri();
+
+      assert(kb > 0 && "computeVerticalVelocity only works with kb > 0");
+
+      // Compute the average (over the element) of the bottom deformation at the previous and current timesteps
+      const double av_bdef1 = elem->mean(&Node::bdef1);
+      const double av_bdef2 = elem->mean(&Node::bdef2);
+
+      Vector3 elem_n1 = element->n(); // normal vector to the bottom face of the "volumentric" element (3D)
+
+      // Bottom face flux
+      const Vector2 gradh = elem->grad2(&Node::h);
+      if constexpr(imm==2) {
+         updateBDEF();
+         compute dr_dxy
+         const Vector3 ubed = dsadsadas;
+
+         const double bflux0 = dot(ubed, elem_n1);
+
+         elem->w[kb] += ubed.z;
+      }
+      else {
+         assert(false && "computeVerticalVelocity: not implemented for imm!=2");
+      } // if imm
+
+      for (int l = kb; l < nvrt; l++) {
+
+         Vector3 elem_n2 = element->n(); // normal vector to the side face of the "volumentric" element (3D)
+
+         double sideFlux = 0.0;
+         for (int j = 0; j < elem->i34; j++) {
+            const Side *side = elem->sides[j];
+
+            const double sideArea = side->area(l);
+
+            sideFlux += ssign*dot(side->u2[l], side->n)*sideArea;
+         }
+
+         bflux=ubar*sne(1,l)+vbar*sne(2,l)+we(l,i)*sne(3,l)
+         
+         elem->w[l] += sideFlux;
+
+         elem_n1 = elem_n2;
+      }
+   }  
 
 
 

@@ -387,7 +387,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
 
 
     // Build isdel
-    nSides = ns + 1;
+    nSides = ns;
 
     isdel.resize(2, nSides); 
     isidenode.resize(2, nSides);

@@ -279,7 +279,12 @@ def schism_step(it: int, namelist, bctides, sflux):
     cufunc.resetVelocityOpenBndNodes()
     cufunc.setVelocityOpenBndNodes()
 
+
+
+
     # Update bed deformation and depth info  lines 8156-
+
+    cufunc.computeVerticalVelocity()
 
     # Optional calculations
 

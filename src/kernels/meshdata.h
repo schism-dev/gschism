@@ -190,6 +190,16 @@ __device__ __forceinline__ Point3 toPoint3(const double2& p, double z) {
     return make_double3(p.x, p.y, z);
 }
 
+__device__ __forceinline__ Vector2& toVector2(double3& v) {
+    return *reinterpret_cast<Vector2*>(&v);
+}
+
+
+__device__ __forceinline__ Point2& toPoint2(double3& p) {
+    return *reinterpret_cast<Point2*>(&p);
+}
+
+
 // ------------------------------------------------------------------------------------------------
 
 // Polynomial class
@@ -480,7 +490,9 @@ struct Element {
       p = (1-eps)*p + eps*toVector2(center);
    }
 
-   __device__ bool computeShapeCoords(Point2 xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
+   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
+   
+   __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
    __device__ Vector2 grad2(double *a) const
    {
@@ -504,6 +516,30 @@ struct Element {
       return {gx, gy};
    }
 
+   __device__ __forceinline__ Vector3 n(void) {
+      if (isTri) {
+         // For triangles...
+
+         // Gets the normal vector to the element (with a length equal to twice the area)
+         if constexpr(ics==1) {
+            
+           fsdfdfs  INCLUDE max(kb
+         }
+         else {  // lat/lon
+            assert(false && "computeVerticalVelocity: lat/lon not implemented for triangles");
+
+         } // if ics
+      }
+      else {
+         // For quads...
+
+         assert(false && "computeVerticalVelocity: quads not yet implemented");
+
+
+      }
+   }
+
+
    __device__ void setFrame(void) {
 
       double ar1, ar2;
@@ -520,7 +556,21 @@ struct Element {
    __inline__ __device__ bool containsPoint(Vector2 xt) const { 
       // Check if the point (xt,yt) is inside the element
       double shpCoords[4];
+
       bool res = computeShapeCoords(xt, shpCoords, false);
+
+      return res;
+   }
+
+   __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords) const { 
+      // Check if the point (xt,yt) is inside the element
+      double shpCoords[4];
+
+      Vector2 tmp_xt = xt;
+      bool res = computeShapeCoords(tmp_xt, shpCoords, fixCoords);
+
+      if (fixCoords && res) xt = tmp_xt;
+
       return res;
    }
 
@@ -714,7 +764,7 @@ struct Side {
    Node *n1, *n2;
    Element *elems[2];     // Elements that share this side XXX (why not e1,e2?)
 
-   double length;         // Length of the side. Used to be called distj; but I think this name is less clear now.
+   double len;         // Length of the side. Used to be called distj; but I think this name is less clear now.
    Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
 
@@ -839,14 +889,11 @@ struct Side {
    __inline__ __device__ Element* findElementTowards(Vector2 u) const {
       // From the elements that share this side, find the one that is in the direction of the target point (xt,yt)
 
-      // If one of the elements is null, return the other one
-      if      (elems[0] == nullptr) return elems[1];
-      else if (elems[1] == nullptr) return elems[0];
-
+      assert(elems[0] != nullptr && "elems[0] is nullptr in findElementTowards");
 
       // Dot product of the negative velocity vector with the side normal vector
       const double dot_prod1 = -dot(u, n);
-      
+
       // Vector from side center to element 0 centroid
       const Vector2 v2 = toVector2(elems[0]->center) - center;
 
@@ -862,7 +909,7 @@ struct Side {
  
    }
 
-   __forceinline__ __device__ Element* otherElem(const Element* elem) {
+   __forceinline__ __device__ Element* otherElem(const Element* elem) const {
       // Given an element, returns the other element that shares this side
       return (elems[0] == elem) ? elems[1] : elems[0];
    }
