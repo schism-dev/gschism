@@ -43,12 +43,18 @@ computeNodalVerticalVelocities2 = None
 computeNodalHorizontalVelocities = None
 resetVelocityOpenBndNodes = None
 setVelocityOpenBndNodes = None
+computeVerticalVelocity = None
 computeMatrixProductAndDotProducts = None
 updateSolutionAndDotProducts = None
 updateSearchDirection = None
 updateBedDeformation = None
 shapiroFilter1 = None
 shapiroFilter2 = None
+
+getElementVar = None
+getNodeVar = None
+getSideVar = None
+
 test = None
 
 def initializeCudaKernelManager(_project_root):
@@ -101,7 +107,9 @@ def initializeCudaFunctions(sizes):
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix
     global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
-    global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities, resetVelocityOpenBndNodes, setVelocityOpenBndNodes
+    global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities
+    global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
+    global getElementVar, getNodeVar, getSideVar
 
     # Get kernel functions with better error handling
     try:
@@ -141,8 +149,12 @@ def initializeCudaFunctions(sizes):
         computeNodalHorizontalVelocities    = mod.get_function('computeNodalHorizontalVelocities',    sizes, kernel_type='nodes')
         resetVelocityOpenBndNodes           = mod.get_function('resetVelocityOpenBndNodes',           sizes, kernel_type='nodeBnd')
         setVelocityOpenBndNodes             = mod.get_function('setVelocityOpenBndNodes',             sizes, kernel_type='nodeBnd')
+        computeVerticalVelocity             = mod.get_function('computeVerticalVelocity',             sizes, kernel_type='elements')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
         printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='nodes')
+        getElementVar                       = mod.get_function('getElementVar',                       sizes, kernel_type='elements')
+        getNodeVar                          = mod.get_function('getNodeVar',                          sizes, kernel_type='nodes')   
+        getSideVar                          = mod.get_function('getSideVar',                          sizes, kernel_type='sides')   
 
         test = mod.get_function('test', sizes, kernel_type='global')
     except Exception as e:

@@ -1,6 +1,7 @@
 import python.cuda_functions as cufunc
 import iop.readSflux as readSflux
 import cupy as cp
+import debug.monitor as monitor
 # from cupy import cudaMemcpyFromSymbol
 
 
@@ -280,6 +281,9 @@ def schism_step(it: int, namelist, bctides, sflux):
     cufunc.setVelocityOpenBndNodes()
 
 
+    # var = monitor.getElementVar("z", 0)
+    monitor.plotMesh()
+    # cufunc.getElementVar(monitor.varCodeDict["x"], var, 0) # monitor.varCodeDict["x"]
 
 
     # Update bed deformation and depth info  lines 8156-
@@ -290,8 +294,6 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # I/O
 
-    print("REMEMBER, updateZCoordData is not being called anywhere in the code")
-    print("Where is element->isDry being set?")
 
 
 

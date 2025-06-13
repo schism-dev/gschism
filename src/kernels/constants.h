@@ -4,7 +4,7 @@ constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 2;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: global, 2: local
-constexpr int imm = 0;                 // Option to pre-compute vnorm on the element
+constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
 constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
@@ -79,3 +79,5 @@ constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 constexpr double dt = 300;  // Time step  XXX 
 
 constexpr double h0 = 0.01;  // Minimum water depth [m]
+
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, area=6, depth=7, radius=8, xlon=9, ylat=10, kb=11, n1=12, n2=13}; // Var codes for getElementVar, getNodeVar...

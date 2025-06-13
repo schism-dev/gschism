@@ -5,7 +5,7 @@ constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 2;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: global, 2: local
-constexpr int imm = 0;                 // Option to pre-compute vnorm on the element
+constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
 constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
@@ -80,6 +80,8 @@ constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 constexpr double dt = 300;  // Time step  XXX 
 
 constexpr double h0 = 0.01;  // Minimum water depth [m]
+
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, area=6, depth=7, radius=8, xlon=9, ylat=10, kb=11, n1=12, n2=13}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -477,11 +479,10 @@ struct Element {
    Vector2 gradPr;           // Gradient of pressure    
    Vector2 gradETP;          // Gradient of Earth Tidal Potential    XXXXX Really used?
 
-   bool isDry;                  // True if the element is dry
-   int kbe;                   // Bottom index of the element
+   bool isDry;                // True if the element is dry
 
    Vector3 center;            // Element center coordinates
-   double xlon_el, ylat_el;   // Element center lat/lon coordinates in _degrees_
+   double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
 
@@ -599,6 +600,13 @@ struct Element {
       }
       return {gx, gy};
    }
+
+   __device__ __forceinline__ Vector3 n(int k, double &area3D) const;
+   __device__ __forceinline__ Vector3 n(int k) const {
+      double area3D;
+      return n(k, area3D);
+    }
+
 
    __device__ void setFrame(void) {
 
@@ -759,6 +767,22 @@ struct Element {
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }   
 
+   template<typename T>
+   __device__ T mean(int level, T (Node::* field)[nvrt]) const {
+      T values[4];
+      getNodalValues(level, field, values);
+
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }
+
+   template<typename T>
+   __device__ T mean(int level, T (Side::* field)[nvrt]) const {
+      T values[4];
+      getSideValues(level, field, values);
+      
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }   
+
    // __device__ double mean(double (Node::*func)(int) const) const {
    //    double values[4];
    //    getNodalValues(level, func, values);
@@ -881,6 +905,7 @@ struct Side {
    __inline__ __device__ Point3 center3D(int k) const { return {center.x, center.y, zc[k]}; }
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
    __inline__ __device__ double Dz(int k)       const { return zc[k] - zc[k-1]; }
+   __inline__ __device__ double area(int k)     const { return len*Dz(k + 1); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
@@ -1128,6 +1153,7 @@ struct Node {
    }
 
    __device__ Point2 p2(void) const { return {p.x, p.y}; }
+   __device__ Point3 p3(int k) const { return {p.x, p.y, z[k]}; }
 
    __device__ double sigmaTransitionDepth(void) const;
 
@@ -1413,7 +1439,8 @@ extern "C" {
    __global__ void getStructSizes(int* sizes);
 
    __global__ void printMatrix(void);
-   
+
+
 
    __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
       // Compute the different time ramps used in the code 
@@ -1477,7 +1504,6 @@ extern "C" {
 
 
 // END INCLUDE: meshdata.h
-
 #include <cuda_runtime.h>
 
 
@@ -1521,6 +1547,49 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 
 }
 
+
+__device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
+   // Computes the 3D normal vector to the element at level k
+   // Returns the normal vector and the area of the element
+
+      if (isTri()) {
+         // For triangles...
+
+         // Gets the normal vector to the element (with a length equal to twice the area)
+         if constexpr(ics==1) {
+            const int kb0 = max(k, nodes[0]->kb);
+            const int kb1 = max(k, nodes[1]->kb);
+            const int kb2 = max(k, nodes[2]->kb);
+
+            const Vector3 n20 = nodes[2]->p3(k) - nodes[0]->p3(k);
+            const Vector3 n10 = nodes[1]->p3(k) - nodes[0]->p3(k);
+            
+            // Computes the cross product of vectors (n2 - n0) and (n1 - n0). 
+            const double nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
+            const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
+            const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
+
+            area3D = sqrt(nx*nx + ny*ny + nz*nz);
+
+            assert(area3D > 0.0 && "Element normal vector: area3D is negative");
+
+            return {nx/area3D, ny/area3D, nz/area3D};
+
+           
+         }
+         else {  // lat/lon
+            assert(false && "Element normal vector: lat/lon not implemented for triangles");
+
+         } // if ics
+      }
+      else {
+         // For quads...
+
+         assert(false && "Element normal vector: quads not yet implemented");
+
+
+      }
+   }
 
 /**
    For a point on a side of an element and a line segment starting at that point and ending at (x2,y2), 
@@ -2102,7 +2171,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    // Second step is to find the level that contains zt
    // Uses a binary search to find the level
    // Note that z coordinates are interpolated from their values at the nodes of the element.
-   int L = kbe;   // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
+   int L = kb;   // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
    int R = nvrt - 1;
 
    // Get the z coordinates at the nodes of the element at the levels L and R
@@ -2814,7 +2883,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
          NodeBoundary *nodeBnd = &localNodeBoundaryMem[idx];
 
          nodeBnd->isEssentialBC = true;
-nodeBnd->iettype = 3;
+nodeBnd->iettype = 3; // XXXXXXXXX
          nodeBnd->elbc = 0.0;
 
          for (int jfr = 0; jfr < nbfr; jfr++) {
@@ -2950,7 +3019,7 @@ if (j==node1->numElements-1) printf("MMMMmm  idx_node = %d, I_4_1 = %.15g, I_4_2
 
       // Additional terms 
       double vnorm = 0.0;
-      if (imm == 2)  { // Pre-compute vnorm on the element
+      if constexpr(imm == 2)  { // Pre-compute vnorm on the element
          Vector3 ubed;
          // update_bdef(time, elem->center, elem->depth, ubed); XXX
 
@@ -2970,16 +3039,14 @@ if (j==node1->numElements-1) printf("MMMMmm  idx_node = %d, I_4_1 = %.15g, I_4_2
 
            (node == node1)? fac=2.0 : fac=1.0;
 
-           if (imm==2) node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
-           else        node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
+           if constexpr(imm==2) node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
+           else                 node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
            
          }
 
 
          if (!elem->isDry) {
-           const Vector2 gradEta = elem->nodes[0]->eta2*elem->gradPhi[0] +
-                                   elem->nodes[1]->eta2*elem->gradPhi[1] +
-                                   elem->nodes[2]->eta2*elem->gradPhi[2];
+           const Vector2 gradEta = elem->grad2(&Node::eta2);
 
            node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
          }
@@ -3136,7 +3203,7 @@ extern "C" {
 
       const int kb = side->kb;
 
-      printf("backtrackAllNodes: side->idx = %d, nvrt = %d\n", side->idx, nvrt);
+
 
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
@@ -4767,7 +4834,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
       
 
       // Impose velocity boundary conditions at the bottom
-      if constexpr(imm == 2) { //no slip
+      if constexpr(imm == 2) { // 3D bed deformation model
          double dep;
          Vector2 vel;
 
@@ -4775,7 +4842,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
          //update_bdef(time, x0, y0, dep, vel);
          // side->u2[kb] = vel;
 
-      } else {
+      } else { // imm = 0 or 1
          if (side->Cd() == 0.0) {
             side->u2[kb] = side->u2[kb + 1];
          } else if (nvrt > kb + 1) { // 3D no slip bottom
@@ -5249,6 +5316,103 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
       }
 
    }
+
+
+   __global__ void computeVerticalVelocity(void) {
+      // Computes the vertical velocity at the (2D) element's centroid.
+      // In this function we will be considering volumetric elements, with side faces and a 
+      // bottom and a top face. We will call them SFs, BF and TF.
+      // It computes the flux coming from BF and the SFs.
+      // If the bed is moving, it takes that into account.
+      // Since water is incompressible, the integral of the velocity times the normal vector
+      // along the surface of the prism is zero. In other words, the flux coming from the SFs 
+      // and the BF is equal to the flux going out from the TF.
+      // TF = - BF - sum(SFs).
+      // It then computes the horizontal velocity at the center of TF.
+      // The vertical velocity W_TF at the center of TF is computed by knowing that:
+      //    (U_TF, V_TF, W_TF) = TF*n_TF/area(TF)
+      // where n_TF is the normal vector to TF (3D) and area(TF) is the area of TF (also 3D).
+
+      ELEM(elem);
+
+      if (elem->isDry) return;
+
+      const int kb = elem->kb;
+      const bool isTri = elem->isTri();
+
+      assert(kb >= 0 && "computeVerticalVelocity: wrong kb");
+
+      // Compute the average (over the element) of the bottom deformation at the previous and current timesteps
+      const double av_bdef1 = elem->mean(&Node::bdef1);
+      const double av_bdef2 = elem->mean(&Node::bdef2);
+
+      Vector3 elem_n1 = elem->n(kb); // normal vector to the bottom face of the "volumetric" element (3D)
+
+      double area3D;
+
+      // Bottom face flux
+      double bottomFlux = 0.0;
+      Vector2 u2meanBottom = {0.0, 0.0};
+      const Vector2 gradh = elem->grad2(&Node::depth);
+      if constexpr(imm==2) {
+         Vector3 ubed;
+
+         assert(false && "computeVerticalVelocity: not implemented for imm==2");
+         // updateBDEF(ubed);
+     
+         // const double bflux0 = dot(ubed, elem_n1);
+
+         // elem->w[kb] += ubed.z;
+      }
+      else {
+         Vector2 umean;
+         if constexpr(ics == 1) {
+            u2meanBottom = elem->mean(kb, &Side::u2);
+         }
+         else {
+            assert(false && "computeVerticalVelocity: ics==1 not implemented for imm==0 or 1");
+         }
+
+         // Error: /=0 for 2D (but OK b/cos fluxes are 0 below for transport)
+         elem->w[kb] = (av_bdef2 - av_bdef1)/dt - dot(gradh, u2meanBottom); // XXXX Is the dot prod always 0?
+
+         bottomFlux = - dot(gradh, u2meanBottom);
+      } // if imm
+
+      // Compute w for kb+1 to nvrt-1
+      for (int l = kb; l < nvrt - 1; l++) {
+
+         // normal vector to the top face of the "volumetric" element (3D)
+         Vector3 elem_n2 = elem->n(l + 1, area3D); 
+
+         // Compute the total flux at the sides
+         double sideFlux = 0.0;
+         Vector2 u2top = {0.0, 0.0};
+         for (int j = 0; j < elem->i34; j++) {
+            const Side *side = elem->sides[j];
+
+            const double sideArea = side->area(l + 1);
+            const Vector2 u2c = 0.5*(side->u2[l] + side->u2[l + 1]); // velocity at the center of the side
+            const double sign = elem->ssign[j]; 
+
+            sideFlux += sign*dot(u2c, side->n)*sideArea;
+         }
+         
+         // Compute the horizontal velocity at the center of the top face as an average of the 
+         //velocities at the centers of the sides
+         const Vector2 u2meanTop = elem->mean(l + 1, &Side::u2);
+
+         // The flx at the top ace can be computed from the other flows.
+         const double topFlux = - sideFlux - bottomFlux;
+         const double topHorizontalFlux = dot(u2meanTop, toVector2(elem_n2))*area3D; // Part of the flux related to the horizontal velocity
+
+         elem->w[l + 1] = (-sideFlux - topHorizontalFlux - bottomFlux)/(elem_n2.z*area3D);
+printf("sideFlux = %f, topHorizontalFlux = %f, bottomFlux = %f, area3D = %f, elem->w[%d] = %.16f, elem_n2.z = %f\n", sideFlux, topHorizontalFlux, bottomFlux, area3D, l + 1, elem->w[l + 1], elem_n2.z);
+         elem_n1 = elem_n2;
+
+         bottomFlux = - topFlux;
+      }
+   }  
 
 
 
@@ -6868,3 +7032,78 @@ __global__ void initializePreconditionedResidual(double *scalars) {
 
 
 
+extern "C" __global__ void getElementVar(int varCode, double *var, int k = -1) {
+   // Get the value of a variable from an element
+   // varName is the name of the variable to get
+   // var is the array to store the value
+   // k is the vertical level index of the variable to get
+
+   ELEM(elem);
+   
+   int idx = elem->idx;
+   int i = threadIdx.x + blockIdx.x * blockDim.x;
+
+   // printf("getElementVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
+   if      (varCode == (int)VarCode::w && k >= 0)       var[idx] = elem->w[k];
+   else if (varCode == (int)VarCode::z && k >= 0)       var[idx] = elem->z[k];
+   else if (varCode == (int)VarCode::x && k == -1)      var[idx] = elem->center.x;
+   else if (varCode == (int)VarCode::y && k == -1)      var[idx] = elem->center.y;
+   else if (varCode == (int)VarCode::area && k == -1)   var[idx] = elem->area;
+   else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = elem->depth;
+   else if (varCode == (int)VarCode::radius && k == -1) var[idx] = elem->radius;
+   else if (varCode == (int)VarCode::xlon && k == -1)   var[idx] = elem->xlon;
+   else if (varCode == (int)VarCode::ylat && k == -1)   var[idx] = elem->ylat;
+   else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(elem->kb);
+   else if (i==0) printf("getElementVar: varCode = %d, k = %d not found\n", varCode, k);
+      
+   
+}
+
+
+extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
+   // Get the value of a variable from an node
+   // varName is the name of the variable to get
+   // var is the array to store the value
+   // k is the vertical level index of the variable to get
+
+   NODE(node);
+   
+   int idx = node->idx;
+   int i = threadIdx.x + blockIdx.x * blockDim.x;
+
+   printf("getNodeVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
+   
+   if      (varCode == (int)VarCode::z && k >= 0)       var[idx] = node->z[k];
+   else if (varCode == (int)VarCode::x && k == -1)      var[idx] = node->p.x;
+   else if (varCode == (int)VarCode::y && k == -1)      var[idx] = node->p.y;
+   else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = node->depth;
+   else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
+   else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
+      
+   
+}
+
+
+extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
+   // Get the value of a variable from an side
+   // varName is the name of the variable to get
+   // var is the array to store the value
+   // k is the vertical level index of the variable to get
+   SIDE(side);
+   
+   int idx = side->idx;
+   int i = threadIdx.x + blockIdx.x * blockDim.x;
+
+   printf("getSideVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
+   
+   if      (varCode == (int)VarCode::z && k >= 0)       var[idx] = side->zc[k];
+   else if (varCode == (int)VarCode::x && k == -1)      var[idx] = side->center.x;
+   else if (varCode == (int)VarCode::y && k == -1)      var[idx] = side->center.y;
+   else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = side->u2[k].x;
+   else if (varCode == (int)VarCode::v && k >= 0)       var[idx] = side->u2[k].y;
+   else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = side->depth();
+   else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(side->kb);
+   else if (varCode == (int)VarCode::n1 && k == -1)     var[idx] = side->n1->idx;
+   else if (varCode == (int)VarCode::n2 && k == -1)     var[idx] = side->n2->idx;
+   else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
+}

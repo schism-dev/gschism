@@ -4,7 +4,7 @@ constexpr int N_TRACERS = __N_TRACERS__;
 
 constexpr int ivcor = __IVCOR__;              // Vertical coordinate system
 constexpr int ics = __ICS__;                 // 1: global, 2: local
-constexpr int imm = __IMM__;                 // Option to pre-compute vnorm on the element
+constexpr int imm = __IMM__;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = __INDVEL__;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = __IVEG__;               // Vegetation option, 0: no vegetation, 1: vegetation
 constexpr int ihhat = __IHHAT__;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
@@ -79,3 +79,5 @@ constexpr double dzb_min = __DZB_MIN__; // Min. bottom boundary layer thickness 
 constexpr double dt = __DT__;  // Time step  XXX 
 
 constexpr double h0 = __H0__;  // Minimum water depth [m]
+
+enum class VarCode {__VARCODES__}; // Var codes for getElementVar, getNodeVar...

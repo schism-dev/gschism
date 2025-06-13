@@ -393,11 +393,10 @@ struct Element {
    Vector2 gradPr;           // Gradient of pressure    
    Vector2 gradETP;          // Gradient of Earth Tidal Potential    XXXXX Really used?
 
-   bool isDry;                  // True if the element is dry
-   int kbe;                   // Bottom index of the element
+   bool isDry;                // True if the element is dry
 
    Vector3 center;            // Element center coordinates
-   double xlon_el, ylat_el;   // Element center lat/lon coordinates in _degrees_
+   double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
 
@@ -516,28 +515,11 @@ struct Element {
       return {gx, gy};
    }
 
-   __device__ __forceinline__ Vector3 n(void) {
-      if (isTri) {
-         // For triangles...
-
-         // Gets the normal vector to the element (with a length equal to twice the area)
-         if constexpr(ics==1) {
-            
-           fsdfdfs  INCLUDE max(kb
-         }
-         else {  // lat/lon
-            assert(false && "computeVerticalVelocity: lat/lon not implemented for triangles");
-
-         } // if ics
-      }
-      else {
-         // For quads...
-
-         assert(false && "computeVerticalVelocity: quads not yet implemented");
-
-
-      }
-   }
+   __device__ __forceinline__ Vector3 n(int k, double &area3D) const;
+   __device__ __forceinline__ Vector3 n(int k) const {
+      double area3D;
+      return n(k, area3D);
+    }
 
 
    __device__ void setFrame(void) {
@@ -699,6 +681,22 @@ struct Element {
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }   
 
+   template<typename T>
+   __device__ T mean(int level, T (Node::* field)[nvrt]) const {
+      T values[4];
+      getNodalValues(level, field, values);
+
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }
+
+   template<typename T>
+   __device__ T mean(int level, T (Side::* field)[nvrt]) const {
+      T values[4];
+      getSideValues(level, field, values);
+      
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }   
+
    // __device__ double mean(double (Node::*func)(int) const) const {
    //    double values[4];
    //    getNodalValues(level, func, values);
@@ -821,6 +819,7 @@ struct Side {
    __inline__ __device__ Point3 center3D(int k) const { return {center.x, center.y, zc[k]}; }
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
    __inline__ __device__ double Dz(int k)       const { return zc[k] - zc[k-1]; }
+   __inline__ __device__ double area(int k)     const { return len*Dz(k + 1); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
@@ -1068,6 +1067,7 @@ struct Node {
    }
 
    __device__ Point2 p2(void) const { return {p.x, p.y}; }
+   __device__ Point3 p3(int k) const { return {p.x, p.y, z[k]}; }
 
    __device__ double sigmaTransitionDepth(void) const;
 
@@ -1353,7 +1353,8 @@ extern "C" {
    __global__ void getStructSizes(int* sizes);
 
    __global__ void printMatrix(void);
-   
+
+
 
    __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
       // Compute the different time ramps used in the code 

@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: test_pybind11.py",
+            "name": "Python: main.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/temp/test_pybind11.py",
+            "program": "${workspaceFolder}/temp/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "python": "C:/Users/jmgonzalez/AppData/Local/miniconda3/envs/gschism/python.exe",
