@@ -176,8 +176,8 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     # XXX I think I will combine all BCs into one function
-    # # Compute new vel. for flow b.c. (uth,vth)
-    # computeFlowBcVelocities()            # Lines 1759-1800
+    # Compute new vel. for flow b.c. (uth,vth)
+    cufunc.computeFlowBcVelocities()            # Lines 1759-1800
 
 
 

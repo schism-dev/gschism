@@ -52,6 +52,10 @@ def schism_init(core, opt):
         error('INIT: mntracers<ntracers')
 
 
+    # XXXXX Initialize time history variables
+    #  uthnd=-99.d0; vthnd=-99.d0; eta_mean=-99.d0; !uth=-99.d0; vth=-99.d0; !flags
+
+
     # Calculate the index ranges for each tracer module
     irange_tr = cp.zeros((2, natrm), dtype=int)
     irange_tr[0, 1:] = cp.cumsum(ntrs[:-1])    

@@ -364,6 +364,7 @@ struct Side;
 struct Element;
 struct Node;
 struct Mesh;
+struct NodeBoundary;
 
 struct CubicSpline { 
    double *x   = nullptr;
@@ -751,7 +752,17 @@ struct BoundarySegment {
 struct SideBoundary {
    Side *side; // Pointer to the side that this boundary segment belongs to
    BoundarySegment *segment; // Pointer to the boundary segment
-  
+
+   Vector2 ubc[nvrt]; // velocity boundary condition
+   
+   __inline__ __device__ double getBoundaryArrayValueWeight(void) const;
+
+
+   __inline__ __device__ Vector2 umo (int jfr) const;
+   __inline__ __device__ Vector2 ufa (int jfr) const;  
+   __inline__ __device__ Vector2 uth (int k) const;
+   __inline__ __device__ double  nuth(int k) const;
+   __inline__ __device__ double  eth (int k) const;
 };
 
 
@@ -782,7 +793,6 @@ struct Side {
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
    double  w2[nvrt];            // Vertical velocity at each vertical level
    Vector2 btu[nvrt];           // Back-tracked velocity
-   Vector2 uth[nvrt];           // "Time history" velocity
    Vector2 U;                   // Vertically averaged velocity vector  
 
    Vector2 d2uv[nvrt];          // divergence of (nu*grad u) XXX COMPUTE!!
@@ -934,7 +944,7 @@ struct NodeBoundary {
    SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
 
-   double etaic;  // Elevation at nodes used for essential boundary conditions
+   double etaic;  // Elevation at nodes used for essential boundary conditions XXXX Where is this value set???
    double elbc;   // Elevation boundary condition
    int iettype;   // Type of elevation boundary condition
    double eth;    // Elevation time history
@@ -943,14 +953,14 @@ struct NodeBoundary {
 
    bool isEssentialBC;
 
+   Vector2 uth[nvrt];           // "Time history" velocity
 
    // Arrays for harmonic constituents (if needed)
-   double emo[nbfr];  // Elevation amplitude
-   double efa[nbfr];  // Elevation phase
-   double umo[nbfr];  // U-velocity amplitude
-   double ufa[nbfr];  // U-velocity phase
-   double vmo[nbfr];  // V-velocity amplitude
-   double vfa[nbfr];  // V-velocity phase 
+   double  emo[nbfr];  // Elevation amplitude
+   double  efa[nbfr];  // Elevation phase
+   Vector2 umo[nbfr];  // velocity amplitude
+   Vector2 ufa[nbfr];  // velocity phase
+
 
    
    __forceinline__ __device__ int numSidesForAverage() const {

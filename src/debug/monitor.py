@@ -4,7 +4,12 @@ import cupy as cp
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
+import matplotlib
 
+matplotlib.use('TkAgg') 
+
+fig = None
+ax  = None
 
 # Create dictionary mapping variable names to indices
 varCodeDict = {var: idx for idx, var in enumerate(varCodes.split(','))}
@@ -41,7 +46,10 @@ def getSideVar(varname, k = -1):
 
 
 def plotMesh():
-    fig, ax = plt.subplots(figsize=(12, 8))
+    global fig, ax
+    
+    if fig is None: 
+        fig, ax = plt.subplots(figsize=(12, 8))
 
     x = getNodeVar("x")
     y = getNodeVar("y")
@@ -70,5 +78,5 @@ def plotMesh():
 
 
 
-    plt.show()
-    plt.pause(0.0)
+    plt.show(block=False)
+    plt.pause(0.1)

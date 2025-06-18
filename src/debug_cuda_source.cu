@@ -81,7 +81,7 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth [m]
 
-enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, area=6, depth=7, radius=8, xlon=9, ylat=10, kb=11, n1=12, n2=13}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, btu=6, btv=7, bccx=8, bccy=9, uth=10, vth=11, eta=12, area=13, qel=14, depth=15, radius=16, xlon=17, ylat=18, kb=19, n1=20, n2=21}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -450,6 +450,7 @@ struct Side;
 struct Element;
 struct Node;
 struct Mesh;
+struct NodeBoundary;
 
 struct CubicSpline { 
    double *x   = nullptr;
@@ -837,7 +838,17 @@ struct BoundarySegment {
 struct SideBoundary {
    Side *side; // Pointer to the side that this boundary segment belongs to
    BoundarySegment *segment; // Pointer to the boundary segment
-  
+
+   Vector2 ubc[nvrt]; // velocity boundary condition
+   
+   __inline__ __device__ double getBoundaryArrayValueWeight(void) const;
+
+
+   __inline__ __device__ Vector2 umo (int jfr) const;
+   __inline__ __device__ Vector2 ufa (int jfr) const;  
+   __inline__ __device__ Vector2 uth (int k) const;
+   __inline__ __device__ double  nuth(int k) const;
+   __inline__ __device__ double  eth (int k) const;
 };
 
 
@@ -868,7 +879,6 @@ struct Side {
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
    double  w2[nvrt];            // Vertical velocity at each vertical level
    Vector2 btu[nvrt];           // Back-tracked velocity
-   Vector2 uth[nvrt];           // "Time history" velocity
    Vector2 U;                   // Vertically averaged velocity vector  
 
    Vector2 d2uv[nvrt];          // divergence of (nu*grad u) XXX COMPUTE!!
@@ -1020,7 +1030,7 @@ struct NodeBoundary {
    SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
 
-   double etaic;  // Elevation at nodes used for essential boundary conditions
+   double etaic;  // Elevation at nodes used for essential boundary conditions XXXX Where is this value set???
    double elbc;   // Elevation boundary condition
    int iettype;   // Type of elevation boundary condition
    double eth;    // Elevation time history
@@ -1029,14 +1039,14 @@ struct NodeBoundary {
 
    bool isEssentialBC;
 
+   Vector2 uth[nvrt];           // "Time history" velocity
 
    // Arrays for harmonic constituents (if needed)
-   double emo[nbfr];  // Elevation amplitude
-   double efa[nbfr];  // Elevation phase
-   double umo[nbfr];  // U-velocity amplitude
-   double ufa[nbfr];  // U-velocity phase
-   double vmo[nbfr];  // V-velocity amplitude
-   double vfa[nbfr];  // V-velocity phase 
+   double  emo[nbfr];  // Elevation amplitude
+   double  efa[nbfr];  // Elevation phase
+   Vector2 umo[nbfr];  // velocity amplitude
+   Vector2 ufa[nbfr];  // velocity phase
+
 
    
    __forceinline__ __device__ int numSidesForAverage() const {
@@ -2228,6 +2238,73 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
 
 
 
+
+__inline__ __device__ double SideBoundary::getBoundaryArrayValueWeight(void) const {
+
+   // For a side boundary, computes the weight w for which the value at node n1 is weighted by to
+   // compute the value at the side center. The one for n2 is computed from 1 - w
+   const Node *n1 = side->n1;
+   const Node *n2 = side->n2;
+
+   bool n1_match = (n1->nodeBnd->segment == segment);
+   bool n2_match = (n2->nodeBnd->segment == segment);
+
+   assert(n1_match || n2_match && "getBoundaryArrayValue: side with no segment boundary");
+   if (n1_match && n2_match) {
+      return 0.5;
+   } else if (n1_match) {
+      return 1.0;
+   } else if (n2_match) {
+      return 0.0;
+   }
+   return 0.0;
+}
+
+
+__inline__ __device__ Vector2 SideBoundary::umo(int jfr) const {
+
+   const double w1 = getBoundaryArrayValueWeight();
+   const double w2 = 1.0 - w1;
+   const NodeBoundary *n1Bnd = side->n1->nodeBnd;
+   const NodeBoundary *n2Bnd = side->n2->nodeBnd;
+
+   return w1*n1Bnd->umo[jfr] + w2*n2Bnd->umo[jfr];
+}
+
+
+__inline__ __device__ Vector2 SideBoundary::ufa(int jfr) const {
+   const double w1 = getBoundaryArrayValueWeight();
+   const double w2 = 1.0 - w1;
+   const NodeBoundary *n1Bnd = side->n1->nodeBnd;
+   const NodeBoundary *n2Bnd = side->n2->nodeBnd;
+
+   return w1*n1Bnd->ufa[jfr] + w2*n2Bnd->ufa[jfr];
+}
+
+
+__inline__ __device__ Vector2 SideBoundary::uth(int k) const {
+   // Returns the value of the velocity at the side center
+   const double w1 = getBoundaryArrayValueWeight();
+   const double w2 = 1.0 - w1;
+   const NodeBoundary *n1Bnd = side->n1->nodeBnd;
+   const NodeBoundary *n2Bnd = side->n2->nodeBnd;
+
+   return w1*n1Bnd->uth[k] + w2*n2Bnd->uth[k];
+}
+
+
+__inline__ __device__ double  SideBoundary::nuth(int k) const {
+   // Returns the value of the normal component of the velocity at the side center
+   const double w1 = getBoundaryArrayValueWeight();
+   const double w2 = 1.0 - w1;
+   const NodeBoundary *n1Bnd = side->n1->nodeBnd;
+   const NodeBoundary *n2Bnd = side->n2->nodeBnd;
+
+   return w1*n1Bnd->uth[k].x + w2*n2Bnd->uth[k].x;
+}
+
+
+
 __inline__ __device__ double  Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
 __inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
 __inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
@@ -2269,6 +2346,8 @@ __inline__ __device__ double  Side::veg_alpha_vert_mean(void) const { return 0.5
 __inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D[k] + n2->veg_alpha3D[k]); }
 
 __inline__ __device__ double  Side::etaMeanBnd(void) const { assert(n1->nodeBnd != nullptr && n2->nodeBnd != nullptr && "etaMeanBnd not assigned"); 
+                                                             assert(n1->nodeBnd->eta_mean >= -98 && n2->nodeBnd->eta_mean >= -98 && "Bad value for etaMeanBnd");
+                                                             // XXXX Should I use something like getBoundaryArrayValueWeight here?
                                                              return 0.5*(n1->nodeBnd->eta_mean + n2->nodeBnd->eta_mean); }
 
 
@@ -2889,10 +2968,8 @@ nodeBnd->iettype = 3; // XXXXXXXXX
          for (int jfr = 0; jfr < nbfr; jfr++) {
             nodeBnd->efa[jfr] = efa[jfr + iseg*nbfr];
             nodeBnd->emo[jfr] = emo[jfr + iseg*nbfr];
-            nodeBnd->umo[jfr] = umo[jfr + iseg*nbfr];
-            nodeBnd->ufa[jfr] = ufa[jfr + iseg*nbfr];
-            nodeBnd->vmo[jfr] = vmo[jfr + iseg*nbfr];
-            nodeBnd->vfa[jfr] = vfa[jfr + iseg*nbfr];
+            nodeBnd->umo[jfr] = {umo[jfr + iseg*nbfr], vmo[jfr + iseg*nbfr]};
+            nodeBnd->ufa[jfr] = {ufa[jfr + iseg*nbfr], vfa[jfr + iseg*nbfr]};
 
          }
 
@@ -3091,7 +3168,7 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
 
          const Node *node2 = sideBnd->side->otherNode(node1); // Other node of the side
 
-
+         // XXXX CAN WE DO THIS MORE NATURALLY IN A SideBnd Loop?
          if (sideBnd != nullptr) {
             // If the side is on a boundary...
 
@@ -3114,8 +3191,8 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
                   for (int k = side->kb; k<nvrt-1; k++) {
                      // uth, vth in lat/lon frame if ics=2
                      // XXX Are uth,vth really necessary? Why not just store the normal component?
-                     const double vn1 = dot(side->uth[k  ], side->n); // outer normal
-                     const double vn2 = dot(side->uth[k+1], side->n);
+                     const double vn1 = dot(sideBnd->uth(k  ), side->n); // outer normal
+                     const double vn2 = dot(sideBnd->uth(k+1), side->n);
 
                      Vn += 0.5*(side->zc[k+1] - side->zc[k])*(vn1 + vn2);
                   }
@@ -3802,6 +3879,82 @@ return;
    //    endif !nfltype2
    }
 
+
+   __global__ void computeFlowBcVelocities(double time) {
+
+      SIDE_BND(sideBnd);
+
+      const Side *side = sideBnd->side;
+
+      const bool isDry = side->isDry;
+
+      if (isDry) {
+         for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] = {0.0, 0.0};
+         return;
+      }
+
+      // For wet sides in open boundaries...
+      const Vector2 n = side->n;
+      const BoundarySegment *segment = sideBnd->segment;
+      const int ifltype = segment->ifltype;
+
+      const double r_uth0 = ramp*segment->qthcon/segment->carea;  // r_ stands for ramp-up
+      const Vector2 r_nuth0 = r_uth0*n;
+
+      Vector2 r_uth    = {0.0, 0.0};    // r_ stands for ramp-up
+      Vector2 r_u1_bar = {0.0, 0.0};
+
+      for (int k = 0; k < nvrt; k++) {
+         if (ifltype == 1 || ifltype == 2) {
+         
+            assert(segment->carea > 0.0 && "computeFlowBcVelocities: dry bnd side");
+
+            const double unth0 = segment->qthcon*ramp/segment->carea;
+            
+            r_uth = unth0*n;  // This case has no ramp-up
+            
+         } else if (ifltype == -1) { // Flather 1
+
+            // uth is the normal vel.; no ramp up
+            const double uth = sideBnd->nuth(k);
+            r_uth = uth*n;
+            assert(uth >= -98.0 && uth <=  98.0 && "computeFlowBcVelocities: wrong velocity b.c. at side");
+
+
+         } else if (ifltype == 3 || ifltype == 5) {
+            // vnth0=0 !normal vel.
+
+
+            // Computes the contribution to the velocity from all tide frequencies
+            for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
+
+               const Vector2 ufa  = sideBnd->ufa(jfr); 
+               const Vector2 umo  = sideBnd->umo(jfr); 
+
+               const int ncyc = int(amig[jfr]*time/(2.0*pi));
+               const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa;
+               r_u1_bar += ramp*ff[jfr]*umo*cos(arg);
+            }
+
+         } // if (ifltype = 3 || ifltype == 5
+
+
+         switch (iettype) {
+            case 1:
+            case 2:
+            case 4:
+               sideBnd->ubc[k] = r_uth;
+               break;
+            case 3:
+               sideBnd->ubc[k] = r_u1_bar;
+               break;
+            case 5:
+               sideBnd->ubc[k] = r_uth + r_u1_bar;
+               break;
+         } // switch
+      } // for k
+   }
+
    __global__ void computeElevationBoundaryConditions(double time) {
       // Compute elevation essential boundary conditions 
 
@@ -3810,15 +3963,16 @@ return;
       const Node *node = nodeBnd->node;
       const int iettype = nodeBnd->iettype;
 
+      // Elevation initial condition at boundary nodes. It is ramped down to zero
       double eic = 0.0;
-      if (nramp_elev==1) eic = nodeBnd->etaic;
-      else               eic = 0.0;
+      if (nramp_elev == 1) eic = nodeBnd->etaic;
+      else                 eic = 0.0;
 
-      const double r_eic = (1.0 - ramp)*eic; 
+      const double r_eic = (1.0 - ramp)*eic;   // r_ stands for ramp
       const double r_eth = ramp*nodeBnd->eth;
-      double eta1_bar = r_eic;
+      double r_eta1_bar = 0.0;
 
-printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
+
       // Compute tide elevation
       if (iettype == 3 || iettype == 5) {   
 
@@ -3834,9 +3988,8 @@ printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
 
             const int ncyc = int(amig[jfr]*time/(2.0*pi));
             const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa;
-            eta1_bar += ramp*ff[jfr]*emo*cos(arg);
+            r_eta1_bar += ramp*ff[jfr]*emo*cos(arg);
 
- printf("++++>> jfr = %d, time = %f, ramp = %f, node->idx = %d, amig = %f, face = %f, ff = %f, efa = %f, emo = %f, arg = %f, eta1_bar = %f\n", jfr, time, ramp, node->idx, amig[jfr], face[jfr], ff[jfr], efa, emo, arg, eta1_bar);            
          } // for jfr
 
       } // if iettype
@@ -3844,16 +3997,14 @@ printf("++++>> node[%d]->iettype = %d\n", node->idx, iettype);
       switch (iettype) {
          case 1:
          case 2:
-            nodeBnd->elbc = r_eth + r_eic;
+         case 4:
+            nodeBnd->elbc = r_eic + r_eth;
             break;
          case 3:
-            nodeBnd->elbc = eta1_bar + r_eic;
-            break;
-         case 4:
-            nodeBnd->elbc = r_eth + r_eic;
+            nodeBnd->elbc = r_eic + r_eta1_bar;
             break;
          case 5:
-            nodeBnd->elbc = r_eth + eta1_bar + r_eic;
+            nodeBnd->elbc = r_eic + r_eta1_bar + r_eth;
             break;
       } // switch
 
@@ -4459,7 +4610,7 @@ extern "C" {
       int k2 = nvrt - 1;
 
       side->bcc[nvrt-1] = {0.0, 0.0};
-      for (int k = nvrt-1; k >= kb; k--) {
+      for (int k = nvrt-2; k >= kb; k--) {
       // For each prism level (from surface to bottom)...
 
          // For both elements, interpolate density gradient at the side's half level.
@@ -4500,6 +4651,8 @@ extern "C" {
          // CHECK INDICES!!! XXX
          const double grav3 = side->grav3();
          side->bcc[k] = side->bcc[k + 1] - (rampbc*grav3/rho0)*side->Dz(k + 1)*gradRho;
+printf(">>>side->bcc[%d] = %e, %e, rampbc: %e, grav3: %e, rho0: %e, side->Dz(k + 1): %e, gradRho: %e, %e\n", k, side->bcc[k].x, side->bcc[k].y, rampbc, grav3, rho0, side->Dz(k + 1), gradRho.x, gradRho.y);
+
       } // for
 
    }
@@ -4794,7 +4947,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
             } // if k<nvrt
 
             if (k > kb + 1) {
-               rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k - 1] + 
+               rrhs[kin] += (dz_0/6.0)*(2.0*btu[k] + btu[k - 1] + 
                                        (dt*coriolis)*rot90(2.0*u2[k] + u2[k - 1]) + 
                                        dt*(2.0*d2uv[k] + d2uv[k - 1]));
 
@@ -4860,10 +5013,10 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
 
    __device__ void applyMomentumBC(void) {
 
-      SIDE_BND(side_bnd);
+      SIDE_BND(sideBnd);
 
-      Side *side = side_bnd->side;
-      const BoundarySegment *segment = side_bnd->segment;
+      Side *side = sideBnd->side;
+      const BoundarySegment *segment = sideBnd->segment;
       const Node *n1 = side->n1;
       const Node *n2 = side->n2;
 
@@ -4875,22 +5028,21 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
       const int kb = side->kb;
 
       if (!isLand && segment->ifltype != 0) {
-         const Vector2 *uth = side->uth;
+         const Vector2 *ubc = sideBnd->ubc;
 
          for (int k=kb; k < nvrt; k++) {
-            assert(segment->ifltype == -2 || (uth[k].x >= -98 && uth[k].y >= -98) && "Momentum BC: Side has no velocity boundary conditions");
-
-            Vector2 uth = side->uth[k];
+            
+            assert(segment->ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
+                   && (ubc[k].x <= 98 && ubc[k].y <= 98)) && "Momentum BC: Side has no velocity boundary conditions");
 
             if (segment->ifltype == -1) {
                // Flather 1
 
                const double depth = side->depth();
 
-               assert(n1->nodeBnd->eta_mean >= -98 && n2->nodeBnd->eta_mean >= -98 && "Flather bnd elevation not assigned");
                assert(depth > 0.0 && "Flather bnd has 0 or negative depth");
 
-               const double vnorm = sqrt(grav/depth)*(side->eta2() - side->etaMeanBnd()) + dot(uth, side->n);
+               const double vnorm = sqrt(grav/depth)*(side->eta2() - side->etaMeanBnd()) + dot(ubc[k], side->n);
 
                side->u2[k] = vnorm*side->n;
 
@@ -4922,10 +5074,10 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
                if (vnorm <= 0.0) rat = segment->vobc1; // incoming
                else              rat = segment->vobc2; // outgoing
 
-               side->u2[k] = (1.0 - rat)*side->u2[k] + rat*uth;
+               side->u2[k] = (1.0 - rat)*side->u2[k] + rat*ubc[k];
             }
             else { // not Flather or 3D radiation
-               side->u2[k] = uth;
+               side->u2[k] = ubc[k];
 
             } // if (segment->ifltype...
 
@@ -7078,6 +7230,8 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::y && k == -1)      var[idx] = node->p.y;
    else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = node->depth;
    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
+   else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;   
+   else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
    else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
       
    
@@ -7105,5 +7259,12 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(side->kb);
    else if (varCode == (int)VarCode::n1 && k == -1)     var[idx] = side->n1->idx;
    else if (varCode == (int)VarCode::n2 && k == -1)     var[idx] = side->n2->idx;
+   else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = side->eta2();
+   else if (varCode == (int)VarCode::btu && k >= 0)     var[idx] = side->btu[k].x;
+   else if (varCode == (int)VarCode::btv && k >= 0)     var[idx] = side->btu[k].y;
+   else if (varCode == (int)VarCode::bccx && k >= 0)    var[idx] = side->bcc[k].x;
+   else if (varCode == (int)VarCode::bccy && k >= 0)    var[idx] = side->bcc[k].y;
+   else if (varCode == (int)VarCode::uth && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth[k].x:0.0;
+   else if (varCode == (int)VarCode::vth && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth[k].y:0.0;
    else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
 }
