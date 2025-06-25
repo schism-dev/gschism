@@ -177,7 +177,7 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # XXX I think I will combine all BCs into one function
     # Compute new vel. for flow b.c. (uth,vth)
-    cufunc.computeFlowBcVelocities()            # Lines 1759-1800
+    cufunc.computeFlowBcVelocities(time)            # Lines 1759-1800
 
 
 
@@ -200,7 +200,12 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     # Backtracking/upwind for momentum
-    cufunc.backtrackAllNodes()              # Lines 4161-5029
+    try:
+        monitor.debugPlotIdx[0] = 0        
+        cufunc.backtrackAllNodes()              # Lines 4161-5029
+    except Exception as e:
+        print(f"Error in backtrackAllNodes: {e}")
+
 
 
     # Vertical advection 

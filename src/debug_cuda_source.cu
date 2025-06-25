@@ -60,6 +60,8 @@ constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
 
 constexpr int nope  = 1; // Number of open boundary segments
 constexpr int mnond = 3; // Maximum number of nodes per open boundary segment
+constexpr int nland = 1; // Number of land boundary segments
+constexpr int mnlnd = 7; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
@@ -81,7 +83,7 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth [m]
 
-enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, btu=6, btv=7, bccx=8, bccy=9, uth=10, vth=11, eta=12, area=13, qel=14, depth=15, radius=16, xlon=17, ylat=18, kb=19, n1=20, n2=21}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, btu=6, btv=7, bccx=8, bccy=9, uth=10, vth=11, ubc=12, vbc=13, elbc=14, eta=15, area=16, qel=17, depth=18, radius=19, xlon=20, ylat=21, kb=22, n1=23, n2=24}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -91,7 +93,7 @@ constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
 
-constexpr int internalSegment = -1;
+constexpr int internalSegment = -1;  // It is not really a segment, but we keep the name.
 constexpr int landSegment = -2;
 
 constexpr double pi = 3.14159265358979323846;
@@ -814,6 +816,8 @@ struct Element {
 
 struct BoundarySegment {
 
+   bool isLand;
+
    double clen;  // Length of the boundary segment
    double carea; // Area of the boundary segment
 
@@ -831,6 +835,24 @@ struct BoundarySegment {
    // Tracer boundary conditions
    // double trobc[natrm];    // Tracer boundary condition nudging factor
    // int  itrtype[natrm];    // Tracer boundary condition type
+
+   BoundarySegment(bool _isLand) {
+      isLand = _isLand;
+      clen = 0.0;
+      carea = 0.0;
+      ifltype = 0;
+      iettype = 0;
+      eth = 0.0;
+   }
+
+   BoundarySegment(void) {
+      isLand = false;
+      clen = 0.0;
+      carea = 0.0;
+      ifltype = 0;
+      iettype = 0;
+      eth = 0.0;
+   }
 
    
 };
@@ -1030,9 +1052,10 @@ struct NodeBoundary {
    SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
 
+   bool isLand;
+
    double etaic;  // Elevation at nodes used for essential boundary conditions XXXX Where is this value set???
    double elbc;   // Elevation boundary condition
-   int iettype;   // Type of elevation boundary condition
    double eth;    // Elevation time history
 
    double eta_mean; // Mean elevation at nodes
@@ -1047,6 +1070,13 @@ struct NodeBoundary {
    Vector2 umo[nbfr];  // velocity amplitude
    Vector2 ufa[nbfr];  // velocity phase
 
+
+   NodeBoundary(void) {
+      isLand = false;
+   }
+   NodeBoundary(bool _isLand) {
+      isLand = _isLand;
+   }
 
    
    __forceinline__ __device__ int numSidesForAverage() const {
@@ -1242,7 +1272,7 @@ printf("addToSparseMatrix: node == this, value = %f\n", coeffDiag);
 
 
 
-class Mesh {
+struct Mesh {
    public:  
 
    int partNum; // Partition number for this mesh.
@@ -1282,7 +1312,8 @@ class Mesh {
    Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
    Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
 
-
+   BoundarySegment landBoundarySegment;
+   NodeBoundary landBoundaryNode;
 
    // Vertical coordinate system
    // Sigma levels
@@ -1354,7 +1385,9 @@ class Mesh {
                        localSegmentMem(localSegmentMem),
                        h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
-                       coeffMatrixMem(partCoeffMatrixMem)
+                       coeffMatrixMem(partCoeffMatrixMem),
+                       landBoundarySegment(true),
+                       landBoundaryNode(true)
    {
       printf("Mesh constructor for partition %d\n", partNum);
 
@@ -1516,12 +1549,17 @@ extern "C" {
 // END INCLUDE: meshdata.h
 #include <cuda_runtime.h>
 
+__device__ double *debugPlot = nullptr;
+__device__ int *debugPlotIdx = nullptr;
+__device__ int debugPlotMutex = 0;
 
 
 #define IDX(ptr) (ptr == nullptr ? -1 : (ptr->idx))
 
 // Each device has a global mesh object
 __device__ Mesh* mesh = nullptr; 
+
+
 
 #define SIDE(side) const int idx_side = threadIdx.x + blockIdx.x * blockDim.x; \
                    Side *side = &(mesh->localSideData[idx_side]); \
@@ -1545,6 +1583,40 @@ __device__ Mesh* mesh = nullptr;
                            if (idx_side_bnd >= mesh->nbs) return;                           
 
 Polynomial<4> *polyDischarge; // XXX read from file
+
+
+
+//===============================================================================
+
+__device__ void lock(int *mutex) {
+    while (atomicCAS(mutex, 0, 1) != 0); // spin until lock acquired
+}
+
+__device__ void unlock(int *mutex) {
+    atomicExch(mutex, 0);
+}
+
+__device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF0000) {
+   // Lock the mutex
+   lock(&debugPlotMutex);
+ 
+   if (debugPlotIdx == nullptr) return;
+   if (*debugPlotIdx >= 10000) return;
+// printf("addDebugPlot 2, x1 = (%f, %f), x2 = (%f, %f)\n", x1.x, x1.y, x2.x, x2.y);   
+   debugPlot[(*debugPlotIdx) + 0*10000] = x1.x;
+   debugPlot[(*debugPlotIdx) + 1*10000] = x1.y;
+   debugPlot[(*debugPlotIdx) + 2*10000] = x2.x;
+   debugPlot[(*debugPlotIdx) + 3*10000] = x2.y;
+   debugPlot[(*debugPlotIdx) + 4*10000] = (double)color;
+   (*debugPlotIdx)++;
+   // Unlock the mutex
+   unlock(&debugPlotMutex);
+
+}
+
+__device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xFF0000) {
+   addDebugPlot(toPoint3(x1, 0.0), toPoint3(x2, 0.0), color);
+}
 
 //===============================================================================
 //     
@@ -1913,14 +1985,15 @@ printf("BBB u_int = %f,%f,%f\n", us, vs, ws);
 __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
                                                        Element *&nextElem, int &jlev, double &dt) {
 
+
    // First thing is to check if the target point is inside the element. If it is, there is nothing
    // else to do.
    // If it is, nudges the point to be inside the element.
    const Element *curElem = nextElem;
    if (containsPoint(toPoint2(xt), true)) {
 
-      curElem->interpolateVelocities(xt, u_int);
-
+      // curElem->interpolateVelocities(xt, u_int);
+addDebugPlot(x0, xt);
       return true;
    }
 
@@ -1956,6 +2029,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
 
       trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
+addDebugPlot(x0, xt);      
 
       nextElem = this;
       // Returns "early", meaning that we stopped before we were able to reach the target point.
@@ -1968,11 +2042,12 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    int iterations = 0;
    while (iterations < MAX_ITERATIONS) {
       iterations++;
+printf("BBBXXXX iterations = %d\n", iterations);      
       
       Element *curElem = nextElem;
 
       bool found_intersection = curElem->findNextIntersection(toPoint2(xt), nextSide, nextElem, t, tIntersect);
-
+addDebugPlot(x0, xt);
       zint = (1 - tIntersect)*zint + tIntersect*xt.z;
 
       // If we are already in the target element, we are done.
@@ -1985,7 +2060,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
       if (curElem->isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
 
          trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
-
+addDebugPlot(x0, xt);
          nextElem = curElem;
 
          // Returns "early", meaning that we stopped before we were able to reach the target point.
@@ -2003,7 +2078,8 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
  
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
-   nextElem->interpolateVelocities(xt, u_int);
+addDebugPlot(x0, xt);   
+   // nextElem->interpolateVelocities(xt, u_int); XXXXX
 
 
    return true;
@@ -2173,7 +2249,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
 
-// printf(" ___BBB02____ idx = %d, u_int = %.17g,%.17g,%.17g, u1 = %.17g,%.17g,%.17g, u2 = %.17g,%.17g,%.17g, u3 = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z, nodes[0]->u2[0].x, nodes[0]->u2[0].y, nodes[0]->u2[0].z, nodes[1]->u2[0].x, nodes[1]->u2[0].y, nodes[1]->u2[0].z, nodes[2]->u2[0].x, nodes[2]->u2[0].y, nodes[2]->u2[0].z);         
+printf(" ___BBB02____ idx = %d, u_int = %.17g,%.17g,%.17g, u1 = %.17g,%.17g,%.17g, u2 = %.17g,%.17g,%.17g, u3 = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z, nodes[0]->u2[0].x, nodes[0]->u2[0].y, nodes[0]->u2[0].z, nodes[1]->u2[0].x, nodes[1]->u2[0].y, nodes[1]->u2[0].z, nodes[2]->u2[0].x, nodes[2]->u2[0].y, nodes[2]->u2[0].z);         
    // First step is to compute the shape coordinates of (xt,yt)
    computeShapeCoords(toVector2(xt), shpCoord, false);
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
@@ -2230,6 +2306,21 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
 
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    u_int = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
+
+Vector3 u1 = wght1*interpolate(L, shpCoord, &Node::u2);
+Vector3 u2 = wght2*interpolate(R, shpCoord, &Node::u2);
+printf("L = %d, R = %d, Element = %d\n", L, R, idx);
+// printf("node1 (%.17g,%.17g), node2 (%.17g,%.17g,%), node3 (%.17g,%.17g)\n", nodes[0]->p2().x, nodes[0]->p2().y, nodes[1]->p2().x, nodes[1]->p2().y, nodes[2]->p2().x, nodes[2]->p2().y);
+printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[L].x, nodes[0]->u2[L].y, nodes[0]->u2[L].z);
+printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[L].x, nodes[1]->u2[L].y, nodes[1]->u2[L].z);
+printf("element = %d, idx = %d, u_n3 = %.17g,%.17g,%.17g\n", idx, nodes[2]->idx, nodes[2]->u2[L].x, nodes[2]->u2[L].y, nodes[2]->u2[L].z);
+printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[R].x, nodes[0]->u2[R].y, nodes[0]->u2[R].z);
+printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[R].x, nodes[1]->u2[R].y, nodes[1]->u2[R].z);
+printf("element = %d, idx = %d, u_n3 = %.17g,%.17g,%.17g\n", idx, nodes[2]->idx, nodes[2]->u2[R].x, nodes[2]->u2[R].y, nodes[2]->u2[R].z);
+printf("element = %d, idx = %d, u_int = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z);   
+printf("u1 = %.17g,%.17g,%.17g\n", u1.x, u1.y, u1.z);   
+printf("u2 = %.17g,%.17g,%.17g\n", u2.x, u2.y, u2.z);   
+if(!(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z))) {u_int = {0.0, 0.0, 0.0}; return;}
 
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
@@ -2521,46 +2612,6 @@ __inline__ __device__ bool Side::btrack(
 
 
 
-
-
-
-
-
-// extern "C" {
-// __global__ void backtrackKernel(
-//     const Mesh* mesh,
-//     const double dt,
-//     BacktrackResults* results  // Structure to store results
-// ) {
-//     // Get side index
-//     int sIdx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (sIdx >= mesh->ns) return;  // Check bounds for local sides
-    
-//     // Get local side data
-//     const Side* side = mesh->localSideData + sIdx;
-//     if (side->isDry()) return;  // Skip dry sides
-    
-//     // Get starting position (side center)
-//     double x0 = side->xc;
-//     double y0 = side->yc;
-//     double z0 = side->zc;
-    
-//     // Get starting element
-//     Element* startElement = side->getStartElement();
-    
-//     // Do backtracking
-//     double xt, yt, zt;  // Final positions
-//     bool exitedDomain = startElement->backtrack(
-//         x0, y0, z0,
-//         dt,
-//         xt, yt, zt
-//     );
-    
-//     // Store results
-//     results[sid].finalPos = {xt, yt, zt};
-//     results[sid].exitedDomain = exitedDomain;
-// }
-
 __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
 
 
@@ -2665,10 +2716,51 @@ __device__ double Node::compZCoord(int k) const {
 }
 
 
+__device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd, int *nlnd, bool &isLand) {
+   // Checks if a side in on the boundary
+   // For this it checks if it belongs to any of the boundary segments. They can be either land or open boundary segments.
+
+   // Returns -1 if the side is not on the boundary, otherwise returns the index of the boundary segment.
+   // isLand is set to true if the side is on a land boundary, otherwise it is set to false.
+
+   // Indices of the nodes that form the side
+   const int n1 = side.n1->idx;
+   const int n2 = side.n2->idx;
+
+   // Check if the side is on a land boundary
+   for (int i = 0; i < nland; i++) {
+      for (int j = 0; j < nlnd[i] - 1; j++) {
+         // Consecutive nodes in the land boundary segment
+         const int b1 = ilnd[i*mnlnd + j];
+         const int b2 = ilnd[i*mnlnd + j + 1];
+
+         if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
+            isLand = true;
+            return i;
+         }
+      }
+   }
+
+   // Check if the side is on an open boundary
+   for (int i = 0; i < nope; i++) {
+      for (int j = 0; j < nond[i] - 1; j++) {
+         // Consecutive nodes in the open boundary segment
+         const int b1 = iond[i*mnond + j];
+         const int b2 = iond[i*mnond + j + 1];
+
+         if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
+            isLand = false;
+            return i;
+         }
+      }
+   }
+   return -1;
+}
+
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 double *node_coords, double *wind_rotate_angle, 
                 int *isdel, int *isidenode, int *isbnd,
-                int *nond, int *nlnd, int *iond, int *ilnd,
+                int *nond, int *nlnd, int *iond, int *ilnd, 
                 int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                 int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                 int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
@@ -2740,31 +2832,45 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
       node.numSides = 0;
 
+printf("EEEEEE idx = %d, isbnd[i] = %d, node.nodeBnd = %p\n", i, isbnd[i], node.nodeBnd);
       // Links the node to the boundary information
       if (isbnd[i] >= 0) {
        
          node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
          node.nodeBnd->node = &node;
 
-
-         if (isbnd[i]>0) {
+         if (isbnd[i]>=0) {
 
             node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
-            node.nodeBnd->segment->ifltype = isbnd[i];
+            
+            node.nodeBnd->segment->ifltype = (isbnd[i]==0)?3:0;
+            node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
 
             // Initialize the length and area of the segment to nan to indicate that they are not yet computed
             node.nodeBnd->segment->clen  = nan("1");
             node.nodeBnd->segment->carea = nan("1");
 
          }
-         else {
-            node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
-         }
+//          else {
+//             node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+// printf("EEEEEPP isbnd[i] = %d, node.nodeBnd->segment = %p\n", isbnd[i], node.nodeBnd->segment);            
+//          }
          
          idxNodeBoundary++;
+printf("EEEEEEhhhh idx = %d, isbnd[i] = %d, idxNodeBoundary = %d\n", i, isbnd[i], idxNodeBoundary);         
       }
       else {
-         node.nodeBnd = nullptr;
+         node.nodeBnd = nullptr; // For internal nodes
+printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd); 
+         if (isbnd[i] == landSegment) {
+            node.nodeBnd = &landBoundaryNode;
+            node.nodeBnd->segment = &landBoundarySegment;
+         }
+         // node.nodeBnd->node = &node;
+         // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+         // // node.nodeBnd = nullptr;
+         // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+        
       }
 
       // XXXX GAUSSIAN HILL VELOCITIES
@@ -2808,20 +2914,50 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       // Side boundary type
       const NodeBoundary *n1bnd = side.n1->nodeBnd;
       const NodeBoundary *n2bnd = side.n2->nodeBnd;
-      // XXXX NOTE: I'm chosing the boundary type of the first node. This may not be correct.
-      
-      if (n1bnd != nullptr || n2bnd != nullptr) 
+
+      if (n1bnd != nullptr && n2bnd != nullptr) 
+      // If both nodes are on the boundary, then the side may be on the boundary
       {
-         side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
-         if (n1bnd != nullptr) side.sideBnd->segment = n1bnd->segment;
-         else                  side.sideBnd->segment = n2bnd->segment;
-         side.sideBnd->side = &side;
-         idxSideBoundary++;
+         bool isLand = false;
+         int isbs = findSideBoundaryType(side, iond, nond, ilnd, nlnd, isLand);
+
+         if (isbs > -1) {
+            side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+            if      ( isLand) side.sideBnd->segment = &landBoundarySegment;
+            else if (!isLand) side.sideBnd->segment = &(localSegmentMem[isbs]);
+          
+            side.sideBnd->side = &side;
+            idxSideBoundary++;
+
+            printf("Here1.5: %d, isbs = %d, isLand = %d, side.sideBnd = %p\n", i, isbs, isLand, side.sideBnd);
+         }
+         
+
+      // }
+      // 
+
+
+
+
+//       // XXXX YYYY NOTE: I'm chosing the boundary type of the first node. This may not be correct.
+// printf("Here2: %d, idxSideBoundary = %d, side.n1->idx = %d, side.n2->idx = %d\n", i, idxSideBoundary, side.n1->idx, side.n2->idx);      
+//       if (n1bnd != nullptr || n2bnd != nullptr) 
+//       {
+// printf("Here2.5: %d, idxSideBoundary = %d\n", i, idxSideBoundary);           
+//          side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+// printf("Here2.6: %d, side.sideBnd = %p, n1bnd = %p, n2bnd = %p\n", i, side.sideBnd, n1bnd, n2bnd);           
+// // printf("Here2.7: %d, side.sideBnd->segment = %p, n1bnd->segment = %p, n2bnd->segment = %p\n", i, side.sideBnd->segment, n1bnd->segment, n2bnd->segment);      
+// if (side.sideBnd->segment == nullptr) continue;
+//          if (n1bnd != nullptr) side.sideBnd->segment = n1bnd->segment;
+//          else                  side.sideBnd->segment = n2bnd->segment;
+//          side.sideBnd->side = &side;
+//          idxSideBoundary++;
+// printf("EERRREEEE side.sideBnd = %p, n1bnd = %p, n2bnd = %p, n1bnd->segment = %p, n2bnd->segment = %p\n", side.sideBnd, n1bnd, n2bnd, n1bnd->segment, n2bnd->segment);
       }
       else side.sideBnd = nullptr;
 
       nbs = idxSideBoundary;
-
+// printf("Here3: %d", i);
       // finding the pointer to the elements that share the side
       const int idx_e1 = isdel[globalSideIndices[i]*2];
       const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
@@ -2835,7 +2971,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       else {
          side.elems[0] = nullptr;
       }
-
+// printf("Here4: %d", i);
       if (idx_e2 > -1) {
          const int locidx_e2 = localElemIndices[idx_e2];
          const int part_e2 =  localElemPart[idx_e2];
@@ -2844,7 +2980,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
       else {
          side.elems[1] = nullptr;
       }
-
+// printf("Here5: %d", i);
 
 
       // Compute the center of the side
@@ -2957,12 +3093,13 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
    // Processing the boundary nodes
    int idx = 0;
    for (int iseg = 0; iseg < nope; iseg++) {
+      
       for (int ilnd = 0; ilnd < nlnd[iseg]; ilnd++) {
 
          NodeBoundary *nodeBnd = &localNodeBoundaryMem[idx];
 
          nodeBnd->isEssentialBC = true;
-nodeBnd->iettype = 3; // XXXXXXXXX
+////nodeBnd->iettype = 3; // XXXXXXXXX
          nodeBnd->elbc = 0.0;
 
          for (int jfr = 0; jfr < nbfr; jfr++) {
@@ -3339,7 +3476,7 @@ extern "C" {
 
          if (vmag <= velmin_btrack) {
             // No activity 
-
+addDebugPlot(side->center, side->center, 'red');
             side->btu[k] = side->u2[k];
             
          } else {  // do btrack
@@ -3885,7 +4022,7 @@ return;
       SIDE_BND(sideBnd);
 
       const Side *side = sideBnd->side;
-
+ 
       const bool isDry = side->isDry;
 
       if (isDry) {
@@ -3896,14 +4033,18 @@ return;
       // For wet sides in open boundaries...
       const Vector2 n = side->n;
       const BoundarySegment *segment = sideBnd->segment;
+
+      assert(segment != nullptr && "computeFlowBcVelocities: segment is nullptr");
+
       const int ifltype = segment->ifltype;
+      const int iettype = segment->iettype;
 
       const double r_uth0 = ramp*segment->qthcon/segment->carea;  // r_ stands for ramp-up
       const Vector2 r_nuth0 = r_uth0*n;
 
       Vector2 r_uth    = {0.0, 0.0};    // r_ stands for ramp-up
       Vector2 r_u1_bar = {0.0, 0.0};
-
+printf("ZZZ4  idx = %d, ifltype = %d, r_nuth0 = %f, %f\n", sideBnd->side->idx, ifltype, r_nuth0.x, r_nuth0.y);
       for (int k = 0; k < nvrt; k++) {
          if (ifltype == 1 || ifltype == 2) {
          
@@ -3924,7 +4065,7 @@ return;
          } else if (ifltype == 3 || ifltype == 5) {
             // vnth0=0 !normal vel.
 
-
+printf("ZZZ3  idx = %d, jfr = %d, ifltype = %d, r_uth = %f, %f\n", sideBnd->side->idx, nbfr, ifltype, r_uth.x, r_uth.y);
             // Computes the contribution to the velocity from all tide frequencies
             for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
 
@@ -3932,8 +4073,10 @@ return;
                const Vector2 umo  = sideBnd->umo(jfr); 
 
                const int ncyc = int(amig[jfr]*time/(2.0*pi));
-               const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa;
-               r_u1_bar += ramp*ff[jfr]*umo*cos(arg);
+               const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
+               const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
+               r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
+printf("ZZZ2  idx = %d, jfr = %d, argx = %f, argy = %f, umo = %f, %f, ufa = %f, %f, ramp = %f, ff = %f\n", sideBnd->side->idx, jfr, argx, argy, umo.x, umo.y, ufa.x, ufa.y, ramp, ff[jfr]);               
             }
 
          } // if (ifltype = 3 || ifltype == 5
@@ -3952,6 +4095,8 @@ return;
                sideBnd->ubc[k] = r_uth + r_u1_bar;
                break;
          } // switch
+
+printf("ZZZ  idx = %d, iettype = %d, r_u1_bar = %f, %f, sideBnd->ubc[%d] = %f, %f\n", sideBnd->side->idx, iettype, r_u1_bar.x, r_u1_bar.y, k, sideBnd->ubc[k].x, sideBnd->ubc[k].y);
       } // for k
    }
 
@@ -3960,8 +4105,12 @@ return;
 
       NODE_BND(nodeBnd); // Each boundary node.
 
+      assert(nodeBnd->segment != nullptr && "computeElevationBoundaryConditions: nodeBnd->segment is nullptr");
+
       const Node *node = nodeBnd->node;
-      const int iettype = nodeBnd->iettype;
+      const BoundarySegment *segment = nodeBnd->segment;
+      const int iettype = segment->iettype;
+      
 
       // Elevation initial condition at boundary nodes. It is ramped down to zero
       double eic = 0.0;
@@ -6892,7 +7041,8 @@ __global__ void createMesh(int partNum,
                            double *partCoeffMatrixMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
                            double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
-                           double *ztot, double *cs, double *dcs) {
+                           double *ztot, double *cs, double *dcs,
+                           double *_debugPlot, int *_debugPlotIdx) {
 
 
 
@@ -6901,6 +7051,11 @@ __global__ void createMesh(int partNum,
       printf("ERROR: Mesh is already initialized\n");
       return;
    };
+
+printf("createMesh 1, debugPlot = %p, debugPlotIdx = %p, *debugPlotIdx = %d\n", _debugPlot, _debugPlotIdx, *_debugPlotIdx);   
+   debugPlot = _debugPlot;
+   debugPlotIdx = _debugPlotIdx;
+   // return;   
 
    printf("partNum = %d, npgb = %d, negb = %d, nsgb = %d, nseg = %d\n", partNum, npgb, negb, nsgb, nseg);
    printf("np = %d, ne = %d, ns = %d\n", np, ne, ns);
@@ -6930,7 +7085,7 @@ extern "C"
   __global__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
-                   int *nond, int *nlnd, int *iond, int *ilnd,
+                   int *nond, int *nlnd, int *iond, int *ilnd, 
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
@@ -6942,7 +7097,7 @@ extern "C"
 
     mesh->populateMesh(i34, elnode, elside, node_coords, wind_rotate_angle, 
                        isdel, isidenode, isbnd,
-                       nond, nlnd, iond, ilnd,
+                       nond, nlnd, iond, ilnd, 
                        nodeNeighNodesStart, nodeNeighNodesIndices,
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        globalNodeIndices, globalElemIndices, globalSideIndices,
@@ -7230,6 +7385,7 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::y && k == -1)      var[idx] = node->p.y;
    else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = node->depth;
    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
+   else if (varCode == (int)VarCode::elbc && k == -1)   var[idx] = node->nodeBnd!=nullptr?node->nodeBnd->elbc:0.0;
    else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;   
    else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
    else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
@@ -7264,7 +7420,9 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::btv && k >= 0)     var[idx] = side->btu[k].y;
    else if (varCode == (int)VarCode::bccx && k >= 0)    var[idx] = side->bcc[k].x;
    else if (varCode == (int)VarCode::bccy && k >= 0)    var[idx] = side->bcc[k].y;
-   else if (varCode == (int)VarCode::uth && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth[k].x:0.0;
-   else if (varCode == (int)VarCode::vth && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth[k].y:0.0;
+   else if (varCode == (int)VarCode::ubc && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].x:0.0;
+   else if (varCode == (int)VarCode::vbc && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].y:0.0;
+   else if (varCode == (int)VarCode::uth && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).x:0.0;
+   else if (varCode == (int)VarCode::vth && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
    else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
 }

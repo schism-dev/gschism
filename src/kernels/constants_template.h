@@ -59,6 +59,8 @@ constexpr int nsiglev = __NSIGLEV__; // Number of sigma levels (in contrast to z
 
 constexpr int nope  = __NOPEN_BOUNDARY_SEGMENTS__; // Number of open boundary segments
 constexpr int mnond = __MAX_NODES_PER_OPEN_BOUNDARY_SEGMENT__; // Maximum number of nodes per open boundary segment
+constexpr int nland = __N_LAND_BOUNDARY_SEGMENTS__; // Number of land boundary segments
+constexpr int mnlnd = __MAX_NODES_PER_LAND_BOUNDARY_SEGMENT__; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = __REARTH_EQ__; // [m] 
 constexpr double rearth_pole = __REARTH_POLE__; // [m]

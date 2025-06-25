@@ -7,6 +7,8 @@ import sys
 import cupy as cp
 import debug.monitor as monitor
 
+
+
 # Enable verbose output
 os.environ['DISTUTILS_DEBUG'] = '1'
 os.environ['VERBOSE'] = '1'
@@ -177,7 +179,8 @@ if __name__ == "__main__":
             module.readHGrid(hgrid_file, numPartitions)
     
 
-    nope, mnond = iond.shape
+    nope, mnond  = iond.shape
+    nland, mnlnd = ilnd.shape
     bctides = read_bctides(test_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
 
 
@@ -217,7 +220,8 @@ if __name__ == "__main__":
 
 
 
-    processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev, nope, mnond,
+    processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev, 
+                     nope, mnond, nland, mnlnd,
                      templatePath="kernels/constants_template.h", 
                      outputPath="kernels/constants.h")
     
@@ -252,6 +256,9 @@ if __name__ == "__main__":
     sigma                = cp.array(sigma,             dtype=cp.float64, order='F')
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
     dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
+
+
+
 
     if False:   
 
@@ -600,7 +607,8 @@ if __name__ == "__main__":
                               partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 
                               partCoeffMatrixMem[ipart],
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
-                              h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs)
+                              h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs,
+                              monitor.debugPlot.data.ptr, monitor.debugPlotIdx.data.ptr)
             
             # Given a local index, this array will return the global index
             globalNodeIndices = cp.arange(numPartNodes   [ipart]).astype(cp.int32)[maskNodesPart]
@@ -614,7 +622,7 @@ if __name__ == "__main__":
             # of the mesh, including the nodes, elements, sides, and their neighbors.
             cufunc.populateMesh(i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
                                 isdel, isidenode, isbnd,
-                                nond, nlnd, iond, ilnd,
+                                nond, nlnd, iond, ilnd, 
                                 nodeNeighNodesStart, nodeNeighNodes,
                                 nodeNeighElemsStart, nodeNeighElems,
                                 globalNodeIndices, globalElemIndices, globalSideIndices,

@@ -5,7 +5,7 @@ constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
 
-constexpr int internalSegment = -1;
+constexpr int internalSegment = -1;  // It is not really a segment, but we keep the name.
 constexpr int landSegment = -2;
 
 constexpr double pi = 3.14159265358979323846;
@@ -728,6 +728,8 @@ struct Element {
 
 struct BoundarySegment {
 
+   bool isLand;
+
    double clen;  // Length of the boundary segment
    double carea; // Area of the boundary segment
 
@@ -745,6 +747,24 @@ struct BoundarySegment {
    // Tracer boundary conditions
    // double trobc[natrm];    // Tracer boundary condition nudging factor
    // int  itrtype[natrm];    // Tracer boundary condition type
+
+   BoundarySegment(bool _isLand) {
+      isLand = _isLand;
+      clen = 0.0;
+      carea = 0.0;
+      ifltype = 0;
+      iettype = 0;
+      eth = 0.0;
+   }
+
+   BoundarySegment(void) {
+      isLand = false;
+      clen = 0.0;
+      carea = 0.0;
+      ifltype = 0;
+      iettype = 0;
+      eth = 0.0;
+   }
 
    
 };
@@ -944,9 +964,10 @@ struct NodeBoundary {
    SideBoundary *sideBnd1; // Pointer to the boundary side object (can be nullptr)
    SideBoundary *sideBnd2; // Pointer to the boundary side object (can be nullptr)
 
+   bool isLand;
+
    double etaic;  // Elevation at nodes used for essential boundary conditions XXXX Where is this value set???
    double elbc;   // Elevation boundary condition
-   int iettype;   // Type of elevation boundary condition
    double eth;    // Elevation time history
 
    double eta_mean; // Mean elevation at nodes
@@ -961,6 +982,13 @@ struct NodeBoundary {
    Vector2 umo[nbfr];  // velocity amplitude
    Vector2 ufa[nbfr];  // velocity phase
 
+
+   NodeBoundary(void) {
+      isLand = false;
+   }
+   NodeBoundary(bool _isLand) {
+      isLand = _isLand;
+   }
 
    
    __forceinline__ __device__ int numSidesForAverage() const {
@@ -1156,7 +1184,7 @@ printf("addToSparseMatrix: node == this, value = %f\n", coeffDiag);
 
 
 
-class Mesh {
+struct Mesh {
    public:  
 
    int partNum; // Partition number for this mesh.
@@ -1196,7 +1224,8 @@ class Mesh {
    Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
    Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
 
-
+   BoundarySegment landBoundarySegment;
+   NodeBoundary landBoundaryNode;
 
    // Vertical coordinate system
    // Sigma levels
@@ -1268,7 +1297,9 @@ class Mesh {
                        localSegmentMem(localSegmentMem),
                        h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
-                       coeffMatrixMem(partCoeffMatrixMem)
+                       coeffMatrixMem(partCoeffMatrixMem),
+                       landBoundarySegment(true),
+                       landBoundaryNode(true)
    {
       printf("Mesh constructor for partition %d\n", partNum);
 

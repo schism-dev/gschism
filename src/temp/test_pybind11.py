@@ -236,6 +236,7 @@ if __name__ == "__main__":
     
 
     nope, mnond = iond.shape
+    nland, _    = ilnd.shape
     bctides = read_bctides(test_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
 
 

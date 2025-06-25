@@ -1,7 +1,7 @@
 from python.schism_consts import *
 
 def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsiglev: int,
-                     nope: int, mnond: int,
+                     nope: int, mnond: int, nland: int, mnlnd: int,
                      templatePath="src/kernels/constants_template.h", 
                      outputPath="src/kernels/constants.h"):
     """
@@ -79,7 +79,8 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         '__NSIGLEV__': (nsiglev, 'grid'),
         '__NOPEN_BOUNDARY_SEGMENTS__': (nope, 'grid'),
         '__MAX_NODES_PER_OPEN_BOUNDARY_SEGMENT__': (mnond, 'grid'),
-        
+        '__N_LAND_BOUNDARY_SEGMENTS__': (nland, 'grid'),
+        '__MAX_NODES_PER_LAND_BOUNDARY_SEGMENT__': (mnlnd, 'grid'),
         # From tidal data
         '__NTIP__': (tidalData.ntip, 'tidal'),
         '__TIP_DP__': (tidalData.tip_dp, 'tidal'),

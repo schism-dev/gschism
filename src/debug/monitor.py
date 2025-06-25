@@ -8,6 +8,13 @@ import matplotlib
 
 matplotlib.use('TkAgg') 
 
+
+
+debugPlot = cp.zeros([10000,5], dtype=cp.float64, order='F') 
+debugPlotIdx = cp.zeros(1, dtype=cp.int32, order='F') 
+debugPlotIdx[0] = 7
+
+
 fig = None
 ax  = None
 
@@ -43,7 +50,14 @@ def getSideVar(varname, k = -1):
     return var.get()
 
 
-
+def intToRGB(color_array):
+    """Convert 0xRRGGBB integer to matplotlib (r, g, b) tuple in [0, 1]."""
+    """Convert an array of 0xRRGGBB ints to an array of (r,g,b) tuples in [0,1]."""
+    color_array = np.asarray(color_array).astype(np.int32)
+    r = (color_array >> 16) & 0xFF
+    g = (color_array >> 8) & 0xFF
+    b = color_array & 0xFF
+    return np.stack([r, g, b], axis=1) / 255.0  # shape: (N, 3)
 
 def plotMesh():
     global fig, ax
@@ -74,9 +88,38 @@ def plotMesh():
     max_u = max(np.max(np.abs(ux)), np.max(np.abs(uy)))
     plt.quiver(sx, sy, 1*ux/max_u, 1*uy/max_u, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
 
+    # Plot the backtracked curves.
+    segments_np = cp.asnumpy(debugPlot[:debugPlotIdx, :])  # shape: (N, 4)
+
+    # Filter out rows with any inf or nan values
+    mask = np.all(np.isfinite(segments_np), axis=1)
+    segments_np = segments_np[mask]
+
+    # Reshape to (N, 2, 2): N segments, each with 2 endpoints (x1,y1), (x2,y2)
+    segments = segments_np.reshape(-1, 2, 2)
+
+    # segments_np is (N, 4): [x1, y1, x2, y2] for each segment
+    x1 = segments_np[:, 0]
+    y1 = segments_np[:, 1]
+    x2 = segments_np[:, 2]
+    y2 = segments_np[:, 3]      
+    color = segments_np[:, 4]
+
+    # Plot start points (x1, y1) and end points (x2, y2)
+    plt.scatter(x1, y1, c=intToRGB(color), s=16)
+    plt.scatter(x2, y2, c=intToRGB(color), s=16)
+
+    # Create the LineCollection
+    lc = LineCollection(segments, colors='g', linewidths=1.0, alpha=0.8)
+
+    # Add to your axes (assuming ax is your matplotlib axes)
+    ax.add_collection(lc)
+
+
     ax.autoscale()  # Adjust axes to fit the lines
 
 
 
-    plt.show(block=False)
-    plt.pause(0.1)
+    plt.show(block=True)
+    plt.pause(0.0)
+    fig = None

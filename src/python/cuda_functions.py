@@ -99,7 +99,7 @@ def initializeCudaFunctions(sizes):
     global mod
     global scaleGravity, computeTimeRamps
     global computeBedDeformation, computeTidalPotential
-    global getBoundaryConditions, computeBottomDragVegetation, computeVegetationAndDragParameters
+    global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, backtrackAllNodes, test
@@ -118,6 +118,7 @@ def initializeCudaFunctions(sizes):
         computeBedDeformation               = mod.get_function('computeBedDeformation',               sizes, kernel_type='global')
         computeTidalPotential               = mod.get_function('computeTidalPotential',               sizes, kernel_type='nodeBnd')
         getBoundaryConditions               = mod.get_function('getBoundaryConditions',               sizes, kernel_type='nodeBnd')
+        computeFlowBcVelocities             = mod.get_function('computeFlowBcVelocities',             sizes, kernel_type='nodeBnd')
         computeBottomDragVegetation         = mod.get_function('computeBottomDragVegetation',         sizes, kernel_type='nodes')
         computeVegetationAndDragParameters  = mod.get_function('computeVegetationAndDragParameters',  sizes, kernel_type='sides')
         computeElevationBoundaryConditions  = mod.get_function('computeElevationBoundaryConditions',  sizes, kernel_type='sides')
