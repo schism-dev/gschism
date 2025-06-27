@@ -12,7 +12,7 @@ matplotlib.use('TkAgg')
 
 debugPlot = cp.zeros([10000,5], dtype=cp.float64, order='F') 
 debugPlotIdx = cp.zeros(1, dtype=cp.int32, order='F') 
-debugPlotIdx[0] = 7
+debugPlotIdx[0] = 0
 
 
 fig = None
@@ -96,7 +96,7 @@ def plotMesh():
     segments_np = segments_np[mask]
 
     # Reshape to (N, 2, 2): N segments, each with 2 endpoints (x1,y1), (x2,y2)
-    segments = segments_np.reshape(-1, 2, 2)
+    segments = segments_np[:, :4].reshape(-1, 2, 2)
 
     # segments_np is (N, 4): [x1, y1, x2, y2] for each segment
     x1 = segments_np[:, 0]
@@ -121,5 +121,5 @@ def plotMesh():
 
 
     plt.show(block=True)
-    plt.pause(0.0)
-    fig = None
+    plt.pause(0.01)
+    # fig = None

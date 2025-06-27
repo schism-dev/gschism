@@ -721,7 +721,8 @@ struct Element {
                                        double &dt, Point3 &xt, double zint, Vector3 &u_int);
     
    __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
-                                                 Element *&nextElem, int &jlev, double &dt);
+                                                 Element *&nextElem, int &jlev, double &dt,
+                                                 const Side *origSide);
 
 };
 
@@ -815,7 +816,7 @@ struct Side {
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 U;                   // Vertically averaged velocity vector  
 
-   Vector2 d2uv[nvrt];          // divergence of (nu*grad u) XXX COMPUTE!!
+   Vector2 d2uv[nvrt];          // divergence of (nu*grad u) 
 
    Vector2 bcc[nvrt];           // Baroclinic term
    Vector2 bcc_TDz[nvrt];       // Baroclinic term at previous timestep
@@ -997,6 +998,7 @@ struct NodeBoundary {
       int res = 0;
       if (sideBnd1 != nullptr && sideBnd1->segment == segment) res++;
       if (sideBnd2 != nullptr && sideBnd2->segment == segment) res++;
+printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p\n", res, segment, sideBnd1, sideBnd2);      
       return res;
    }
 

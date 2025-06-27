@@ -436,16 +436,20 @@ printf("BBB u_int = %f,%f,%f\n", us, vs, ws);
  *   was found.
  */
 __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
-                                                       Element *&nextElem, int &jlev, double &dt) {
+                                                       Element *&nextElem, int &jlev, double &dt,
+                                                       const Side *origSide) {
 
 
+   if (origSide->idx == 7) {
+      printf("AAAA&&&& origSide->idx = %d, u_int = %f,%f,%f, x0 = %f,%f,%f, xt = %f,%f,%f\n", origSide->idx, u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
+   }
    // First thing is to check if the target point is inside the element. If it is, there is nothing
    // else to do.
    // If it is, nudges the point to be inside the element.
    const Element *curElem = nextElem;
    if (containsPoint(toPoint2(xt), true)) {
 
-      // curElem->interpolateVelocities(xt, u_int);
+      curElem->interpolateVelocities(xt, u_int);
 addDebugPlot(x0, xt);
       return true;
    }
@@ -480,9 +484,10 @@ addDebugPlot(x0, xt);
    // if the tracking segment goes out of water (either dry or edge boundary)
    if (isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
 
-
+addDebugPlot(x0, xt, 0x00A0FF);
+printf("BBBXXXX going out of water\n");
       trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
-addDebugPlot(x0, xt);      
+addDebugPlot(x0, xt, 0x00A0FF);      
 
       nextElem = this;
       // Returns "early", meaning that we stopped before we were able to reach the target point.
@@ -511,9 +516,10 @@ addDebugPlot(x0, xt);
 
       // if the tracking segment goes out of water (either dry or edge boundary).
       if (curElem->isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
-
+addDebugPlot(x0, xt, 0x00A0FF);
+printf("BBBXXXX going out of water\n");
          trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
-addDebugPlot(x0, xt);
+addDebugPlot(x0, xt, 0x00A0FF);   
          nextElem = curElem;
 
          // Returns "early", meaning that we stopped before we were able to reach the target point.
@@ -532,8 +538,9 @@ addDebugPlot(x0, xt);
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
 addDebugPlot(x0, xt);   
-   // nextElem->interpolateVelocities(xt, u_int); XXXXX
-
+printf("MMMMMM nextElem->idx = %d, u_int = %f,%f,%f\n", nextElem->idx, u_int.x, u_int.y, u_int.z);
+   nextElem->interpolateVelocities(xt, u_int); 
+printf("MMMMMM2 nextElem->idx = %d, u_int = %f,%f,%f\n", nextElem->idx, u_int.x, u_int.y, u_int.z);
 
    return true;
 }
@@ -624,7 +631,7 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
          // I have tested and compared the new algorithm with the old one, and they give
          // very similar results in terms of how close the "fixed" point is to the original point in cartesian coordinates.
          // The new algorithm should be faster since it is branchless.
-         const double a = - tmpmin + 1.0e-2;  // XXX it used to be 1.0e-4 in the comments of the original code
+         const double a = - tmpmin + 1.0e-4;  // XXX it used to be 1.0e-4 in the comments of the original code
          const double b = 1.0/(shpCoords[0] + shpCoords[1] + shpCoords[2] + 3.0*a);
          
          shpCoords[0] = (shpCoords[0] + a)*b;
@@ -760,9 +767,11 @@ printf(" ___BBB02____ idx = %d, u_int = %.17g,%.17g,%.17g, u1 = %.17g,%.17g,%.17
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    u_int = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
 
+if (idx==2) {
 Vector3 u1 = wght1*interpolate(L, shpCoord, &Node::u2);
 Vector3 u2 = wght2*interpolate(R, shpCoord, &Node::u2);
 printf("L = %d, R = %d, Element = %d\n", L, R, idx);
+printf("shpCoord = %.17g,%.17g,%.17g,%.17g\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
 // printf("node1 (%.17g,%.17g), node2 (%.17g,%.17g,%), node3 (%.17g,%.17g)\n", nodes[0]->p2().x, nodes[0]->p2().y, nodes[1]->p2().x, nodes[1]->p2().y, nodes[2]->p2().x, nodes[2]->p2().y);
 printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[L].x, nodes[0]->u2[L].y, nodes[0]->u2[L].z);
 printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[L].x, nodes[1]->u2[L].y, nodes[1]->u2[L].z);
@@ -774,6 +783,7 @@ printf("element = %d, idx = %d, u_int = %.17g,%.17g,%.17g\n", idx, u_int.x, u_in
 printf("u1 = %.17g,%.17g,%.17g\n", u1.x, u1.y, u1.z);   
 printf("u2 = %.17g,%.17g,%.17g\n", u2.x, u2.y, u2.z);   
 if(!(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z))) {u_int = {0.0, 0.0, 0.0}; return;}
+}
 
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
@@ -942,7 +952,7 @@ __inline__ __device__ bool Side::btrack(
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards(toVector2(u_int));
 
-   // If it starts at a boundary side, we should start with a velocity parallel to the side.
+   // If it starts at a boundary side, we must start with a velocity parallel to the side.
    if (curElem == nullptr) {
       // Make velocity parallel to the side
       const Vector2 u2parallel = dot(toVector2(u_int), t())*t();
@@ -965,7 +975,7 @@ __inline__ __device__ bool Side::btrack(
       Point3 xt = x0 - dtb*u_int;
 
 
-      bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb);
+      bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, this);
       assert(found && "Backtracking failed in btrack");
 
       time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
@@ -1292,6 +1302,9 @@ printf("EEEEEE idx = %d, isbnd[i] = %d, node.nodeBnd = %p\n", i, isbnd[i], node.
          node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
          node.nodeBnd->node = &node;
 
+         node.nodeBnd->sideBnd1 = nullptr;
+         node.nodeBnd->sideBnd2 = nullptr;
+
          if (isbnd[i]>=0) {
 
             node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
@@ -1365,8 +1378,8 @@ printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd);
       side.n = normalize(side.n);
 
       // Side boundary type
-      const NodeBoundary *n1bnd = side.n1->nodeBnd;
-      const NodeBoundary *n2bnd = side.n2->nodeBnd;
+      NodeBoundary *n1bnd = side.n1->nodeBnd;
+      NodeBoundary *n2bnd = side.n2->nodeBnd;
 
       if (n1bnd != nullptr && n2bnd != nullptr) 
       // If both nodes are on the boundary, then the side may be on the boundary
@@ -1378,6 +1391,13 @@ printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd);
             side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
             if      ( isLand) side.sideBnd->segment = &landBoundarySegment;
             else if (!isLand) side.sideBnd->segment = &(localSegmentMem[isbs]);
+
+            // Links each node boundary to the side boundary using the first available side boundary pointer
+            if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
+            else                            n1bnd->sideBnd2 = side.sideBnd;
+
+            if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
+            else                            n2bnd->sideBnd2 = side.sideBnd;
           
             side.sideBnd->side = &side;
             idxSideBoundary++;
@@ -1929,7 +1949,7 @@ extern "C" {
 
          if (vmag <= velmin_btrack) {
             // No activity 
-addDebugPlot(side->center, side->center, 'red');
+addDebugPlot(side->center, side->center, 0x00FF00);
             side->btu[k] = side->u2[k];
             
          } else {  // do btrack
@@ -2616,6 +2636,61 @@ printf("ZZZ  idx = %d, iettype = %d, r_u1_bar = %f, %f, sideBnd->ubc[%d] = %f, %
          nodeBnd->elbc += ramp*(prmsl_ref - node->pr)/grav/rho0;
       }
 printf("++++>> nodeBnd->elbc = %f\n", nodeBnd->elbc);
+   }
+
+
+   __global__ void computeHorizontalViscosity(void) { 
+
+      assert(ics == 0 && "computeHorizontalViscosity: implemented only for ics=0");
+
+      SIDE(side);
+
+      if (side->isDry) return;
+
+      side->d2uv = {0.0, 0.0};
+
+      if constexpr(ihorcon == 1) {
+         for (int k = side->kb; k < nvrt - 1; k++) {
+            // Computes the Laplacian by using the simplified formula presented in the paper:
+            // SELFE: A semi-implicit Eulerian–Lagrangian finite-element model for cross-scale ocean circulation
+            // By Zhang and Baptista.
+
+            // sum(nu*(u_i - u_c))/area, where u_i is the velocity at the i-th surrounding side and u_c is the velocity at the side under consideration.
+            // This is a standard discretization of the Laplacian operator.
+            // Following the paper, nu is estimated as: gamma*area/dt, where gamma is a non-dimensional parameter.
+            // The area is the area of the cell we use for this calculation (it's not the area of an element). However, since it is in the numerator and the denominator, it cancels out.
+            // Gamma is hvis_coef0 in the code.
+            // The value of gamma needs to be < 0.5.
+
+            // For the computation at the side center, we use the velocities at the two sides that are connected to the 
+            // side under consideration in each of the two possible elements that share the side.
+            Vector2 sumU = {0.0, 0.0};
+            for (int l = 0; l < 2; l++) {
+               const Element *elem = side->elems[l];
+
+               if (elem == nullptr) continue;  // This happens at the domain boundaries
+
+               // Find the local index of the side in the element
+               const int idxSide = elem->sideLocalIdx(side);
+               // Find the two sides that are connected to the side under consideration
+               const int side1 = elem->sides[elem->nxq(idxSide + 1)];
+               const int side2 = elem->sides[elem->nxq(idxSide - 1)];
+
+               sumU += side1->u2[k] + side2->u2[k] - 2*side->u2[k];
+
+            }
+
+            side->d2uv = hvis_coef0*sumU/dt;
+   printf("+++++ side->d2uv = %f, %f\n", side->d2uv.x, side->d2uv.y);
+
+
+   CHECK THIS RESULTS. RENAME d2uv. IMPLEMENT ihorcon == 2
+         }
+      else if constexpr(ihorcon == 2) {
+         assert(false && "computeHorizontalViscosity: implemented only for ihorcon == 1");
+      }
+
+
    }
 
 
@@ -3347,16 +3422,16 @@ printf("###>>>#side->is2D() = %d\n", side->is2D());
          const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
 
          Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
-                           side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 - thetai*side->gradEta2));
+                           side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 + thetai*side->gradEta2));
 
          hat_gam += dt*side->d2uv[nvrt-1];  // XXXX compute d2uv
 
-         const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvel1, rmaxvel1);
-         const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvel2, rmaxvel2);
+         const double ux = -clamp(hat_gam.x*hhat/htot, -rmaxvel1, rmaxvel1);
+         const double uy = -clamp(hat_gam.y*hhat/htot, -rmaxvel2, rmaxvel2);
 
          for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
 
-printf("###>>>#side->u2[0] = %e, %e, side->u2[1] = %e, %e\n", side->u2[0].x, side->u2[0].y, side->u2[1].x, side->u2[1].y);
+printf("###>>>#side->u2[0] = %e, %e, side->u2[1] = %e, %e, hat_gam = %e, %e, hhat = %e, htot = %e\n", side->u2[0].x, side->u2[0].y, side->u2[1].x, side->u2[1].y, side->d2uv[nvrt-1].x, side->d2uv[nvrt-1].y, hhat, htot);
 
       }
       else { // 3D
@@ -5831,7 +5906,7 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    int idx = node->idx;
    int i = threadIdx.x + blockIdx.x * blockDim.x;
 
-   printf("getNodeVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
+   // printf("getNodeVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
    
    if      (varCode == (int)VarCode::z && k >= 0)       var[idx] = node->z[k];
    else if (varCode == (int)VarCode::x && k == -1)      var[idx] = node->p.x;
@@ -5841,6 +5916,8 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::elbc && k == -1)   var[idx] = node->nodeBnd!=nullptr?node->nodeBnd->elbc:0.0;
    else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;   
    else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
+   else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
+   else if (varCode == (int)VarCode::v && k >= 0)       var[idx] = node->u2[k].y;
    else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
       
    

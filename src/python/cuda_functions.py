@@ -22,6 +22,7 @@ computeTidalPotential = None
 computeBottomDragVegetation = None
 computeVegetationAndDragParameters = None
 computeElevationBoundaryConditions = None
+computeHorizontalViscosity = None
 computeVerticallyIntegratedVelocity = None
 computeDensityCubicSplines = None
 computeDensityGradient = None
@@ -122,6 +123,7 @@ def initializeCudaFunctions(sizes):
         computeBottomDragVegetation         = mod.get_function('computeBottomDragVegetation',         sizes, kernel_type='nodes')
         computeVegetationAndDragParameters  = mod.get_function('computeVegetationAndDragParameters',  sizes, kernel_type='sides')
         computeElevationBoundaryConditions  = mod.get_function('computeElevationBoundaryConditions',  sizes, kernel_type='sides')
+        computeHorizontalViscosity          = mod.get_function('computeHorizontalViscosity',          sizes, kernel_type='sides')
         computeVerticallyIntegratedVelocity = mod.get_function('computeVerticallyIntegratedVelocity', sizes, kernel_type='sides')
         computeDensityCubicSplines          = mod.get_function('computeDensityCubicSplines',          sizes, kernel_type='elements')
         computeDensityGradient              = mod.get_function('computeDensityGradient',              sizes, kernel_type='elements')

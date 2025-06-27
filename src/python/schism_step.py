@@ -196,7 +196,7 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     # Horizontal viscosity, implemented as a filter (also Shapiro filter)
-    #####cufunc.computeHorizontalViscosity()       # Lines 3840-4160
+    cufunc.computeHorizontalViscosity()       # Lines 3840-4160
 
 
     # Backtracking/upwind for momentum
