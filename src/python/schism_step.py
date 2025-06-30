@@ -258,6 +258,9 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     cufunc.solveMomentumEquations(time)
 
+
+    cufunc.applyMomentumBC()
+
     # Transport    lines 7388-8111
 
     # cufunc.shapiroFilter1()
@@ -277,7 +280,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     # Adjust mass after level change
     # XXXXXXXXX IMPLEMENT THIS
 
-    # Compute nodal velociries from side velocities
+    # Compute nodal velocities from side velocities
     cufunc.zeroNodalVelocities()
     cufunc.computeNodalVerticalVelocities1()
     cufunc.computeNodalVerticalVelocities2()

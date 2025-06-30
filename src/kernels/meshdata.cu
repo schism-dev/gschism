@@ -814,6 +814,8 @@ __inline__ __device__ double SideBoundary::getBoundaryArrayValueWeight(void) con
    return 0.0;
 }
 
+__inline__ __device__ double  SideBoundary::etaMeanBnd(void) const { return 0.5*(side->n1->nodeBnd->eta_mean + side->n2->nodeBnd->eta_mean); }         // XXXX Should I use something like getBoundaryArrayValueWeight here?
+
 
 __inline__ __device__ Vector2 SideBoundary::umo(int jfr) const {
 
@@ -898,11 +900,6 @@ __inline__ __device__ double  Side::veg_h(void)   const { return 0.5*(n1->veg_h 
 __inline__ __device__ double  Side::veg_nv(void)  const { return 0.5*(n1->veg_nv + n2->veg_nv); }
 __inline__ __device__ double  Side::veg_alpha_vert_mean(void) const { return 0.5*(n1->veg_alpha_vert_mean + n2->veg_alpha_vert_mean); }
 __inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D[k] + n2->veg_alpha3D[k]); }
-
-__inline__ __device__ double  Side::etaMeanBnd(void) const { assert(n1->nodeBnd != nullptr && n2->nodeBnd != nullptr && "etaMeanBnd not assigned"); 
-                                                             assert(n1->nodeBnd->eta_mean >= -98 && n2->nodeBnd->eta_mean >= -98 && "Bad value for etaMeanBnd");
-                                                             // XXXX Should I use something like getBoundaryArrayValueWeight here?
-                                                             return 0.5*(n1->nodeBnd->eta_mean + n2->nodeBnd->eta_mean); }
 
 
 __inline__ __device__ double  Side::Cd(void)      const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
@@ -2641,13 +2638,15 @@ printf("++++>> nodeBnd->elbc = %f\n", nodeBnd->elbc);
 
    __global__ void computeHorizontalViscosity(void) { 
 
-      assert(ics == 0 && "computeHorizontalViscosity: implemented only for ics=0");
+      assert(ics == 1 && "computeHorizontalViscosity: implemented only for ics=1");
 
       SIDE(side);
 
       if (side->isDry) return;
 
-      side->d2uv = {0.0, 0.0};
+      for (int k = 0; k < nvrt; k++) {
+         side->nuGradU[k] = {0.0, 0.0};
+      }
 
       if constexpr(ihorcon == 1) {
          for (int k = side->kb; k < nvrt - 1; k++) {
@@ -2673,19 +2672,19 @@ printf("++++>> nodeBnd->elbc = %f\n", nodeBnd->elbc);
                // Find the local index of the side in the element
                const int idxSide = elem->sideLocalIdx(side);
                // Find the two sides that are connected to the side under consideration
-               const int side1 = elem->sides[elem->nxq(idxSide + 1)];
-               const int side2 = elem->sides[elem->nxq(idxSide - 1)];
+               const Side *side1 = elem->sides[elem->nxq(idxSide + 1)];
+               const Side *side2 = elem->sides[elem->nxq(idxSide - 1)];
 
                sumU += side1->u2[k] + side2->u2[k] - 2*side->u2[k];
 
             }
 
-            side->d2uv = hvis_coef0*sumU/dt;
-   printf("+++++ side->d2uv = %f, %f\n", side->d2uv.x, side->d2uv.y);
+            side->nuGradU[k] = hvis_coef0*sumU/dt;
+   printf("+++++ side->nuGradU = %f, %f\n", side->nuGradU[k].x, side->nuGradU[k].y);
 
-
-   CHECK THIS RESULTS. RENAME d2uv. IMPLEMENT ihorcon == 2
+   
          }
+      }
       else if constexpr(ihorcon == 2) {
          assert(false && "computeHorizontalViscosity: implemented only for ihorcon == 1");
       }
@@ -3401,7 +3400,7 @@ printf("###>>>#side->is2D() = %d\n", side->is2D());
          // Warning: Do not use htot2, which is updated.
          const double htot = side->htot1();
          const double hhat = side->hhat;
-
+printf("htot: %e, hhat: %e\n", htot, hhat);
          assert(hhat > 0.0 && htot > 0.0 && "Impossible dry 55:");
 
          Vector2 tau2 = {0.0, 0.0};
@@ -3421,17 +3420,19 @@ printf("###>>>#side->is2D() = %d\n", side->is2D());
 
          const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
 
+printf("coriolisTerm: %e, %e\n", coriolisTerm.x, coriolisTerm.y);
+
          Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
                            side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 + thetai*side->gradEta2));
 
-         hat_gam += dt*side->d2uv[nvrt-1];  // XXXX compute d2uv
+         hat_gam += dt*side->nuGradU[nvrt-1];  // XXXX compute nuGradU
 
          const double ux = -clamp(hat_gam.x*hhat/htot, -rmaxvel1, rmaxvel1);
          const double uy = -clamp(hat_gam.y*hhat/htot, -rmaxvel2, rmaxvel2);
 
          for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
 
-printf("###>>>#side->u2[0] = %e, %e, side->u2[1] = %e, %e, hat_gam = %e, %e, hhat = %e, htot = %e\n", side->u2[0].x, side->u2[0].y, side->u2[1].x, side->u2[1].y, side->d2uv[nvrt-1].x, side->d2uv[nvrt-1].y, hhat, htot);
+printf("###>>>#side->u2[0] = %e, %e, side->u2[1] = %e, %e, hat_gam = %e, %e, hhat = %e, htot = %e\n", side->u2[0].x, side->u2[0].y, side->u2[1].x, side->u2[1].y, side->nuGradU[nvrt-1].x, side->nuGradU[nvrt-1].y, hhat, htot);
 
       }
       else { // 3D
@@ -3572,7 +3573,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
          const Vector2 *btu = side->btu;
          const Vector2 *u2  = side->u2;
          const double coriolis = side->coriolis;
-         const Vector2 *d2uv = side->d2uv;
+         const Vector2 *nuGradU = side->nuGradU;
 
 
          for (int k = kb + 1; k<nvrt; k++) {
@@ -3597,8 +3598,8 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
 
 
                rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
-                                          (dt*coriolis)*rot90(2.0*u2[k] + u2[k + 1]) + 
-                                          dt*(2.0*d2uv[k] + d2uv[k + 1]));
+                                        dt*(coriolis*rot90(2.0*u2[k] + u2[k + 1]) + 
+                                            2.0*nuGradU[k] + nuGradU[k + 1]));
 
                //diff stress tensors 1006
                if constexpr(itur==5) {  // 1018:itur==5 XXX What is itur?
@@ -3625,8 +3626,8 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
 
             if (k > kb + 1) {
                rrhs[kin] += (dz_0/6.0)*(2.0*btu[k] + btu[k - 1] + 
-                                       (dt*coriolis)*rot90(2.0*u2[k] + u2[k - 1]) + 
-                                       dt*(2.0*d2uv[k] + d2uv[k - 1]));
+                                       dt*(coriolis*rot90(2.0*u2[k] + u2[k - 1]) + 
+                                           2.0*nuGradU[k] + nuGradU[k - 1]));
 
 
                // diff stress tensors 1006
@@ -3663,7 +3664,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
       } // if side->is2D()
       
 
-      // Impose velocity boundary conditions at the bottom
+      // Impose velocity boundary condition at the bottom
       if constexpr(imm == 2) { // 3D bed deformation model
          double dep;
          Vector2 vel;
@@ -3681,14 +3682,14 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
           
       } // if imm
 
-      // XXX aren't we undoing what was done here: for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
-      for (int k=0; k < kb; k++) side->u2[k] = {0.0, 0.0};
-      
+      // The velocities below the bottom level are set to zero
+      for (int k=0; k < kb - 1; k++) side->u2[k] = {0.0, 0.0};
+
 
    }
 
 
-   __device__ void applyMomentumBC(void) {
+   __global__ void applyMomentumBC(void) {
 
       SIDE_BND(sideBnd);
 
@@ -3697,34 +3698,35 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
       const Node *n1 = side->n1;
       const Node *n2 = side->n2;
 
-      // REMEMEBER, this is a trick, segment can be a pointer or (-1, -2)
-      const bool isLand     = (segment == (BoundarySegment *)landSegment);
-      const bool isInternal = (segment == (BoundarySegment *)internalSegment);
+      assert(segment != nullptr && "applyMomentumBC: segment is nullptr");
 
-      assert(!isInternal && "applyMomentumBC: Shouldn't be an internal side");
+      // REMEMEBER, this is a trick, segment can be a pointer or (-1, -2)
+      const bool isLand = segment->isLand;
+      const int ifltype = segment->ifltype;
+
       const int kb = side->kb;
 
-      if (!isLand && segment->ifltype != 0) {
+printf("ifltype = %d, isLand = %d, segment = %d\n", ifltype, segment->isLand, segment);    
+      if (!isLand && ifltype != 0) {
          const Vector2 *ubc = sideBnd->ubc;
-
+  
          for (int k=kb; k < nvrt; k++) {
             
-            assert(segment->ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
+            assert(ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
                    && (ubc[k].x <= 98 && ubc[k].y <= 98)) && "Momentum BC: Side has no velocity boundary conditions");
 
-            if (segment->ifltype == -1) {
+            if (ifltype == -1) {
                // Flather 1
 
                const double depth = side->depth();
 
                assert(depth > 0.0 && "Flather bnd has 0 or negative depth");
 
-               const double vnorm = sqrt(grav/depth)*(side->eta2() - side->etaMeanBnd()) + dot(ubc[k], side->n);
+               const double vnorm = sqrt(grav/depth)*(side->eta2() - sideBnd->etaMeanBnd()) + dot(ubc[k], side->n);
 
                side->u2[k] = vnorm*side->n;
 
-            } else if (segment->ifltype == -2) { // Discharge
-
+            } else if (ifltype == -2) { // Discharge
 
                const double eta1 = side->eta1();
                const double eta2 = side->eta2();
@@ -3744,7 +3746,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
 
 
             }
-            else if (segment->ifltype == -4 || segment->ifltype == -5) { // 3D radiation
+            else if (ifltype == -4 || ifltype == -5) { // 3D radiation
                const double vnorm = dot(side->u2[k], side->n);
 
                double rat;
@@ -3761,12 +3763,17 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
          }
 
       }
-      else if (isLand) { // land bnd
+      else if (isLand) { // if it is land boundary side
+
          if constexpr(islip == 0) { // free slip
             for (int k=kb; k < nvrt; k++) {
                double vnorm = 0.0; // for most cases
                const double vtan = dot(side->u2[k], side->t());
-               side->u2[k] = vtan*side->t() - vnorm*side->n;
+               const Vector2 t = side->t();
+               const Vector2 n = side->n;
+printf("islip   = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan*t - vnorm*n = %f,%f\n", islip, k, side->idx, side->u2[k].x, side->u2[k].y, (vtan*t - vnorm*n).x, (vtan*t - vnorm*n).y);      
+               side->u2[k] = vtan*t - vnorm*n;
+printf("islipXX = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan*t - vnorm*n = %f,%f\n", islip, k, side->idx, side->u2[k].x, side->u2[k].y, (vtan*t - vnorm*n).x, (vtan*t - vnorm*n).y);                     
             }
 
          } else { // no slip
@@ -3775,9 +3782,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
          }
       } // if (side segment type...
 
-      
-
-
+   
 
    }
 
@@ -5103,7 +5108,7 @@ extern "C" {
 
          // Integrate horizontal viscosity force vertically
          for (int k=side->kb + 1; k<nvrt; k++) {
-            const Vector2 levelHorVisc = side->Dz(k)*(side->d2uv[k] + side->d2uv[k-1])/2.0; 
+            const Vector2 levelHorVisc = side->Dz(k)*(side->nuGradU[k] + side->nuGradU[k-1])/2.0; 
 
             F += levelHorVisc;
 
@@ -5116,8 +5121,7 @@ extern "C" {
             } // if iveg
          } // for k
 
-         fb += side->d2uv[side->kb];
-
+         fb += side->nuGradU[side->kb];
 
          // Add to ghat1
          if constexpr(ics==2) {

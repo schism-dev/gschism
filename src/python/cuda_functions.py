@@ -34,6 +34,7 @@ setupCoefficientMatrixAndRHS = None
 rollUpElevation = None
 computeHorGradientAtSide = None
 solveMomentumEquations = None
+applyMomentumBC = None
 ul0UpdateZCoords = None
 ul0ComputeDryElementsAndNodes = None
 ul0UpdateRewettedNodes = None
@@ -101,9 +102,9 @@ def initializeCudaFunctions(sizes):
     global scaleGravity, computeTimeRamps
     global computeBedDeformation, computeTidalPotential
     global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
-    global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeDensityCubicSplines
+    global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
-    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, backtrackAllNodes, test
+    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix
@@ -139,6 +140,7 @@ def initializeCudaFunctions(sizes):
         initializePreconditionedResidual    = mod.get_function('initializePreconditionedResidual',    sizes, kernel_type='nodes')
         computeHorGradientAtSide            = mod.get_function('computeHorGradientAtSide',            sizes, kernel_type='sides')
         solveMomentumEquations              = mod.get_function('solveMomentumEquations',              sizes, kernel_type='nodes')
+        applyMomentumBC                     = mod.get_function('applyMomentumBC',                     sizes, kernel_type='sideBnd')
         # updateBedDeformation                = mod.get_function('updateBedDeformation',                sizes, kernel_type='nodes')
         shapiroFilter1                      = mod.get_function('shapiroFilter1',                      sizes, kernel_type='nodes')
         shapiroFilter2                      = mod.get_function('shapiroFilter2',                      sizes, kernel_type='nodes')

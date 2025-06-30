@@ -6,7 +6,7 @@ constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
 
 constexpr int internalSegment = -1;  // It is not really a segment, but we keep the name.
-constexpr int landSegment = -2;
+constexpr int landSegment     = -2;
 
 constexpr double pi = 3.14159265358979323846;
 
@@ -778,6 +778,7 @@ struct SideBoundary {
    
    __inline__ __device__ double getBoundaryArrayValueWeight(void) const;
 
+   __inline__ __device__ double etaMeanBnd(void) const;
 
    __inline__ __device__ Vector2 umo (int jfr) const;
    __inline__ __device__ Vector2 ufa (int jfr) const;  
@@ -816,7 +817,7 @@ struct Side {
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 U;                   // Vertically averaged velocity vector  
 
-   Vector2 d2uv[nvrt];          // divergence of (nu*grad u) 
+   Vector2 nuGradU[nvrt];          // nu*grad u
 
    Vector2 bcc[nvrt];           // Baroclinic term
    Vector2 bcc_TDz[nvrt];       // Baroclinic term at previous timestep
@@ -891,8 +892,6 @@ struct Side {
    __inline__ __device__ double veg_alpha_vert_mean(void) const;
    __inline__ __device__ double veg_alpha3D(int k) const;
    __inline__ __device__ double veg_c(void)  const { return veg_c2/(1.0 + veg_c2); }
-
-   __inline__ __device__ double etaMeanBnd(void) const;
 
    __inline__ __device__ double Cd(void) const;
 

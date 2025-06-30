@@ -68,6 +68,8 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         '__H0__': (namelist.opt.h0, 'namelist.opt'),
         '__ITUR__': (namelist.opt.itur, 'namelist.opt'),
         '__ISLIP__': (namelist.opt.islip, 'namelist.opt'),
+        '__IHORCON__': (namelist.opt.ihorcon, 'namelist.opt'),
+        '__HVIS_COEF0__': (namelist.opt.hvis_coef0, 'namelist.opt'),
         '__ISHAPIRO__': (namelist.opt.ishapiro, 'namelist.opt'),
         '__SHAPIRO0__': (namelist.opt.shapiro0, 'namelist.opt'),
         '__NITER_SHAP__': (namelist.opt.niter_shap, 'namelist.opt'),

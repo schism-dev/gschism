@@ -465,6 +465,7 @@ if __name__ == "__main__":
     numPartNodes = []
     numPartSides = []
     numPartBoundaryNodes = []
+    numPartBoundarySides = []
     for ipart, device_id in enumerate(range(n_gpus)):
 
         # Count the number of elements in the partition
@@ -485,9 +486,9 @@ if __name__ == "__main__":
         numPartBoundaryNodes.append((partNodes[idxBndNodes] == ipart).sum().get())
         print(f"Partition {ipart} has {numPartBoundaryNodes} boundary nodes")
        
-        # # Count the number of boundary sides in the partition
-        # numPartBoundarySides.append((partSides[cp.unique(ilnd)] == ipart).sum().get())
-        # print(f"Partition {ipart} has {numPartBoundarySides} boundary sides")
+        # Count the number of boundary sides in the partition
+        numPartBoundarySides.append((partSides[cp.unique(ilnd)] == ipart).sum().get())
+        print(f"Partition {ipart} has {numPartBoundarySides} boundary sides")
        
     nodesMemList = []
     elemsMemList = []
@@ -636,7 +637,7 @@ if __name__ == "__main__":
             # cufunc.test(12.0,  1.0, -1.0)
 
     sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
-             'nodeBnd': max(numPartBoundaryNodes)}
+             'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
     cufunc.initializeCudaFunctions(sizes)
 
     schism_init(namelist.core, namelist.opt)
