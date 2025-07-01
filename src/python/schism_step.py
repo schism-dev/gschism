@@ -263,8 +263,10 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # Transport    lines 7388-8111
 
-    # cufunc.shapiroFilter1()
-    # cufunc.shapiroFilter2()
+    if opt.ishapiro == 1:
+        # The Shapiro filter is applied in two steps
+        cufunc.shapiroFilter1()
+        cufunc.shapiroFilter2()
 
 
     # cufunc.updateBedDeformation()

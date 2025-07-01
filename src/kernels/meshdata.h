@@ -874,7 +874,7 @@ struct Side {
    __forceinline__ __device__ Vector2 t(void) const { return {-n.y, n.x}; } // Tangent vector
 
    __inline__ __device__ bool isBnd(void) const { return sideBnd != nullptr; } // True if the side is a boundary side
-   __inline__ __device__ bool isBnd2(void) const { return elems[0] == nullptr; } // This is a different type of being boundary. XXXXX CHECK IF THIS THE SAME
+   __inline__ __device__ bool isInternal(void) const { return elems[1] != nullptr; } // Internal side
    __inline__ __device__ int iadv(void) const;
 
    __inline__ __device__ double grav3(void) const;

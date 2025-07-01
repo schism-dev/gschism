@@ -95,15 +95,15 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
         tide.nbfr = read_values(line, [int])[0]
         
         if tide.nbfr > 0:
-            tide.amig = cp.zeros(tide.nbfr, dtype=float64)
-            tide.ff   = cp.zeros(tide.nbfr, dtype=float64)
-            tide.face = cp.zeros(tide.nbfr, dtype=float64)
-            tide.emo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.efa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.umo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.ufa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.vmo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
-            tide.vfa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64)
+            tide.amig = cp.zeros(tide.nbfr, dtype=float64, order='F')
+            tide.ff   = cp.zeros(tide.nbfr, dtype=float64, order='F')
+            tide.face = cp.zeros(tide.nbfr, dtype=float64, order='F')
+            tide.emo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64, order='F')
+            tide.efa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64, order='F')
+            tide.umo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64, order='F')
+            tide.ufa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64, order='F')
+            tide.vmo  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64, order='F')
+            tide.vfa  = cp.zeros((nope_global, mnond_global, tide.nbfr), dtype=float64, order='F')
             
             for i in range(tide.nbfr):
                 line = f.readline()  # Skip tag

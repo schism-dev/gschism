@@ -1456,6 +1456,9 @@ printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd);
       // Compute the center of the side
       side.center = 0.5*(side.n1->p2() + side.n2->p2());
 
+      assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
+      side.shapiro = shapiro0;
+
 #ifdef GAUSSIAN_HILL_VELOCITIES
 // XXXX
 if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
@@ -1563,8 +1566,10 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
    // Processing the boundary nodes
    int idx = 0;
    for (int iseg = 0; iseg < nope; iseg++) {
+      // for each segment...
       
-      for (int ilnd = 0; ilnd < nlnd[iseg]; ilnd++) {
+      for (int ind = 0; ind < nlnd[iseg]; ind++) {
+         // for each node on the segment...
 
          NodeBoundary *nodeBnd = &localNodeBoundaryMem[idx];
 
@@ -1573,10 +1578,12 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
          nodeBnd->elbc = 0.0;
 
          for (int jfr = 0; jfr < nbfr; jfr++) {
-            nodeBnd->efa[jfr] = efa[jfr + iseg*nbfr];
-            nodeBnd->emo[jfr] = emo[jfr + iseg*nbfr];
-            nodeBnd->umo[jfr] = {umo[jfr + iseg*nbfr], vmo[jfr + iseg*nbfr]};
-            nodeBnd->ufa[jfr] = {ufa[jfr + iseg*nbfr], vfa[jfr + iseg*nbfr]};
+
+            const int idx = iseg*mnond*nbfr + ind*nbfr + jfr;
+            nodeBnd->efa[jfr] = efa[idx];
+            nodeBnd->emo[jfr] = emo[idx];
+            nodeBnd->umo[jfr] = {umo[idx], vmo[idx]};
+            nodeBnd->ufa[jfr] = {ufa[idx], vfa[idx]};
 
          }
 
@@ -2512,10 +2519,12 @@ return;
       const double r_uth0 = ramp*segment->qthcon/segment->carea;  // r_ stands for ramp-up
       const Vector2 r_nuth0 = r_uth0*n;
 
-      Vector2 r_uth    = {0.0, 0.0};    // r_ stands for ramp-up
-      Vector2 r_u1_bar = {0.0, 0.0};
+
 printf("ZZZ4  idx = %d, ifltype = %d, r_nuth0 = %f, %f\n", sideBnd->side->idx, ifltype, r_nuth0.x, r_nuth0.y);
       for (int k = 0; k < nvrt; k++) {
+         Vector2 r_uth    = {0.0, 0.0};    // r_ stands for ramp-up
+         Vector2 r_u1_bar = {0.0, 0.0};
+      
          if (ifltype == 1 || ifltype == 2) {
          
             assert(segment->carea > 0.0 && "computeFlowBcVelocities: dry bnd side");
@@ -2546,7 +2555,7 @@ printf("ZZZ3  idx = %d, jfr = %d, ifltype = %d, r_uth = %f, %f\n", sideBnd->side
                const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
                const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
                r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
-printf("ZZZ2  idx = %d, jfr = %d, argx = %f, argy = %f, umo = %f, %f, ufa = %f, %f, ramp = %f, ff = %f\n", sideBnd->side->idx, jfr, argx, argy, umo.x, umo.y, ufa.x, ufa.y, ramp, ff[jfr]);               
+printf("ZZZ2  idx = %d, jfr = %d, ncyc = %d, face = %f, argx = %f, argy = %f, umo = %f, %f, ufa = %f, %f, ramp = %f, ff = %f, r_u1_bar = %e, %e\n", sideBnd->side->idx, jfr, ncyc, face[jfr], argx, argy, umo.x, umo.y, ufa.x, ufa.y, ramp, ff[jfr], r_u1_bar.x, r_u1_bar.y);               
             }
 
          } // if (ifltype = 3 || ifltype == 5
@@ -3427,8 +3436,8 @@ printf("coriolisTerm: %e, %e\n", coriolisTerm.x, coriolisTerm.y);
 
          hat_gam += dt*side->nuGradU[nvrt-1];  // XXXX compute nuGradU
 
-         const double ux = -clamp(hat_gam.x*hhat/htot, -rmaxvel1, rmaxvel1);
-         const double uy = -clamp(hat_gam.y*hhat/htot, -rmaxvel2, rmaxvel2);
+         const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvel1, rmaxvel1);
+         const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvel2, rmaxvel2);
 
          for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
 
@@ -3650,9 +3659,11 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
 
          } // k=kb + 1,nvrt
 
-   printf("#### bdia[0] = %f, bdia[1] = %f, bdia[2] = %f, bdia[3] = %f\n", bdia[0], bdia[1], bdia[2], bdia[3]);         
+printf("#### bdia[0] = %f, bdia[1] = %f, bdia[2] = %f, bdia[3] = %f\n", bdia[0], bdia[1], bdia[2], bdia[3]);         
    // tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
          tridag_sch<2>(nvrt, alow, bdia, cupp, (double *)rrhs, (double *)u, (double *)gam);
+printf("::: u[0] = %e, u[1] = %e, u[2] = %e, u[3] = %e\n", u[0], u[1], u[2], u[3]);
+
 
          for (int k=kb + 1; k<nvrt; k++) {
             const int kin = k - kb;
@@ -3676,7 +3687,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
       } else { // imm = 0 or 1
          if (side->Cd() == 0.0) {
             side->u2[kb] = side->u2[kb + 1];
-         } else if (nvrt > kb + 1) { // 3D no slip bottom
+         } else if (nvrt - 1 > kb + 1) { // 3D no slip bottom
             side->u2[kb] = {0.0, 0.0};
          }
           
@@ -3706,7 +3717,7 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
 
       const int kb = side->kb;
 
-printf("ifltype = %d, isLand = %d, segment = %d\n", ifltype, segment->isLand, segment);    
+printf("ifltype = %d, isLand = %d, segment = %d, ubc = %e,%e\n", ifltype, segment->isLand, segment, sideBnd->ubc[kb].x, sideBnd->ubc[kb].y);    
       if (!isLand && ifltype != 0) {
          const Vector2 *ubc = sideBnd->ubc;
   
@@ -3757,6 +3768,7 @@ printf("ifltype = %d, isLand = %d, segment = %d\n", ifltype, segment->isLand, se
             }
             else { // not Flather or 3D radiation
                side->u2[k] = ubc[k];
+printf("****** idx = %d, k = %d, side->idx = %d, ubc = %e,%e\n", side->idx, k, side->idx, ubc[k].x, ubc[k].y);               
 
             } // if (segment->ifltype...
 
@@ -3787,38 +3799,35 @@ printf("islipXX = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan*t - vnorm*n = %f,
    }
 
 
-   __device__ void shapiroFilter1(void) {
+   __global__ void shapiroFilter1(void) {
       // First step of the Shapiro filter (normally used if indvel<=0)
       // Computes the filtered values and stores them in bcc (as a temporary array).
 
-      if constexpr(ishapiro == 0) return;
-
       SIDE(side);
 
-      const bool isInternal = (side->sideBnd->segment == (BoundarySegment *)internalSegment);
-
-      if (side->isDry || isInternal ) return;
+      // Only internal wet sides are processed
+      if (side->isDry || !(side->isInternal())) return;
 
       const int kb = side->kb;
 
       for (int mm = 1; mm <= niter_shap; mm++) {
 
-
-         // Internal wet sides
          for (int k = kb + 1; k < nvrt; k++) {
             // WARNING: reusing bcc as a temporary array to store the suru values.
             side->bcc[k] = {0.0, 0.0};
             Vector2 suru = {0.0, 0.0};
 
-            for (int j=0; j<4; j++) {
+            for (int j=0; j<4; j++) { // 4 neighbors per side
 
                const Side *nSide = side->neigh(j); // Every internal side has 4 neighbors
-               
+printf("idx = %d, j = %d,nSide->idx = %d, nSide->u2[k] = %e,%e\n", side->idx, j, nSide->idx, nSide->u2[k].x, nSide->u2[k].y);
+
                int kin = k;
                if (!(nSide->isDry)) kin = max(k, nSide->kb + 1);
                
                if constexpr(ics==1) {
-                  suru += side->u2[kin];
+                  suru += nSide->u2[kin];
+
                } else {
                   assert(false && "Not implemented: ics == 2");
                   // Vector2 vn1, vn2;
@@ -3828,30 +3837,30 @@ printf("islipXX = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan*t - vnorm*n = %f,
                }
             }
 
+
             side->bcc[k] = side->u2[k] + side->shapiro*(0.25*suru - side->u2[k]); // sframe2 if ics=2
+printf("NNNN idx = %d, suru = %f,%f, side->u2[k] = %f,%f, side->bcc[k] = %f,%f\n", side->idx, suru.x, suru.y, side->u2[k].x, side->u2[k].y, side->bcc[k].x, side->bcc[k].y);            
 
          }
       }
    }
 
-   __device__ void shapiroFilter2(void) {
+   __global__ void shapiroFilter2(void) {
       // Second step of the Shapiro filter. Assigns to u2 the values stored in bcc.
-
-      if constexpr(ishapiro == 0) return;
 
       SIDE(side);
 
-      const bool isInternal = (side->sideBnd->segment == (BoundarySegment *)internalSegment);
-
-      if (side->isDry || isInternal ) return;
+      if (side->isDry || !(side->isInternal())) return;
 
       const int kb = side->kb;
 
       for (int k = 0; k < kb - 1; k++) side->u2[k] = {0.0, 0.0};
 
       if (side->is2D()) {
-         side->u2[kb] = side->u2[nvrt - 1];
-         
+         // side->u2[kb] = side->u2[nvrt - 1];
+         side->u2[kb + 1] = side->bcc[kb + 1];
+         side->u2[kb    ] = side->u2 [nvrt - 1];
+
       } else {
          // 3D
          for (int k = kb + 1; k < nvrt; k++) side->u2[k] = side->bcc[k];
@@ -3993,7 +4002,7 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
       SIDE(side);
 
       // A side is wet if and only if at least one of its elements is wet.
-      const bool isWet = !side->elems[0]->isDry || (!side->isBnd2() && !side->elems[1]->isDry);
+      const bool isWet = !side->elems[0]->isDry || (side->isInternal() && !side->elems[1]->isDry);
 
       const Node *n1 = side->n1;
       const Node *n2 = side->n2;
