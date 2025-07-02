@@ -1654,11 +1654,12 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
             const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
             const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
 
-            area3D = sqrt(nx*nx + ny*ny + nz*nz);
+            const double len = sqrt(nx*nx + ny*ny + nz*nz);
+            area3D = 0.5*len;
 
             assert(area3D > 0.0 && "Element normal vector: area3D is negative");
 
-            return {nx/area3D, ny/area3D, nz/area3D};
+            return {nx/len, ny/len, nz/len};
 
            
          }
@@ -5784,11 +5785,12 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
          for (int j = 0; j < elem->i34; j++) {
             const Side *side = elem->sides[j];
 
-            const double sideArea = side->area(l + 1);
+            const double sideArea = side->area(l);
             const Vector2 u2c = 0.5*(side->u2[l] + side->u2[l + 1]); // velocity at the center of the side
             const double sign = elem->ssign[j]; 
 
             sideFlux += sign*dot(u2c, side->n)*sideArea;
+printf("idx = %d, l = %d, sideFlux = %f, u2c = %f,%f, side->len = %f, zc = %f, %f, sideArea = %f\n", side->idx, l, sideFlux, u2c.x, u2c.y, side->len, side->zc[l], side->zc[l + 1], sideArea);            
          }
          
          // Compute the horizontal velocity at the center of the top face as an average of the 
@@ -5800,7 +5802,9 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
          const double topHorizontalFlux = dot(u2meanTop, toVector2(elem_n2))*area3D; // Part of the flux related to the horizontal velocity
 
          elem->w[l + 1] = (-sideFlux - topHorizontalFlux - bottomFlux)/(elem_n2.z*area3D);
-printf("sideFlux = %f, topHorizontalFlux = %f, bottomFlux = %f, area3D = %f, elem->w[%d] = %.16f, elem_n2.z = %f\n", sideFlux, topHorizontalFlux, bottomFlux, area3D, l + 1, elem->w[l + 1], elem_n2.z);
+printf("idx = %d, l = %d, sideFlux = %f, topHorizontalFlux = %f, bottomFlux = %f, area3D = %f, elem->w[%d] = %.16f, elem_n2.z = %f\n", elem->idx, l, sideFlux, topHorizontalFlux, bottomFlux, area3D, l + 1, elem->w[l + 1], elem_n2.z);
+
+
          elem_n1 = elem_n2;
 
          bottomFlux = - topFlux;

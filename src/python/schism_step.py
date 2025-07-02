@@ -271,6 +271,8 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # cufunc.updateBedDeformation()
 
+    cufunc.computeVerticalVelocity()
+
     cufunc.ul0UpdateZCoords()
     
     cufunc.ul0ComputeDryElementsAndNodes()
@@ -281,6 +283,7 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # Adjust mass after level change
     # XXXXXXXXX IMPLEMENT THIS
+
 
     # Compute nodal velocities from side velocities
     cufunc.zeroNodalVelocities()
@@ -298,7 +301,7 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # Update bed deformation and depth info  lines 8156-
 
-    cufunc.computeVerticalVelocity()
+ 
 
     # Optional calculations
 
