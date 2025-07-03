@@ -36,9 +36,9 @@ __device__ double *ff;   // Earth equilibrium argument of the harmonic constitue
 // Union to store different types of variables in the same memory location. This is used to define temporary 
 // variables that can be used to store different types of variables.
 union TempVar {
-    double d;
-    int i;
-    bool b;
+   double d;
+   int i;
+   bool b;
 };
 
 
@@ -1024,6 +1024,7 @@ struct Node {
 
    Point3 p;
    Vector3 u2[nvrt];
+   Vector2 utmp[nvrt];  // Temporary array to store velocities
    double z[nvrt];
    double lon, lat;
    double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
@@ -1115,6 +1116,9 @@ struct Node {
    __inline__ __device__ double zTopCanopy(void) const { return z[kb] + veg_h; } 
 
    __inline__ __device__ bool isDry2(void) const { return htot2() <= h0; } // isDry, but updated to use eta2
+
+   __inline__ __device__ bool isBnd(void) const { return nodeBnd != nullptr; } // True if the node is a boundary node
+   // __inline__ __device__ int numElements(void) const { return isNbd() ? numElements - 1 : numElements; } // Number of elements that are connected to this node
 
    __device__ void clearMatrixRow(void) {
       // Clear the matrix row for this node

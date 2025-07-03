@@ -3437,8 +3437,8 @@ printf("coriolisTerm: %e, %e\n", coriolisTerm.x, coriolisTerm.y);
 
          hat_gam += dt*side->nuGradU[nvrt-1];  // XXXX compute nuGradU
 
-         const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvel1, rmaxvel1);
-         const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvel2, rmaxvel2);
+         const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvelx, rmaxvelx);
+         const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
 
          for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
 
@@ -3670,7 +3670,7 @@ printf("::: u[0] = %e, u[1] = %e, u[2] = %e, u[3] = %e\n", u[0], u[1], u[2], u[3
             const int kin = k - kb;
 
             // Velocity is always clamped to maximum values
-            side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvel1, rmaxvel1), clamp(soln[kin].y, -rmaxvel2, rmaxvel2));
+            side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
          } // k
 
       } // if side->is2D()
@@ -4065,7 +4065,8 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
       NODE(node);
 
       for (int k = 0; k < nvrt; k++) {
-         node->u2[k] = {0.0, 0.0, 0.0};
+         node->u2[k]   = {0.0, 0.0, 0.0};
+         node->utmp[k] = {0.0, 0.0};
          node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
       }
    }
@@ -4079,28 +4080,86 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
          Node *node = elem->nodes[j];
 
          for (int k = node->kb; k < nvrt; k++) {
-            node->u2[k].z += elem->w[k]*elem->area;
-            node->tmp.d += elem->area;
+            atomicAdd(&(node->u2[k].z), elem->w[k]*elem->area);
          }
+         atomicAdd(&(node->tmp.d), elem->area);
       }
    }
 
    __global__ void computeNodalVerticalVelocities2(void) {
    // Compute node's vertical velocities from element's vertical velocities at WHOLE levels.
    // Divides by the total area of the elements sharing the    node.
-      ELEM(elem);
-
-      for (int j = 0; j < elem->i34; j++) {
-         Node *node = elem->nodes[j];
-
-         for (int k = node->kb; k < nvrt; k++) node->u2[k].z /= node->tmp.d;  // node->tmp.d contains the total area of the elements sharing the node
-      }
+      NODE(node);
+printf("node->idx = %d, node->tmp.d = %e, node->u2[k].z = %e\n", node->idx, node->tmp.d, node->u2[0].z);
+      for (int k = node->kb; k < nvrt; k++) node->u2[k].z = node->u2[k].z / node->tmp.d;  // node->tmp.d contains the total area of the elements sharing the node
    }
 
-   __global__ void computeNodalHorizontalVelocities(void) {
+
+   __global__ void computeNodalHorizontalVelocities1(void) {
+      assert(indvel == 0 && "computeNodalVelocities only works for indvel <= 0. IMPLEMENT THIS FOR INDVEL = 1");
+      assert(ics == 1 && "computeNodalVelocities only works for ics = 1. IMPLEMENT THIS FOR other ics");
+
+      ELEM(elem);
+
+      const int kb = elem->kb;
+      const bool isTri = elem->isTri();
+
+      if constexpr(indvel <= 0) {
+         // Assuming discontinoius hvel.
+
+
+         if (isTri) { // For triangles
+         // Interpolates the side velocities at the nodes. A magnitude defined at the sides and interpolated at one node can be
+         // computed as the sum of the adjacent side magnitudes minus the side magnitude that is not adjacent to the node.
+
+            for (int j = 0; j < 3; j++) {
+               // For every node of the triangle...
+               Node *node = elem->nodes[j];
+
+               const Side *s1 = elem->sides[j];
+               const Side *s2 = elem->sides[(j + 1) % 3];
+               const Side *s3 = elem->sides[(j + 2) % 3];
+
+               const int numElements = node->numElements;
+
+               for (int k = kb; k < nvrt; k++)  {
+                  Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k];
+                  u.x = clamp(u.x, -rmaxvelx, rmaxvelx);
+                  u.y = clamp(u.y, -rmaxvely, rmaxvely);
+                  // node->utmp[k] = node->utmp[k] + (1.0/numElements) * u; 
+                  atomicAdd(&(node->utmp[k].x), (1.0/numElements) * u.x);
+                  atomicAdd(&(node->utmp[k].y), (1.0/numElements) * u.y);
+
+auto uu = (1.0/numElements) * u;                  
+if (k==0 && node->idx == 1) printf("elem->idx = %d, node->idx = %d, utmp = %e,%e, node->numElements = %d, node->numSides = %d, u = %e,%e\n", elem->idx, node->idx, node->utmp[k].x, node->utmp[k].y, node->numElements, node->numSides, uu.x, uu.y);                  
+               }
+
+            }
+         }
+         else { // For quads
+
+         }
+
+      }
+      
+   }
+
+
+   __global__ void computeNodalHorizontalVelocities2(void) {
+      NODE(node);
+
+      for (int k = 0; k < nvrt; k++) {
+         node->u2[k] = toVector3(node->utmp[k], node->u2[k].z);
+      }
+      
+   }   
+
+   __global__ void computeNodalHorizontalVelocitiesOLD(void) {
+   // XXXX I'm not sure where I got this function from. 
    // Compute node's horizonal velocities from side velocities at WHOLE levels.
    // It goes for each side and adds to the nodes the velocity divided by the number of sides.
    // It does it for all nodes, including boundary nodes. Afterwards, the open boundary nodes are set to a different value.
+   // It uses the utmp array as a temporary array to store the velocities.
 
       assert(indvel == 0 && "computeNodalVelocities only works with indvel = 0. IMPLEMENT THIS FOR INDVEL <= 0");
 
@@ -4114,11 +4173,13 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
       for (int k = kb; k < nvrt; k++) {
 
          // Cast the u2 vector into a Vector2 
-         Vector2& n1_u2 = *reinterpret_cast<Vector2*>(&n1->u2[k]);
-         Vector2& n2_u2 = *reinterpret_cast<Vector2*>(&n2->u2[k]);
-
-         n1_u2 += side->u2[k]/n1->numSides;
-         n2_u2 += side->u2[k]/n2->numSides;
+         Vector2& n1_u2 = *reinterpret_cast<Vector2*>(&(n1->utmp[k]));
+         Vector2& n2_u2 = *reinterpret_cast<Vector2*>(&(n2->utmp[k]));
+// printf("1 &n1_u2 = %p, &n2_u2 = %p, side idx = %d, n1->idx = %d, n2->idx = %d, side->u2[k] = %e,%e, n1->numSides = %d, n2->numSides = %d, n1_u2 = %e,%e, n2_u2 = %e,%e\n", &n1_u2, &n2_u2, side->idx, n1->idx, n2->idx, side->u2[k].x, side->u2[k].y, n1->numSides, n2->numSides, n1_u2.x, n1_u2.y, n2_u2.x, n2_u2.y);         
+         n1_u2 = side->u2[k]/n1->numSides;
+// printf("2 &n1_u2 = %p, &n2_u2 = %p, side idx = %d, n1->idx = %d, n2->idx = %d, side->u2[k] = %e,%e, n1->numSides = %d, n2->numSides = %d, n1_u2 = %e,%e, n2_u2 = %e,%e\n", &n1_u2, &n2_u2, side->idx, n1->idx, n2->idx, side->u2[k].x, side->u2[k].y, n1->numSides, n2->numSides, n1_u2.x, n1_u2.y, n2_u2.x, n2_u2.y);                  
+         n2_u2 = side->u2[k]/n2->numSides;
+printf("k = %d, side idx = %d, n1->idx = %d, n2->idx = %d, side->u2[k] = %e,%e, n1->numSides = %d, n2->numSides = %d, n1_u2 = %e,%e, n2_u2 = %e,%e\n", k, side->idx, n1->idx, n2->idx, side->u2[k].x, side->u2[k].y, n1->numSides, n2->numSides, n1_u2.x, n1_u2.y, n2_u2.x, n2_u2.y);         
 
       }
 
@@ -5935,6 +5996,7 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
    else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
    else if (varCode == (int)VarCode::v && k >= 0)       var[idx] = node->u2[k].y;
+   else if (varCode == (int)VarCode::w && k >= 0)       var[idx] = node->u2[k].z;
    else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
       
    

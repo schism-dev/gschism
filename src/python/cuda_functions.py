@@ -42,7 +42,8 @@ ul0UpdateSides = None
 zeroNodalVelocities = None
 computeNodalVerticalVelocities1 = None
 computeNodalVerticalVelocities2 = None
-computeNodalHorizontalVelocities = None
+computeNodalHorizontalVelocities1 = None
+computeNodalHorizontalVelocities2 = None
 resetVelocityOpenBndNodes = None
 setVelocityOpenBndNodes = None
 computeVerticalVelocity = None
@@ -109,7 +110,7 @@ def initializeCudaFunctions(sizes):
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix
     global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
-    global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities
+    global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
     global getElementVar, getNodeVar, getSideVar
 
@@ -151,7 +152,8 @@ def initializeCudaFunctions(sizes):
         zeroNodalVelocities                 = mod.get_function('zeroNodalVelocities',                 sizes, kernel_type='nodes')
         computeNodalVerticalVelocities1     = mod.get_function('computeNodalVerticalVelocities1',     sizes, kernel_type='elements')
         computeNodalVerticalVelocities2     = mod.get_function('computeNodalVerticalVelocities2',     sizes, kernel_type='nodes')
-        computeNodalHorizontalVelocities    = mod.get_function('computeNodalHorizontalVelocities',    sizes, kernel_type='nodes')
+        computeNodalHorizontalVelocities1    = mod.get_function('computeNodalHorizontalVelocities1',  sizes, kernel_type='elements')
+        computeNodalHorizontalVelocities2    = mod.get_function('computeNodalHorizontalVelocities2',  sizes, kernel_type='nodes')
         resetVelocityOpenBndNodes           = mod.get_function('resetVelocityOpenBndNodes',           sizes, kernel_type='nodeBnd')
         setVelocityOpenBndNodes             = mod.get_function('setVelocityOpenBndNodes',             sizes, kernel_type='nodeBnd')
         computeVerticalVelocity             = mod.get_function('computeVerticalVelocity',             sizes, kernel_type='elements')

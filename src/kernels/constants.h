@@ -70,8 +70,8 @@ constexpr double rearth_pole = 6378206.4; // [m]
 constexpr double thetai = 0.6;
 
 constexpr double rmaxvel = 10; // Maximum velocity for the x-component
-constexpr double rmaxvel1 = rmaxvel;       // Maximum velocity for the x-component
-constexpr double rmaxvel2 = rmaxvel*1.013; // Maximum velocity for the y-component
+constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
+constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
 constexpr double rho0 = 1000; // [kg/m^3]
 constexpr double dtb_min = 10; //XXXX
