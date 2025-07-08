@@ -291,8 +291,8 @@ def schism_step(it: int, namelist, bctides, sflux):
     cufunc.computeNodalVerticalVelocities2()
     cufunc.computeNodalHorizontalVelocities1()
     cufunc.computeNodalHorizontalVelocities2()
-    cufunc.resetVelocityOpenBndNodes()
-    cufunc.setVelocityOpenBndNodes()
+    # cufunc.resetVelocityOpenBndNodes()
+    # cufunc.setVelocityOpenBndNodes()
 
 
     # var = monitor.getElementVar("z", 0)

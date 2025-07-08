@@ -85,7 +85,7 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth [m]
 
-enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, btu=6, btv=7, bccx=8, bccy=9, uth=10, vth=11, ubc=12, vbc=13, elbc=14, eta=15, area=16, qel=17, depth=18, radius=19, xlon=20, ylat=21, kb=22, n1=23, n2=24}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, btu=6, btv=7, bccx=8, bccy=9, uth=10, vth=11, ubc=12, vbc=13, island=14, ifltype=15, elbc=16, eta=17, area=18, qel=19, depth=20, radius=21, xlon=22, ylat=23, kb=24, n1=25, n2=26}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -1995,9 +1995,9 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
                                                        const Side *origSide) {
 
 
-   if (origSide->idx == 7) {
-      printf("AAAA&&&& origSide->idx = %d, u_int = %f,%f,%f, x0 = %f,%f,%f, xt = %f,%f,%f\n", origSide->idx, u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
-   }
+if (origSide->idx == 8) {
+   printf("AAAA&&&& u_int = %e,%e,%e, x0 = %f,%f,%f, xt = %f,%f,%f, dt = %e\n", u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, dt);
+}
    // First thing is to check if the target point is inside the element. If it is, there is nothing
    // else to do.
    // If it is, nudges the point to be inside the element.
@@ -2005,6 +2005,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    if (containsPoint(toPoint2(xt), true)) {
 
       curElem->interpolateVelocities(xt, u_int);
+if (origSide->idx == 8) printf("BBB&&&& u_int = %e,%e,%e, x0 = %f,%f,%f, xt = %f,%f,%f, dt = %e\n", u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, dt);      
 addDebugPlot(x0, xt);
       return true;
    }
@@ -2264,7 +2265,6 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
 
-printf(" ___BBB02____ idx = %d, u_int = %.17g,%.17g,%.17g, u1 = %.17g,%.17g,%.17g, u2 = %.17g,%.17g,%.17g, u3 = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z, nodes[0]->u2[0].x, nodes[0]->u2[0].y, nodes[0]->u2[0].z, nodes[1]->u2[0].x, nodes[1]->u2[0].y, nodes[1]->u2[0].z, nodes[2]->u2[0].x, nodes[2]->u2[0].y, nodes[2]->u2[0].z);         
    // First step is to compute the shape coordinates of (xt,yt)
    computeShapeCoords(toVector2(xt), shpCoord, false);
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
@@ -2322,23 +2322,23 @@ printf(" ___BBB02____ idx = %d, u_int = %.17g,%.17g,%.17g, u1 = %.17g,%.17g,%.17
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    u_int = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
 
-if (idx==2) {
-Vector3 u1 = wght1*interpolate(L, shpCoord, &Node::u2);
-Vector3 u2 = wght2*interpolate(R, shpCoord, &Node::u2);
-printf("L = %d, R = %d, Element = %d\n", L, R, idx);
-printf("shpCoord = %.17g,%.17g,%.17g,%.17g\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
-// printf("node1 (%.17g,%.17g), node2 (%.17g,%.17g,%), node3 (%.17g,%.17g)\n", nodes[0]->p2().x, nodes[0]->p2().y, nodes[1]->p2().x, nodes[1]->p2().y, nodes[2]->p2().x, nodes[2]->p2().y);
-printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[L].x, nodes[0]->u2[L].y, nodes[0]->u2[L].z);
-printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[L].x, nodes[1]->u2[L].y, nodes[1]->u2[L].z);
-printf("element = %d, idx = %d, u_n3 = %.17g,%.17g,%.17g\n", idx, nodes[2]->idx, nodes[2]->u2[L].x, nodes[2]->u2[L].y, nodes[2]->u2[L].z);
-printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[R].x, nodes[0]->u2[R].y, nodes[0]->u2[R].z);
-printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[R].x, nodes[1]->u2[R].y, nodes[1]->u2[R].z);
-printf("element = %d, idx = %d, u_n3 = %.17g,%.17g,%.17g\n", idx, nodes[2]->idx, nodes[2]->u2[R].x, nodes[2]->u2[R].y, nodes[2]->u2[R].z);
-printf("element = %d, idx = %d, u_int = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z);   
-printf("u1 = %.17g,%.17g,%.17g\n", u1.x, u1.y, u1.z);   
-printf("u2 = %.17g,%.17g,%.17g\n", u2.x, u2.y, u2.z);   
-if(!(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z))) {u_int = {0.0, 0.0, 0.0}; return;}
-}
+// if (origSide->idx == 8) {
+// Vector3 u1 = wght1*interpolate(L, shpCoord, &Node::u2);
+// Vector3 u2 = wght2*interpolate(R, shpCoord, &Node::u2);
+// printf("L = %d, R = %d, Element = %d\n", L, R, idx);
+// printf("shpCoord = %.17g,%.17g,%.17g,%.17g\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
+// // printf("node1 (%.17g,%.17g), node2 (%.17g,%.17g,%), node3 (%.17g,%.17g)\n", nodes[0]->p2().x, nodes[0]->p2().y, nodes[1]->p2().x, nodes[1]->p2().y, nodes[2]->p2().x, nodes[2]->p2().y);
+// printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[L].x, nodes[0]->u2[L].y, nodes[0]->u2[L].z);
+// printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[L].x, nodes[1]->u2[L].y, nodes[1]->u2[L].z);
+// printf("element = %d, idx = %d, u_n3 = %.17g,%.17g,%.17g\n", idx, nodes[2]->idx, nodes[2]->u2[L].x, nodes[2]->u2[L].y, nodes[2]->u2[L].z);
+// printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[R].x, nodes[0]->u2[R].y, nodes[0]->u2[R].z);
+// printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[R].x, nodes[1]->u2[R].y, nodes[1]->u2[R].z);
+// printf("element = %d, idx = %d, u_n3 = %.17g,%.17g,%.17g\n", idx, nodes[2]->idx, nodes[2]->u2[R].x, nodes[2]->u2[R].y, nodes[2]->u2[R].z);
+// printf("element = %d, idx = %d, u_int = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z);   
+// printf("u1 = %.17g,%.17g,%.17g\n", u1.x, u1.y, u1.z);   
+// printf("u2 = %.17g,%.17g,%.17g\n", u2.x, u2.y, u2.z);   
+// if(!(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z))) {u_int = {0.0, 0.0, 0.0}; return;}
+// }
 
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
@@ -2525,6 +2525,7 @@ __inline__ __device__ bool Side::btrack(
 
       // Next point in the backtracking curve
       Point3 xt = x0 - dtb*u_int;
+if (idx == 8) printf("LLLL   dtb: %f, u_int: %g %g %g\n", dtb, u_int.x, u_int.y, u_int.z);
 
 
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, this);
@@ -3454,7 +3455,7 @@ extern "C" {
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
-
+printf("OOXXXOOOOO idx = %d,  side->isDry = %d\n", side->idx, side->isDry);
       if (side->isDry) return;
 
 
@@ -3505,10 +3506,12 @@ extern "C" {
          const bool ifl_bnd =  (side->sideBnd != nullptr);
          
          const double vmag = length(toVector2(u_int));
+printf("OOOXX___XXOOOO idx = %d, k = %d, vmag = %e\n", side->idx, k, vmag);
 
          if (vmag <= velmin_btrack) {
             // No activity 
 addDebugPlot(side->center, side->center, 0x00FF00);
+printf("OOOXXXXOOOO idx = %d, k = %d, u_int = %e, %e, %e\n", side->idx, k, u_int.x, u_int.y, u_int.z);
             side->btu[k] = side->u2[k];
             
          } else {  // do btrack
@@ -3558,7 +3561,10 @@ addDebugPlot(side->center, side->center, 0x00FF00);
 
             Vector3 u_int = {0.0, 0.0, 0.0};
 
+printf("AAAAAAA idx = %d, k = %d, u_int = %e, %e\n", side->idx, k, u_int.x, u_int.y);
             side->btrack(k, dt, dtbk, u_int);
+printf("OOOOOOO idx = %d, k = %d, u_int = %e, %e\n", side->idx, k, u_int.x, u_int.y);
+            side->btu[k] = toVector2(u_int);
                
          } // if vmag (do backtrack)
 
@@ -7569,23 +7575,25 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
 
    printf("getSideVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
    
-   if      (varCode == (int)VarCode::z && k >= 0)       var[idx] = side->zc[k];
-   else if (varCode == (int)VarCode::x && k == -1)      var[idx] = side->center.x;
-   else if (varCode == (int)VarCode::y && k == -1)      var[idx] = side->center.y;
-   else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = side->u2[k].x;
-   else if (varCode == (int)VarCode::v && k >= 0)       var[idx] = side->u2[k].y;
-   else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = side->depth();
-   else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(side->kb);
-   else if (varCode == (int)VarCode::n1 && k == -1)     var[idx] = side->n1->idx;
-   else if (varCode == (int)VarCode::n2 && k == -1)     var[idx] = side->n2->idx;
-   else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = side->eta2();
-   else if (varCode == (int)VarCode::btu && k >= 0)     var[idx] = side->btu[k].x;
-   else if (varCode == (int)VarCode::btv && k >= 0)     var[idx] = side->btu[k].y;
-   else if (varCode == (int)VarCode::bccx && k >= 0)    var[idx] = side->bcc[k].x;
-   else if (varCode == (int)VarCode::bccy && k >= 0)    var[idx] = side->bcc[k].y;
-   else if (varCode == (int)VarCode::ubc && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].x:0.0;
-   else if (varCode == (int)VarCode::vbc && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].y:0.0;
-   else if (varCode == (int)VarCode::uth && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).x:0.0;
-   else if (varCode == (int)VarCode::vth && k >= 0)     var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
+   if      (varCode == (int)VarCode::z && k >= 0)        var[idx] = side->zc[k];
+   else if (varCode == (int)VarCode::x && k == -1)       var[idx] = side->center.x;
+   else if (varCode == (int)VarCode::y && k == -1)       var[idx] = side->center.y;
+   else if (varCode == (int)VarCode::u && k >= 0)        var[idx] = side->u2[k].x;
+   else if (varCode == (int)VarCode::v && k >= 0)        var[idx] = side->u2[k].y;
+   else if (varCode == (int)VarCode::depth && k == -1)   var[idx] = side->depth();
+   else if (varCode == (int)VarCode::kb && k == -1)      var[idx] = (double)(side->kb);
+   else if (varCode == (int)VarCode::n1 && k == -1)      var[idx] = side->n1->idx;
+   else if (varCode == (int)VarCode::n2 && k == -1)      var[idx] = side->n2->idx;
+   else if (varCode == (int)VarCode::eta && k == -1)     var[idx] = side->eta2();
+   else if (varCode == (int)VarCode::btu && k >= 0)      var[idx] = side->btu[k].x;
+   else if (varCode == (int)VarCode::btv && k >= 0)      var[idx] = side->btu[k].y;
+   else if (varCode == (int)VarCode::bccx && k >= 0)     var[idx] = side->bcc[k].x;
+   else if (varCode == (int)VarCode::bccy && k >= 0)     var[idx] = side->bcc[k].y;
+   else if (varCode == (int)VarCode::ubc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].x:0.0;
+   else if (varCode == (int)VarCode::vbc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].y:0.0;
+   else if (varCode == (int)VarCode::uth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).x:0.0;
+   else if (varCode == (int)VarCode::vth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
+   else if (varCode == (int)VarCode::ifltype && k == -1) var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->ifltype:0.0;
+   else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->isLand:0.0;
    else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
 }

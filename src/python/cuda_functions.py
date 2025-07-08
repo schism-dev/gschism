@@ -155,7 +155,7 @@ def initializeCudaFunctions(sizes):
         computeNodalHorizontalVelocities1    = mod.get_function('computeNodalHorizontalVelocities1',  sizes, kernel_type='elements')
         computeNodalHorizontalVelocities2    = mod.get_function('computeNodalHorizontalVelocities2',  sizes, kernel_type='nodes')
         resetVelocityOpenBndNodes           = mod.get_function('resetVelocityOpenBndNodes',           sizes, kernel_type='nodeBnd')
-        setVelocityOpenBndNodes             = mod.get_function('setVelocityOpenBndNodes',             sizes, kernel_type='nodeBnd')
+        setVelocityOpenBndNodes             = mod.get_function('setVelocityOpenBndNodes',             sizes, kernel_type='sideBnd')
         computeVerticalVelocity             = mod.get_function('computeVerticalVelocity',             sizes, kernel_type='elements')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
         printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='nodes')
