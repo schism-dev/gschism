@@ -31,10 +31,10 @@ def init(nNodes, nElements, nSides):
     numElements = nElements
     numSides = nSides
 
-def getElementVar(varname, k = -1):
+def getElementVar(varname, k = -1, j = -1):
     varCode = varCodeDict[varname]
     var = cp.zeros(numElements, dtype=cp.float64)
-    cufunc.getElementVar(varCode, var, k)
+    cufunc.getElementVar(varCode, var, k, j)
     return var.get()
 
 def getNodeVar(varname, k = -1):

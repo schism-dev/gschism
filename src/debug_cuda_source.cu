@@ -85,7 +85,7 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth [m]
 
-enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, btu=6, btv=7, bccx=8, bccy=9, uth=10, vth=11, ubc=12, vbc=13, island=14, ifltype=15, elbc=16, eta=17, area=18, qel=19, depth=20, radius=21, xlon=22, ylat=23, kb=24, n1=25, n2=26}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, nx=6, ny=7, ssign=8, btu=9, btv=10, bccx=11, bccy=12, uth=13, vth=14, ubc=15, vbc=16, island=17, ifltype=18, elbc=19, eta=20, area=21, qel=22, depth=23, radius=24, xlon=25, ylat=26, kb=27, n1=28, n2=29}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -2927,7 +2927,7 @@ printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd);
       side.n2->numSides++;
 
       // Normal, unitary vector to the side
-      side.n = {- (side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
+      side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
       side.n = normalize(side.n);
 
       // Side boundary type
@@ -3171,7 +3171,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    
    for (int j=0; j<node1->numElements; j++) {
       // For each element connected to the node...
-
+printf("IDX = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
       Element *elem = node1->elements[j];
 
       // Compute the average gravity
@@ -4990,7 +4990,7 @@ printf("htot: %e, hhat: %e\n", htot, hhat);
 
          const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
 
-printf("coriolisTerm: %e, %e\n", coriolisTerm.x, coriolisTerm.y);
+printf("idx: %d\ncoriolisTerm: %e, %e\nside->gradPr: %e, %e\nside->gradETP: %e, %e\nside->bcc[kb]: %e, %e\ngradEta2: %e, %e\ngradEta1: %e, %e\n", side->idx, coriolisTerm.x, coriolisTerm.y, side->gradPr.x, side->gradPr.y, side->gradETP.x, side->gradETP.y, side->bcc[kb].x, side->bcc[kb].y, side->gradEta2.x, side->gradEta2.y, side->gradEta1.x, side->gradEta1.y);
 
          Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
                            side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 + thetai*side->gradEta2));
@@ -5340,13 +5340,16 @@ printf("****** idx = %d, k = %d, side->idx = %d, ubc = %e,%e\n", side->idx, k, s
 
          if constexpr(islip == 0) { // free slip
             for (int k=kb; k < nvrt; k++) {
-               double vnorm = 0.0; // for most cases
-               const double vtan = dot(side->u2[k], side->t());
+
                const Vector2 t = side->t();
                const Vector2 n = side->n;
-printf("islip   = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan*t - vnorm*n = %f,%f\n", islip, k, side->idx, side->u2[k].x, side->u2[k].y, (vtan*t - vnorm*n).x, (vtan*t - vnorm*n).y);      
+
+               double vnorm = 0.0; // for most cases
+               const double vtan = dot(side->u2[k], t);
+               
+printf("islip   = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan = %f, vnorm = %f, t = %f,%f, n = %f,%f\n", islip, k, side->idx, side->u2[k].x, side->u2[k].y, vtan, vnorm, t.x, t.y, n.x, n.y);      
                side->u2[k] = vtan*t - vnorm*n;
-printf("islipXX = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan*t - vnorm*n = %f,%f\n", islip, k, side->idx, side->u2[k].x, side->u2[k].y, (vtan*t - vnorm*n).x, (vtan*t - vnorm*n).y);                     
+
             }
 
          } else { // no slip
@@ -6602,7 +6605,7 @@ extern "C" {
       const int i34 = elem->i34;
       const int kb = elem->kb;
 
-      for (int j=1; j<i34; j++) {
+      for (int j=0; j<i34; j++) {
          // For each node and side in the element...
 
          const Node *node = elem->nodes[j];
@@ -6693,7 +6696,9 @@ extern "C" {
 
          // Add btrack & surface stress terms to \breve{G} first
          if constexpr(ics==1) {
+printf("XXXX idx: %d, side->idx: %d, j: %d, ghat1: %e,%e\n", elem->idx, side->idx, j, elem->ghat1.x, elem->ghat1.y);            
             elem->ghat1 += cff1*Ustar - cff3*Ustar_alpha;
+printf("XXXX idx: %d, side->idx: %d, j: %d, cff1: %e, cff3: %e, Ustar: %e,%e, Ustar_alpha: %e,%e, Dz: %e, elem->ghat1: %e,%e\n", elem->idx, side->idx, j, cff1, cff3, Ustar.x, Ustar.y, Ustar_alpha.x, Ustar_alpha.y, side->Dz(nvrt - 1),  elem->ghat1.x, elem->ghat1.y);
          } else {
             // XXX IMPLEMENT THIS
             // call project_hvec(xtmp,ytmp,sframe2(:,:,isd),eframe(:,:,i),tt1,ss1)
@@ -6708,7 +6713,9 @@ extern "C" {
 
             // Term for surface and bottom stress
             elem->ghat1 -= chi*dt*cff2*ubstar + dt*cff1*tau;
+printf("XXXX2 idx: %d, side->idx: %d, j: %d, chi: %e, dt: %e, cff2: %e, ubstar: %e,%e, tau: %e,%e, elem->ghat1: %e,%e\n", elem->idx, side->idx, j, chi, dt, cff2, ubstar.x, ubstar.y, tau.x, tau.y, elem->ghat1.x, elem->ghat1.y);            
          } else {
+            assert(0 && "computeElemAverageGhat: Not implemented");
             // XXX IMPLEMENT THIS
             // n1=isidenode(1,isd); n2=isidenode(2,isd)
             // call project_hvec(tau(1,n1),tau(2,n1),pframe(:,:,n1),eframe(:,:,i),vn1,vn2)
@@ -6769,9 +6776,11 @@ extern "C" {
          } // if ics
 
          elem->ghat1 += cff1*dt*F - cff2*chi*dt*dt*fb - cff3*dt*Fa;
+printf("XXXX3 idx: %d, side->idx: %d, j: %d, cff1: %e, cff2: %e, cff3: %e, F: %e,%e, fb: %e,%e, Fa: %e,%e, elem->ghat1: %e,%e\n", elem->idx, side->idx, j, cff1, cff2, cff3, F.x, F.y, fb.x, fb.y, Fa.x, Fa.y, elem->ghat1.x, elem->ghat1.y);         
       } // for j (nodes and sides)
 
       elem->ghat1 = (1.0/i34)*elem->ghat1;
+printf("$####$$ elem->ghat1 = %.15g, %.15g\n", elem->ghat1.x, elem->ghat1.y);
          
       // Finish off terms in F, F^\alpha and f_b
       const double grav3 = elem->mean(&Node::grav2);
@@ -7505,7 +7514,7 @@ __global__ void initializePreconditionedResidual(double *scalars) {
 
 
 
-extern "C" __global__ void getElementVar(int varCode, double *var, int k = -1) {
+extern "C" __global__ void getElementVar(int varCode, double *var, int k = -1, int j = -1) {
    // Get the value of a variable from an element
    // varName is the name of the variable to get
    // var is the array to store the value
@@ -7527,6 +7536,7 @@ extern "C" __global__ void getElementVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::xlon && k == -1)   var[idx] = elem->xlon;
    else if (varCode == (int)VarCode::ylat && k == -1)   var[idx] = elem->ylat;
    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(elem->kb);
+   else if (varCode == (int)VarCode::ssign && k == -1 && j > -1)  var[idx] = (double)(elem->ssign[j]);
    else if (i==0) printf("getElementVar: varCode = %d, k = %d not found\n", varCode, k);
       
    
@@ -7578,6 +7588,8 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    if      (varCode == (int)VarCode::z && k >= 0)        var[idx] = side->zc[k];
    else if (varCode == (int)VarCode::x && k == -1)       var[idx] = side->center.x;
    else if (varCode == (int)VarCode::y && k == -1)       var[idx] = side->center.y;
+   else if (varCode == (int)VarCode::nx && k == -1)      var[idx] = side->n.x;
+   else if (varCode == (int)VarCode::ny && k == -1)      var[idx] = side->n.y;
    else if (varCode == (int)VarCode::u && k >= 0)        var[idx] = side->u2[k].x;
    else if (varCode == (int)VarCode::v && k >= 0)        var[idx] = side->u2[k].y;
    else if (varCode == (int)VarCode::depth && k == -1)   var[idx] = side->depth();

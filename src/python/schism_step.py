@@ -32,7 +32,7 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
         # If the initial residual is already small enough, return 0
         return 0
 
-    while iterCount < 10+0*maxIter:
+    while iterCount < maxIter:
         # compute Ap, rMr, pAp, α on GPU
         scalars[2] = 0.0 # pAp
         cufunc.computeMatrixProductAndDotProducts()
@@ -236,6 +236,8 @@ def schism_step(it: int, namelist, bctides, sflux):
     # setup coefficient matrix, sparsem, for the wave equation
     #!...  No elevation essential b.c. are imposed yet but other b.c. is imposed
     cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-
+
+    cufunc.printMatrix()
 
 
     cufunc.rollUpElevation()

@@ -411,11 +411,21 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                 printFormatted(ansi::red("n2==-1"));
             }   
 
-            isdel(0,jsj)=ie;
-            isdel(1,jsj)=ic3(j,ie);
-            isidenode(0,jsj)=n1;
-            isidenode(1,jsj)=n2;
-
+printFormatted(ansi::green("ic3(j,ie) = %d"), ic3(j,ie));
+            if (ic3(j,ie) == -1 || (ic3(j,ie) > -1 && ie < ic3(j,ie)))
+            {
+                isdel(0,jsj)=ie;
+                isdel(1,jsj)=ic3(j,ie);
+                isidenode(0,jsj)=n1;
+                isidenode(1,jsj)=n2;
+            }
+            else
+            {
+                isdel(0,jsj)=ic3(j,ie);
+                isdel(1,jsj)=ie;
+                isidenode(0,jsj)=n2;
+                isidenode(1,jsj)=n1;
+            }
         }
     }
 
