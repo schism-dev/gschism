@@ -298,7 +298,7 @@ def schism_step(it: int, namelist, bctides, sflux):
 
 
     # var = monitor.getElementVar("z", 0)
-    monitor.plotMesh()
+    # monitor.plotMesh()
     # cufunc.getElementVar(monitor.varCodeDict["x"], var, 0) # monitor.varCodeDict["x"]
 
 

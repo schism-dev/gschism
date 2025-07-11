@@ -64,6 +64,9 @@ def plotMesh():
     
     if fig is None: 
         fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Remove all existing plots
+    ax.clear()
 
     x = getNodeVar("x")
     y = getNodeVar("y")
@@ -120,6 +123,6 @@ def plotMesh():
 
 
 
-    plt.show(block=True)
+    plt.show(block=False)
     plt.pause(0.01)
     # fig = None

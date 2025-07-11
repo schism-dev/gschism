@@ -974,7 +974,7 @@ struct NodeBoundary {
 
    bool isEssentialBC;
 
-   Vector2 uth[nvrt];           // "Time history" velocity
+   Vector2 uth[nvrt];  // "Time history" velocity
 
    // Arrays for harmonic constituents (if needed)
    double  emo[nbfr];  // Elevation amplitude

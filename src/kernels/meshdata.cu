@@ -55,7 +55,7 @@ __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF00
  
    if (debugPlotIdx == nullptr) return;
    if (*debugPlotIdx >= 10000) return;
-// printf("addDebugPlot 2, x1 = (%f, %f), x2 = (%f, %f)\n", x1.x, x1.y, x2.x, x2.y);   
+
    debugPlot[(*debugPlotIdx) + 0*10000] = x1.x;
    debugPlot[(*debugPlotIdx) + 1*10000] = x1.y;
    debugPlot[(*debugPlotIdx) + 2*10000] = x2.x;
@@ -224,29 +224,10 @@ __device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&
       }
 
    }
-   
-printf("AAA 1, found_intersection = %d, nextSide = %p, nextElement = %p\n", found_intersection, nextSide, nextElement);
-
 
    // found_intersection should always be true, since we checked all the sides.  
    side = nextSide;
-// if (found_intersection) {
-// if (nextElement == nullptr)  printf("$$$  0, %d, %.5f, %.5f\n",  side->idx, side->x(t), side->y(t));
-// else   printf("$$$  %d, %d, %.5f, %.5f\n", nextElement->idx, side->idx, side->x(t), side->y(t));
-// }   
-   // if (!found_intersection) {
-   //    // Check if the segment is parallel to the initial side
-   //    printf("XXX segment: side = %p\n", side);
-   //    printf("XXX %f\n", dot(x2 - x1, side->n1->p2() - side->n2->p2()));
-   //    if (abs(dot(x2 - x1, side->n1->p2() - side->n2->p2())) < small) {
-   //       assert(false && "Segment is parallel to the initial side");
-   //       found_intersection = true;
-   //       nextElement = side->otherElem(this);
-   //       tIntersect = t;
-   //       t = 0.0;
-   //       found_intersection = true;
-   //    }
-   // }
+
    return found_intersection;
 }
 
@@ -259,8 +240,6 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
 
-double minDelta = 1e10; 
-double btt1 = 1e10, btt2;
    for (int i = 0; i < i34; i++) {
 
       Side *side2 = sides[i];
@@ -281,13 +260,6 @@ double btt1 = 1e10, btt2;
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
          const double tt2 = delta2/delta;
 
-if (abs(tt1) < abs(btt1)) {
-   minDelta = abs(delta);
-   btt1 = tt1;
-   btt2 = tt2;
-}
-
-if (idx == 0) printf("RRRRRR delta = %e, delta1 = %e, delta2 = %e, tt1 = %e, tt2 = %e\n", delta, delta1, delta2, tt1, tt2);
          if (tt1 >= -small && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
@@ -322,35 +294,8 @@ if (idx == 0) printf("RRRRRR delta = %e, delta1 = %e, delta2 = %e, tt1 = %e, tt2
 
    }
 
-   if (!found_intersection) {
       
-if (idx == 0) printf("ZZ No intersection found:\n"
-           "Element %d\n"
-           "in = %d\n"
-           "minDelta = %e\n"
-           "tt1 = %e, tt2 = %e\n"
-           "segment: (%f, %f)-(%f, %f)\n"
-           "Vertices:\n"
-         //   "  Nodes nextElement: (%f, %f), (%f, %f), (%f, %f),(%f, %f)\n"
-           "  Nodes curElement: (%f, %f), (%f, %f), (%f, %f),(%f, %f)\n",
-           IDX(nextElement),
-           (btt1 >= -small && btt2 >= -small && btt2 <= 1.0 + small && btt1 <= 1.0 + small),
-           minDelta,
-           btt1, btt2,
-           x1.x, x1.y,
-           x2.x, x2.y,
-         //   nextElement->nodes[0]->p.x, nextElement->nodes[0]->p.y,
-         //   nextElement->nodes[1]->p.x, nextElement->nodes[1]->p.y,
-         //   nextElement->nodes[2]->p.x, nextElement->nodes[2]->p.y,
-         //   nextElement->nodes[0]->p.x, nextElement->nodes[0]->p.y,
-           nodes[0]->p.x, nodes[0]->p.y,
-           nodes[1]->p.x, nodes[1]->p.y,
-           nodes[2]->p.x, nodes[2]->p.y,
-           nodes[0]->p.x, nodes[0]->p.y);
-
-   }
-
-   // assert(found_intersection && "No intersection found");
+   assert(found_intersection && "No intersection found");
 
    // found_intersection should always be true, since we checked all the sides.  
    return found_intersection;
@@ -398,7 +343,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
 
    // The end of this tracking segment is now the intersection point.
    xt = {intersection.x, intersection.y, zint};
-printf("BBB u_int = %f,%f,%f\n", us, vs, ws);   
+
    u_int = {us, vs, ws};
    
 }
@@ -441,9 +386,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
                                                        const Side *origSide) {
 
 
-if (origSide->idx == 8) {
-   printf("AAAA&&&& u_int = %e,%e,%e, x0 = %f,%f,%f, xt = %f,%f,%f, dt = %e\n", u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, dt);
-}
+
    // First thing is to check if the target point is inside the element. If it is, there is nothing
    // else to do.
    // If it is, nudges the point to be inside the element.
@@ -451,7 +394,7 @@ if (origSide->idx == 8) {
    if (containsPoint(toPoint2(xt), true)) {
 
       curElem->interpolateVelocities(xt, u_int);
-if (origSide->idx == 8) printf("BBB&&&& u_int = %e,%e,%e, x0 = %f,%f,%f, xt = %f,%f,%f, dt = %e\n", u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, dt);      
+
 addDebugPlot(x0, xt);
       return true;
    }
@@ -487,7 +430,6 @@ addDebugPlot(x0, xt);
    if (isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
 
 addDebugPlot(x0, xt, 0x00A0FF);
-printf("BBBXXXX going out of water\n");
       trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
 addDebugPlot(x0, xt, 0x00A0FF);      
 
@@ -502,7 +444,6 @@ addDebugPlot(x0, xt, 0x00A0FF);
    int iterations = 0;
    while (iterations < MAX_ITERATIONS) {
       iterations++;
-printf("BBBXXXX iterations = %d\n", iterations);      
       
       Element *curElem = nextElem;
 
@@ -519,7 +460,6 @@ addDebugPlot(x0, xt);
       // if the tracking segment goes out of water (either dry or edge boundary).
       if (curElem->isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
 addDebugPlot(x0, xt, 0x00A0FF);
-printf("BBBXXXX going out of water\n");
          trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
 addDebugPlot(x0, xt, 0x00A0FF);   
          nextElem = curElem;
@@ -540,9 +480,7 @@ addDebugPlot(x0, xt, 0x00A0FF);
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
 addDebugPlot(x0, xt);   
-printf("MMMMMM nextElem->idx = %d, u_int = %f,%f,%f\n", nextElem->idx, u_int.x, u_int.y, u_int.z);
    nextElem->interpolateVelocities(xt, u_int); 
-printf("MMMMMM2 nextElem->idx = %d, u_int = %f,%f,%f\n", nextElem->idx, u_int.x, u_int.y, u_int.z);
 
    return true;
 }
@@ -768,24 +706,6 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    u_int = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
 
-// if (origSide->idx == 8) {
-// Vector3 u1 = wght1*interpolate(L, shpCoord, &Node::u2);
-// Vector3 u2 = wght2*interpolate(R, shpCoord, &Node::u2);
-// printf("L = %d, R = %d, Element = %d\n", L, R, idx);
-// printf("shpCoord = %.17g,%.17g,%.17g,%.17g\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
-// // printf("node1 (%.17g,%.17g), node2 (%.17g,%.17g,%), node3 (%.17g,%.17g)\n", nodes[0]->p2().x, nodes[0]->p2().y, nodes[1]->p2().x, nodes[1]->p2().y, nodes[2]->p2().x, nodes[2]->p2().y);
-// printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[L].x, nodes[0]->u2[L].y, nodes[0]->u2[L].z);
-// printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[L].x, nodes[1]->u2[L].y, nodes[1]->u2[L].z);
-// printf("element = %d, idx = %d, u_n3 = %.17g,%.17g,%.17g\n", idx, nodes[2]->idx, nodes[2]->u2[L].x, nodes[2]->u2[L].y, nodes[2]->u2[L].z);
-// printf("element = %d, idx = %d, u_n1 = %.17g,%.17g,%.17g\n", idx, nodes[0]->idx, nodes[0]->u2[R].x, nodes[0]->u2[R].y, nodes[0]->u2[R].z);
-// printf("element = %d, idx = %d, u_n2 = %.17g,%.17g,%.17g\n", idx, nodes[1]->idx, nodes[1]->u2[R].x, nodes[1]->u2[R].y, nodes[1]->u2[R].z);
-// printf("element = %d, idx = %d, u_n3 = %.17g,%.17g,%.17g\n", idx, nodes[2]->idx, nodes[2]->u2[R].x, nodes[2]->u2[R].y, nodes[2]->u2[R].z);
-// printf("element = %d, idx = %d, u_int = %.17g,%.17g,%.17g\n", idx, u_int.x, u_int.y, u_int.z);   
-// printf("u1 = %.17g,%.17g,%.17g\n", u1.x, u1.y, u1.z);   
-// printf("u2 = %.17g,%.17g,%.17g\n", u2.x, u2.y, u2.z);   
-// if(!(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z))) {u_int = {0.0, 0.0, 0.0}; return;}
-// }
-
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
 
@@ -971,8 +891,6 @@ __inline__ __device__ bool Side::btrack(
 
       // Next point in the backtracking curve
       Point3 xt = x0 - dtb*u_int;
-if (idx == 8) printf("LLLL   dtb: %f, u_int: %g %g %g\n", dtb, u_int.x, u_int.y, u_int.z);
-
 
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, this);
       assert(found && "Backtracking failed in btrack");
@@ -1294,7 +1212,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
       node.numSides = 0;
 
-printf("EEEEEE idx = %d, isbnd[i] = %d, node.nodeBnd = %p\n", i, isbnd[i], node.nodeBnd);
+
       // Links the node to the boundary information
       if (isbnd[i] >= 0) {
        
@@ -1322,11 +1240,10 @@ printf("EEEEEE idx = %d, isbnd[i] = %d, node.nodeBnd = %p\n", i, isbnd[i], node.
 //          }
          
          idxNodeBoundary++;
-printf("EEEEEEhhhh idx = %d, isbnd[i] = %d, idxNodeBoundary = %d\n", i, isbnd[i], idxNodeBoundary);         
       }
       else {
          node.nodeBnd = nullptr; // For internal nodes
-printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd); 
+
          if (isbnd[i] == landSegment) {
             node.nodeBnd = &landBoundaryNode;
             node.nodeBnd->segment = &landBoundarySegment;
@@ -1429,7 +1346,7 @@ printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd);
       else side.sideBnd = nullptr;
 
       nbs = idxSideBoundary;
-// printf("Here3: %d", i);
+
       // finding the pointer to the elements that share the side
       const int idx_e1 = isdel[globalSideIndices[i]*2];
       const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
@@ -1443,7 +1360,7 @@ printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd);
       else {
          side.elems[0] = nullptr;
       }
-// printf("Here4: %d", i);
+
       if (idx_e2 > -1) {
          const int locidx_e2 = localElemIndices[idx_e2];
          const int part_e2 =  localElemPart[idx_e2];
@@ -1452,8 +1369,6 @@ printf("EEEEEQQ isbnd[i] = %d, node.nodeBnd = %p\n", isbnd[i], node.nodeBnd);
       else {
          side.elems[1] = nullptr;
       }
-// printf("Here5: %d", i);
-
 
       // Compute the center of the side
       side.center = 0.5*(side.n1->p2() + side.n2->p2());
@@ -1504,8 +1419,6 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
       elem.i34 = i34[i];
 
-// printf("elem = %p, elem.i34 = %d\n", &elem, elem.i34);
-
       // Compute the centroid of the element and its depth
       Vector2 center = {0.0, 0.0};
       elem.depth = 0.0;
@@ -1516,7 +1429,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
       elem.center.x = center.x;
       elem.center.y = center.y;
 
-      // printf("elem = %p, i34 = %d, center = (%f,%f,%f)\n", &elem, elem.i34, elem.center.x, elem.center.y, elem.depth);
+
       
       // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
       // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
@@ -1617,7 +1530,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    
    for (int j=0; j<node1->numElements; j++) {
       // For each element connected to the node...
-printf("IDX = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
+
       Element *elem = node1->elements[j];
 
       // Compute the average gravity
@@ -1664,18 +1577,10 @@ printf("IDX = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
          const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
          const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
 
-if (j==node1->numElements-1) {
-printf("grav3 = %f, thetai = %f, dt = %f, hhatb = %f, area = %f, dot1= %f, dot2 = %f, dot3 = %f\n", grav3, thetai, dt, hhatb, area, dot(x3-x2, x3-x2), dot(x3-x2, x1-x3), dot(x1-x3, x1-x3));
-printf("node idx = %d, x1 = %f, %f, x2 = %f, %f, x3 = %f, %f\n", node1->idx, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y);
-printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
-}
-
          node1->addToSparseMatrix(node1, I1_ii);
          node1->addToSparseMatrix(node2, I1_ij); 
          node1->addToSparseMatrix(node3, I1_ik);
 
-if (j==node1->numElements-1) printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_ii, I1_ij, I1_ik);
-     
       }
       else { // Quad
          // XXX IMPLEMENT THIS
@@ -1708,7 +1613,6 @@ if (j==node1->numElements-1) printf("I1_ii = %f, I1_ij = %f, I1_ik = %f\n", I1_i
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
      
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
-if (j==node1->numElements-1) printf("MMMMmm  idx_node = %d, I_4_1 = %.15g, I_4_2 = %.15g, node1->qel = %.15g, gradPhi_1 = %.15g, %.15g, elem->ghat1 = %.15g, %.15g\n", node1->idx, I_4_1, I_4_2, node1->qel, gradPhi_1.x, gradPhi_1.y, elem->ghat1.x, elem->ghat1.y);
 
       // Additional terms 
       double vnorm = 0.0;
@@ -1726,14 +1630,13 @@ if (j==node1->numElements-1) printf("MMMMmm  idx_node = %d, I_4_1 = %.15g, I_4_2
 
       if (elem->isTri()) {
          for (int l=0; l<3; l++) {
-           double fac;
+            double fac;
 
-           Node *node = elem->nodes[l];
+            Node *node = elem->nodes[l];
 
-           (node == node1)? fac=2.0 : fac=1.0;
-
-           if constexpr(imm==2) node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
-           else                 node->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
+            fac = (node == node1) ? 2.0 : 1.0;
+            if constexpr(imm==2) node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
+            else                 node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
            
          }
 
@@ -1743,7 +1646,6 @@ if (j==node1->numElements-1) printf("MMMMmm  idx_node = %d, I_4_1 = %.15g, I_4_2
 
            node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
          }
-if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->eta2);
 
       } // isTri
       else { // isQuad
@@ -1805,10 +1707,8 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
                   // Computes the side flux of (uth, vth)
                   double Vn = 0.0;
                   for (int k = side->kb; k<nvrt-1; k++) {
-                     // uth, vth in lat/lon frame if ics=2
-                     // XXX Are uth,vth really necessary? Why not just store the normal component?
-                     const double vn1 = dot(sideBnd->uth(k  ), side->n); // outer normal
-                     const double vn2 = dot(sideBnd->uth(k+1), side->n);
+                     const double vn1 = dot(sideBnd->ubc[k  ], side->n); // outer normal
+                     const double vn2 = dot(sideBnd->ubc[k+1], side->n);
 
                      Vn += 0.5*(side->zc[k+1] - side->zc[k])*(vn1 + vn2);
                   }
@@ -1854,9 +1754,8 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
             if(!side->isDry) {
 
                const double Unbar = dot(side->U, side->n);
-
                node1->qel -= 0.5*(1.0 - thetai)*dt*side->len*Unbar;
-               
+
             } // I_5
 
          } // if is boundary side
@@ -1865,8 +1764,6 @@ if (j==node1->numElements-1) printf("&&& node1->qel = %f\n", node1->qel, node1->
 
    } // if isbnd
 
-
-   printf("44444444 idx_node = %d, node1->qel = %f\n", node1->idx, node1->qel);
 
 }
 
@@ -1901,7 +1798,6 @@ extern "C" {
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
-printf("OOXXXOOOOO idx = %d,  side->isDry = %d\n", side->idx, side->isDry);
       if (side->isDry) return;
 
 
@@ -1952,12 +1848,11 @@ printf("OOXXXOOOOO idx = %d,  side->isDry = %d\n", side->idx, side->isDry);
          const bool ifl_bnd =  (side->sideBnd != nullptr);
          
          const double vmag = length(toVector2(u_int));
-printf("OOOXX___XXOOOO idx = %d, k = %d, vmag = %e\n", side->idx, k, vmag);
 
          if (vmag <= velmin_btrack) {
             // No activity 
 addDebugPlot(side->center, side->center, 0x00FF00);
-printf("OOOXXXXOOOO idx = %d, k = %d, u_int = %e, %e, %e\n", side->idx, k, u_int.x, u_int.y, u_int.z);
+
             side->btu[k] = side->u2[k];
             
          } else {  // do btrack
@@ -2007,9 +1902,7 @@ printf("OOOXXXXOOOO idx = %d, k = %d, u_int = %e, %e, %e\n", side->idx, k, u_int
 
             Vector3 u_int = {0.0, 0.0, 0.0};
 
-printf("AAAAAAA idx = %d, k = %d, u_int = %e, %e\n", side->idx, k, u_int.x, u_int.y);
             side->btrack(k, dt, dtbk, u_int);
-printf("OOOOOOO idx = %d, k = %d, u_int = %e, %e\n", side->idx, k, u_int.x, u_int.y);
             side->btu[k] = toVector2(u_int);
                
          } // if vmag (do backtrack)
@@ -2327,7 +2220,6 @@ extern "C" {
 
       }
 
-      printf("scaleGravity: node(%d)->grav2 = %f\n", node->idx, node->grav2);
    }
 
 
@@ -2526,8 +2418,6 @@ return;
       const double r_uth0 = ramp*segment->qthcon/segment->carea;  // r_ stands for ramp-up
       const Vector2 r_nuth0 = r_uth0*n;
 
-
-printf("ZZZ4  idx = %d, ifltype = %d, r_nuth0 = %f, %f\n", sideBnd->side->idx, ifltype, r_nuth0.x, r_nuth0.y);
       for (int k = 0; k < nvrt; k++) {
          Vector2 r_uth    = {0.0, 0.0};    // r_ stands for ramp-up
          Vector2 r_u1_bar = {0.0, 0.0};
@@ -2551,7 +2441,6 @@ printf("ZZZ4  idx = %d, ifltype = %d, r_nuth0 = %f, %f\n", sideBnd->side->idx, i
          } else if (ifltype == 3 || ifltype == 5) {
             // vnth0=0 !normal vel.
 
-printf("ZZZ3  idx = %d, jfr = %d, ifltype = %d, r_uth = %f, %f\n", sideBnd->side->idx, nbfr, ifltype, r_uth.x, r_uth.y);
             // Computes the contribution to the velocity from all tide frequencies
             for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
 
@@ -2562,7 +2451,6 @@ printf("ZZZ3  idx = %d, jfr = %d, ifltype = %d, r_uth = %f, %f\n", sideBnd->side
                const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
                const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
                r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
-printf("ZZZ2  idx = %d, jfr = %d, ncyc = %d, face = %f, argx = %f, argy = %f, umo = %f, %f, ufa = %f, %f, ramp = %f, ff = %f, r_u1_bar = %e, %e\n", sideBnd->side->idx, jfr, ncyc, face[jfr], argx, argy, umo.x, umo.y, ufa.x, ufa.y, ramp, ff[jfr], r_u1_bar.x, r_u1_bar.y);               
             }
 
          } // if (ifltype = 3 || ifltype == 5
@@ -2582,7 +2470,6 @@ printf("ZZZ2  idx = %d, jfr = %d, ncyc = %d, face = %f, argx = %f, argy = %f, um
                break;
          } // switch
 
-printf("ZZZ  idx = %d, iettype = %d, r_u1_bar = %f, %f, sideBnd->ubc[%d] = %f, %f\n", sideBnd->side->idx, iettype, r_u1_bar.x, r_u1_bar.y, k, sideBnd->ubc[k].x, sideBnd->ubc[k].y);
       } // for k
    }
 
@@ -2648,7 +2535,7 @@ printf("ZZZ  idx = %d, iettype = %d, r_u1_bar = %f, %f, sideBnd->ubc[%d] = %f, %
       if (iettype != 0 && inv_atm_bnd == 1) {
          nodeBnd->elbc += ramp*(prmsl_ref - node->pr)/grav/rho0;
       }
-printf("++++>> nodeBnd->elbc = %f\n", nodeBnd->elbc);
+
    }
 
 
@@ -2696,8 +2583,6 @@ printf("++++>> nodeBnd->elbc = %f\n", nodeBnd->elbc);
             }
 
             side->nuGradU[k] = hvis_coef0*sumU/dt;
-   printf("+++++ side->nuGradU = %f, %f\n", side->nuGradU[k].x, side->nuGradU[k].y);
-
    
          }
       }
@@ -2713,7 +2598,6 @@ printf("++++>> nodeBnd->elbc = %f\n", nodeBnd->elbc);
       // Set essential boundary conditions 
       NODE(node); // Each boundary node
       NodeBoundary *nodeBnd = node->nodeBnd;
-printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, nodeBnd ? nodeBnd->isEssentialBC : -1);
       
 // nodeBnd->isEssentialBC = true;      
       // Check if this node has essential BC
@@ -2721,21 +2605,18 @@ printf("node idx = %d, nodeBnd = %p, essentialBC = %d\n", node->idx, nodeBnd, no
          // Verify BC value is valid
          assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
-         printf("XX node IDX = %d, nodeBnd->isEssentialBC = %d\n", node->idx, nodeBnd->isEssentialBC);
-         
+       
          // Set diagonal to 1 and zero off-diagonals
          node->coeffDiag = 1.0;
-         printf("ZZZZZZZ node->coeffDiag = %16.9f\n", node->coeffDiag);
 
          for (int j = 0; j < node->numNodes; j++) {
                node->coeffMatrix[j] = 0.0;
-               printf("YY node->coeffMatrix[%d, %d] = %f\n", node->idx, node->nodes[j]->idx, node->coeffMatrix[j]);
          }
          
          // Set solution and RHS to BC value
          node->mX  = nodeBnd->elbc;
          node->qel = nodeBnd->elbc;
-printf("{{{{ node->mX = %f, node->qel = %f\n", node->mX, node->qel);         
+
       } else {
          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
 
@@ -2749,7 +2630,6 @@ printf("{{{{ node->mX = %f, node->qel = %f\n", node->mX, node->qel);
                   // Subtract contribution to RHS
                   node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
-                  printf("ZZ node->coeffMatrix[%d, %d] = %f\n", node->idx, node->nodes[j]->idx, node->coeffMatrix[j]);
                }
          }
       }
@@ -2760,7 +2640,6 @@ printf("{{{{ node->mX = %f, node->qel = %f\n", node->mX, node->qel);
       NODE(node);
 
       node->eta2 = node->mX;
-printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
    }
 
 
@@ -2942,8 +2821,6 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
 
       } // if iveg
 
-      printf("computeBottomDragVegetation: nodeIdx = %d, node->veg_alpha_vert_mean = %f\n", node->idx, node->veg_alpha_vert_mean);
-
    }
 
    __global__ void computeVegetationAndDragParameters(void) {
@@ -3045,9 +2922,6 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
          if (ihhat == 1) side->hhat = max(0.0, side->hhat);
       } // if 3D
 
-      printf("computeVegetationAndDragParameters: sideIdx = %d, side->htot = %f, side->hhat = %f\n", side->idx, side->htot2(), side->hhat);
-
-        
    }
 
 
@@ -3343,7 +3217,6 @@ extern "C" {
          // CHECK INDICES!!! XXX
          const double grav3 = side->grav3();
          side->bcc[k] = side->bcc[k + 1] - (rampbc*grav3/rho0)*side->Dz(k + 1)*gradRho;
-printf(">>>side->bcc[%d] = %e, %e, rampbc: %e, grav3: %e, rho0: %e, side->Dz(k + 1): %e, gradRho: %e, %e\n", k, side->bcc[k].x, side->bcc[k].y, rampbc, grav3, rho0, side->Dz(k + 1), gradRho.x, gradRho.y);
 
       } // for
 
@@ -3379,13 +3252,6 @@ printf(">>>side->bcc[%d] = %e, %e, rampbc: %e, grav3: %e, rho0: %e, side->Dz(k +
       side->gradPr   = side->grad2(&Node::pr,   isWet1);
 
 
-      printf("gradEta1: %e, %e, gradEta2: %e, %e, gradETP: %e, %e, gradPr: %e, %e\n", 
-         side->gradEta1.x, side->gradEta1.y, 
-         side->gradEta2.x, side->gradEta2.y, 
-         side->gradETP.x, side->gradETP.y, 
-         side->gradPr.x, side->gradPr.y);
-
-
    }
 
 
@@ -3411,12 +3277,11 @@ printf(">>>side->bcc[%d] = %e, %e, rampbc: %e, grav3: %e, rho0: %e, side->Dz(k +
       const double veg_h = side->veg_h();
       const double grav3 = side->grav3();
 
-printf("###>>>#side->is2D() = %d\n", side->is2D());
       if (side->is2D()) {
          // Warning: Do not use htot2, which is updated.
          const double htot = side->htot1();
          const double hhat = side->hhat;
-printf("htot: %e, hhat: %e\n", htot, hhat);
+
          assert(hhat > 0.0 && htot > 0.0 && "Impossible dry 55:");
 
          Vector2 tau2 = {0.0, 0.0};
@@ -3436,8 +3301,6 @@ printf("htot: %e, hhat: %e\n", htot, hhat);
 
          const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
 
-printf("idx: %d\ncoriolisTerm: %e, %e\nside->gradPr: %e, %e\nside->gradETP: %e, %e\nside->bcc[kb]: %e, %e\ngradEta2: %e, %e\ngradEta1: %e, %e\n", side->idx, coriolisTerm.x, coriolisTerm.y, side->gradPr.x, side->gradPr.y, side->gradETP.x, side->gradETP.y, side->bcc[kb].x, side->bcc[kb].y, side->gradEta2.x, side->gradEta2.y, side->gradEta1.x, side->gradEta1.y);
-
          Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
                            side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 + thetai*side->gradEta2));
 
@@ -3447,8 +3310,6 @@ printf("idx: %d\ncoriolisTerm: %e, %e\nside->gradPr: %e, %e\nside->gradETP: %e, 
          const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
 
          for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
-
-printf("###>>>#side->u2[0] = %e, %e, side->u2[1] = %e, %e, hat_gam = %e, %e, hhat = %e, htot = %e\n", side->u2[0].x, side->u2[0].y, side->u2[1].x, side->u2[1].y, side->nuGradU[nvrt-1].x, side->nuGradU[nvrt-1].y, hhat, htot);
 
       }
       else { // 3D
@@ -3486,8 +3347,6 @@ printf("###>>>#side->u2[0] = %e, %e, side->u2[1] = %e, %e, hat_gam = %e, %e, hha
             const double dfz = 0.25*(side->dfv(k) + side->dfv(k + 1));
             const double dzz = side->Dz(k);
 
-            printf("k: %d, side->zc[0]: %e, side->n1->z[0]: %e, side->n2->z[0]: %e, dzz: %e, dfz: %e\n",k, side->zc[0], side->n1->z[0], side->n2->z[0], dzz, dfz);
-            printf("k: %d, side->zc[1]: %e, side->n1->z[1]: %e, side->n2->z[1]: %e, dzz: %e, dfz: %e\n",k, side->zc[1], side->n1->z[1], side->n2->z[1], dzz, dfz);
             assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
 
             alow[kin] = 0.0;
@@ -3531,7 +3390,6 @@ printf("###>>>#side->u2[0] = %e, %e, side->u2[1] = %e, %e, hat_gam = %e, %e, hha
                const double tmp = dt*dfz/dzz;
                cupp[kin] += cff1*dzz/6.0 - tmp;
                bdia[kin] += cff1*dzz/3.0 + tmp;
-printf("####cff1 = %f, dzz = %f, tmp = %f, cupp[%d] = %f, bdia[%d] = %f\n", cff1, dzz, tmp, cupp[kin], kin, bdia[kin]);               
             }
 
 
@@ -3562,12 +3420,12 @@ printf("####cff1 = %f, dzz = %f, tmp = %f, cupp[%d] = %f, bdia[%d] = %f\n", cff1
                const double tmp = dt*dfz/dzz;
                alow[kin] += cff1*dzz/6.0 - tmp;
                bdia[kin] += cff1*dzz/3.0 + tmp;
-printf("####cff1 = %f, dzz = %f, tmp = %f, alow[%d] = %f, bdia[%d] = %f\n", cff1, dzz, tmp, alow[kin], kin, bdia[kin]);               
+
             } else { // Bottom boundary
                // This occurs at the bottom, where the bottom drag is applied.
 
                bdia[kin] += dt*side->chi2;
-printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia[%d] = %f\n", k, kb + 1, nvrt - 1, side->chi2, kin, alow[kin], kin, bdia[kin]);               
+
             } // if (k > kb + 1)
 
 
@@ -3666,10 +3524,8 @@ printf("####3 k = %d, kb + 1 = %d, nvrt - 1 = %d, chi2 = %f, alow[%d] = %f, bdia
 
          } // k=kb + 1,nvrt
 
-printf("#### bdia[0] = %f, bdia[1] = %f, bdia[2] = %f, bdia[3] = %f\n", bdia[0], bdia[1], bdia[2], bdia[3]);         
    // tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
          tridag_sch<2>(nvrt, alow, bdia, cupp, (double *)rrhs, (double *)u, (double *)gam);
-printf("::: u[0] = %e, u[1] = %e, u[2] = %e, u[3] = %e\n", u[0], u[1], u[2], u[3]);
 
 
          for (int k=kb + 1; k<nvrt; k++) {
@@ -3724,7 +3580,6 @@ printf("::: u[0] = %e, u[1] = %e, u[2] = %e, u[3] = %e\n", u[0], u[1], u[2], u[3
 
       const int kb = side->kb;
 
-printf("ifltype = %d, isLand = %d, segment = %d, ubc = %e,%e\n", ifltype, segment->isLand, segment, sideBnd->ubc[kb].x, sideBnd->ubc[kb].y);    
       if (!isLand && ifltype != 0) {
          const Vector2 *ubc = sideBnd->ubc;
   
@@ -3775,7 +3630,6 @@ printf("ifltype = %d, isLand = %d, segment = %d, ubc = %e,%e\n", ifltype, segmen
             }
             else { // not Flather or 3D radiation
                side->u2[k] = ubc[k];
-printf("****** idx = %d, k = %d, side->idx = %d, ubc = %e,%e\n", side->idx, k, side->idx, ubc[k].x, ubc[k].y);               
 
             } // if (segment->ifltype...
 
@@ -3793,7 +3647,6 @@ printf("****** idx = %d, k = %d, side->idx = %d, ubc = %e,%e\n", side->idx, k, s
                double vnorm = 0.0; // for most cases
                const double vtan = dot(side->u2[k], t);
                
-printf("islip   = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan = %f, vnorm = %f, t = %f,%f, n = %f,%f\n", islip, k, side->idx, side->u2[k].x, side->u2[k].y, vtan, vnorm, t.x, t.y, n.x, n.y);      
                side->u2[k] = vtan*t - vnorm*n;
 
             }
@@ -3830,7 +3683,6 @@ printf("islip   = %d, k = %d, side->idx = %d, u2 = %f,%f, vtan = %f, vnorm = %f,
             for (int j=0; j<4; j++) { // 4 neighbors per side
 
                const Side *nSide = side->neigh(j); // Every internal side has 4 neighbors
-printf("idx = %d, j = %d,nSide->idx = %d, nSide->u2[k] = %e,%e\n", side->idx, j, nSide->idx, nSide->u2[k].x, nSide->u2[k].y);
 
                int kin = k;
                if (!(nSide->isDry)) kin = max(k, nSide->kb + 1);
@@ -3849,7 +3701,6 @@ printf("idx = %d, j = %d,nSide->idx = %d, nSide->u2[k] = %e,%e\n", side->idx, j,
 
 
             side->bcc[k] = side->u2[k] + side->shapiro*(0.25*suru - side->u2[k]); // sframe2 if ics=2
-printf("NNNN idx = %d, suru = %f,%f, side->u2[k] = %f,%f, side->bcc[k] = %f,%f\n", side->idx, suru.x, suru.y, side->u2[k].x, side->u2[k].y, side->bcc[k].x, side->bcc[k].y);            
 
          }
       }
@@ -3895,9 +3746,8 @@ printf("NNNN idx = %d, suru = %f,%f, side->u2[k] = %f,%f, side->bcc[k] = %f,%f\n
 
          node->updateKb();
          for (int k = node->kb; k < nvrt; k++) node->z[k] = node->compZCoord(k); 
-for (int k = node->kb; k < nvrt; k++) printf("k = %d, node->kb = %d, node->z[k] = %f\n", k, node->kb, node->z[k]);
 
-      } // if wet or dry
+      }
 
       // We use the temp.b field to store the previous state of isDry.
       node->tmp.b = node->isDry;
@@ -3947,7 +3797,6 @@ for (int k = node->kb; k < nvrt; k++) printf("k = %d, node->kb = %d, node->z[k] 
       const int kb3 = n3->kb;
       const int kb4 = (elem->isQuad()) ? n4->kb : INT_MAX;
 
-printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
 
       elem->kb = min(min(kb1, kb2), min(kb3, kb4));
 
@@ -4099,7 +3948,7 @@ printf("kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d\n", kb1, kb2, kb3, kb4);
    // Compute node's vertical velocities from element's vertical velocities at WHOLE levels.
    // Divides by the total area of the elements sharing the    node.
       NODE(node);
-printf("node->idx = %d, node->tmp.d = %e, node->u2[k].z = %e\n", node->idx, node->tmp.d, node->u2[0].z);
+
       for (int k = node->kb; k < nvrt; k++) node->u2[k].z = node->u2[k].z / node->tmp.d;  // node->tmp.d contains the total area of the elements sharing the node
    }
 
@@ -4139,8 +3988,6 @@ printf("node->idx = %d, node->tmp.d = %e, node->u2[k].z = %e\n", node->idx, node
                   atomicAdd(&(node->utmp[k].x), (1.0/numElements) * u.x);
                   atomicAdd(&(node->utmp[k].y), (1.0/numElements) * u.y);
 
-auto uu = (1.0/numElements) * u;                  
-if (k==0 && node->idx == 1) printf("elem->idx = %d, node->idx = %d, utmp = %e,%e, node->numElements = %d, node->numSides = %d, u = %e,%e\n", elem->idx, node->idx, node->utmp[k].x, node->utmp[k].y, node->numElements, node->numSides, uu.x, uu.y);                  
                }
 
             }
@@ -4184,11 +4031,9 @@ if (k==0 && node->idx == 1) printf("elem->idx = %d, node->idx = %d, utmp = %e,%e
          // Cast the u2 vector into a Vector2 
          Vector2& n1_u2 = *reinterpret_cast<Vector2*>(&(n1->utmp[k]));
          Vector2& n2_u2 = *reinterpret_cast<Vector2*>(&(n2->utmp[k]));
-// printf("1 &n1_u2 = %p, &n2_u2 = %p, side idx = %d, n1->idx = %d, n2->idx = %d, side->u2[k] = %e,%e, n1->numSides = %d, n2->numSides = %d, n1_u2 = %e,%e, n2_u2 = %e,%e\n", &n1_u2, &n2_u2, side->idx, n1->idx, n2->idx, side->u2[k].x, side->u2[k].y, n1->numSides, n2->numSides, n1_u2.x, n1_u2.y, n2_u2.x, n2_u2.y);         
+
          n1_u2 = side->u2[k]/n1->numSides;
-// printf("2 &n1_u2 = %p, &n2_u2 = %p, side idx = %d, n1->idx = %d, n2->idx = %d, side->u2[k] = %e,%e, n1->numSides = %d, n2->numSides = %d, n1_u2 = %e,%e, n2_u2 = %e,%e\n", &n1_u2, &n2_u2, side->idx, n1->idx, n2->idx, side->u2[k].x, side->u2[k].y, n1->numSides, n2->numSides, n1_u2.x, n1_u2.y, n2_u2.x, n2_u2.y);                  
          n2_u2 = side->u2[k]/n2->numSides;
-printf("k = %d, side idx = %d, n1->idx = %d, n2->idx = %d, side->u2[k] = %e,%e, n1->numSides = %d, n2->numSides = %d, n1_u2 = %e,%e, n2_u2 = %e,%e\n", k, side->idx, n1->idx, n2->idx, side->u2[k].x, side->u2[k].y, n1->numSides, n2->numSides, n1_u2.x, n1_u2.y, n2_u2.x, n2_u2.y);         
 
       }
 
@@ -4310,7 +4155,6 @@ printf("k = %d, side idx = %d, n1->idx = %d, n2->idx = %d, side->u2[k] = %e,%e, 
             const double sign = elem->ssign[j]; 
 
             sideFlux += sign*dot(u2c, side->n)*sideArea;
-printf("idx = %d, l = %d, sideFlux = %f, u2c = %f,%f, side->len = %f, zc = %f, %f, sideArea = %f\n", side->idx, l, sideFlux, u2c.x, u2c.y, side->len, side->zc[l], side->zc[l + 1], sideArea);            
          }
          
          // Compute the horizontal velocity at the center of the top face as an average of the 
@@ -4322,8 +4166,6 @@ printf("idx = %d, l = %d, sideFlux = %f, u2c = %f,%f, side->len = %f, zc = %f, %
          const double topHorizontalFlux = dot(u2meanTop, toVector2(elem_n2))*area3D; // Part of the flux related to the horizontal velocity
 
          elem->w[l + 1] = (-sideFlux - topHorizontalFlux - bottomFlux)/(elem_n2.z*area3D);
-printf("idx = %d, l = %d, sideFlux = %f, topHorizontalFlux = %f, bottomFlux = %f, area3D = %f, elem->w[%d] = %.16f, elem_n2.z = %f\n", elem->idx, l, sideFlux, topHorizontalFlux, bottomFlux, area3D, l + 1, elem->w[l + 1], elem_n2.z);
-
 
          elem_n1 = elem_n2;
 
@@ -5142,9 +4984,9 @@ extern "C" {
 
          // Add btrack & surface stress terms to \breve{G} first
          if constexpr(ics==1) {
-printf("XXXX idx: %d, side->idx: %d, j: %d, ghat1: %e,%e\n", elem->idx, side->idx, j, elem->ghat1.x, elem->ghat1.y);            
+
             elem->ghat1 += cff1*Ustar - cff3*Ustar_alpha;
-printf("XXXX idx: %d, side->idx: %d, j: %d, cff1: %e, cff3: %e, Ustar: %e,%e, Ustar_alpha: %e,%e, Dz: %e, elem->ghat1: %e,%e\n", elem->idx, side->idx, j, cff1, cff3, Ustar.x, Ustar.y, Ustar_alpha.x, Ustar_alpha.y, side->Dz(nvrt - 1),  elem->ghat1.x, elem->ghat1.y);
+
          } else {
             // XXX IMPLEMENT THIS
             // call project_hvec(xtmp,ytmp,sframe2(:,:,isd),eframe(:,:,i),tt1,ss1)
@@ -5159,9 +5001,9 @@ printf("XXXX idx: %d, side->idx: %d, j: %d, cff1: %e, cff3: %e, Ustar: %e,%e, Us
 
             // Term for surface and bottom stress
             elem->ghat1 -= chi*dt*cff2*ubstar + dt*cff1*tau;
-printf("XXXX2 idx: %d, side->idx: %d, j: %d, chi: %e, dt: %e, cff2: %e, ubstar: %e,%e, tau: %e,%e, elem->ghat1: %e,%e\n", elem->idx, side->idx, j, chi, dt, cff2, ubstar.x, ubstar.y, tau.x, tau.y, elem->ghat1.x, elem->ghat1.y);            
+
          } else {
-            assert(0 && "computeElemAverageGhat: Not implemented");
+            assert(false && "computeElemAverageGhat: Not implemented");
             // XXX IMPLEMENT THIS
             // n1=isidenode(1,isd); n2=isidenode(2,isd)
             // call project_hvec(tau(1,n1),tau(2,n1),pframe(:,:,n1),eframe(:,:,i),vn1,vn2)
@@ -5222,11 +5064,9 @@ printf("XXXX2 idx: %d, side->idx: %d, j: %d, chi: %e, dt: %e, cff2: %e, ubstar: 
          } // if ics
 
          elem->ghat1 += cff1*dt*F - cff2*chi*dt*dt*fb - cff3*dt*Fa;
-printf("XXXX3 idx: %d, side->idx: %d, j: %d, cff1: %e, cff2: %e, cff3: %e, F: %e,%e, fb: %e,%e, Fa: %e,%e, elem->ghat1: %e,%e\n", elem->idx, side->idx, j, cff1, cff2, cff3, F.x, F.y, fb.x, fb.y, Fa.x, Fa.y, elem->ghat1.x, elem->ghat1.y);         
       } // for j (nodes and sides)
 
       elem->ghat1 = (1.0/i34)*elem->ghat1;
-printf("$####$$ elem->ghat1 = %.15g, %.15g\n", elem->ghat1.x, elem->ghat1.y);
          
       // Finish off terms in F, F^\alpha and f_b
       const double grav3 = elem->mean(&Node::grav2);
@@ -5246,7 +5086,7 @@ printf("$####$$ elem->ghat1 = %.15g, %.15g\n", elem->ghat1.x, elem->ghat1.y);
 
          tmp += dt*(av_cff1*F - av_cff2*chi*dt*fb - av_cff3*Fa);
       } // for j
-printf("$$$ tmp = %.15g, %.15g\n", tmp.x, tmp.y);
+
       //botf1 etc are already in elem frame
       elem->ghat1 += tmp/i34;
 
@@ -5673,7 +5513,7 @@ __global__ void createMesh(int partNum,
       return;
    };
 
-printf("createMesh 1, debugPlot = %p, debugPlotIdx = %p, *debugPlotIdx = %d\n", _debugPlot, _debugPlotIdx, *_debugPlotIdx);   
+
    debugPlot = _debugPlot;
    debugPlotIdx = _debugPlotIdx;
    // return;   
@@ -5895,7 +5735,6 @@ __global__ void updateSearchDirection() {
 
     const double beta = (*rMr_new)/(*rMr_old);
 
-// printf("ZZZ updateSearchDirection: beta = %f\n", beta);
 
     // p =z + beta*p
     node->mP = z + beta*p;
@@ -6013,6 +5852,7 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
    else if (varCode == (int)VarCode::v && k >= 0)       var[idx] = node->u2[k].y;
    else if (varCode == (int)VarCode::w && k >= 0)       var[idx] = node->u2[k].z;
+   
    else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
       
    
@@ -6053,5 +5893,6 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::vth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
    else if (varCode == (int)VarCode::ifltype && k == -1) var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->ifltype:0.0;
    else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->isLand:0.0;
+   else if (varCode == (int)VarCode::hhat && k == -1)    var[idx] = side->hhat;
    else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
 }
