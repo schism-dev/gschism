@@ -1132,7 +1132,7 @@ struct Node {
       
       if (node == this) {
          coeffDiag += value;
-printf("addToSparseMatrix: node == this, value = %f\n", coeffDiag);         
+     
       } else {
          // Search (linearly)the index of the node in the array of nodes
          // XXX: This is not efficient, see if we can improve this
@@ -1439,8 +1439,6 @@ extern "C" {
          ramp = 1.0;
       }
 
-      printf("computeTimeRamps: i = %d, time = %f, nws = %d, if_source = %d, ramp = %f, drampbc = %f, drampwind = %f, drampwafo = %f, dramp_ss = %f, dramp = %f\n", 
-             threadIdx.x + blockIdx.x * blockDim.x, time, nws, if_source, ramp, drampbc, drampwind, drampwafo, dramp_ss, dramp);
    }
       
 

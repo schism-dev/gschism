@@ -80,16 +80,25 @@ def plotMesh():
     sy = getSideVar("y")
     ux = getSideVar("u", 0)
     uy = getSideVar("v", 0)
+    eta = getNodeVar("eta")
+    x  = getNodeVar("x")
+    y  = getNodeVar("y")
 
     # Build the segments array for LineCollection
     segments = np.stack([np.column_stack([x[n1], y[n1]]), np.column_stack([x[n2], y[n2]])], axis=1)
+
+    # Plots eta at the element centers. Eta is shown as the radius of the circle.
+    plt.scatter(x, y, color='b', s=(eta*200 + 20))
 
     # Create the LineCollection
     lc = LineCollection(segments, colors='r', alpha=0.53, linewidths=0.5)
     ax.add_collection(lc)
 
-    max_u = max(np.max(np.abs(ux)), np.max(np.abs(uy)))
-    plt.quiver(sx, sy, 1*ux/max_u, 1*uy/max_u, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
+    # Use a fixed scale factor for consistent arrow length representation
+    # Adjust this value to make arrows longer or shorter while maintaining 1 m/s = constant length
+    fixed_scale = 10.001  # Adjust this value as needed for your visualization
+    
+    plt.quiver(sx, sy, fixed_scale*ux, fixed_scale*uy, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
 
     # Plot the backtracked curves.
     segments_np = cp.asnumpy(debugPlot[:debugPlotIdx, :])  # shape: (N, 4)

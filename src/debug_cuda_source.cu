@@ -61,9 +61,9 @@ constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 3; // Maximum number of nodes per open boundary segment
+constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
 constexpr int nland = 1; // Number of land boundary segments
-constexpr int mnlnd = 7; // Maximum number of nodes per land boundary segment
+constexpr int mnlnd = 31; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
@@ -1222,7 +1222,7 @@ struct Node {
       
       if (node == this) {
          coeffDiag += value;
-printf("addToSparseMatrix: node == this, value = %f\n", coeffDiag);         
+     
       } else {
          // Search (linearly)the index of the node in the array of nodes
          // XXX: This is not efficient, see if we can improve this
@@ -1529,8 +1529,6 @@ extern "C" {
          ramp = 1.0;
       }
 
-      printf("computeTimeRamps: i = %d, time = %f, nws = %d, if_source = %d, ramp = %f, drampbc = %f, drampwind = %f, drampwafo = %f, dramp_ss = %f, dramp = %f\n", 
-             threadIdx.x + blockIdx.x * blockDim.x, time, nws, if_source, ramp, drampbc, drampwind, drampwafo, dramp_ss, dramp);
    }
       
 
@@ -2453,6 +2451,11 @@ __inline__ __device__ bool Side::btrack(
                       // then time_rm needs to be increased by the unused time.
       if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0
 
+
+      // If the velocity is too small, we stop the backtracking
+      const double vmag = length(toVector2(u_int));
+      if (vmag <= velmin_btrack) break;
+
       // The current point becomes the next segment's starting point.
       x0 = xt;
  
@@ -2600,6 +2603,7 @@ __device__ double Node::compZCoord(int k) const {
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
       
+printf("htot2() = %e\n",htot2());      
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
    if constexpr(ivcor == 2) {
@@ -3394,18 +3398,17 @@ extern "C" {
          }  // ics
 
 
-         // Velocity at the side (in ll frame for ics, same vertical direction)
-         // XXX IS THIS NECESSARY?
-         Vector3 u_int = toVector3(side->u2[k], 0.5*(side->w2[k] + side->w2[k+1])); // XXX {side->u2[j].x, side->u2[j].y, 0.5*(side->w2[j] + side->w2[j+1])};
 
          // If on land or open boundary...
          const bool ifl_bnd =  (side->sideBnd != nullptr);
          
-         const double vmag = length(toVector2(u_int));
+         const double vmag = length(side->u2[k]);
 
          if (vmag <= velmin_btrack) {
             // No activity 
 addDebugPlot(side->center, side->center, 0x00FF00);
+const double w2 = side->w2[k];
+if (side->idx == 0) printf("$$$$ u_int = %e,%e\n", side->u2[k].x, side->u2[k].y); 
 
             side->btu[k] = side->u2[k];
             
@@ -3807,8 +3810,10 @@ extern "C" {
 
 
       NODE_BND(nodeBnd);
-printf("getBoundaryConditions: time = %f NOT IMPLEMENTED\n", time);
-return;
+
+      assert(nfltype <= 0 && nettype <= 0 && "getBoundaryConditions: Not implemented");
+      return;
+
       const Node *node = nodeBnd->node;
 
     
@@ -7423,8 +7428,6 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    int idx = side->idx;
    int i = threadIdx.x + blockIdx.x * blockDim.x;
 
-   printf("getSideVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
-   
    if      (varCode == (int)VarCode::z && k >= 0)        var[idx] = side->zc[k];
    else if (varCode == (int)VarCode::x && k == -1)       var[idx] = side->center.x;
    else if (varCode == (int)VarCode::y && k == -1)       var[idx] = side->center.y;

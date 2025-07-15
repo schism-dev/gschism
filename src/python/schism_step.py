@@ -19,7 +19,7 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
     if cp.cuda.runtime.getDeviceCount() > 1:
         raise ValueError("This function is not YET parallelized for multiple GPUs. Reductions need to be extended to all devices.")
     
-    cufunc.printMatrix()
+    # cufunc.printMatrix()
 
     scalars = cp.zeros(3, dtype=cp.float64) # rMr_old, rMr_new, pAp
 
@@ -58,7 +58,7 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
 
         iterCount += 1
 
-        print(f"Iteration {iterCount}: rMr_new = {rMr_new}, rMr_old = {rMr_old}")
+
         
 
     return iterCount
@@ -122,7 +122,7 @@ def computeMeteorologicalForcing(time, sflux):
 #       enddo !i=1,npa
 # !$OMP end do      
 
-def schism_step(it: int, namelist, bctides, sflux):
+def schism_step(it: int, namelist, bctides, sflux, eta):
 
     core = namelist.core
     opt  = namelist.opt
@@ -237,7 +237,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     #!...  No elevation essential b.c. are imposed yet but other b.c. is imposed
     cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-
 
-    cufunc.printMatrix()
+    # cufunc.printMatrix()
 
 
     cufunc.rollUpElevation()
@@ -299,6 +299,8 @@ def schism_step(it: int, namelist, bctides, sflux):
 
     # var = monitor.getElementVar("z", 0)
     # monitor.plotMesh()
+    var = monitor.getNodeVar("eta")
+    eta[:, it] = var
     # cufunc.getElementVar(monitor.varCodeDict["x"], var, 0) # monitor.varCodeDict["x"]
 
 

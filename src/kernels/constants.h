@@ -60,9 +60,9 @@ constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 3; // Maximum number of nodes per open boundary segment
+constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
 constexpr int nland = 1; // Number of land boundary segments
-constexpr int mnlnd = 7; // Maximum number of nodes per land boundary segment
+constexpr int mnlnd = 31; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
