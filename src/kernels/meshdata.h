@@ -1147,36 +1147,8 @@ struct Node {
       }
    }
 
-#ifdef BACKTRACKING
-   __device__ void updateZCoordData() {
-   // XXX: To be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
-      // Check if node is wet
-      isDry = (depth + eta2 <= h0);  // XXX Check if we are doing this elsewhere
-
-      if (idry) return;
-
-      if constexpr(ivcor == 2) {  // SZ coordinates
-         
-         // Compute bottom level index
-         if (depth <= mesh->h_s) {
-               kb = mesh->nzlevels;
-         } else {
-               kb = -1;
-               for (int i = 0; i < mesh->kz-1; i++) {
-                  if (-depth >= mesh->ztot[i] && -depth < mesh->ztot[i+1]) {
-                     kb = i;
-                     break;
-                  }
-               }
-         }
-      } 
-      else if (ivcor == 1) {  // Localized sigma
-         // Do nothing
-      }
-
-   }
-#endif   
+   __device__ __inline__ void updateZCoordData(void);
 
    __device__ double compZCoord(int k) const;
 
@@ -1290,7 +1262,7 @@ struct Mesh {
                    NodeBoundary *localNodeBoundaryMem,
                    SideBoundary *localSideBoundaryMem,
                    BoundarySegment *localSegmentMem,
-                   double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
+                   double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
                    double *cs, double *dcs
                    ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
                        np(np), ne(ne), ns(ns), kz(kz),
@@ -1300,7 +1272,7 @@ struct Mesh {
                        nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
-                       h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
+                       h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
                        coeffMatrixMem(partCoeffMatrixMem),
                        landBoundarySegment(true),
@@ -1400,7 +1372,7 @@ extern "C" {
 
    __global__ void printMatrix(void);
 
-
+   __global__ void returnMatrix(double *res);
 
    __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
       // Compute the different time ramps used in the code 

@@ -14,6 +14,8 @@ __device__ Mesh* mesh = nullptr;
 
 
 
+// Convenience macros for accessing the objects in kernels.
+
 #define SIDE(side) const int idx_side = threadIdx.x + blockIdx.x * blockDim.x; \
                    Side *side = &(mesh->localSideData[idx_side]); \
                    if (idx_side >= mesh->ns) return;
@@ -1042,6 +1044,33 @@ __device__ void Node::updateKb(void) {
 }
 
 
+__device__ __inline__ void Node::updateZCoordData(void) {
+// XXX: To be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
+
+   if (isDry2()) return;
+
+   if constexpr(ivcor == 2) {  // SZ coordinates
+      
+      // Compute bottom level index
+      if (depth <= mesh->h_s) {
+            kb = mesh->kz;
+      } else {
+         kb = -1;
+         for (int i = 0; i < mesh->kz; i++) {
+            // XXX Use binary search
+            if (-depth >= mesh->ztot[i] && -depth < mesh->ztot[i+1]) {
+               kb = i;
+               break;
+            }
+         }
+      }
+   } 
+   else if (ivcor == 1) {  // Localized sigma
+      // Do nothing
+   }
+
+}
+
 __device__ double Node::compZCoord(int k) const {
    // Computes the z coordinate at level k.
    // Depending on the vertical coordinate system, the z coordinate is computed differently.
@@ -1050,8 +1079,8 @@ __device__ double Node::compZCoord(int k) const {
    // used 
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
-      
-printf("htot2() = %e\n",htot2());      
+
+  
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
    if constexpr(ivcor == 2) {
@@ -1067,7 +1096,7 @@ printf("htot2() = %e\n",htot2());
       // once per time step/node.
       // CHECK: updateZCoordData
 
-      if      (k == nvrt-1)      { return eta2; }
+      if      (k == nvrt-1)      return eta2; 
       else if (k == kz)          return -hmod2;
       else if (k == kb)          return -depth;
       else if (k < kz && k >= 0) return mesh->ztot[k];
@@ -1075,6 +1104,7 @@ printf("htot2() = %e\n",htot2());
          const int ksig = k - kz + 1;
 
          if (hmod2 <= h_c) {
+printf("mesh->sigma[ksig] * (hmod2 + eta2) + eta2 = %e\n", mesh->sigma[ksig] * (hmod2 + eta2) + eta2);            
             return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
          } 
          else if (eta2 <= - h_c - (depth - h_c) * theta_f/sinh_theta_f) {
@@ -1082,6 +1112,7 @@ printf("htot2() = %e\n",htot2());
             assert(false && "ZCOOR: invalid h_c\n");
          } 
          else {
+printf("eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig] = %e\n", eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig]);
             return eta2*(1.0 + mesh->sigma[ksig]) + 
                          h_c * mesh->sigma[ksig] + 
                          (hmod2 - h_c) * mesh->cs[ksig];
@@ -1854,9 +1885,7 @@ extern "C" {
 
          if (vmag <= velmin_btrack) {
             // No activity 
-addDebugPlot(side->center, side->center, 0x00FF00);
-const double w2 = side->w2[k];
-if (side->idx == 0) printf("$$$$ u_int = %e,%e\n", side->u2[k].x, side->u2[k].y); 
+
 
             side->btu[k] = side->u2[k];
             
@@ -2647,6 +2676,8 @@ extern "C" {
       NODE(node);
 
       node->eta2 = node->mX;
+
+      node->updateZCoordData();
    }
 
 
@@ -5508,7 +5539,7 @@ __global__ void createMesh(int partNum,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
                            double *partCoeffMatrixMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
-                           double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
+                           double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
                            double *ztot, double *cs, double *dcs,
                            double *_debugPlot, int *_debugPlotIdx) {
 
@@ -5541,7 +5572,7 @@ __global__ void createMesh(int partNum,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
                    partCoeffMatrixMem,
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
-                   h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
+                   h_c, h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
 
    // XXX read from file
    polyDischarge = new Polynomial<4>(0.0, 0.0, 0.0, 0.0, 0.0);                   
@@ -5597,28 +5628,40 @@ __global__ void getStructSizes(int* sizes)  {
       sizes[5] = (int)sizeof(BoundarySegment);
 }
 
+
 __global__ void printMatrix(void) {
+   // Debugging: print the matrix
 
-
-   // Let only one thread per block print at a time 
-
-   if (threadIdx.x == 0) {
-      for (int ithread = 0; ithread < blockDim.x; ithread++) {
-         const int idx_node = ithread + blockIdx.x * blockDim.x;
-         if (idx_node >= mesh->np) return;
-         const Node *node = mesh->localNodeData + idx_node;
-         printf("idx_node = %d [%d] diag=%lf, [", idx_node, node->numNodes, node->coeffDiag);
-         for (int j = 0; j < node->numNodes; j++) {
-            Node* nbNode = node->nodes[j];
-            if (node->coeffMatrix[j] != 0.0) printf("%d:%f,  ", nbNode->idx, node->coeffMatrix[j]);
-         }
-         printf("]\n");
-
+   for (int ithread = 0; ithread < blockDim.x; ithread++) {
+      const int idx_node = ithread + blockIdx.x * blockDim.x;
+      if (idx_node >= mesh->np) return;
+      const Node *node = mesh->localNodeData + idx_node;
+      printf("idx_node = %d [%d] diag=%lf, [", idx_node, node->numNodes, node->coeffDiag);
+      for (int j = 0; j < node->numNodes; j++) {
+         Node* nbNode = node->nodes[j];
+         if (node->coeffMatrix[j] != 0.0) printf("%d:%f,  ", nbNode->idx, node->coeffMatrix[j]);
       }
+      printf("]\n");
+
    }
 
+}
 
 
+__global__ void returnMatrix(double *res) {
+   // Debugging: returns the matrix as a CuPy array
+
+   const int size = mesh->np;
+   for (int idx_node = 0; idx_node < size; idx_node++) {
+      const Node *node = mesh->localNodeData + idx_node;
+      res[idx_node*size + idx_node] = node->coeffDiag;
+      for (int j = 0; j < node->numNodes; j++) {
+         Node* nbNode = node->nodes[j];
+         if (node->coeffMatrix[j] != 0.0) res[nbNode->idx*size + idx_node] =  node->coeffMatrix[j];
+      }
+
+   }
+   
 }
 
 
@@ -5630,19 +5673,26 @@ __global__ void computeMatrixProductAndDotProducts() {
    double* s_rMr = sdata;
    double* s_pAp = sdata + BLOCK_SIZE;
 
-   s_rMr[threadIdx.x] = 0.0;
-   s_pAp[threadIdx.x] = 0.0;
+   const int tid = threadIdx.x;
+
+   double l_pAp = 0.0;
+
+   s_rMr[tid] = 0.0;
+   s_pAp[tid] = 0.0;
 
    // 2) get your node pointer
-   NODE(node);  
-   const int tid = threadIdx.x;
+   // NODE(node);   
+   const int idx_node = threadIdx.x + blockIdx.x * blockDim.x; 
+   Node *node = &(mesh->localNodeData[idx_node]); 
+   if (idx_node < mesh->np) {
+
 
    const double diag = node->coeffDiag;
    const double r    = node->mR;
    const double p    = node->mP;  
 
    // apply preconditioner on the fly:
-   const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
+   // const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
 
    // 4) compute Ap = A.p
    double Ap = node->coeffDiag * node->mP;
@@ -5651,28 +5701,36 @@ __global__ void computeMatrixProductAndDotProducts() {
       Ap += node->coeffMatrix[j] * nbNode->mP;
 
    }
+
    node->mAp = Ap;
     
 
    // 5) dot-products individual products (r'Mr, p'Ap) (REDUCTION)
-   const double l_rMr = r*Mr;  // r'Mr
-   const double l_pAp = p*Ap;  // p'Ap
+   // const double l_rMr = r*Mr;  // r'Mr
+   l_pAp = p*Ap;  // p'Ap
+
+
+   }
 
    // 6) write into shared mem
-   s_rMr[tid] = l_rMr;
+   // s_rMr[tid] = l_rMr;
    s_pAp[tid] = l_pAp;
 
    __syncthreads();
 
    // 7) block-wide tree reduction
    for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
-      if (tid < stride)  s_pAp[tid] += s_pAp[tid + stride];
+      if (tid < stride)  {
+         s_pAp[tid] += s_pAp[tid + stride];
+      }
       __syncthreads();
    }
 
    // 8) thread 0 atomically accumulates into the globals
    // XXX: This is slower than it needs to be, but it is simple and works
-   if (tid == 0) atomicAdd(pAp, s_pAp[0]);
+   if (tid == 0) {
+      atomicAdd(pAp, s_pAp[0]);
+   }
 
 
 }
@@ -5681,16 +5739,19 @@ __global__ void computeMatrixProductAndDotProducts() {
 __global__ void updateSolutionAndDotProducts(void) {
    extern __shared__ double s_rMr[BLOCK_SIZE];       
 
-   s_rMr[threadIdx.x] = 0.0;
+   const int tid = threadIdx.x;
 
+   s_rMr[tid] = 0.0;
 
    // get node & bounds-check:
    NODE(node);
-   const int tid = threadIdx.x;
 
-
+   
    // Compute alpha
    const double alpha = (*rMr_old)/(*pAp);
+
+   assert(*pAp != 0.0 && "updateSolutionAndDotProducts: pAp = 0.0");
+
 
    // load scalars
    const double diag = node->coeffDiag;
@@ -5734,6 +5795,7 @@ __global__ void updateSolutionAndDotProducts(void) {
 
 
 __global__ void updateSearchDirection() {
+
     NODE(node);
 
     // recompute z on-the-fly
@@ -5852,6 +5914,7 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::x && k == -1)      var[idx] = node->p.x;
    else if (varCode == (int)VarCode::y && k == -1)      var[idx] = node->p.y;
    else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = node->depth;
+   else if (varCode == (int)VarCode::htot && k == -1)   var[idx] = node->htot2();
    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
    else if (varCode == (int)VarCode::elbc && k == -1)   var[idx] = node->nodeBnd!=nullptr?node->nodeBnd->elbc:0.0;
    else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;   

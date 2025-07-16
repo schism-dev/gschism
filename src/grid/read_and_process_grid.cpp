@@ -1096,7 +1096,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
 */
 std::tuple<py::array_t<int32_t>,     // ivcor, nvrt
            py::array_t<double>,       // ztot (nNodes for ivcor=1, empty for ivcor=2)
-           py::array_t<double>,       // h_s, theta_b, theta_f (3 values for ivcor=2, empty for ivcor=1)
+           py::array_t<double>,       // h_c, h_s, theta_b, theta_f (3 values for ivcor=2, empty for ivcor=1)
            py::array_t<double>,       // sigma_lcl (nvrt x nNodes for ivcor=1, empty for ivcor=2)
            py::array_t<double>,       // sigma (nvrt values for ivcor=2, empty for ivcor=1)
            py::array_t<double>,       // cs (nvrt values for ivcor=2, empty for ivcor=1)
@@ -1153,7 +1153,7 @@ readVGrid(const std::string& filename, int nNodes) {
         return std::make_tuple(
             toPyArray(std::vector<int>{ivcor, nvrt, 0, nvrt}),
             toPyArray(ztot),                          // ztot for ivcor=1
-            toPyArray(std::vector<double>()),         // empty h_s, theta_b, theta_f
+            toPyArray(std::vector<double>()),         // empty h_c, h_s, theta_b, theta_f
             toPyArray(sigma_lcl),                     // sigma_lcl for ivcor=1
             toPyArray(std::vector<double>()),         // empty sigma
             toPyArray(std::vector<double>()),         // empty cs
@@ -1228,6 +1228,7 @@ printFormatted(ansi::red("level_number = %d, ztot[%d] = %f, hs = %f, ztot[%d]>-h
 
         // Read sigma level parameters
         file >> h_c >> theta_b >> theta_f >> dummy;
+printFormatted(ansi::red("h_c = %f, theta_b = %f, theta_f = %f"), h_c, theta_b, theta_f);
         std::getline(file, dummy); 
         if (h_c<5.0 || h_c>=h_s) {
             throw std::runtime_error("h_c needs to be larger to avoid 2nd type abnormaty: " + std::to_string(h_c));
@@ -1271,7 +1272,7 @@ printFormatted(ansi::red("level_number = %d, ztot[%d] = %f, hs = %f, ztot[%d]>-h
         return std::make_tuple(
             toPyArray(std::vector<int>{ivcor, nvrt, kz, nsiglev}),
             toPyArray(ztot),        
-            toPyArray(std::vector<double>{h_s, theta_b, theta_f}),  // SZ parameters
+            toPyArray(std::vector<double>{h_c, h_s, theta_b, theta_f}),  // SZ parameters
             toPyArray(Array2D<double>()),                           // XXXX empty sigma_lcl
             toPyArray(sigma),                                        // sigma for ivcor=2
             toPyArray(cs),

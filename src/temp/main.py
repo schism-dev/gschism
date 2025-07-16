@@ -44,7 +44,7 @@ from python.schism_init import readNamelist, schism_init
 from python.schism_step import schism_step
 from python.schism_consts import *
 import python.cuda_functions as cufunc
-tracktest = '/media/jmg/Elements/src/gschism/src/temp/tracktest.txt'
+# tracktest = '/media/jmg/Elements/src/gschism/src/temp/tracktest.txt'
 # tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
 
 
@@ -52,13 +52,13 @@ tracktest = '/media/jmg/Elements/src/gschism/src/temp/tracktest.txt'
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
-in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
+# in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
 
 
 # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 # test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
-test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
+# test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     print(nodeNeighNodes)
 
 
-    [ivcor, nvrt, kz, nsiglev], ztot, [h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
+    [ivcor, nvrt, kz, nsiglev], ztot, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
         module.readVGrid(vgrid_file, nodeCoords.shape[1])
 
     if (nws == 2):
@@ -610,7 +610,7 @@ if __name__ == "__main__":
                               partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 
                               partCoeffMatrixMem[ipart],
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
-                              h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs,
+                              h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs,
                               monitor.debugPlot.data.ptr, monitor.debugPlotIdx.data.ptr)
             
             # Given a local index, this array will return the global index
@@ -644,8 +644,9 @@ if __name__ == "__main__":
 
     schism_init(namelist.core, namelist.opt)
 
-    eta = np.zeros([130, 3*480], dtype=cp.float64)
-    for t in range(0, 33, 1):
+    eta = np.zeros([numNodes, 3*480], dtype=cp.float64)
+    for t in range(0, 1333, 1):
+        print(f">>>>>>>>>>>>>Step {t}")
         schism_step(t, namelist, bctides, sflux, eta)
 
     pass

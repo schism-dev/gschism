@@ -15,6 +15,7 @@ populateMesh = None
 getStructSizes = None
 initTidalHarmonicConstituents = None
 printMatrix = None
+returnMatrix = None
 scaleGravity = None
 computeTimeRamps = None
 computeBedDeformation = None
@@ -108,7 +109,7 @@ def initializeCudaFunctions(sizes):
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
-    global initializePreconditionedResidual, printMatrix
+    global initializePreconditionedResidual, printMatrix, returnMatrix
     global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
@@ -158,7 +159,8 @@ def initializeCudaFunctions(sizes):
         setVelocityOpenBndNodes             = mod.get_function('setVelocityOpenBndNodes',             sizes, kernel_type='sideBnd')
         computeVerticalVelocity             = mod.get_function('computeVerticalVelocity',             sizes, kernel_type='elements')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
-        printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='nodes')
+        printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='global')
+        returnMatrix                        = mod.get_function('returnMatrix',                        sizes, kernel_type='global')
         getElementVar                       = mod.get_function('getElementVar',                       sizes, kernel_type='elements')
         getNodeVar                          = mod.get_function('getNodeVar',                          sizes, kernel_type='nodes')   
         getSideVar                          = mod.get_function('getSideVar',                          sizes, kernel_type='sides')   

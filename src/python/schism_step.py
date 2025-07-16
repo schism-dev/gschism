@@ -26,21 +26,32 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
 
     # Compute initial preconditioned residual Mr
     cufunc.initializePreconditionedResidual(scalars)
+    cp.cuda.Device().synchronize()
 
     rMr_new = scalars[1].item()
     if (rMr_new <= 1e-30):
         # If the initial residual is already small enough, return 0
         return 0
+    
+    rMr_0 = rMr_new
 
     while iterCount < maxIter:
         # compute Ap, rMr, pAp, α on GPU
         scalars[2] = 0.0 # pAp
+        cp.cuda.Device().synchronize()
         cufunc.computeMatrixProductAndDotProducts()
+        # if cp.cuda.runtime.getLastError() != 0:
+        #     raise ValueError("Error in computeMatrixProductAndDotProducts")
+
+        # Sync to make sure pAp reduction is finished
+        cp.cuda.Device().synchronize()
 
         # update x,r,z and accumulate rr_new on GPU
         scalars[0] = scalars[1] # rMr_old = rMr_new
         scalars[1] = 0.0 # rMr_new
         cufunc.updateSolutionAndDotProducts()
+        # if cp.cuda.get_last_error() != 0:
+        #     raise ValueError("Error in updateSolutionAndDotProducts")
 
         # Sync to make sure rr reduction is finished
         cp.cuda.Device().synchronize()
@@ -50,9 +61,10 @@ def solveWaveEquation(maxIter=10000, tol=1e-6):
         rMr_old = scalars[0].item()
 
 
-        if rMr_new <= tol*tol * rMr_old:
+        if rMr_new <= tol*tol * rMr_0:
             break
-
+        if (cp.isnan(rMr_new)):
+            raise ValueError("rMr_new is NaN")
         # update p ← z + beta*p on GPU
         cufunc.updateSearchDirection()
 
@@ -271,7 +283,7 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
         cufunc.shapiroFilter2()
 
 
-    # cufunc.updateBedDeformation()
+    # cufunc.updateBedDeformation()  // CHECK IF updateZCoordData MUST BE CALLED HERE
 
     cufunc.computeVerticalVelocity()
 
