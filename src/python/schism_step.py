@@ -5,7 +5,7 @@ import debug.monitor as monitor
 # from cupy import cudaMemcpyFromSymbol
 
 
-def solveWaveEquation(maxIter=10000, tol=1e-6):
+def solveWaveEquation(maxIter=10000, tol=1e-16):
     """
     Solve wave equation using Conjugate Gradient method.
     Assumes all arrays are already stored in Node as doubles.
@@ -249,13 +249,13 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
     #!...  No elevation essential b.c. are imposed yet but other b.c. is imposed
     cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-
 
-    # cufunc.printMatrix()
-
 
     cufunc.rollUpElevation()
 
 
     cufunc.setEssentialBC()
+
+    cufunc.printMatrix()    
 
     #  Solve the wave equation
     solveWaveEquation()

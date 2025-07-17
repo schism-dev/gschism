@@ -85,7 +85,7 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth [m]
 
-enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, nx=6, ny=7, hhat=8, ssign=9, btu=10, btv=11, bccx=12, bccy=13, uth=14, vth=15, ubc=16, vbc=17, island=18, ifltype=19, elbc=20, eta=21, area=22, qel=23, depth=24, radius=25, xlon=26, ylat=27, kb=28, n1=29, n2=30, htot=31}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, U=6, V=7, nx=8, ny=9, hhat=10, ssign=11, btu=12, btv=13, bccx=14, bccy=15, uth=16, vth=17, ubc=18, vbc=19, island=20, ifltype=21, elbc=22, eta=23, area=24, qel=25, depth=26, radius=27, xlon=28, ylat=29, kb=30, n1=31, n2=32, htot=33}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -3173,6 +3173,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // Integral of \nabla\phi_i \cdot \pmb{E}
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
      
+// printf(">>> k = %d, node idx = %d, elem->idx = %d, Umean = %.15e,%.15e, I_4_1 = %.15e, I_4_2 = %.15e, node1->qel = %.15e\n", j, node1->idx, elem->idx, Umean.x, Umean.y, I_4_1, I_4_2, dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2));
+printf(">>> k = %d, node idx = %d, elem->idx = %d, ghat1 = %.15e,%.15e, gradPhi = %.15e,%.15e\n", j, node1->idx, elem->idx, elem->ghat1.x, elem->ghat1.y, gradPhi_1.x, gradPhi_1.y);
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
 
       // Additional terms 
@@ -3198,6 +3200,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
             fac = (node == node1) ? 2.0 : 1.0;
             if constexpr(imm==2) node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
             else                 node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
+printf("AAA>>>  (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm) = %.15e\n",  (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm));
            
          }
 
@@ -3206,6 +3209,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
            const Vector2 gradEta = elem->grad2(&Node::eta2);
 
            node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
+printf("BBB>>>  elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta) = %.15e\n",  elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta));
          }
 
       } // isTri
@@ -3409,7 +3413,6 @@ extern "C" {
 
          if (vmag <= velmin_btrack) {
             // No activity 
-
 
             side->btu[k] = side->u2[k];
             
@@ -7156,9 +7159,8 @@ __global__ void getStructSizes(int* sizes)  {
 __global__ void printMatrix(void) {
    // Debugging: print the matrix
 
-   for (int ithread = 0; ithread < blockDim.x; ithread++) {
-      const int idx_node = ithread + blockIdx.x * blockDim.x;
-      if (idx_node >= mesh->np) return;
+   const int size = mesh->np;
+   for (int idx_node = 0; idx_node < size; idx_node++) {
       const Node *node = mesh->localNodeData + idx_node;
       printf("idx_node = %d [%d] diag=%lf, [", idx_node, node->numNodes, node->coeffDiag);
       for (int j = 0; j < node->numNodes; j++) {
@@ -7470,6 +7472,8 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::ny && k == -1)      var[idx] = side->n.y;
    else if (varCode == (int)VarCode::u && k >= 0)        var[idx] = side->u2[k].x;
    else if (varCode == (int)VarCode::v && k >= 0)        var[idx] = side->u2[k].y;
+   else if (varCode == (int)VarCode::U && k == -1)       var[idx] = side->U.x;
+   else if (varCode == (int)VarCode::V && k == -1)       var[idx] = side->U.y;   
    else if (varCode == (int)VarCode::depth && k == -1)   var[idx] = side->depth();
    else if (varCode == (int)VarCode::kb && k == -1)      var[idx] = (double)(side->kb);
    else if (varCode == (int)VarCode::n1 && k == -1)      var[idx] = side->n1->idx;
