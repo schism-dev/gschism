@@ -60,9 +60,9 @@ constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 3; // Maximum number of nodes per open boundary segment
+constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
 constexpr int nland = 1; // Number of land boundary segments
-constexpr int mnlnd = 7; // Maximum number of nodes per land boundary segment
+constexpr int mnlnd = 31; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
@@ -84,4 +84,4 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth [m]
 
-enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, U=6, V=7, nx=8, ny=9, hhat=10, ssign=11, btu=12, btv=13, bccx=14, bccy=15, uth=16, vth=17, ubc=18, vbc=19, island=20, ifltype=21, elbc=22, eta=23, area=24, qel=25, depth=26, radius=27, xlon=28, ylat=29, kb=30, n1=31, n2=32, htot=33}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, U=6, V=7, nx=8, ny=9, hhat=10, ghatx=11, ghaty=12, ssign=13, btu=14, btv=15, bccx=16, bccy=17, uth=18, vth=19, ubc=20, vbc=21, island=22, ifltype=23, elbc=24, eta=25, area=26, qel=27, depth=28, radius=29, xlon=30, ylat=31, kb=32, n1=33, n2=34, htot=35, gradEta1x=36, gradEta1y=37, gradEta2x=38, gradEta2y=39, gradETPx=40, gradETPy=41, gradPrx=42, gradPry=43}; // Var codes for getElementVar, getNodeVar...

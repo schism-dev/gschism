@@ -791,7 +791,7 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
    Vector2 grad = {0.0, 0.0};
    int count = 0;
 
-   if constexpr(ics == 2) assert(false && "computeHorGradientAtSide: ics = 2 not implemented");
+   if constexpr(ics == 2) assert(false && "grad2: ics = 2 not implemented");
 
    // First element
    if (elems[0] != nullptr && condition(elems[0])) {
@@ -855,6 +855,7 @@ __inline__ __device__ bool Side::btrack(
 
    // Start from side center
    Point3 x0 = {center.x, center.y, zc[jlev]};
+
  
 
    double time_rm = dt; // Remaining time
@@ -872,14 +873,24 @@ __inline__ __device__ bool Side::btrack(
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards(toVector2(u_int));
 
+
+
    // If it starts at a boundary side, we must start with a velocity parallel to the side.
    if (curElem == nullptr) {
       // Make velocity parallel to the side
       const Vector2 u2parallel = dot(toVector2(u_int), t())*t();
-      u_int = {u2parallel.x, u2parallel.y, u_int.z};
+      // u_int = {u2parallel.x, u2parallel.y, u_int.z};
       curElem = otherElem(curElem);
       
    }
+
+// Nudges it towards the circumcenter
+// printf("0{{jlev = %d}} side->idx = %d, x0 = %.15e,%.15e,%.15e\n", jlev, idx, x0.x, x0.y, x0.z);
+Vector2 xcirc = {(curElem->nodes[0]->p.x + curElem->nodes[1]->p.x + curElem->nodes[2]->p.x)/3.0,
+                 (curElem->nodes[0]->p.y + curElem->nodes[1]->p.y + curElem->nodes[2]->p.y)/3.0};
+const double eps = 9.013e-3;                 
+x0.x = xcirc.x*eps + (1 - eps)*x0.x;
+x0.y = xcirc.y*eps + (1 - eps)*x0.y;
 
 
 
@@ -893,14 +904,13 @@ __inline__ __device__ bool Side::btrack(
 
       // Next point in the backtracking curve
       Point3 xt = x0 - dtb*u_int;
-
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, this);
       assert(found && "Backtracking failed in btrack");
 
-      time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
-                      // then time_rm needs to be increased by the unused time.
       if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0
 
+      time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
+                      // then time_rm needs to be increased by the unused time.
 
       // If the velocity is too small, we stop the backtracking
       const double vmag = length(toVector2(u_int));
@@ -1650,7 +1660,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
      
 // printf(">>> k = %d, node idx = %d, elem->idx = %d, Umean = %.15e,%.15e, I_4_1 = %.15e, I_4_2 = %.15e, node1->qel = %.15e\n", j, node1->idx, elem->idx, Umean.x, Umean.y, I_4_1, I_4_2, dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2));
-printf(">>> k = %d, node idx = %d, elem->idx = %d, ghat1 = %.15e,%.15e, gradPhi = %.15e,%.15e\n", j, node1->idx, elem->idx, elem->ghat1.x, elem->ghat1.y, gradPhi_1.x, gradPhi_1.y);
+// printf(">>> k = %d, node idx = %d, elem->idx = %d, ghat1 = %.15e,%.15e, gradPhi = %.15e,%.15e\n", j, node1->idx, elem->idx, elem->ghat1.x, elem->ghat1.y, gradPhi_1.x, gradPhi_1.y);
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
 
       // Additional terms 
@@ -1676,7 +1686,7 @@ printf(">>> k = %d, node idx = %d, elem->idx = %d, ghat1 = %.15e,%.15e, gradPhi 
             fac = (node == node1) ? 2.0 : 1.0;
             if constexpr(imm==2) node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
             else                 node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
-printf("AAA>>>  (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm) = %.15e\n",  (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm));
+// printf("AAA>>>  (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm) = %.15e\n",  (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm));
            
          }
 
@@ -1685,7 +1695,7 @@ printf("AAA>>>  (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm) = %.15e\n",  (
            const Vector2 gradEta = elem->grad2(&Node::eta2);
 
            node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
-printf("BBB>>>  elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta) = %.15e\n",  elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta));
+// printf("BBB>>>  elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta) = %.15e\n",  elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta));
          }
 
       } // isTri
@@ -1815,7 +1825,7 @@ extern "C" {
 
       NODE(node);
 
-      node->eta2 += node->eta1;
+      node->eta1 = node->eta2;
 
    }
 
@@ -3280,6 +3290,7 @@ extern "C" {
 
       SIDE(side);
 
+// printf("side->isDry: %d\n", side->isDry);
       if (side->isDry) return;
 
       // Computes the gradient of the variables at the side center.
@@ -3291,6 +3302,10 @@ extern "C" {
       side->gradEta2 = side->grad2(&Node::eta2, isWet2);
       side->gradETP  = side->grad2(&Node::ETP,  isWet3);
       side->gradPr   = side->grad2(&Node::pr,   isWet1);
+// printf("gradEta1: %.15f, %.15f\n", side->gradEta1.x, side->gradEta1.y);
+// printf("gradEta2: %.15f, %.15f\n", side->gradEta2.x, side->gradEta2.y);
+// printf("gradETP: %.15f, %.15f\n", side->gradETP.x, side->gradETP.y);
+// printf("gradPr: %.15f, %.15f\n", side->gradPr.x, side->gradPr.y);
 
 
    }
@@ -3751,6 +3766,10 @@ extern "C" {
       // Second step of the Shapiro filter. Assigns to u2 the values stored in bcc.
 
       SIDE(side);
+
+// side->u2[1] = {10.0,-10.0}; 
+// side->u2[0] = {10.0,-10.0};
+// return;      
 
       if (side->isDry || !(side->isInternal())) return;
 
@@ -5891,6 +5910,8 @@ extern "C" __global__ void getElementVar(int varCode, double *var, int k = -1, i
    else if (varCode == (int)VarCode::radius && k == -1) var[idx] = elem->radius;
    else if (varCode == (int)VarCode::xlon && k == -1)   var[idx] = elem->xlon;
    else if (varCode == (int)VarCode::ylat && k == -1)   var[idx] = elem->ylat;
+   else if (varCode == (int)VarCode::ghatx && k == -1)  var[idx] = elem->ghat1.x;
+   else if (varCode == (int)VarCode::ghaty && k == -1)  var[idx] = elem->ghat1.y;
    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(elem->kb);
    else if (varCode == (int)VarCode::ssign && k == -1 && j > -1)  var[idx] = (double)(elem->ssign[j]);
    else if (i==0) printf("getElementVar: varCode = %d, k = %d not found\n", varCode, k);
@@ -5966,5 +5987,13 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::ifltype && k == -1) var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->ifltype:0.0;
    else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->isLand:0.0;
    else if (varCode == (int)VarCode::hhat && k == -1)    var[idx] = side->hhat;
+   else if (varCode == (int)VarCode::gradEta1x   && k == -1)    var[idx] = side->gradEta1.x;
+   else if (varCode == (int)VarCode::gradEta1y   && k == -1)    var[idx] = side->gradEta1.y;
+   else if (varCode == (int)VarCode::gradEta2x   && k == -1)    var[idx] = side->gradEta2.x;
+   else if (varCode == (int)VarCode::gradEta2y   && k == -1)    var[idx] = side->gradEta2.y;
+   else if (varCode == (int)VarCode::gradETPx   && k == -1)    var[idx] = side->gradETP.x;
+   else if (varCode == (int)VarCode::gradETPy   && k == -1)    var[idx] = side->gradETP.y;
+   else if (varCode == (int)VarCode::gradPrx   && k == -1)    var[idx] = side->gradPr.x;
+   else if (varCode == (int)VarCode::gradPry   && k == -1)    var[idx] = side->gradPr.y;
    else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
 }

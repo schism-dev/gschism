@@ -255,7 +255,7 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
 
     cufunc.setEssentialBC()
 
-    cufunc.printMatrix()    
+    # cufunc.printMatrix()    
 
     #  Solve the wave equation
     solveWaveEquation()
@@ -310,7 +310,8 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
 
 
     # var = monitor.getElementVar("z", 0)
-    # monitor.plotMesh()
+    monitor.plotMesh()
+
     var = monitor.getNodeVar("eta")
     eta[:, it] = var
     # cufunc.getElementVar(monitor.varCodeDict["x"], var, 0) # monitor.varCodeDict["x"]

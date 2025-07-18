@@ -4,6 +4,6 @@ mntracers = 30  # Maximum number of tracers, used only for dimensioning btrack a
 
 blockSize = 256
 
-varCodes = "x,y,z,u,v,w,U,V,nx,ny,hhat,ssign,btu,btv,bccx,bccy,uth,vth,ubc,vbc," + \
+varCodes = "x,y,z,u,v,w,U,V,nx,ny,hhat,ghatx,ghaty,ssign,btu,btv,bccx,bccy,uth,vth,ubc,vbc," + \
            "island,ifltype,elbc,eta,area,qel,depth,radius,xlon,ylat,kb,n1,n2," + \
-           "htot"
+           "htot,gradEta1x,gradEta1y,gradEta2x,gradEta2y,gradETPx,gradETPy,gradPrx,gradPry"

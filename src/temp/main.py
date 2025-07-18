@@ -52,13 +52,13 @@ import python.cuda_functions as cufunc
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
-# in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
+in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
 
 
 # test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
 # test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
-# test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
+test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux

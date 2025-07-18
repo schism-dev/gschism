@@ -133,5 +133,5 @@ def plotMesh():
 
 
     plt.show(block=False)
-    plt.pause(0.01)
+    plt.pause(0.2)
     # fig = None
