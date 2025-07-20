@@ -1579,15 +1579,19 @@ __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF00
    // Lock the mutex
    lock(&debugPlotMutex);
  
-   if (debugPlotIdx == nullptr) return;
-   if (*debugPlotIdx >= 10000) return;
+   bool ok = true;
+   if (debugPlotIdx == nullptr) ok = false;
+   if (*debugPlotIdx >= 10000) ok = false;
+   if (ok) {
+      debugPlot[(*debugPlotIdx) + 0*10000] = x1.x;
+      debugPlot[(*debugPlotIdx) + 1*10000] = x1.y;
+      debugPlot[(*debugPlotIdx) + 2*10000] = x2.x;
+      debugPlot[(*debugPlotIdx) + 3*10000] = x2.y;
+      debugPlot[(*debugPlotIdx) + 4*10000] = (double)color;
+      (*debugPlotIdx)++;
+   }
 
-   debugPlot[(*debugPlotIdx) + 0*10000] = x1.x;
-   debugPlot[(*debugPlotIdx) + 1*10000] = x1.y;
-   debugPlot[(*debugPlotIdx) + 2*10000] = x2.x;
-   debugPlot[(*debugPlotIdx) + 3*10000] = x2.y;
-   debugPlot[(*debugPlotIdx) + 4*10000] = (double)color;
-   (*debugPlotIdx)++;
+   __threadfence();               // ensure all above writes are visible
    // Unlock the mutex
    unlock(&debugPlotMutex);
 
@@ -1797,6 +1801,7 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
       
       }
       else {  // parallel segments
+         assert(false && "Parallel segments");
          // // In this case, we theck if they are colinear. if they are, we compute the intersection point as:
          // // tt2 += length(x1 - x2) * sign(dot(x1 - x2, x3 - x4)) in {0, 1}
 
@@ -4842,6 +4847,8 @@ extern "C" {
 
       SIDE(side);
 
+if (side->idx == 285) printf("XXXXXXXXX solveMomentumEquations: side idx = %d, isDry = %d\n", side->idx, side->isDry);      
+
       if (side->isDry) 
       {
          for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};         
@@ -4890,6 +4897,7 @@ extern "C" {
          const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
 
          for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
+
 
       }
       else { // 3D
@@ -5130,7 +5138,8 @@ extern "C" {
       } else { // imm = 0 or 1
          if (side->Cd() == 0.0) {
             side->u2[kb] = side->u2[kb + 1];
-         } else if (nvrt - 1 > kb + 1) { // 3D no slip bottom
+         } else if (nvrt - 1 > kb + 1) { // 3D no slip bottom   XXXXX use is3D()?
+printf("XXXXXXXXX computeFlowBcVelocities: 3D no slip bottom, side idx = %d\n", side->idx);
             side->u2[kb] = {0.0, 0.0};
          }
           
@@ -5219,6 +5228,7 @@ extern "C" {
       else if (isLand) { // if it is land boundary side
 
          if constexpr(islip == 0) { // free slip
+
             for (int k=kb; k < nvrt; k++) {
 
                const Vector2 t = side->t();
@@ -5653,8 +5663,13 @@ extern "C" {
             Vector2& n1_u2 = *reinterpret_cast<Vector2*>(&n1->u2[k]);
             Vector2& n2_u2 = *reinterpret_cast<Vector2*>(&n2->u2[k]);
 
-            if (n1->nodeBnd->segment == sidebnd->segment) n1_u2 += sidebnd->side->u2[k]/n1->nodeBnd->numSidesForAverage();
-            if (n2->nodeBnd->segment == sidebnd->segment) n2_u2 += sidebnd->side->u2[k]/n2->nodeBnd->numSidesForAverage();
+            if (n1->nodeBnd->segment == sidebnd->segment) {
+               atomicAdd(&(n1_u2.x), sidebnd->side->u2[k].x/n1->nodeBnd->numSidesForAverage());
+            }
+            if (n2->nodeBnd->segment == sidebnd->segment) {
+               atomicAdd(&(n2_u2.x), sidebnd->side->u2[k].x/n2->nodeBnd->numSidesForAverage());
+            }
+
          }
       }
 

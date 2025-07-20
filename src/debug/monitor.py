@@ -61,6 +61,8 @@ def intToRGB(color_array):
 
 def plotMesh():
     global fig, ax
+
+    res = True
     
     if fig is None: 
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -117,6 +119,14 @@ def plotMesh():
     y2 = segments_np[:, 3]      
     color = segments_np[:, 4]
 
+    # Find the segments of length larger than 100.0     
+    length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+    mask = length > 100.0
+    color[mask] = 0x0000FF
+    if mask.any():
+        res = False
+
+
     # Plot start points (x1, y1) and end points (x2, y2)
     plt.scatter(x1, y1, c=intToRGB(color), s=16)
     plt.scatter(x2, y2, c=intToRGB(color), s=16)
@@ -135,3 +145,5 @@ def plotMesh():
     plt.show(block=False)
     plt.pause(0.2)
     # fig = None
+
+    return res
