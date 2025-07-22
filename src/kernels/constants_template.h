@@ -18,6 +18,9 @@ constexpr double hvis_coef0 = __HVIS_COEF0__;// Horizontal viscosity coefficient
 constexpr int ishapiro = __ISHAPIRO__;       // Option to include Shapiro filter
 constexpr double shapiro0 = __SHAPIRO0__;    // Shapiro filter parameter
 constexpr int niter_shap = __NITER_SHAP__;   // Number of iterations for Shapiro filter
+constexpr int ncor = __NCOR__;               // Option to include Coriolis force
+constexpr double coricoef = __CORICOEF__;    // Coriolis force coefficient
+constexpr double sfea0 = __SFEA0__;          // Reference latitude for Coriolis force
 
 
 constexpr int nchi = __NCHI__;  // Option to compute drag coefficients chi and chi2

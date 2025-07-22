@@ -73,7 +73,10 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         '__ISHAPIRO__': (namelist.opt.ishapiro, 'namelist.opt'),
         '__SHAPIRO0__': (namelist.opt.shapiro0, 'namelist.opt'),
         '__NITER_SHAP__': (namelist.opt.niter_shap, 'namelist.opt'),
-        
+        '__NCOR__': (namelist.opt.ncor, 'namelist.opt'),
+        '__CORICOEF__': (namelist.opt.coricoef, 'namelist.opt'),
+        '__SFEA0__': (namelist.opt.sfea0, 'namelist.opt'),
+
         # From grid parameters
         '__IVCOR__': (ivcor, 'grid'),
         '__NVRT__': (nvrt, 'grid'),

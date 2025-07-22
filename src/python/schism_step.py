@@ -1,5 +1,6 @@
 import python.cuda_functions as cufunc
 import iop.readSflux as readSflux
+import iop.writeOutput as writeOutput
 import cupy as cp
 import debug.monitor as monitor
 # from cupy import cudaMemcpyFromSymbol
@@ -196,8 +197,10 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
     # Bottom drag coefficients for nchi=-1 or 1; Cd and Cdp for nchi=0 already read in
     ####cufunc.computeBottomDrag()                  # Lines 1801-1961
 
+
     # bypass solver for transport only XXXX
     # I haven't included this in the code yet
+
 
     # bottom drag and vegetation drag
     cufunc.computeBottomDragVegetation()      # Lines 2353-2662
@@ -255,7 +258,9 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
 
     cufunc.setEssentialBC()
 
+
     # cufunc.printMatrix()    
+
 
     #  Solve the wave equation
     solveWaveEquation()
@@ -283,7 +288,7 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
         cufunc.shapiroFilter2()
 
 
-    # cufunc.updateBedDeformation()  // CHECK IF updateZCoordData MUST BE CALLED HERE
+    # cufunc.updateBedDeformation()  // XXXX CHECK IF updateZCoordData MUST BE CALLED HERE
 
     cufunc.computeVerticalVelocity()
 
@@ -322,12 +327,13 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
 
 
     # Update bed deformation and depth info  lines 8156-
-
  
 
     # Optional calculations
 
+
     # I/O
+    writeOutput.writeOutput(it)   
 
 
 

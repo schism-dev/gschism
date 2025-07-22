@@ -2,6 +2,9 @@ import f90nml
 from os import path
 from types import SimpleNamespace
 from iop.logger import log, error
+from math import sin, pi
+
+omega_e = 7.292e-5
 
 def readNamelist(pathNamelist):
     """
@@ -286,16 +289,24 @@ def readParam(pathNamelist):
             param_dict['OPT'][key] = default_value
 
 
-    # Check core parameters
+
     core = param_dict['CORE']
+    opt  = param_dict['OPT']
+
+
+    if opt['ncor'] == -1:
+        opt['coricoef'] = 2*omega_e*sin(opt['rlatitude']/180*pi)     
+
+
     # Check model type parameters
     if core['ibc'] not in {0, 1}:
         error('Unknown ibcc')
     if core['ibtp'] not in {0, 1}:
         error('Unknown ibtp')
-    
 
-       # Print model configuration
+
+
+    # Print model configuration
     if core['ibc'] == 0:
         log('You are using baroclinic model')
     else:
@@ -317,6 +328,20 @@ def readParam(pathNamelist):
     # Validate vegetation parameters
     if core['nbins_veg_vert'] <= 0:
         error('INIT: nbins_veg_vert<=0')
+
+
+    # More validations
+    if opt['ncor'] not in {-1, 0, 1}:
+        error(f'Invalid ncor = {opt["ncor"]}, not in [-1, 0, 1]')
+
+    if opt['nchi'] == 1 and opt['dzb_min'] <= 0:
+        error(f'Invalid dzb_min = {opt["dzb_min"]} <= 0') 
+
+    if opt['nchi'] == -1 and opt['hmin_man'] <= 0:
+        error(f'Invalid hmin_man = {opt["hmin_man"]} <= 0')
+
+    if opt['ics'] not in {1, 2}:
+        error(f'Invalid ics = {opt["ics"]}, not in [1, 2]')
 
     # Convert to ParamConfig object
     return ParamConfig(param_dict)

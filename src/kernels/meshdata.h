@@ -795,7 +795,7 @@ struct Side {
    Node *n1, *n2;
    Element *elems[2];     // Elements that share this side XXX (why not e1,e2?)
 
-   double len;         // Length of the side. Used to be called distj; but I think this name is less clear now.
+   double len;            // Length of the side. Used to be called distj; but I think this name is less clear now.
    Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
 
@@ -805,7 +805,7 @@ struct Side {
                           // this is nullptr
    
    int kb;                // Bottom index of the side
-   bool isDry;             // True if the side is dry
+   bool isDry;            // True if the side is dry
  
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
@@ -846,6 +846,8 @@ struct Side {
 
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
+   __inline__ __device__ double lon(void) const;
+   __inline__ __device__ double lat(void) const;
    __inline__ __device__ Point2 p_t(double t) const;
 
    __inline__ __device__ Point3 center3D(int k) const { return {center.x, center.y, zc[k]}; }
@@ -1291,7 +1293,8 @@ struct Mesh {
    }
 
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
-                   double *node_coords, double *wind_rotate_angle, 
+                   double *node_coords, double *node_coords_ll, bool use_ll,
+                   double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
                    int *nond, int *nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
@@ -1299,6 +1302,7 @@ struct Mesh {
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                    int *localNodePart,     int *localElemPart,     int *localSidePart,
+                   double *drag, double *roughness,
                    double *emo, double *efa, 
                    double *umo, double *ufa, 
                    double *vmo, double *vfa);

@@ -55,11 +55,6 @@ in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
 
 
-# test_dir = '/home/jo.gonzalez/src/gschism_old/test/schism_verification_tests/Test_CORIE'
-# test_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
-test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
-test_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
-
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
 
@@ -170,25 +165,22 @@ if __name__ == "__main__":
     from iop.readTides import read_bctides
 
 
-    hgrid_file = os.path.join(in_dir, 'hgrid.gr3')
-    vgrid_file = os.path.join(in_dir, 'vgrid.in')
+    hgrid_file    = os.path.join(in_dir, 'hgrid.gr3')
+    hgrid_ll_file = os.path.join(in_dir, 'hgrid.ll')
+    vgrid_file    = os.path.join(in_dir, 'vgrid.in')
 
     
-    print(hgrid_file, vgrid_file)
     numPartitions = 1
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
-        ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
-            module.readHGrid(hgrid_file, numPartitions)
+        nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
+            module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions)
     
 
     nope, mnond  = iond.shape
     nland, mnlnd = ilnd.shape
-    bctides = read_bctides(test_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
+    bctides = read_bctides(in_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
 
 
-    
-    print(nodeCoords.shape)
-    print(nodeNeighNodes)
 
 
     [ivcor, nvrt, kz, nsiglev], ztot, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
@@ -198,6 +190,8 @@ if __name__ == "__main__":
         wind_rotate_angle = module.readWindRotationAngle(os.path.join(in_dir, 'windrot_geo2proj.gr3'), nodeCoords.shape[1])
     else:
         wind_rotate_angle = np.zeros(nodeCoords.shape[1])
+
+
 
     # Before sending the mesh to the GPU, we need to do some preprocessing, including computing the 
     # interpolation weights.
@@ -218,9 +212,18 @@ if __name__ == "__main__":
 
     
 
-    namelist = readNamelist(test_dir)
+    namelist = readNamelist(in_dir)
 
 
+    # Read in bottom friction coefficients 
+    nchi = namelist.opt.nchi
+    drag      = np.zeros(nodeCoords.shape[1])
+    roughness = np.zeros(nodeCoords.shape[1])
+    if nchi == 0: # read in drag coefficients for 3D model
+        drag[:] = module.readHGridData(os.path.join(in_dir, 'drag.gr3'), nodeCoords.shape[1], elnode.shape[1])
+
+    else:
+        roughness[:] = module.readHGridData(os.path.join(in_dir, 'rough.gr3'), nodeCoords.shape[1], elnode.shape[1])
 
     processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev, 
                      nope, mnond, nland, mnlnd,
@@ -251,6 +254,7 @@ if __name__ == "__main__":
     nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32, order='F')
     nodeNeighElems       = cp.array(nodeNeighElems[0], dtype=cp.int32, order='F')
     nodeCoords           = cp.array(nodeCoords,        dtype=cp.float64, order='F')
+    nodeCoords_ll        = cp.array(nodeCoords_ll,     dtype=cp.float64, order='F')
     wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
 
     ztot                 = cp.array(ztot,              dtype=cp.float64, order='F')
@@ -259,7 +263,8 @@ if __name__ == "__main__":
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
     dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
 
-
+    drag                 = cp.array(drag,              dtype=cp.float64, order='F')
+    roughness            = cp.array(roughness,         dtype=cp.float64, order='F')
 
 
     if False:   
@@ -597,6 +602,12 @@ if __name__ == "__main__":
             elsidePart = elside[:, maskElemsPart].copy(order='F')
             nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
             windRotateAnglePart = wind_rotate_angle[maskNodesPart].copy(order='F')
+            nodeCoords_llPart = cp.zeros((0, 0), dtype=cp.float64, order='F')
+            if nodeCoords_ll.shape[0] > 0:
+                nodeCoords_llPart  = nodeCoords_ll[:, maskNodesPart].copy(order='F')
+                use_ll = True
+            else:
+                use_ll = False
 
             numSegments = ilnd.shape[0]
 
@@ -623,7 +634,8 @@ if __name__ == "__main__":
         with cp.cuda.Device(ipart):
             # Adds additional information to the mesh object. This function deals with the actual data
             # of the mesh, including the nodes, elements, sides, and their neighbors.
-            cufunc.populateMesh(i34Part, elnodePart, elsidePart, nodeCoordsPart, windRotateAnglePart, 
+            cufunc.populateMesh(i34Part, elnodePart, elsidePart, nodeCoordsPart, nodeCoords_llPart, use_ll,
+                                windRotateAnglePart, 
                                 isdel, isidenode, isbnd,
                                 nond, nlnd, iond, ilnd, 
                                 nodeNeighNodesStart, nodeNeighNodes,
@@ -631,6 +643,7 @@ if __name__ == "__main__":
                                 globalNodeIndices, globalElemIndices, globalSideIndices,
                                 localNodeIndices, localElemIndices, localSideIndices,
                                 localNodePart, localElemPart, localSidePart,
+                                drag, roughness,
                                 bctides.emo, bctides.efa, 
                                 bctides.umo, bctides.ufa,
                                 bctides.vmo, bctides.vfa)
@@ -642,10 +655,10 @@ if __name__ == "__main__":
              'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
     cufunc.initializeCudaFunctions(sizes)
 
-    schism_init(namelist.core, namelist.opt)
+    ntime, nrec = schism_init(namelist.core, namelist.opt)
 
-    eta = np.zeros([numNodes, 3*480], dtype=cp.float64)
-    for t in range(0, 1333, 1):
+    eta = np.zeros([numNodes, ntime], dtype=cp.float64)
+    for t in range(0, ntime, 1):
         print(f">>>>>>>>>>>>>Step {t}")
         schism_step(t, namelist, bctides, sflux, eta)
 

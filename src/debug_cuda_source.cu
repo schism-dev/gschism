@@ -19,6 +19,9 @@ constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
 constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
+constexpr int ncor = 0;               // Option to include Coriolis force
+constexpr double coricoef = 0;    // Coriolis force coefficient
+constexpr double sfea0 = 45;          // Reference latitude for Coriolis force
 
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
@@ -885,7 +888,7 @@ struct Side {
    Node *n1, *n2;
    Element *elems[2];     // Elements that share this side XXX (why not e1,e2?)
 
-   double len;         // Length of the side. Used to be called distj; but I think this name is less clear now.
+   double len;            // Length of the side. Used to be called distj; but I think this name is less clear now.
    Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
 
@@ -895,7 +898,7 @@ struct Side {
                           // this is nullptr
    
    int kb;                // Bottom index of the side
-   bool isDry;             // True if the side is dry
+   bool isDry;            // True if the side is dry
  
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
@@ -936,6 +939,8 @@ struct Side {
 
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
+   __inline__ __device__ double lon(void) const;
+   __inline__ __device__ double lat(void) const;
    __inline__ __device__ Point2 p_t(double t) const;
 
    __inline__ __device__ Point3 center3D(int k) const { return {center.x, center.y, zc[k]}; }
@@ -1381,7 +1386,8 @@ struct Mesh {
    }
 
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
-                   double *node_coords, double *wind_rotate_angle, 
+                   double *node_coords, double *node_coords_ll, bool use_ll,
+                   double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
                    int *nond, int *nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
@@ -1389,6 +1395,7 @@ struct Mesh {
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                    int *localNodePart,     int *localElemPart,     int *localSidePart,
+                   double *drag, double *roughness,
                    double *emo, double *efa, 
                    double *umo, double *ufa, 
                    double *vmo, double *vfa);
@@ -2315,6 +2322,8 @@ __inline__ __device__ double  SideBoundary::nuth(int k) const {
 
 __inline__ __device__ double  Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
 __inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
+__inline__ __device__ double  Side::lon(void) const { return 0.5*(n1->lon + n2->lon); }
+__inline__ __device__ double  Side::lat(void) const { return 0.5*(n1->lat + n2->lat); }
 __inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
 __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition)(const Element*)) const {
    Vector2 grad = {0.0, 0.0};
@@ -2354,7 +2363,7 @@ __inline__ __device__ double  Side::veg_alpha_vert_mean(void) const { return 0.5
 __inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D[k] + n2->veg_alpha3D[k]); }
 
 
-__inline__ __device__ double  Side::Cd(void)      const { if constexpr(nchi != 0) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
+__inline__ __device__ double  Side::Cd(void)      const { if (!isDry) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
 
 __inline__ __device__ Vector2 Side::tau(void)    const { return 0.5*(n1->tau + n2->tau); }
 
@@ -2714,7 +2723,8 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
 }
 
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
-                double *node_coords, double *wind_rotate_angle, 
+                double *node_coords, double *node_coords_ll, bool use_ll,
+                double *wind_rotate_angle, 
                 int *isdel, int *isidenode, int *isbnd,
                 int *nond, int *nlnd, int *iond, int *ilnd, 
                 int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
@@ -2722,6 +2732,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                 int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                 int *localNodePart,     int *localElemPart,     int *localSidePart,
+                double *drag, double *roughness,
                 double *emo, double *efa, 
                 double *umo, double *ufa, 
                 double *vmo, double *vfa) {
@@ -2729,7 +2740,12 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
    printf("Populating mesh for partition %d\n", partNum);
 
    // Horizontal grid
-   printf("Processing %d nodes\n", np);    
+   printf("Processing %d nodes\n", np);   
+
+   
+   // Parameters used to compute a linear approximation of the Coriolis coefficient around the reference latitude sfea0
+   const double fc   = 2.0*omega_e*sin(sfea0);
+   const double beta = 2.0*omega_e*cos(sfea0);
 
 
    int idxNodeBoundary = 0;  
@@ -2788,6 +2804,9 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
       node.numSides = 0;
 
+      node.Cd = drag[i];
+      node.rough = roughness[i];
+      for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
 
       // Links the node to the boundary information
       if (isbnd[i] >= 0) {
@@ -2810,7 +2829,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
             node.nodeBnd->segment->carea = nan("1");
 
          }
-//          else {
+//          else {  XXXXXX
 //             node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
 // printf("EEEEEPP isbnd[i] = %d, node.nodeBnd->segment = %p\n", isbnd[i], node.nodeBnd->segment);            
 //          }
@@ -2894,7 +2913,6 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
             side.sideBnd->side = &side;
             idxSideBoundary++;
 
-            printf("Here1.5: %d, isbs = %d, isLand = %d, side.sideBnd = %p\n", i, isbs, isLand, side.sideBnd);
          }
          
 
@@ -2966,6 +2984,24 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
       // Compute the length of the side
       const Vector2 vLen = side.n2->p2() - side.n1->p2();
       side.len = sqrt(dot(vLen, vLen));
+
+
+      // Compute the Coriolis coefficient
+
+      if constexpr(ncor == -1 || ncor == 0) {
+         side.coriolis = coricoef;
+      }
+      else {
+         const double sphi = side.lat();  // Latitude at the center of the side
+
+         if constexpr(ics == 1) {
+            side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
+         }
+         else {
+            side.coriolis = 2.0*omega_e*sin(sphi);
+         }
+      }
+
 
    }
 
@@ -3065,7 +3101,6 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
          NodeBoundary *nodeBnd = &localNodeBoundaryMem[idx];
 
          nodeBnd->isEssentialBC = true;
-////nodeBnd->iettype = 3; // XXXXXXXXX
          nodeBnd->elbc = 0.0;
 
          for (int jfr = 0; jfr < nbfr; jfr++) {
@@ -4265,13 +4300,13 @@ extern "C" {
       //--------------------------------
 
       // nchi = {-1, 0, 1} is the type of bottom drag.
-      if (nchi==1) {
+      if constexpr(nchi == 1) {
 
          bool ltmp = false; // for WBL iteration
 
          // Cdmax=-1 !max. Cd at node for this process (info only)
          // Drag at nodes
-   /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)
+   /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
    // !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
         
          const double rough = node->rough;
@@ -4304,6 +4339,7 @@ extern "C" {
       {
          const double mag_u = length(toVector2(node->u2[kb + 1]));
          node->tau_bot = node->rho[kb + 1]*node->Cd*mag_u*toVector2(node->u2[kb + 1]); // units: kg/m/s^2 (Pa)
+
          // XXX In the original code there is an additional component of tau_bot, used in icm_sfm.F90 with this comment:
          // !sediment erosion: this part needs more documentation
       }
@@ -4424,7 +4460,7 @@ extern "C" {
       // Velocity magnitude at the bottom level
       // XXXX Check if we have added -dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1) to u2.
       const double vmag1 = length(side->btu[kb + 1]); //BACKTRACKED VELOCITY
-      side->chi2 = side->Cd()*vmag1;
+      side->chi2 = 10*side->Cd()*vmag1;
       side->chi  = side->chi2;
       if constexpr(iveg != 0) {
          const Node *n1 = side->n1;
@@ -4432,6 +4468,7 @@ extern "C" {
          const double veg_alpha_bot = 0.5*(n1->veg_alpha3D[n1->kb] + n2->veg_alpha3D[n2->kb]);
          side->chi = side->chi/(1.0 + veg_alpha_bot*vmag1*dt);
       }
+// printf("****&&&** side->chi2 = %.16f, side->chi = %.16f, side->Cd = %.16f, vmag1 = %.16f\n", side->chi2, side->chi, side->Cd(), vmag1);      
 
       // Calc consts in SAV model; make sure veg_[c2,beta]=0 at 2D, dry side, and emergent side
 
@@ -4482,6 +4519,7 @@ extern "C" {
 
          assert(fricH > 0.0 && "COMPUTE CONTINUITY EQUATION: Impossible dry 53");
 
+printf("****&&&** side->hhat = %.16f, htot = %.16f, fricH = %.16f\n", side->hhat, htot, fricH);         
          side->hhat = htot*htot/fricH; 
 
       } else { // 3D
@@ -7143,7 +7181,8 @@ __global__ void createMesh(int partNum,
 extern "C"
                                  
   __global__ void populateMesh(int *i34, int *elnode, int *elside,
-                   double *node_coords, double *wind_rotate_angle, 
+                   double *node_coords, double *node_coords_ll, bool use_ll,
+                   double *wind_rotate_angle, 
                    int *isdel, int *isidenode, int *isbnd,
                    int *nond, int *nlnd, int *iond, int *ilnd, 
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
@@ -7151,11 +7190,12 @@ extern "C"
                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                    int *localNodeIndices, int *localElemIndices, int *localSideIndices,
                    int *localNodePart,    int *localElemPart,    int *localSidePart,
+                   double *drag, double *roughness,
                    double *emo, double *efa, 
                    double *umo, double *ufa, 
                    double *vmo, double *vfa) {
 
-    mesh->populateMesh(i34, elnode, elside, node_coords, wind_rotate_angle, 
+    mesh->populateMesh(i34, elnode, elside, node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
                        isdel, isidenode, isbnd,
                        nond, nlnd, iond, ilnd, 
                        nodeNeighNodesStart, nodeNeighNodesIndices,
@@ -7163,6 +7203,7 @@ extern "C"
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
+                       drag, roughness,
                        emo, efa, umo, ufa, vmo, vfa);
   }
 

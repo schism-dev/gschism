@@ -745,6 +745,7 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>,    // elnode
            py::array_t<int32_t>,    // elside
            py::array_t<double>,     // nodeCoords
+           py::array_t<double>,     // nodeCoords_ll
            py::array_t<int32_t>,    // ic3
            py::array_t<int32_t>,    // isdel
            py::array_t<int32_t>,    // isidenode
@@ -756,7 +757,7 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::tuple,               // nodeNeighElems
            py::tuple                // nodeNeighNodes
            >
-readHGrid(const std::string& filename, idx_t nPartitions) {
+readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPartitions) {
 
     
     // Read the header information
@@ -767,9 +768,6 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
     // Read mesh name
     std::string meshName;
     std::getline(file, meshName);
-
-    printf("bbb %s\n", filename.c_str());
-    printf("aaaaa %s\n", meshName.c_str());
 
     // Read element and node counts
     int nElements, nNodes, nSides;
@@ -1053,9 +1051,49 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
 
     partitionNodesAndSides(nElements, nNodes, nSides, elnode, i34, ic3, isdel, partElements, nodeNeighElems, partNodes, partSides);
 
-    // printf("i34.size() = %d, partElements.size() = %d, partNodes.size() = %d, partSides.size() = %d\n", i34.size(), partElements.size(), partNodes.size(), partSides.size());
-    // printf("elnode.size() = %d, elside.size() = %d, nodeCoords.size() = %d, ic3.size() = %d,  isdel.size() = %d\n", elnode.rows(), elside.rows(), nodes.rows(), ic3.rows(), isdel.rows());
+    // Read the longitude and latitude of the nodes if the file is present
+    printFormatted(ansi::green("Reading longitude and latitude from %s"), filename_ll.c_str());
+    Array2D<double> nodeCoords_ll(0, 0);
+    if (filename_ll != "") {
+        
+        std::ifstream file_ll(filename_ll);
+        if (file_ll.is_open()) {
+            nodeCoords_ll.resize(2, nNodes);  // [lon, lat]
+            std::string line;
 
+            std::getline(file_ll, line); // Skip the first line
+
+            // Read the number of nodes
+            std::getline(file_ll, line); // 
+            std::istringstream iss(line);
+            int tmp_nNodes, tmp_nElements;
+            iss >> tmp_nElements >> tmp_nNodes;
+
+            if (tmp_nNodes != nNodes) {
+                throw std::runtime_error("Number of nodes in the .gr3 file does not match the number of nodes in the .gr3 file");
+            }
+
+            if (tmp_nElements != nElements) {
+                throw std::runtime_error("Number of elements in the .gr3 file does not match the number of elements in the .gr3 file");
+            }
+
+            // Read the longitude and latitude of the nodes
+            double lon, lat, dummyZ;
+            int dummyIdx;
+            for (int i = 0; i < nNodes; i++) {
+                std::getline(file_ll, line);
+                std::istringstream iss(line);
+                iss >> dummyIdx >> lon >> lat >> dummyZ;
+
+                nodeCoords_ll(0, i) = lon;
+                nodeCoords_ll(1, i) = lat;
+            }
+            printFormatted(ansi::green("Read longitude and latitude"));
+
+
+        }
+
+    }
    
     return std::make_tuple(
         toPyArray(i34),
@@ -1065,6 +1103,7 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
         toPyArray(elnode),
         toPyArray(elside),
         toPyArray(nodeCoords),
+        toPyArray(nodeCoords_ll),
         toPyArray(ic3),
         toPyArray(isdel),
         toPyArray(isidenode),
@@ -1077,6 +1116,50 @@ readHGrid(const std::string& filename, idx_t nPartitions) {
         toPyArray(nodeNeighNodes)
 
     );  
+}
+
+
+py::array_t<double> readHGridData(const std::string& filename, int nNodes, int nElements) {
+/** Reads data from a horizontal grid file of format .gr3 
+ * @param filename: the name of the .gr3 file
+ * @return: a numpy array of shape (nNodes) containing the data */
+    
+    // Read the header information
+    std::ifstream file(filename);
+    if (!file.is_open()) throw std::runtime_error("Could not open file " + filename);
+
+    printFormatted(ansi::green("Reading data from %s"), filename.c_str());
+    std::vector<double> data(nNodes);
+    std::string line;
+
+    std::getline(file, line); // Skip the first line
+
+    // Read the number of nodes and elements
+    std::getline(file, line); 
+    std::istringstream iss(line);
+    int tmp_nNodes, tmp_nElements;
+    iss >> tmp_nElements >> tmp_nNodes;
+
+    if (tmp_nNodes != nNodes || tmp_nElements != nElements) {
+        throw std::runtime_error("Number of nodes or elements in the .gr3 file does not match the number of nodes or elements in the .gr3 file");
+    }
+
+
+    // Read the data
+    double dataVal, dummyX, dummyY;
+    int dummyIdx;
+    for (int i = 0; i < nNodes; i++) {
+        std::getline(file, line);
+        std::istringstream iss(line);
+        iss >> dummyIdx >> dummyX >> dummyY >> dataVal;
+
+        data[i] = dataVal;
+    }
+    printFormatted(ansi::green("Read longitude and latitude"));
+
+
+    return toPyArray(data);
+
 }
 
 
@@ -1337,6 +1420,7 @@ PYBIND11_MODULE(test, m) {
     });
 
     m.def("readHGrid", &readHGrid, "Read a horizontal grid file");
-    m.def("readVGrid", &readVGrid, "Read a vertical grid file");    
+    m.def("readVGrid", &readVGrid, "Read a vertical grid file");  
+    m.def("readHGridData", &readHGridData, "Read data from a horizontal grid file");
     m.def("readWindRotationAngle", &readWindRotationAngle, "Read the wind rotation angle file");
 }

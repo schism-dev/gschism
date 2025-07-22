@@ -56,6 +56,11 @@ def schism_init(core, opt):
     #  uthnd=-99.d0; vthnd=-99.d0; eta_mean=-99.d0; !uth=-99.d0; vth=-99.d0; !flags
 
 
+    # Compute total number of time steps 
+    ntime = cp.round(core.rnday*86400.0/core.dt)
+    nrec = min(ntime, core.ihfskip)/core.nspool
+
+
     # Calculate the index ranges for each tracer module
     irange_tr = cp.zeros((2, natrm), dtype=int)
     irange_tr[0, 1:] = cp.cumsum(ntrs[:-1])    
@@ -88,6 +93,8 @@ def schism_init(core, opt):
         print("inunfl = 1 not implemented")
         sys.exit()
         # levels1(0, 0)
+
+    return int(ntime.item()), int(nrec.item())
 
 
     
