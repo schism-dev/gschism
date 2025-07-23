@@ -1,6 +1,6 @@
 from python.schism_consts import *
 
-def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsiglev: int,
+def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsiglev: int,
                      nope: int, mnond: int, nland: int, mnlnd: int,
                      templatePath="src/kernels/constants_template.h", 
                      outputPath="src/kernels/constants.h"):
@@ -17,7 +17,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         Vertical coordinate type
     nvrt : int
         Number of vertical levels
-    kz : int
+    nzlev : int
         Number of z-levels
     nsiglev : int
         Number of sigma levels
@@ -80,7 +80,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, kz: int, nsigle
         # From grid parameters
         '__IVCOR__': (ivcor, 'grid'),
         '__NVRT__': (nvrt, 'grid'),
-        '__NZLEV__': (kz, 'grid'),  # kz is number of z-levels
+        '__NZLEV__': (nzlev, 'grid'), 
         '__NSIGLEV__': (nsiglev, 'grid'),
         '__NOPEN_BOUNDARY_SEGMENTS__': (nope, 'grid'),
         '__MAX_NODES_PER_OPEN_BOUNDARY_SEGMENT__': (mnond, 'grid'),

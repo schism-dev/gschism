@@ -41,8 +41,6 @@ def solveWaveEquation(maxIter=10000, tol=1e-16):
         scalars[2] = 0.0 # pAp
         cp.cuda.Device().synchronize()
         cufunc.computeMatrixProductAndDotProducts()
-        # if cp.cuda.runtime.getLastError() != 0:
-        #     raise ValueError("Error in computeMatrixProductAndDotProducts")
 
         # Sync to make sure pAp reduction is finished
         cp.cuda.Device().synchronize()
@@ -51,8 +49,6 @@ def solveWaveEquation(maxIter=10000, tol=1e-16):
         scalars[0] = scalars[1] # rMr_old = rMr_new
         scalars[1] = 0.0 # rMr_new
         cufunc.updateSolutionAndDotProducts()
-        # if cp.cuda.get_last_error() != 0:
-        #     raise ValueError("Error in updateSolutionAndDotProducts")
 
         # Sync to make sure rr reduction is finished
         cp.cuda.Device().synchronize()
@@ -60,7 +56,6 @@ def solveWaveEquation(maxIter=10000, tol=1e-16):
         # fetch rr_new = <r, r> from the device
         rMr_new = scalars[1].item()
         rMr_old = scalars[0].item()
-
 
         if rMr_new <= tol*tol * rMr_0:
             break
@@ -70,7 +65,6 @@ def solveWaveEquation(maxIter=10000, tol=1e-16):
         cufunc.updateSearchDirection()
 
         iterCount += 1
-
 
         
 

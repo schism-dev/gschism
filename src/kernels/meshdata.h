@@ -1210,7 +1210,7 @@ struct Mesh {
    // Sigma levels
    double h_s; 
    double h_c; 
-   int    kz;
+
    double theta_b;
    double theta_f, sinh_theta_f;
    double *sigma_lcl;
@@ -1254,7 +1254,7 @@ struct Mesh {
 
    __device__ Mesh(int partNum,
                    int npgb, int negb, int nsgb, 
-                   int np, int ne, int ns, int nvrt, int kz,
+                   int np, int ne, int ns,
                    int max_np, int max_ne, int max_ns, int nseg,
                    Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
@@ -1267,7 +1267,7 @@ struct Mesh {
                    double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
                    double *cs, double *dcs
                    ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
-                       np(np), ne(ne), ns(ns), kz(kz),
+                       np(np), ne(ne), ns(ns),
                        max_np(max_np), max_ne(max_ne), max_ns(max_ns),
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
@@ -1285,7 +1285,7 @@ struct Mesh {
       printf("npgb = %d, negb = %d, nsgb = %d, nseg = %d\n", npgb, negb, nsgb, nseg);
       printf("np = %d, ne = %d, ns = %d\n", np, ne, ns);
       printf("max_np = %d, max_ne = %d, max_ns = %d\n", max_np, max_ne, max_ns);
-      printf("nvrt = %d, kz = %d\n", nvrt, kz);
+ 
       printf("elemsPtr = %p, elems = %p\n", *elems, elemsMem);
       
       sinh_theta_f = sinh(theta_f);

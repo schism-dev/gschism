@@ -53,6 +53,7 @@ import python.cuda_functions as cufunc
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
+in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN01c'
 
 
 # import src.io.readSflux as readSflux
@@ -183,7 +184,7 @@ if __name__ == "__main__":
 
 
 
-    [ivcor, nvrt, kz, nsiglev], ztot, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
+    [ivcor, nvrt, nzlev, nsiglev], ztot, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
         module.readVGrid(vgrid_file, nodeCoords.shape[1])
 
     if (nws == 2):
@@ -222,10 +223,16 @@ if __name__ == "__main__":
     if nchi == 0: # read in drag coefficients for 3D model
         drag[:] = module.readHGridData(os.path.join(in_dir, 'drag.gr3'), nodeCoords.shape[1], elnode.shape[1])
 
-    else:
+    elif nchi == 1:
         roughness[:] = module.readHGridData(os.path.join(in_dir, 'rough.gr3'), nodeCoords.shape[1], elnode.shape[1])
+        raise Exception("nchi = 1 not tested")
 
-    processConstants(namelist, bctides, ivcor, nvrt, kz, nsiglev, 
+    else:
+        raise Exception(f"nchi != {0,1} not implemented")
+
+        
+    # Generate the constants.h file that will be compiled with the CUDA kernels
+    processConstants(namelist, bctides, ivcor, nvrt, nzlev, nsiglev, 
                      nope, mnond, nland, mnlnd,
                      templatePath="kernels/constants_template.h", 
                      outputPath="kernels/constants.h")
@@ -615,7 +622,7 @@ if __name__ == "__main__":
             # which memory is being used by the mesh, both locally and in other GPUs.
             cufunc.createMesh(ipart, numNodes, numElements, numSides, numSegments,
                               numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart],  
-                              max(numPartNodes), max(numPartElements), max(numPartSides), nvrt, kz,
+                              max(numPartNodes), max(numPartElements), max(numPartSides),
                               nodesPtr, elemsPtr, sidesPtr,
                               nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
                               partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 

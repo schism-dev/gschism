@@ -411,7 +411,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                 printFormatted(ansi::red("n2==-1"));
             }   
 
-printFormatted(ansi::green("ic3(j,ie) = %d"), ic3(j,ie));
+
             if (ic3(j,ie) == -1 || (ic3(j,ie) > -1 && ie < ic3(j,ie)))
             {
                 isdel(0,jsj)=ie;
@@ -684,7 +684,6 @@ void partitionNodesAndSides(int nElements, int nNodes, int nSides,
 
         int le = rand() % 2;
         if (isdel(le, is) == -1) le = 1 - le;
-        printf("XXXXX isdel(le, is) = %d\n", isdel(le, is));
         partSides[is] = partitions[isdel(le, is)];
     }
 
@@ -1052,9 +1051,10 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     partitionNodesAndSides(nElements, nNodes, nSides, elnode, i34, ic3, isdel, partElements, nodeNeighElems, partNodes, partSides);
 
     // Read the longitude and latitude of the nodes if the file is present
-    printFormatted(ansi::green("Reading longitude and latitude from %s"), filename_ll.c_str());
     Array2D<double> nodeCoords_ll(0, 0);
     if (filename_ll != "") {
+        
+        printFormatted(ansi::green("Reading longitude and latitude from %s"), filename_ll.c_str());
         
         std::ifstream file_ll(filename_ll);
         if (file_ll.is_open()) {
@@ -1088,10 +1088,12 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
                 nodeCoords_ll(0, i) = lon;
                 nodeCoords_ll(1, i) = lat;
             }
-            printFormatted(ansi::green("Read longitude and latitude"));
+
 
 
         }
+
+        printFormatted(ansi::green("Read longitude and latitude"));
 
     }
    
@@ -1195,7 +1197,9 @@ readVGrid(const std::string& filename, int nNodes) {
     // Read vertical coordinate type and number of levels
     int ivcor, nvrt;
     std::string dummy;
-    file >> ivcor >> dummy;
+    file >> ivcor;
+    std::getline(file, dummy);
+    printFormatted(ansi::yellow("ivcor = %d, dummy = %s"), ivcor, dummy.c_str());
 
     printFormatted(ansi::yellow("Reading vertical grid file: %s"), filename.c_str());
 
@@ -1206,7 +1210,8 @@ readVGrid(const std::string& filename, int nNodes) {
     if (ivcor == 1) {
         // Localized sigma coordinates
 
-        file >> nvrt >> dummy;
+        file >> nvrt;
+        std::getline(file, dummy);
     
         Array2D<double> sigma_lcl(nvrt, nNodes);
         std::vector<double> ztot(nNodes);
@@ -1248,20 +1253,21 @@ readVGrid(const std::string& filename, int nNodes) {
         double h_s, h_c, theta_b, theta_f;
         int kz;
 
-        file >> nvrt >> kz >> h_s >> dummy;  
-printFormatted(ansi::red("nvrt = %d, kz = %d, h_s = %f"), nvrt, kz, h_s);              
+        file >> nvrt >> kz >> h_s;  
+        std::getline(file, dummy);
 
-        std::getline(file,  dummy);  
-        
+        // Since kz is a number of levels and not an index, we'll call it nz
+        int nz = kz;
+       
         std::getline(file,  dummy);  // Skip "Z levels" comment
 
-        int nsiglev = nvrt - kz + 1;
+        int nsiglev = nvrt - nz + 1;
 
         if (nvrt < 2) {
             throw std::runtime_error("nvrt < 2");
         }
-        if (kz < 1) {
-            throw std::runtime_error("Invalid kz: " + std::to_string(kz));
+        if (nz < 0) {
+            throw std::runtime_error("Invalid nz: " + std::to_string(nz));
         }
         if (h_s < 6.0) {
             throw std::runtime_error("h_s needs to be larger: " + std::to_string(h_s));
@@ -1272,38 +1278,37 @@ printFormatted(ansi::red("nvrt = %d, kz = %d, h_s = %f"), nvrt, kz, h_s);
         std::vector<double> cs(nvrt);
         std::vector<double> dcs(nvrt);
         std::vector<double> ztot(nvrt);
-printFormatted(ansi::red("kz = %d"), kz);        
+    
         // Read the z levels
-        for (int k = 0; k < kz; k++) {
+        for (int k = 0; k < nz - 1 ; k++) {
             int level_number;
-            double ztmp;
-            file >> level_number >> ztmp;
-            ztot[k] = -ztmp;
-printFormatted(ansi::red("level_number = %d, ztot[%d] = %f"), level_number, k, ztot[k]);
+            file >> level_number >> ztot[k];
 
             
             if (level_number != k + 1) {  // Convert to 0-based indexing
                 throw std::runtime_error("Invalid level number in vgrid file");
             }
 
-printFormatted(ansi::red("level_number = %d, ztot[%d] = %f, hs = %f, ztot[%d]>-hs = %d"), level_number, k, ztot[k], h_s, ztot[k] > -h_s);
-            if (ztmp > -h_s) {
+
+            if (ztot[k] >= -h_s) {
                 throw std::runtime_error("Illegal Z level: " + std::to_string(k) + " ztot = " + std::to_string(ztot[k]) + " h_s = " + std::to_string(h_s));
             }
 
-            if (k>1 && ztot[k] <= ztot[k-1]) {
+            if (k > 0 && ztot[k] <= ztot[k-1]) {
                 throw std::runtime_error("z-level inverted: " + std::to_string(k));
             }
-        }
 
-        // Level kz is not neccesary to be read.
+            
+        }
+        ztot[nz - 1] = -h_s;
+
+        // Level nz is not neccesary to be read.
         std::getline(file,  dummy);  
+        std::getline(file,  dummy); 
 
         // Read the sigma levels
-
-
         sigma[0] = -1.0; //bottom
-        sigma[nsiglev] = 0.0; //surface
+        sigma[nsiglev - 1] = 0.0; //surface
         
         std::getline(file, dummy);  // Skip "S levels" comment
         // std::getline(file, dummy); 
@@ -1311,7 +1316,7 @@ printFormatted(ansi::red("level_number = %d, ztot[%d] = %f, hs = %f, ztot[%d]>-h
 
         // Read sigma level parameters
         file >> h_c >> theta_b >> theta_f >> dummy;
-printFormatted(ansi::red("h_c = %f, theta_b = %f, theta_f = %f"), h_c, theta_b, theta_f);
+
         std::getline(file, dummy); 
         if (h_c<5.0 || h_c>=h_s) {
             throw std::runtime_error("h_c needs to be larger to avoid 2nd type abnormaty: " + std::to_string(h_c));
@@ -1323,21 +1328,22 @@ printFormatted(ansi::red("h_c = %f, theta_b = %f, theta_f = %f"), h_c, theta_b, 
             throw std::runtime_error("Wrong theta_f: " + std::to_string(theta_f));
         }
 
-        // Skip the kz level
+        // Skip the nz level
         std::getline(file, dummy); 
         
         // Read the sigma levels
-        for (int k = kz + 1 ; k < nvrt; k++) {
-            const int ksig = k - kz;
+        sigma[0]           = -1.0; //bottom
+        sigma[nsiglev - 1] =  0.0; //surface
+
+        for (int k = nz; k < nvrt; k++) {
+            const int ksig = k - nz + 1;
             int level_number;
             file >> level_number >> sigma[ksig];
-
-            
-            if (level_number != k - kz + 1) {  // Convert to 0-based indexing
+            if (level_number != ksig + 1) {  // Convert to 0-based indexing
                 throw std::runtime_error("Invalid level number in vgrid file");
             }
 
-            if (sigma[ksig] <= sigma[ksig-1] || sigma[ksig] >=   0.0) {
+            if (sigma[ksig] <= sigma[ksig-1] || sigma[ksig] > 0.0 || sigma[ksig] < -1.0) {
                 throw std::runtime_error("Invalid sigma levels at: " + std::to_string(ksig) + ", sigma(" + std::to_string(ksig) + ") = " + std::to_string(sigma[ksig]) + ", sigma(" + std::to_string(ksig-1) + ") = " + std::to_string(sigma[ksig-1]));
             }
        

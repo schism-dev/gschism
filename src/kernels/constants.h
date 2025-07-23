@@ -58,9 +58,9 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 2; // Number of vertical levels
-constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
+constexpr int nvrt    = 17; // Number of vertical levels
+constexpr int nzlev   = 7; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = 11; // Number of sigma levels (in contrast to z levels)
 
 constexpr int nope  = 1; // Number of open boundary segments
 constexpr int mnond = 13; // Maximum number of nodes per open boundary segment

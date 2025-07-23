@@ -1034,15 +1034,16 @@ __device__ void Node::updateKb(void) {
       
       // Compute bottom level index
       if (depth <= mesh->h_s) {
-         kb = mesh->kz - 1;
+         kb = nzlev;
       } else {
          kb = -1;
          int L = 0;
-         int R = mesh->kz - 2;  // We check up to kz-2 since we access i+1
+         int R = nzlev; 
          
          while (L <= R) {
             int M = (R + L) / 2;
 
+printf("L = %d, R = %d, M = %d, depth = %f, ztot[L] = %f, ztot[R] = %f, ztot[M] = %f\n", L, R, M, depth, mesh->ztot[L], mesh->ztot[R], mesh->ztot[M]);
             assert((-depth >= mesh->ztot[L] && -depth < mesh->ztot[R]) && "ZCOOR: invalid depth\n");
             
             if (-depth >= mesh->ztot[L] && -depth < mesh->ztot[M]) {
@@ -1070,10 +1071,10 @@ __device__ __inline__ void Node::updateZCoordData(void) {
       
       // Compute bottom level index
       if (depth <= mesh->h_s) {
-            kb = mesh->kz;
+            kb = nzlev;
       } else {
          kb = -1;
-         for (int i = 0; i < mesh->kz; i++) {
+         for (int i = 0; i <= nzlev; i++) {
             // XXX Use binary search
             if (-depth >= mesh->ztot[i] && -depth < mesh->ztot[i+1]) {
                kb = i;
@@ -1103,7 +1104,6 @@ __device__ double Node::compZCoord(int k) const {
    if constexpr(ivcor == 2) {
 
       const double hmod2 = sigmaTransitionDepth(); // Depth transition between z and sigma levels
-      const int kz = mesh->kz;
       const double h_c = mesh->h_c;
       const double theta_f = mesh->theta_f;
       const double sinh_theta_f = mesh->sinh_theta_f;
@@ -1113,12 +1113,12 @@ __device__ double Node::compZCoord(int k) const {
       // once per time step/node.
       // CHECK: updateZCoordData
 
-      if      (k == nvrt-1)      return eta2; 
-      else if (k == kz)          return -hmod2;
-      else if (k == kb)          return -depth;
-      else if (k < kz && k >= 0) return mesh->ztot[k];
-      else if (k > kz) {
-         const int ksig = k - kz + 1;
+      if      (k == nvrt-1)           return eta2; 
+      else if (k == nzlev)            return -hmod2;
+      else if (k == kb)               return -depth;
+      else if (k < nzlev && k >= 0)   return mesh->ztot[k];
+      else if (k > nzlev) {
+         const int ksig = k - nzlev + 1;
 
          if (hmod2 <= h_c) {
 printf("mesh->sigma[ksig] * (hmod2 + eta2) + eta2 = %e\n", mesh->sigma[ksig] * (hmod2 + eta2) + eta2);            
@@ -2929,7 +2929,7 @@ extern "C" {
       // Velocity magnitude at the bottom level
       // XXXX Check if we have added -dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1) to u2.
       const double vmag1 = length(side->btu[kb + 1]); //BACKTRACKED VELOCITY
-      side->chi2 = 10*side->Cd()*vmag1;
+      side->chi2 = side->Cd()*vmag1;
       side->chi  = side->chi2;
       if constexpr(iveg != 0) {
          const Node *n1 = side->n1;
@@ -2937,7 +2937,6 @@ extern "C" {
          const double veg_alpha_bot = 0.5*(n1->veg_alpha3D[n1->kb] + n2->veg_alpha3D[n2->kb]);
          side->chi = side->chi/(1.0 + veg_alpha_bot*vmag1*dt);
       }
-// printf("****&&&** side->chi2 = %.16f, side->chi = %.16f, side->Cd = %.16f, vmag1 = %.16f\n", side->chi2, side->chi, side->Cd(), vmag1);      
 
       // Calc consts in SAV model; make sure veg_[c2,beta]=0 at 2D, dry side, and emergent side
 
@@ -2988,7 +2987,6 @@ extern "C" {
 
          assert(fricH > 0.0 && "COMPUTE CONTINUITY EQUATION: Impossible dry 53");
 
-printf("****&&&** side->hhat = %.16f, htot = %.16f, fricH = %.16f\n", side->hhat, htot, fricH);         
          side->hhat = htot*htot/fricH; 
 
       } else { // 3D
@@ -5601,7 +5599,7 @@ extern "C"
 __global__ void createMesh(int partNum, 
                            int npgb, int negb, int nsgb, int nseg,
                            int np, int ne, int ns, 
-                           int max_np, int max_ne, int max_ns, int nvrt, int kz,
+                           int max_np, int max_ne, int max_ns,
                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
@@ -5627,13 +5625,13 @@ __global__ void createMesh(int partNum,
    printf("partNum = %d, npgb = %d, negb = %d, nsgb = %d, nseg = %d\n", partNum, npgb, negb, nsgb, nseg);
    printf("np = %d, ne = %d, ns = %d\n", np, ne, ns);
    printf("max_np = %d, max_ne = %d, max_ns = %d\n", max_np, max_ne, max_ns);
-   printf("nvrt = %d, kz = %d\n", nvrt, kz);
+   printf("nvrt = %d, nzlev = %d\n", nvrt, nzlev);
 
    printf("Creating mesh for partition %d, np = %d\n", partNum, np);
    printf("CREATEMESH: elemsPtr = %p, elems = %p\n", *elemsPtr, elems);
    
    mesh = new Mesh(partNum, npgb, negb, nsgb, 
-                   np, ne, ns, nvrt, kz,
+                   np, ne, ns,
                    max_np, max_ne, max_ns, nseg, 
                    nodesPtr, elemsPtr, sidesPtr, 
                    nodes, elems, sides,
