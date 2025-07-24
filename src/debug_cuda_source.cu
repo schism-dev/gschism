@@ -63,6 +63,11 @@ constexpr int nvrt    = 17; // Number of vertical levels
 constexpr int nzlev   = 7; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = 11; // Number of sigma levels (in contrast to z levels)
 
+//  To simplify comparisons, I define index versions of count variables.
+constexpr int ivrt    = nvrt - 1;
+constexpr int izlev   = nzlev - 1;
+constexpr int isiglev = nsiglev - 1;
+
 constexpr int nope  = 1; // Number of open boundary segments
 constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
 constexpr int nland = 1; // Number of land boundary segments
@@ -2574,7 +2579,7 @@ __device__ void Node::updateKb(void) {
          while (L <= R) {
             int M = (R + L) / 2;
 
-printf("L = %d, R = %d, M = %d, depth = %f, ztot[L] = %f, ztot[R] = %f, ztot[M] = %f\n", L, R, M, depth, mesh->ztot[L], mesh->ztot[R], mesh->ztot[M]);
+// printf("L = %d, R = %d, M = %d, depth = %f, ztot[L] = %f, ztot[R] = %f, ztot[M] = %f\n", L, R, M, depth, mesh->ztot[L], mesh->ztot[R], mesh->ztot[M]);
             assert((-depth >= mesh->ztot[L] && -depth < mesh->ztot[R]) && "ZCOOR: invalid depth\n");
             
             if (-depth >= mesh->ztot[L] && -depth < mesh->ztot[M]) {
@@ -2602,10 +2607,10 @@ __device__ __inline__ void Node::updateZCoordData(void) {
       
       // Compute bottom level index
       if (depth <= mesh->h_s) {
-            kb = nzlev;
+            kb = nzlev - 1;
       } else {
          kb = -1;
-         for (int i = 0; i <= nzlev; i++) {
+         for (int i = 0; i < nzlev; i++) {
             // XXX Use binary search
             if (-depth >= mesh->ztot[i] && -depth < mesh->ztot[i+1]) {
                kb = i;
@@ -2644,15 +2649,16 @@ __device__ double Node::compZCoord(int k) const {
       // once per time step/node.
       // CHECK: updateZCoordData
 
-      if      (k == nvrt-1)           return eta2; 
-      else if (k == nzlev)            return -hmod2;
-      else if (k == kb)               return -depth;
-      else if (k < nzlev && k >= 0)   return mesh->ztot[k];
-      else if (k > nzlev) {
-         const int ksig = k - nzlev + 1;
+      //  To simplify comparisons, I define index versions of count variables.
+      if      (k == ivrt)           return eta2; 
+      else if (k == izlev)          return -hmod2;
+      else if (k == kb)             return -depth;
+      else if (k < izlev && k >= 0) return mesh->ztot[k];
+      else if (k > izlev) {
+         const int ksig = k - izlev;
 
          if (hmod2 <= h_c) {
-printf("mesh->sigma[ksig] * (hmod2 + eta2) + eta2 = %e\n", mesh->sigma[ksig] * (hmod2 + eta2) + eta2);            
+// printf("mesh->sigma[ksig] * (hmod2 + eta2) + eta2 = %e\n", mesh->sigma[ksig] * (hmod2 + eta2) + eta2);            
             return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
          } 
          else if (eta2 <= - h_c - (depth - h_c) * theta_f/sinh_theta_f) {
@@ -2660,7 +2666,7 @@ printf("mesh->sigma[ksig] * (hmod2 + eta2) + eta2 = %e\n", mesh->sigma[ksig] * (
             assert(false && "ZCOOR: invalid h_c\n");
          } 
          else {
-printf("eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig] = %e\n", eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig]);
+// printf("eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig] = %e\n", eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig]);
             return eta2*(1.0 + mesh->sigma[ksig]) + 
                          h_c * mesh->sigma[ksig] + 
                          (hmod2 - h_c) * mesh->cs[ksig];
@@ -3542,6 +3548,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 
    assert(n >= 1       && "TRIDAG: n must be >= 1");
    assert(b[0] != 0.0  && "TRIDAG: b[0]=0");
+// printf("AAAAAA a[0] = %f, b[0] = %f, c[0] = %f, rhs[0] = %f\n", a[0], b[0], c[0], rhs[0]);   
 
    double bet = b[0];
    if constexpr (nc == 1) {
@@ -3553,7 +3560,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
    for (int j = 1; j < n; j++) {
       gam[j] = c[j-1]/bet;
       bet = b[j] - a[j]*gam[j];
-
+// printf("RRR bet = %f, b[%d] = %f, a[%d] = %f, gam[%d] = %f\n", bet, j, b[j], j, a[j], j, gam[j]);
       assert (bet != 0.0 && "TRIDIAGONAL SOLVER: bet=0");
 
       if constexpr (nc == 1) {
@@ -4883,7 +4890,6 @@ extern "C" {
 
       SIDE(side);
 
-if (side->idx == 285) printf("XXXXXXXXX solveMomentumEquations: side idx = %d, isDry = %d\n", side->idx, side->isDry);      
 
       if (side->isDry) 
       {
@@ -4963,9 +4969,9 @@ if (side->idx == 285) printf("XXXXXXXXX solveMomentumEquations: side idx = %d, i
          const double zTopCanopy = side->zTopCanopy();
 
          // Initialize the tridiagonal system
-         for (int k = kb + 1; k<nvrt; k++) {
+         for (int k = kb + 1; k < nvrt; k++) {
             
-            const int kin = k - kb;
+            const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
             const double dfz = 0.25*(side->dfv(k) + side->dfv(k + 1));
@@ -5149,7 +5155,8 @@ if (side->idx == 285) printf("XXXXXXXXX solveMomentumEquations: side idx = %d, i
          } // k=kb + 1,nvrt
 
    // tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
-         tridag_sch<2>(nvrt, alow, bdia, cupp, (double *)rrhs, (double *)u, (double *)gam);
+// if (side->idx == 1) for (int k=0; k<nvrt; k++) printf("AAAAAA alow[%d] = %f, bdia[%d] = %f, cupp[%d] = %f, rrhs[%d] = %f\n", k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k]);   
+         tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)u, (double *)gam);
 
 
          for (int k=kb + 1; k<nvrt; k++) {
@@ -5175,7 +5182,7 @@ if (side->idx == 285) printf("XXXXXXXXX solveMomentumEquations: side idx = %d, i
          if (side->Cd() == 0.0) {
             side->u2[kb] = side->u2[kb + 1];
          } else if (nvrt - 1 > kb + 1) { // 3D no slip bottom   XXXXX use is3D()?
-printf("XXXXXXXXX computeFlowBcVelocities: 3D no slip bottom, side idx = %d\n", side->idx);
+// printf("XXXXXXXXX computeFlowBcVelocities: 3D no slip bottom, side idx = %d\n", side->idx);
             side->u2[kb] = {0.0, 0.0};
          }
           
@@ -5365,6 +5372,7 @@ printf("XXXXXXXXX computeFlowBcVelocities: 3D no slip bottom, side idx = %d\n", 
    // For wet nodes updates the nodes z-coordinates and bottom index, kb.
       
       NODE(node);      
+
 
       if (node->isDry2()) { 
 

@@ -62,6 +62,11 @@ constexpr int nvrt    = 17; // Number of vertical levels
 constexpr int nzlev   = 7; // Number of z levels (in contrast to sigma levels)
 constexpr int nsiglev = 11; // Number of sigma levels (in contrast to z levels)
 
+//  To simplify comparisons, I define index versions of count variables.
+constexpr int ivrt    = nvrt - 1;
+constexpr int izlev   = nzlev - 1;
+constexpr int isiglev = nsiglev - 1;
+
 constexpr int nope  = 1; // Number of open boundary segments
 constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
 constexpr int nland = 1; // Number of land boundary segments

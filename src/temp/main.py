@@ -209,9 +209,7 @@ if __name__ == "__main__":
     q_air_node = np.zeros(nodeCoords.shape[1])
     # sflux.getWind(2452424.0, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
 
-
-
-    
+   
 
     namelist = readNamelist(in_dir)
 
