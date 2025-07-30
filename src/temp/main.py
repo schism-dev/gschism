@@ -7,6 +7,9 @@ import sys
 import cupy as cp
 import debug.monitor as monitor
 
+# For profiling
+from line_profiler import LineProfiler
+
 
 
 # Enable verbose output
@@ -662,11 +665,15 @@ if __name__ == "__main__":
 
     ntime, nrec = schism_init(namelist.core, namelist.opt)
 
-    eta = np.zeros([numNodes, ntime], dtype=cp.float64)
-    for t in range(0, ntime, 1):
-        print(f">>>>>>>>>>>>>Step {t}")
-        schism_step(t, namelist, bctides, sflux, eta)
+    profiler = LineProfiler() 
+    schism_step_wrapped = profiler(schism_step)
 
+    eta = np.zeros([numNodes, ntime], dtype=cp.float64)
+    for t in range(0, ntime//10, 1):
+        print(f">>>>>>>>>>>>>Step {t}")
+        schism_step_wrapped(t, namelist, bctides, sflux, eta)
+
+        profiler.print_stats()
     pass
 
 

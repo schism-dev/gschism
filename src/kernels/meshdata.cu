@@ -52,6 +52,7 @@ __device__ void unlock(int *mutex) {
 }
 
 __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF0000) {
+   return;
    // Lock the mutex
    lock(&debugPlotMutex);
  
@@ -864,7 +865,6 @@ __inline__ __device__ bool Side::btrack(
    Point3 x0 = {center.x, center.y, zc[jlev]};
 
  
-
    double time_rm = dt; // Remaining time
 
 
@@ -879,7 +879,6 @@ __inline__ __device__ bool Side::btrack(
 
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards(toVector2(u_int));
-
 
 
    // If it starts at a boundary side, we must start with a velocity parallel to the side.
@@ -1879,7 +1878,6 @@ extern "C" {
       const int kb = side->kb;
 
 
-
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
@@ -2018,11 +2016,11 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
    if constexpr (nc == 1) {
       u[0] = rhs[0]/bet;
    } else {
-      for (int k = 0; k < nc; k++) u[k*nc] = rhs[k*nc]/bet;
+      for (int l = 0; l < nc; l++) u[l] = rhs[l]/bet;
    }
 
    for (int j = 1; j < n; j++) {
-      gam[j] = c[j-1]/bet;
+      gam[j] = c[j - 1]/bet;
       bet = b[j] - a[j]*gam[j];
 // printf("RRR bet = %f, b[%d] = %f, a[%d] = %f, gam[%d] = %f\n", bet, j, b[j], j, a[j], j, gam[j]);
       assert (bet != 0.0 && "TRIDIAGONAL SOLVER: bet=0");
@@ -2030,19 +2028,19 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
       if constexpr (nc == 1) {
          u[j] = (rhs[j] - a[j]*u[j - 1])/bet;
       } else {
-         for (int k = 0; k < nc; k++) {
-            u[j + k*nc] = (rhs[j + k*nc] - a[j]*u[j - 1 + k*nc])/bet;
+         for (int l = 0; l < nc; l++) {
+            u[j*nc + l] = (rhs[j*nc + l] - a[j]*u[(j - 1)*nc + l])/bet;
          }
       }
    }
 
    // Back-substitution
-   for (int j=n-1; j>=1; j--) {
+   for (int j=n-1; j>=0; j--) {
       if constexpr (nc == 1) {
-         u[j] = u[j] - gam[j+1]*u[j-1];
+         u[j] = u[j] - gam[j + 1]*u[j + 1];
       } else {
-         for (int k = 0; k < nc; k++) {
-            u[j + k*nc] = u[j + k*nc] - gam[j + 1]*u[j-1 + k*nc];
+         for (int l = 0; l < nc; l++) {
+            u[j*nc + l] = u[j*nc + l] - gam[j + 1]*u[(j + 1)*nc + l];
          }
       }
    }
@@ -3402,7 +3400,7 @@ extern "C" {
          const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvelx, rmaxvelx);
          const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
 
-         for (int k=0; k<nvrt; k++) side->u2[k] = {ux, uy};
+         for (int k = 0; k < nvrt; k++) side->u2[k] = {ux, uy};
 
 
       }
@@ -3439,9 +3437,7 @@ extern "C" {
 
             // Vertical viscosity at the face center
             const double dfz = 0.25*(side->dfv(k) + side->dfv(k + 1));
-            const double dzz = side->Dz(k);
-
-            assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
+           
 
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
@@ -3481,7 +3477,10 @@ extern "C" {
                   } // if (zTopCanopy
                } // if iveg
 
+               const double dzz = side->Dz(k + 1);
                const double tmp = dt*dfz/dzz;
+               assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
+
                cupp[kin] += cff1*dzz/6.0 - tmp;
                bdia[kin] += cff1*dzz/3.0 + tmp;
             }
@@ -3511,7 +3510,10 @@ extern "C" {
 
                } // if iveg
 
+               const double dzz = side->Dz(k);
                const double tmp = dt*dfz/dzz;
+               assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
+
                alow[kin] += cff1*dzz/6.0 - tmp;
                bdia[kin] += cff1*dzz/3.0 + tmp;
 
@@ -3544,8 +3546,8 @@ extern "C" {
          const Vector2 *nuGradU = side->nuGradU;
 
 
-         for (int k = kb + 1; k<nvrt; k++) {
-            const int kin = k - kb;
+         for (int k = kb + 1; k < nvrt; k++) {
+            const int kin = k - kb - 1;
 
             const double dz_0 = side->Dz(k);
             const double dz_1 = side->Dz(k+1);  
@@ -3560,6 +3562,7 @@ extern "C" {
 
             // Elevation gradient, atmospheric pressure and tidal potential
             rrhs[kin] = -dz*dt*(grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0);
+      
 
             // Coriolis, advection, wind stress, and horizontal viscosity
             if (k < nvrt - 1) {
@@ -3568,6 +3571,7 @@ extern "C" {
                rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
                                         dt*(coriolis*rot90(2.0*u2[k] + u2[k + 1]) + 
                                             2.0*nuGradU[k] + nuGradU[k + 1]));
+                                                
 
                //diff stress tensors 1006
                if constexpr(itur==5) {  // 1018:itur==5 XXX What is itur?
@@ -3597,7 +3601,6 @@ extern "C" {
                                        dt*(coriolis*rot90(2.0*u2[k] + u2[k - 1]) + 
                                            2.0*nuGradU[k] + nuGradU[k - 1]));
 
-
                // diff stress tensors 1006
                if constexpr(itur==5) { // 1018:itur==5 XXX What is itur?
                   assert(false && "Not implemented: itur == 5");
@@ -3615,21 +3618,22 @@ extern "C" {
 
             } // if ibc==0
 
-
          } // k=kb + 1,nvrt
 
-   // tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
-// if (side->idx == 1) for (int k=0; k<nvrt; k++) printf("AAAAAA alow[%d] = %f, bdia[%d] = %f, cupp[%d] = %f, rrhs[%d] = %f\n", k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k]);   
-         tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)u, (double *)gam);
 
+if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("AAAAAA kb = %d, alow[%d] = %.16f, bdia[%d] = %.16f, cupp[%d] = %.16f, rrhs[%d] = %.16f, %.16f\n", kb, k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k].x, rrhs[k].y);   
+         tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
+for (int k=nvrt-kb; k<nvrt; k++) soln[k] = {0.0, 0.0};
+if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, soln[%d] = %.16f, %.16f\n", kb, k, soln[k].x, soln[k].y);   
 
-         for (int k=kb + 1; k<nvrt; k++) {
-            const int kin = k - kb;
+// for (int k=0; k<nvrt; k++) soln[k] = u[k];
+         for (int k = kb + 1; k<nvrt; k++) {
+            const int kin = k - kb - 1;
 
             // Velocity is always clamped to maximum values
             side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
          } // k
-
+if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\n", k, soln[k].x, soln[k].y);   
       } // if side->is2D()
       
 
@@ -3679,7 +3683,7 @@ extern "C" {
       if (!isLand && ifltype != 0) {
          const Vector2 *ubc = sideBnd->ubc;
   
-         for (int k=kb; k < nvrt; k++) {
+         for (int k = kb; k < nvrt; k++) {
             
             assert(ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
                    && (ubc[k].x <= 98 && ubc[k].y <= 98)) && "Momentum BC: Side has no velocity boundary conditions");
@@ -3979,6 +3983,8 @@ extern "C" {
          assert(side->htot2() > h0 && "Weird side. Total depth is smaller than h0.");
 
          side->kb = min(kb1, kb2);
+
+         for (int k = 0; k < side->kb; k++) side->zc[k] = 0.0;  // XXXX NECESSARY???
 
          for (int k = side->kb; k < nvrt; k++) {
             side->zc[k] = 0.5*(n1->z[max(k, kb1)] + n2->z[max(k, kb2)]);
