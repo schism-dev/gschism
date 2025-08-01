@@ -129,6 +129,42 @@ def computeMeteorologicalForcing(time, sflux):
 #       enddo !i=1,npa
 # !$OMP end do      
 
+def checkU():
+    #  REMOVE THIS!!!!!!
+    import numpy as np
+    # cp.cuda.Device().synchronize()
+    maxVar = 0.0
+    max_idx = 0
+    max_level = 0
+    var1 = monitor.getSideVar("u", 0)
+    for i in range(1, 17):
+        var2 = monitor.getSideVar("u", i)
+        diff = np.abs(var1 - var2)
+        max_diff = np.max(diff)
+        if max_diff > maxVar:
+            maxVar = max_diff
+            max_level = i
+            max_idx = np.argmax(diff)
+        var1 = var2.copy()
+    if maxVar > 0.4:
+        print(f"Max difference: {maxVar} at node {max_idx}, level {max_level}")
+
+    maxVar = 0.0
+    max_idx = 0
+    max_level = 0
+    var1 = monitor.getNodeVar("u", 0)
+    for i in range(1, 17):
+        var2 = monitor.getNodeVar("u", i)
+        diff = np.abs(var1 - var2)
+        max_diff = np.max(diff)
+        if max_diff > maxVar:
+            maxVar = max_diff
+            max_level = i
+            max_idx = np.argmax(diff)
+        var1 = var2.copy()
+    if maxVar > 0.4:
+        print(f"Max difference: {maxVar} at node {max_idx}, level {max_level}")
+
 def schism_step(it: int, namelist, bctides, sflux, eta):
 
     core = namelist.core
@@ -268,11 +304,13 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
     # Precompute elevation gradient, atmo. pressure and earth tidal potential 
     cufunc.computeHorGradientAtSide()  # lines -7296
 
-
+    checkU()
     cufunc.solveMomentumEquations(time)
-
+    # checkU()
+    
 
     cufunc.applyMomentumBC()
+    # checkU()
 
     # Transport    lines 7388-8111
 

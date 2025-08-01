@@ -147,3 +147,53 @@ def plotMesh():
     # fig = None
 
     return res
+
+
+def plotSideVar(varname, level=-1):
+    global fig, ax
+    
+    if fig is None: 
+        fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Remove all existing plots
+    ax.clear()
+
+    # Get node coordinates for plotting
+    x = getNodeVar("x")
+    y = getNodeVar("y")
+    
+    # Plot all nodes
+    plt.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
+
+    # Get side data
+    n1 = getSideVar("n1").astype(int)
+    n2 = getSideVar("n2").astype(int)
+    sx = getSideVar("x")
+    sy = getSideVar("y")
+    
+    # Get the variable to plot
+    var = getSideVar(varname, level)
+    
+    # Build the segments array for LineCollection
+    segments = np.stack([np.column_stack([x[n1], y[n1]]), np.column_stack([x[n2], y[n2]])], axis=1)
+
+    # Create the LineCollection with colors based on the variable
+    lc = LineCollection(segments, cmap='viridis', alpha=0.8, linewidths=2.0)
+    lc.set_array(var)
+    ax.add_collection(lc)
+    
+    # Add colorbar
+    plt.colorbar(lc, label=varname)
+
+    # Plot side centers with variable values
+    scatter = plt.scatter(sx, sy, c=var, cmap='viridis', s=50, edgecolors='black', linewidth=0.5)
+    
+    # Add colorbar for scatter plot
+    plt.colorbar(scatter, label=varname)
+
+    ax.autoscale()
+    plt.title(f'Side Variable: {varname}')
+    plt.show(block=True)
+    # plt.pause(0.0)
+    
+    return True

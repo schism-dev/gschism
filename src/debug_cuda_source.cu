@@ -4888,7 +4888,6 @@ extern "C" {
 
       SIDE(side);
 
-
       if (side->isDry) 
       {
          for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};         
@@ -4909,7 +4908,7 @@ extern "C" {
          const double htot = side->htot1();
          const double hhat = side->hhat;
 
-         assert(hhat > 0.0 && htot > 0.0 && "Impossible dry 55:");
+         assert(hhat > 0.0 && htot > 0.0 && "solveMomentumEquations: Impossible");
 
          Vector2 tau2 = {0.0, 0.0};
           
@@ -4933,6 +4932,7 @@ extern "C" {
 
          hat_gam += dt*side->nuGradU[nvrt-1];  // XXXX compute nuGradU
 
+if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, hat_gam.x = %.16f, hhat = %.16f, htot = %.16f\n", hat_gam.x*hhat/htot, hat_gam.x, hhat, htot);
          const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvelx, rmaxvelx);
          const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
 
@@ -4951,16 +4951,7 @@ extern "C" {
          // k+1 and k.
 
 
-         // // Define layer thickness & viscosity
-         // for (int k=kb + 1; k<nvrt; k++) {
-         //    const double dzz = side->Dz(k - 1);
-
-         //    assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
-
-         //    // Vertical viscosity at the face center
-         //    dfz(k) = 0.25*(n1->dfv[k] + n2->dfv[k] + n1->dfv[k-1] + n2->dfv[k-1]);
-        
-         // }
+   
 
 
          const int ndim = nvrt - kb;
@@ -4972,7 +4963,7 @@ extern "C" {
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz = 0.25*(side->dfv(k) + side->dfv(k + 1));
+            const double dfz = 1e-6; //0.25*(side->dfv(k) + side->dfv(k + 1));
            
 
             alow[kin] = 0.0;
@@ -5106,7 +5097,7 @@ extern "C" {
 
                rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
                                         dt*(coriolis*rot90(2.0*u2[k] + u2[k + 1]) + 
-                                            2.0*nuGradU[k] + nuGradU[k + 1]));
+                                            0.0*nuGradU[k] + nuGradU[k + 1]));
                                                 
 
                //diff stress tensors 1006
@@ -5116,7 +5107,7 @@ extern "C" {
                   // rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
                }
 
-            } else { // k=nvrt
+            } else { // k = nvrt - 1
                Vector2 tau2 = {0.0, 0.0};
                if constexpr(ics==1) {
                   tau2 = side->tau();
@@ -5159,11 +5150,11 @@ extern "C" {
 
 if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("AAAAAA kb = %d, alow[%d] = %.16f, bdia[%d] = %.16f, cupp[%d] = %.16f, rrhs[%d] = %.16f, %.16f\n", kb, k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k].x, rrhs[k].y);   
          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
-for (int k=nvrt-kb; k<nvrt; k++) soln[k] = {0.0, 0.0};
+for (int k=nvrt-kb-1; k < nvrt; k++) { soln[k] = {0.0, 0.0}; side->u2[k] = {0.0, 0.0}; }
 if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, soln[%d] = %.16f, %.16f\n", kb, k, soln[k].x, soln[k].y);   
 
 // for (int k=0; k<nvrt; k++) soln[k] = u[k];
-         for (int k = kb + 1; k<nvrt; k++) {
+         for (int k = kb + 1; k < nvrt; k++) {
             const int kin = k - kb - 1;
 
             // Velocity is always clamped to maximum values
@@ -5611,7 +5602,7 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
 
 
          if (isTri) { // For triangles
-         // Interpolates the side velocities at the nodes. A magnitude defined at the sides and interpolated at one node can be
+         // Interpolates the side velocities at the nodes. A magnitude defined at the sides and interpolated (extrapolated) at one node can be
          // computed as the sum of the adjacent side magnitudes minus the side magnitude that is not adjacent to the node.
 
             for (int j = 0; j < 3; j++) {
@@ -5623,20 +5614,22 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
                const Side *s3 = elem->sides[(j + 2) % 3];
 
                const int numElements = node->numElements;
+               const double inv_numElements = 1.0/numElements;
 
                for (int k = kb; k < nvrt; k++)  {
-                  Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k];
+                  Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k]; // u interpolated at the node   
                   u.x = clamp(u.x, -rmaxvelx, rmaxvelx);
                   u.y = clamp(u.y, -rmaxvely, rmaxvely);
                   // node->utmp[k] = node->utmp[k] + (1.0/numElements) * u; 
-                  atomicAdd(&(node->utmp[k].x), (1.0/numElements) * u.x);
-                  atomicAdd(&(node->utmp[k].y), (1.0/numElements) * u.y);
+                  atomicAdd(&(node->utmp[k].x), inv_numElements * u.x);
+                  atomicAdd(&(node->utmp[k].y), inv_numElements * u.y);
 
                }
 
             }
          }
          else { // For quads
+            assert(false && "computeNodalHorizontalVelocities1: not implemented for quads");
 
          }
 
