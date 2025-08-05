@@ -475,8 +475,8 @@ struct Element {
       }
    }
 
-   __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
-   __inline__ __device__ double Dz(int k)      const { return z[k+1] - z[k]; }
+   __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
+   __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
 
    // Check if the element is dry using the more up-to-date elevation.
    __inline__ __device__ bool isDry2(void) const;
@@ -850,10 +850,10 @@ struct Side {
    __inline__ __device__ double lat(void) const;
    __inline__ __device__ Point2 p_t(double t) const;
 
-   __inline__ __device__ Point3 center3D(int k) const { return {center.x, center.y, zc[k]}; }
+   __inline__ __device__ Point3 center3D(int k) const { assert(k < nvrt); return {center.x, center.y, zc[k]}; }
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
-   __inline__ __device__ double Dz(int k)       const { return zc[k] - zc[k-1]; }
-   __inline__ __device__ double area(int k)     const { return len*Dz(k + 1); }
+   __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k-1]; }
+   __inline__ __device__ double area(int k)     const { assert(k < nvrt); return len*Dz(k + 1); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side

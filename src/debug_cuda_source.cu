@@ -573,8 +573,8 @@ struct Element {
       }
    }
 
-   __inline__ __device__ double z_prism(int k) const { return 0.5*(z[k+1] + z[k]); }
-   __inline__ __device__ double Dz(int k)      const { return z[k+1] - z[k]; }
+   __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
+   __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
 
    // Check if the element is dry using the more up-to-date elevation.
    __inline__ __device__ bool isDry2(void) const;
@@ -948,10 +948,10 @@ struct Side {
    __inline__ __device__ double lat(void) const;
    __inline__ __device__ Point2 p_t(double t) const;
 
-   __inline__ __device__ Point3 center3D(int k) const { return {center.x, center.y, zc[k]}; }
+   __inline__ __device__ Point3 center3D(int k) const { assert(k < nvrt); return {center.x, center.y, zc[k]}; }
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
-   __inline__ __device__ double Dz(int k)       const { return zc[k] - zc[k-1]; }
-   __inline__ __device__ double area(int k)     const { return len*Dz(k + 1); }
+   __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k-1]; }
+   __inline__ __device__ double area(int k)     const { assert(k < nvrt); return len*Dz(k + 1); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
@@ -3522,9 +3522,10 @@ extern "C" {
                
          } // if vmag (do backtrack)
 
-      } // for j=jmin,nvrt-1
+      } // for k=kb,nvrt-1
 
    }
+
 } // extern "C"
 
 template<int nc>
@@ -3571,7 +3572,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
    }
 
    // Back-substitution
-   for (int j=n-1; j>=0; j--) {
+   for (int j = n - 2; j >= 0; j--) {
       if constexpr (nc == 1) {
          u[j] = u[j] - gam[j + 1]*u[j + 1];
       } else {
@@ -4698,6 +4699,8 @@ __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Eleme
 extern "C" {
    __global__ void computeDensityGradient(void) {
 
+      if constexpr(ibc != 0) return;
+
          // Compute the horizontal density gradient at each element.
       // It works in two steps:
       // 1. Interpolate the density at the neighboring elements at the same zcor as the prism of element i.
@@ -4734,6 +4737,7 @@ extern "C" {
             // Using cubic splines, interpolate demeaned density difference at the same z half-levels as elem.
             const double rho1 = interpolateDensityAtHalfLevel(elem, e1, k);
             const double rho2 = interpolateDensityAtHalfLevel(elem, e2, k);
+if (elem->idx == 21) printf("$$AAAXXXXXXXA$$$ rho1 = %.16f, rho2 = %.16f\n", rho1, rho2);            
 
             // Compute the density difference and the vector from elem to e1 and e2
             // getRhoDiffAndVec takes into account boundaries/dry elements
@@ -4872,10 +4876,6 @@ extern "C" {
       side->gradEta2 = side->grad2(&Node::eta2, isWet2);
       side->gradETP  = side->grad2(&Node::ETP,  isWet3);
       side->gradPr   = side->grad2(&Node::pr,   isWet1);
-// printf("gradEta1: %.15f, %.15f\n", side->gradEta1.x, side->gradEta1.y);
-// printf("gradEta2: %.15f, %.15f\n", side->gradEta2.x, side->gradEta2.y);
-// printf("gradETP: %.15f, %.15f\n", side->gradETP.x, side->gradETP.y);
-// printf("gradPr: %.15f, %.15f\n", side->gradPr.x, side->gradPr.y);
 
 
    }
@@ -5073,22 +5073,25 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
          const Vector2 *nuGradU = side->nuGradU;
 
 
+         const Vector2 grad2D = grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0;
+
          for (int k = kb + 1; k < nvrt; k++) {
             const int kin = k - kb - 1;
 
             const double dz_0 = side->Dz(k);
-            const double dz_1 = side->Dz(k+1);  
+            const double dz_1 = (k < nvrt - 1) ? side->Dz(k + 1) : 0.0;  // k always < nvrt - 1 when used.
 
             rrhs[kin] = {0.0, 0.0};
             double dz = 0.0;
 
             // dz is the distance between the center of the k-th layer and the center of the (k+1)-th layer
             // In the boundary layers, it is the distance between the center of the layer and the boundary.
-            if (k < nvrt  ) dz += 0.5*dz_1;
-            if (k > kb + 1) dz += 0.5*dz_0;
+            if (k < nvrt  ) dz += dz_1;
+            if (k > kb + 1) dz += dz_0;
 
             // Elevation gradient, atmospheric pressure and tidal potential
-            rrhs[kin] = -dz*dt*(grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0);
+            rrhs[kin] = - 0.5*dz*dt*grad2D;
+if (side->idx == 21) printf("$$AAAA$$$ rrhs[%d] = %.16f, %.16f, dz = %.16f\n", k, rrhs[kin].x, rrhs[kin].y, dz);            
       
 
             // Coriolis, advection, wind stress, and horizontal viscosity
@@ -5097,9 +5100,9 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
 
                rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
                                         dt*(coriolis*rot90(2.0*u2[k] + u2[k + 1]) + 
-                                            0.0*nuGradU[k] + nuGradU[k + 1]));
+                                            2.0*nuGradU[k] + nuGradU[k + 1]));
                                                 
-
+// if (side->idx == 21) printf("$$BBBB$$$ dz_1 = %.16f, coriolis = %.16f, btu[%d] = %.16f, %.16f, u2[%d] = %.16f, %.16f, nuGradU[%d] = %.16f, %.16f\n", dz_1, coriolis, k, btu[k].x, btu[k].y, k, u2[k].x, u2[k].y, k, nuGradU[k].x, nuGradU[k].y);            
                //diff stress tensors 1006
                if constexpr(itur==5) {  // 1018:itur==5 XXX What is itur?
                   // Does it make sense to have dz_1 multiplying and dividing? XXX
@@ -5107,10 +5110,11 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
                   // rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
                }
 
-            } else { // k = nvrt - 1
+            } else { // k == nvrt - 1 SURFACE
                Vector2 tau2 = {0.0, 0.0};
                if constexpr(ics==1) {
                   tau2 = side->tau();
+      
                } else {
                   assert(false && "Not implemented: ics == 2");
                   // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
@@ -5127,6 +5131,7 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
                rrhs[kin] += (dz_0/6.0)*(2.0*btu[k] + btu[k - 1] + 
                                        dt*(coriolis*rot90(2.0*u2[k] + u2[k - 1]) + 
                                            2.0*nuGradU[k] + nuGradU[k - 1]));
+if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] = %.16f, %.16f, u2[%d] = %.16f, %.16f, nuGradU[%d] = %.16f, %.16f\n", dz_0, coriolis, k, btu[k].x, btu[k].y, k, u2[k].x, u2[k].y, k, nuGradU[k].x, nuGradU[k].y);            
 
                // diff stress tensors 1006
                if constexpr(itur==5) { // 1018:itur==5 XXX What is itur?
@@ -5150,8 +5155,8 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
 
 if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("AAAAAA kb = %d, alow[%d] = %.16f, bdia[%d] = %.16f, cupp[%d] = %.16f, rrhs[%d] = %.16f, %.16f\n", kb, k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k].x, rrhs[k].y);   
          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
-for (int k=nvrt-kb-1; k < nvrt; k++) { soln[k] = {0.0, 0.0}; side->u2[k] = {0.0, 0.0}; }
-if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, soln[%d] = %.16f, %.16f\n", kb, k, soln[k].x, soln[k].y);   
+// for (int k=nvrt-kb-1; k < nvrt; k++) { soln[k] = {0.0, 0.0}; side->u2[k] = {0.0, 0.0}; }
+if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, Dz[%d] = %.16f, soln[%d] = %.16f, %.16f\n", kb, k, side->Dz(k), k, soln[k].x, soln[k].y);   
 
 // for (int k=0; k<nvrt; k++) soln[k] = u[k];
          for (int k = kb + 1; k < nvrt; k++) {
@@ -5305,7 +5310,6 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
 
          for (int k = kb + 1; k < nvrt; k++) {
             // WARNING: reusing bcc as a temporary array to store the suru values.
-            side->bcc[k] = {0.0, 0.0};
             Vector2 suru = {0.0, 0.0};
 
             for (int j=0; j<4; j++) { // 4 neighbors per side
@@ -5338,10 +5342,6 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
       // Second step of the Shapiro filter. Assigns to u2 the values stored in bcc.
 
       SIDE(side);
-
-// side->u2[1] = {10.0,-10.0}; 
-// side->u2[0] = {10.0,-10.0};
-// return;      
 
       if (side->isDry || !(side->isInternal())) return;
 
@@ -5562,6 +5562,14 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
          node->utmp[k] = {0.0, 0.0};
          node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
       }
+   }
+
+   __global__ void computeNodalVerticalVelocities0(void) {
+   // Compute node's vertical velocities from element's vertical velocities at WHOLE levels.
+   // Divides by the total area of the elements sharing the    node.
+      NODE(node);
+
+      for (int k = node->kb; k < nvrt; k++) node->u2[k].z = 0.0;  // node->tmp.d contains the total area of the elements sharing the node
    }
 
    __global__ void computeNodalVerticalVelocities1(void) {

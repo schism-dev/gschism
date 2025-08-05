@@ -41,6 +41,7 @@ ul0ComputeDryElementsAndNodes = None
 ul0UpdateRewettedNodes = None
 ul0UpdateSides = None
 zeroNodalVelocities = None
+computeNodalVerticalVelocities0 = None
 computeNodalVerticalVelocities1 = None
 computeNodalVerticalVelocities2 = None
 computeNodalHorizontalVelocities1 = None
@@ -111,7 +112,7 @@ def initializeCudaFunctions(sizes):
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializePreconditionedResidual, printMatrix, returnMatrix
     global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
-    global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
+    global zeroNodalVelocities, computeNodalVerticalVelocities0, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
     global getElementVar, getNodeVar, getSideVar
 
@@ -151,6 +152,7 @@ def initializeCudaFunctions(sizes):
         ul0UpdateRewettedNodes              = mod.get_function('ul0UpdateRewettedNodes',              sizes, kernel_type='nodes')
         ul0UpdateSides                      = mod.get_function('ul0UpdateSides',                      sizes, kernel_type='sides')
         zeroNodalVelocities                 = mod.get_function('zeroNodalVelocities',                 sizes, kernel_type='nodes')
+        computeNodalVerticalVelocities0     = mod.get_function('computeNodalVerticalVelocities0',     sizes, kernel_type='nodes')
         computeNodalVerticalVelocities1     = mod.get_function('computeNodalVerticalVelocities1',     sizes, kernel_type='elements')
         computeNodalVerticalVelocities2     = mod.get_function('computeNodalVerticalVelocities2',     sizes, kernel_type='nodes')
         computeNodalHorizontalVelocities1   = mod.get_function('computeNodalHorizontalVelocities1',   sizes, kernel_type='elements')

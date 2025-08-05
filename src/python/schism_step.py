@@ -338,6 +338,7 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
 
     # Compute nodal velocities from side velocities
     cufunc.zeroNodalVelocities()
+    cufunc.computeNodalVerticalVelocities0()
     cufunc.computeNodalVerticalVelocities1()
     cufunc.computeNodalVerticalVelocities2()
     cufunc.computeNodalHorizontalVelocities1()

@@ -674,6 +674,7 @@ if __name__ == "__main__":
         # schism_step_wrapped(t, namelist, bctides, sflux, eta)
         # profiler.print_stats()
         schism_step(t, namelist, bctides, sflux, eta)
+        pass
 
         
     pass
