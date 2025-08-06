@@ -950,8 +950,8 @@ struct Side {
 
    __inline__ __device__ Point3 center3D(int k) const { assert(k < nvrt); return {center.x, center.y, zc[k]}; }
    __inline__ __device__ Point2 point(double t) const { return {x(t), y(t)}; }
-   __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k-1]; }
-   __inline__ __device__ double area(int k)     const { assert(k < nvrt); return len*Dz(k + 1); }
+   __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
+   __inline__ __device__ double area(int k)     const { assert(k < nvrt - 1); return len*Dz(k + 1); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
@@ -2115,7 +2115,7 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
          // I have tested and compared the new algorithm with the old one, and they give
          // very similar results in terms of how close the "fixed" point is to the original point in cartesian coordinates.
          // The new algorithm should be faster since it is branchless.
-         const double a = - tmpmin + 1.0e-4;  // XXX it used to be 1.0e-4 in the comments of the original code
+         const double a = - tmpmin + 1.0e-6;  // XXX it used to be 1.0e-4 in the comments of the original code
          const double b = 1.0/(shpCoords[0] + shpCoords[1] + shpCoords[2] + 3.0*a);
          
          shpCoords[0] = (shpCoords[0] + a)*b;
@@ -4202,6 +4202,7 @@ extern "C" {
             }
 
             side->nuGradU[k] = hvis_coef0*sumU/dt;
+if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->nuGradU[k].x, side->nuGradU[k].y);            
    
          }
       }
@@ -4963,7 +4964,7 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz = 1e-6; //0.25*(side->dfv(k) + side->dfv(k + 1));
+            const double dfz = 1e-6; //0.25*(side->dfv(k) + side->dfv(k + 1)); XXXXX
            
 
             alow[kin] = 0.0;
@@ -5047,7 +5048,8 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
             } else { // Bottom boundary
                // This occurs at the bottom, where the bottom drag is applied.
 
-               bdia[kin] += dt*side->chi2;
+               bdia[kin] += dt*side->chi2; // XXXX
+
 
             } // if (k > kb + 1)
 
@@ -5091,7 +5093,7 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
 
             // Elevation gradient, atmospheric pressure and tidal potential
             rrhs[kin] = - 0.5*dz*dt*grad2D;
-if (side->idx == 21) printf("$$AAAA$$$ rrhs[%d] = %.16f, %.16f, dz = %.16f\n", k, rrhs[kin].x, rrhs[kin].y, dz);            
+if (side->idx == 21) printf("$$AAAA$$$ gradETP[%d] = %.16f, %.16f, dz = %.16f\n", k, rrhs[kin].x, rrhs[kin].y, dz);            
       
 
             // Coriolis, advection, wind stress, and horizontal viscosity
@@ -5153,10 +5155,10 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
          } // k=kb + 1,nvrt
 
 
-if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("AAAAAA kb = %d, alow[%d] = %.16f, bdia[%d] = %.16f, cupp[%d] = %.16f, rrhs[%d] = %.16f, %.16f\n", kb, k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k].x, rrhs[k].y);   
+// if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("AAAAAA kb = %d, alow[%d] = %.16f, bdia[%d] = %.16f, cupp[%d] = %.16f, rrhs[%d] = %.16f, %.16f\n", kb, k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k].x, rrhs[k].y);   
          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
 // for (int k=nvrt-kb-1; k < nvrt; k++) { soln[k] = {0.0, 0.0}; side->u2[k] = {0.0, 0.0}; }
-if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, Dz[%d] = %.16f, soln[%d] = %.16f, %.16f\n", kb, k, side->Dz(k), k, soln[k].x, soln[k].y);   
+// if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, Dz[%d] = %.16f, soln[%d] = %.16f, %.16f\n", kb, k, side->Dz(k), k, soln[k].x, soln[k].y);   
 
 // for (int k=0; k<nvrt; k++) soln[k] = u[k];
          for (int k = kb + 1; k < nvrt; k++) {
@@ -5165,7 +5167,7 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, Dz[%d] = %
             // Velocity is always clamped to maximum values
             side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
          } // k
-if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\n", k, soln[k].x, soln[k].y);   
+// if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\n", k, soln[k].x, soln[k].y);   
       } // if side->is2D()
       
 
@@ -5306,18 +5308,18 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
 
       const int kb = side->kb;
 
-      for (int mm = 1; mm <= niter_shap; mm++) {
+      for (int mm = 0; mm < niter_shap; mm++) {
 
          for (int k = kb + 1; k < nvrt; k++) {
             // WARNING: reusing bcc as a temporary array to store the suru values.
             Vector2 suru = {0.0, 0.0};
 
-            for (int j=0; j<4; j++) { // 4 neighbors per side
+            for (int j = 0; j < 4; j++) { // 4 neighbors per side
 
                const Side *nSide = side->neigh(j); // Every internal side has 4 neighbors
 
                int kin = k;
-               if (!(nSide->isDry)) kin = max(k, nSide->kb + 1);
+               if (!(nSide->isDry)) kin = max(k, kb + 1);
                
                if constexpr(ics==1) {
                   suru += nSide->u2[kin];
@@ -5350,7 +5352,6 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
       for (int k = 0; k < kb - 1; k++) side->u2[k] = {0.0, 0.0};
 
       if (side->is2D()) {
-         // side->u2[kb] = side->u2[nvrt - 1];
          side->u2[kb + 1] = side->bcc[kb + 1];
          side->u2[kb    ] = side->u2 [nvrt - 1];
 
@@ -5564,13 +5565,7 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
       }
    }
 
-   __global__ void computeNodalVerticalVelocities0(void) {
-   // Compute node's vertical velocities from element's vertical velocities at WHOLE levels.
-   // Divides by the total area of the elements sharing the    node.
-      NODE(node);
-
-      for (int k = node->kb; k < nvrt; k++) node->u2[k].z = 0.0;  // node->tmp.d contains the total area of the elements sharing the node
-   }
+ 
 
    __global__ void computeNodalVerticalVelocities1(void) {
    // Compute node's vertical velocities from element's vertical velocities at WHOLE levels.
@@ -5792,7 +5787,7 @@ if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\
       for (int l = kb; l < nvrt - 1; l++) {
 
          // normal vector to the top face of the "volumetric" element (3D)
-         Vector3 elem_n2 = elem->n(l + 1, area3D); 
+         Vector3 elem_n2 = elem->n(l + 1, area3D);  // Get the normal vector and the area of the top face (as a 3D surface)
 
          // Compute the total flux at the sides
          double sideFlux = 0.0;
