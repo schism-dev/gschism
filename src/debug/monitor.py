@@ -152,8 +152,8 @@ def plotMesh():
 def plotSideVar(varname, level=-1):
     global fig, ax
     
-    if fig is None: 
-        fig, ax = plt.subplots(figsize=(12, 8))
+    # if fig is None: 
+    fig, ax = plt.subplots(figsize=(12, 8))
     
     # Remove all existing plots
     ax.clear()

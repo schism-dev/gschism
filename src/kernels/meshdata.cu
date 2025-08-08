@@ -2496,7 +2496,6 @@ extern "C" {
       assert(segment != nullptr && "computeFlowBcVelocities: segment is nullptr");
 
       const int ifltype = segment->ifltype;
-      const int iettype = segment->iettype;
 
       const double r_uth0 = ramp*segment->qthcon/segment->carea;  // r_ stands for ramp-up
       const Vector2 r_nuth0 = r_uth0*n;
@@ -2539,7 +2538,7 @@ extern "C" {
          } // if (ifltype = 3 || ifltype == 5
 
 
-         switch (iettype) {
+         switch (ifltype) {
             case 1:
             case 2:
             case 4:
@@ -3428,7 +3427,7 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz = 1e-6; //0.25*(side->dfv(k) + side->dfv(k + 1)); XXXXX
+            const double dfz = 1e-6; //0.5*(side->dfv(k) + side->dfv(k + 1)); XXXXX
            
 
             alow[kin] = 0.0;
@@ -3625,7 +3624,7 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
 // if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, Dz[%d] = %.16f, soln[%d] = %.16f, %.16f\n", kb, k, side->Dz(k), k, soln[k].x, soln[k].y);   
 
 // for (int k=0; k<nvrt; k++) soln[k] = u[k];
-         for (int k = kb + 1; k < nvrt; k++) {
+         for (int k = kb + 1; k < nvrt; k++) {  // YYYYYYYYY can be kb 
             const int kin = k - kb - 1;
 
             // Velocity is always clamped to maximum values
@@ -3655,7 +3654,7 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
       } // if imm
 
       // The velocities below the bottom level are set to zero
-      for (int k=0; k < kb - 1; k++) side->u2[k] = {0.0, 0.0};
+      for (int k = 0; k <= kb - 1; k++) side->u2[k] = {0.0, 0.0};
 
 
    }
@@ -3681,7 +3680,7 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
       if (!isLand && ifltype != 0) {
          const Vector2 *ubc = sideBnd->ubc;
   
-         for (int k = kb; k < nvrt; k++) {
+         for (int k = kb; k < nvrt; k++) { // YYYYYYYYY can be kb + 1
             
             assert(ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
                    && (ubc[k].x <= 98 && ubc[k].y <= 98)) && "Momentum BC: Side has no velocity boundary conditions");
@@ -3715,7 +3714,6 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
 
                side->u2[k] = vnorm*side->n;
 
-
             }
             else if (ifltype == -4 || ifltype == -5) { // 3D radiation
                const double vnorm = dot(side->u2[k], side->n);
@@ -3725,8 +3723,10 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
                else              rat = segment->vobc2; // outgoing
 
                side->u2[k] = (1.0 - rat)*side->u2[k] + rat*ubc[k];
+
             }
             else { // not Flather or 3D radiation
+if (side->idx == 305) printf("------------------------>4 side->idx = %d, subc[%d] = %.16f, %.16f, su2[%d] = %.16f, %.16f\n", side->idx, k, ubc[k].x, ubc[k].y, k-1, side->u2[k-1].x, side->u2[k-1].y);                              
                side->u2[k] = ubc[k];
 
             } // if (segment->ifltype...
@@ -3738,7 +3738,7 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
 
          if constexpr(islip == 0) { // free slip
 
-            for (int k=kb; k < nvrt; k++) {
+            for (int k = kb; k < nvrt; k++) {
 
                const Vector2 t = side->t();
                const Vector2 n = side->n;

@@ -2115,7 +2115,7 @@
  2115:          // I have tested and compared the new algorithm with the old one, and they give
  2116:          // very similar results in terms of how close the "fixed" point is to the original point in cartesian coordinates.
  2117:          // The new algorithm should be faster since it is branchless.
- 2118:          const double a = - tmpmin + 1.0e-6;  // XXX it used to be 1.0e-4 in the comments of the original code
+ 2118:          const double a = - tmpmin + 1.0e-4;  // XXX it used to be 1.0e-4 in the comments of the original code
  2119:          const double b = 1.0/(shpCoords[0] + shpCoords[1] + shpCoords[2] + 3.0*a);
  2120:          
  2121:          shpCoords[0] = (shpCoords[0] + a)*b;
@@ -4032,1237 +4032,1237 @@
  4032:       assert(segment != nullptr && "computeFlowBcVelocities: segment is nullptr");
  4033: 
  4034:       const int ifltype = segment->ifltype;
- 4035:       const int iettype = segment->iettype;
- 4036: 
- 4037:       const double r_uth0 = ramp*segment->qthcon/segment->carea;  // r_ stands for ramp-up
- 4038:       const Vector2 r_nuth0 = r_uth0*n;
- 4039: 
- 4040:       for (int k = 0; k < nvrt; k++) {
- 4041:          Vector2 r_uth    = {0.0, 0.0};    // r_ stands for ramp-up
- 4042:          Vector2 r_u1_bar = {0.0, 0.0};
- 4043:       
- 4044:          if (ifltype == 1 || ifltype == 2) {
- 4045:          
- 4046:             assert(segment->carea > 0.0 && "computeFlowBcVelocities: dry bnd side");
- 4047: 
- 4048:             const double unth0 = segment->qthcon*ramp/segment->carea;
- 4049:             
- 4050:             r_uth = unth0*n;  // This case has no ramp-up
- 4051:             
- 4052:          } else if (ifltype == -1) { // Flather 1
- 4053: 
- 4054:             // uth is the normal vel.; no ramp up
- 4055:             const double uth = sideBnd->nuth(k);
- 4056:             r_uth = uth*n;
- 4057:             assert(uth >= -98.0 && uth <=  98.0 && "computeFlowBcVelocities: wrong velocity b.c. at side");
+ 4035: 
+ 4036:       const double r_uth0 = ramp*segment->qthcon/segment->carea;  // r_ stands for ramp-up
+ 4037:       const Vector2 r_nuth0 = r_uth0*n;
+ 4038: 
+ 4039:       for (int k = 0; k < nvrt; k++) {
+ 4040:          Vector2 r_uth    = {0.0, 0.0};    // r_ stands for ramp-up
+ 4041:          Vector2 r_u1_bar = {0.0, 0.0};
+ 4042:       
+ 4043:          if (ifltype == 1 || ifltype == 2) {
+ 4044:          
+ 4045:             assert(segment->carea > 0.0 && "computeFlowBcVelocities: dry bnd side");
+ 4046: 
+ 4047:             const double unth0 = segment->qthcon*ramp/segment->carea;
+ 4048:             
+ 4049:             r_uth = unth0*n;  // This case has no ramp-up
+ 4050:             
+ 4051:          } else if (ifltype == -1) { // Flather 1
+ 4052: 
+ 4053:             // uth is the normal vel.; no ramp up
+ 4054:             const double uth = sideBnd->nuth(k);
+ 4055:             r_uth = uth*n;
+ 4056:             assert(uth >= -98.0 && uth <=  98.0 && "computeFlowBcVelocities: wrong velocity b.c. at side");
+ 4057: 
  4058: 
- 4059: 
- 4060:          } else if (ifltype == 3 || ifltype == 5) {
- 4061:             // vnth0=0 !normal vel.
- 4062: 
- 4063:             // Computes the contribution to the velocity from all tide frequencies
- 4064:             for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
- 4065: 
- 4066:                const Vector2 ufa  = sideBnd->ufa(jfr); 
- 4067:                const Vector2 umo  = sideBnd->umo(jfr); 
- 4068: 
- 4069:                const int ncyc = int(amig[jfr]*time/(2.0*pi));
- 4070:                const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
- 4071:                const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
- 4072:                r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
- 4073:             }
- 4074: 
- 4075:          } // if (ifltype = 3 || ifltype == 5
+ 4059:          } else if (ifltype == 3 || ifltype == 5) {
+ 4060:             // vnth0=0 !normal vel.
+ 4061: 
+ 4062:             // Computes the contribution to the velocity from all tide frequencies
+ 4063:             for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
+ 4064: 
+ 4065:                const Vector2 ufa  = sideBnd->ufa(jfr); 
+ 4066:                const Vector2 umo  = sideBnd->umo(jfr); 
+ 4067: 
+ 4068:                const int ncyc = int(amig[jfr]*time/(2.0*pi));
+ 4069:                const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
+ 4070:                const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
+ 4071:                r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
+ 4072:             }
+ 4073: 
+ 4074:          } // if (ifltype = 3 || ifltype == 5
+ 4075: 
  4076: 
- 4077: 
- 4078:          switch (iettype) {
- 4079:             case 1:
- 4080:             case 2:
- 4081:             case 4:
- 4082:                sideBnd->ubc[k] = r_uth;
- 4083:                break;
- 4084:             case 3:
- 4085:                sideBnd->ubc[k] = r_u1_bar;
- 4086:                break;
- 4087:             case 5:
- 4088:                sideBnd->ubc[k] = r_uth + r_u1_bar;
- 4089:                break;
- 4090:          } // switch
- 4091: 
- 4092:       } // for k
- 4093:    }
- 4094: 
- 4095:    __global__ void computeElevationBoundaryConditions(double time) {
- 4096:       // Compute elevation essential boundary conditions 
- 4097: 
- 4098:       NODE_BND(nodeBnd); // Each boundary node.
- 4099: 
- 4100:       assert(nodeBnd->segment != nullptr && "computeElevationBoundaryConditions: nodeBnd->segment is nullptr");
- 4101: 
- 4102:       const Node *node = nodeBnd->node;
- 4103:       const BoundarySegment *segment = nodeBnd->segment;
- 4104:       const int iettype = segment->iettype;
- 4105:       
- 4106: 
- 4107:       // Elevation initial condition at boundary nodes. It is ramped down to zero
- 4108:       double eic = 0.0;
- 4109:       if (nramp_elev == 1) eic = nodeBnd->etaic;
- 4110:       else                 eic = 0.0;
- 4111: 
- 4112:       const double r_eic = (1.0 - ramp)*eic;   // r_ stands for ramp
- 4113:       const double r_eth = ramp*nodeBnd->eth;
- 4114:       double r_eta1_bar = 0.0;
+ 4077:          switch (ifltype) {
+ 4078:             case 1:
+ 4079:             case 2:
+ 4080:             case 4:
+ 4081:                sideBnd->ubc[k] = r_uth;
+ 4082:                break;
+ 4083:             case 3:
+ 4084:                sideBnd->ubc[k] = r_u1_bar;
+ 4085:                break;
+ 4086:             case 5:
+ 4087:                sideBnd->ubc[k] = r_uth + r_u1_bar;
+ 4088:                break;
+ 4089:          } // switch
+ 4090: 
+ 4091:       } // for k
+ 4092:    }
+ 4093: 
+ 4094:    __global__ void computeElevationBoundaryConditions(double time) {
+ 4095:       // Compute elevation essential boundary conditions 
+ 4096: 
+ 4097:       NODE_BND(nodeBnd); // Each boundary node.
+ 4098: 
+ 4099:       assert(nodeBnd->segment != nullptr && "computeElevationBoundaryConditions: nodeBnd->segment is nullptr");
+ 4100: 
+ 4101:       const Node *node = nodeBnd->node;
+ 4102:       const BoundarySegment *segment = nodeBnd->segment;
+ 4103:       const int iettype = segment->iettype;
+ 4104:       
+ 4105: 
+ 4106:       // Elevation initial condition at boundary nodes. It is ramped down to zero
+ 4107:       double eic = 0.0;
+ 4108:       if (nramp_elev == 1) eic = nodeBnd->etaic;
+ 4109:       else                 eic = 0.0;
+ 4110: 
+ 4111:       const double r_eic = (1.0 - ramp)*eic;   // r_ stands for ramp
+ 4112:       const double r_eth = ramp*nodeBnd->eth;
+ 4113:       double r_eta1_bar = 0.0;
+ 4114: 
  4115: 
- 4116: 
- 4117:       // Compute tide elevation
- 4118:       if (iettype == 3 || iettype == 5) {   
- 4119: 
- 4120:          if constexpr(iloadtide==1) { // loading tide
- 4121:             assert(false && "Loading tide not implemented");
- 4122:             // node->ETP += node->rloadtide[0,j]*cos(tfreq[j]*time - node->rloadtide[1,j]);
- 4123:          }
- 4124:          
- 4125:          for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
- 4126: 
- 4127:             const double efa  = nodeBnd->efa[jfr]; 
- 4128:             const double emo  = nodeBnd->emo[jfr]; 
- 4129: 
- 4130:             const int ncyc = int(amig[jfr]*time/(2.0*pi));
- 4131:             const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa;
- 4132:             r_eta1_bar += ramp*ff[jfr]*emo*cos(arg);
- 4133: 
- 4134:          } // for jfr
- 4135: 
- 4136:       } // if iettype
- 4137: 
- 4138:       switch (iettype) {
- 4139:          case 1:
- 4140:          case 2:
- 4141:          case 4:
- 4142:             nodeBnd->elbc = r_eic + r_eth;
- 4143:             break;
- 4144:          case 3:
- 4145:             nodeBnd->elbc = r_eic + r_eta1_bar;
- 4146:             break;
- 4147:          case 5:
- 4148:             nodeBnd->elbc = r_eic + r_eta1_bar + r_eth;
- 4149:             break;
- 4150:       } // switch
+ 4116:       // Compute tide elevation
+ 4117:       if (iettype == 3 || iettype == 5) {   
+ 4118: 
+ 4119:          if constexpr(iloadtide==1) { // loading tide
+ 4120:             assert(false && "Loading tide not implemented");
+ 4121:             // node->ETP += node->rloadtide[0,j]*cos(tfreq[j]*time - node->rloadtide[1,j]);
+ 4122:          }
+ 4123:          
+ 4124:          for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
+ 4125: 
+ 4126:             const double efa  = nodeBnd->efa[jfr]; 
+ 4127:             const double emo  = nodeBnd->emo[jfr]; 
+ 4128: 
+ 4129:             const int ncyc = int(amig[jfr]*time/(2.0*pi));
+ 4130:             const double arg = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - efa;
+ 4131:             r_eta1_bar += ramp*ff[jfr]*emo*cos(arg);
+ 4132: 
+ 4133:          } // for jfr
+ 4134: 
+ 4135:       } // if iettype
+ 4136: 
+ 4137:       switch (iettype) {
+ 4138:          case 1:
+ 4139:          case 2:
+ 4140:          case 4:
+ 4141:             nodeBnd->elbc = r_eic + r_eth;
+ 4142:             break;
+ 4143:          case 3:
+ 4144:             nodeBnd->elbc = r_eic + r_eta1_bar;
+ 4145:             break;
+ 4146:          case 5:
+ 4147:             nodeBnd->elbc = r_eic + r_eta1_bar + r_eth;
+ 4148:             break;
+ 4149:       } // switch
+ 4150: 
  4151: 
- 4152: 
- 4153:       //Add inverse barometric effects
- 4154:       if (iettype != 0 && inv_atm_bnd == 1) {
- 4155:          nodeBnd->elbc += ramp*(prmsl_ref - node->pr)/grav/rho0;
- 4156:       }
- 4157: 
- 4158:    }
+ 4152:       //Add inverse barometric effects
+ 4153:       if (iettype != 0 && inv_atm_bnd == 1) {
+ 4154:          nodeBnd->elbc += ramp*(prmsl_ref - node->pr)/grav/rho0;
+ 4155:       }
+ 4156: 
+ 4157:    }
+ 4158: 
  4159: 
- 4160: 
- 4161:    __global__ void computeHorizontalViscosity(void) { 
- 4162: 
- 4163:       assert(ics == 1 && "computeHorizontalViscosity: implemented only for ics=1");
- 4164: 
- 4165:       SIDE(side);
- 4166: 
- 4167:       if (side->isDry) return;
- 4168: 
- 4169:       for (int k = 0; k < nvrt; k++) {
- 4170:          side->nuGradU[k] = {0.0, 0.0};
- 4171:       }
- 4172: 
- 4173:       if constexpr(ihorcon == 1) {
- 4174:          for (int k = side->kb; k < nvrt - 1; k++) {
- 4175:             // Computes the Laplacian by using the simplified formula presented in the paper:
- 4176:             // SELFE: A semi-implicit Eulerian–Lagrangian finite-element model for cross-scale ocean circulation
- 4177:             // By Zhang and Baptista.
- 4178: 
- 4179:             // sum(nu*(u_i - u_c))/area, where u_i is the velocity at the i-th surrounding side and u_c is the velocity at the side under consideration.
- 4180:             // This is a standard discretization of the Laplacian operator.
- 4181:             // Following the paper, nu is estimated as: gamma*area/dt, where gamma is a non-dimensional parameter.
- 4182:             // The area is the area of the cell we use for this calculation (it's not the area of an element). However, since it is in the numerator and the denominator, it cancels out.
- 4183:             // Gamma is hvis_coef0 in the code.
- 4184:             // The value of gamma needs to be < 0.5.
- 4185: 
- 4186:             // For the computation at the side center, we use the velocities at the two sides that are connected to the 
- 4187:             // side under consideration in each of the two possible elements that share the side.
- 4188:             Vector2 sumU = {0.0, 0.0};
- 4189:             for (int l = 0; l < 2; l++) {
- 4190:                const Element *elem = side->elems[l];
- 4191: 
- 4192:                if (elem == nullptr) continue;  // This happens at the domain boundaries
- 4193: 
- 4194:                // Find the local index of the side in the element
- 4195:                const int idxSide = elem->sideLocalIdx(side);
- 4196:                // Find the two sides that are connected to the side under consideration
- 4197:                const Side *side1 = elem->sides[elem->nxq(idxSide + 1)];
- 4198:                const Side *side2 = elem->sides[elem->nxq(idxSide - 1)];
- 4199: 
- 4200:                sumU += side1->u2[k] + side2->u2[k] - 2*side->u2[k];
- 4201: 
- 4202:             }
- 4203: 
- 4204:             side->nuGradU[k] = hvis_coef0*sumU/dt;
- 4205: if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->nuGradU[k].x, side->nuGradU[k].y);            
- 4206:    
- 4207:          }
- 4208:       }
- 4209:       else if constexpr(ihorcon == 2) {
- 4210:          assert(false && "computeHorizontalViscosity: implemented only for ihorcon == 1");
- 4211:       }
+ 4160:    __global__ void computeHorizontalViscosity(void) { 
+ 4161: 
+ 4162:       assert(ics == 1 && "computeHorizontalViscosity: implemented only for ics=1");
+ 4163: 
+ 4164:       SIDE(side);
+ 4165: 
+ 4166:       if (side->isDry) return;
+ 4167: 
+ 4168:       for (int k = 0; k < nvrt; k++) {
+ 4169:          side->nuGradU[k] = {0.0, 0.0};
+ 4170:       }
+ 4171: 
+ 4172:       if constexpr(ihorcon == 1) {
+ 4173:          for (int k = side->kb; k < nvrt - 1; k++) {
+ 4174:             // Computes the Laplacian by using the simplified formula presented in the paper:
+ 4175:             // SELFE: A semi-implicit Eulerian–Lagrangian finite-element model for cross-scale ocean circulation
+ 4176:             // By Zhang and Baptista.
+ 4177: 
+ 4178:             // sum(nu*(u_i - u_c))/area, where u_i is the velocity at the i-th surrounding side and u_c is the velocity at the side under consideration.
+ 4179:             // This is a standard discretization of the Laplacian operator.
+ 4180:             // Following the paper, nu is estimated as: gamma*area/dt, where gamma is a non-dimensional parameter.
+ 4181:             // The area is the area of the cell we use for this calculation (it's not the area of an element). However, since it is in the numerator and the denominator, it cancels out.
+ 4182:             // Gamma is hvis_coef0 in the code.
+ 4183:             // The value of gamma needs to be < 0.5.
+ 4184: 
+ 4185:             // For the computation at the side center, we use the velocities at the two sides that are connected to the 
+ 4186:             // side under consideration in each of the two possible elements that share the side.
+ 4187:             Vector2 sumU = {0.0, 0.0};
+ 4188:             for (int l = 0; l < 2; l++) {
+ 4189:                const Element *elem = side->elems[l];
+ 4190: 
+ 4191:                if (elem == nullptr) continue;  // This happens at the domain boundaries
+ 4192: 
+ 4193:                // Find the local index of the side in the element
+ 4194:                const int idxSide = elem->sideLocalIdx(side);
+ 4195:                // Find the two sides that are connected to the side under consideration
+ 4196:                const Side *side1 = elem->sides[elem->nxq(idxSide + 1)];
+ 4197:                const Side *side2 = elem->sides[elem->nxq(idxSide - 1)];
+ 4198: 
+ 4199:                sumU += side1->u2[k] + side2->u2[k] - 2*side->u2[k];
+ 4200: 
+ 4201:             }
+ 4202: 
+ 4203:             side->nuGradU[k] = hvis_coef0*sumU/dt;
+ 4204: if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->nuGradU[k].x, side->nuGradU[k].y);            
+ 4205:    
+ 4206:          }
+ 4207:       }
+ 4208:       else if constexpr(ihorcon == 2) {
+ 4209:          assert(false && "computeHorizontalViscosity: implemented only for ihorcon == 1");
+ 4210:       }
+ 4211: 
  4212: 
- 4213: 
- 4214:    }
+ 4213:    }
+ 4214: 
  4215: 
- 4216: 
- 4217:    __global__ void setEssentialBC(void) {
- 4218:       // Set essential boundary conditions 
- 4219:       NODE(node); // Each boundary node
- 4220:       NodeBoundary *nodeBnd = node->nodeBnd;
- 4221:       
- 4222: // nodeBnd->isEssentialBC = true;      
- 4223:       // Check if this node has essential BC
- 4224:       if (nodeBnd && nodeBnd->isEssentialBC) {
- 4225:          // Verify BC value is valid
- 4226:          assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
- 4227: 
- 4228:        
- 4229:          // Set diagonal to 1 and zero off-diagonals
- 4230:          node->coeffDiag = 1.0;
- 4231: 
- 4232:          for (int j = 0; j < node->numNodes; j++) {
- 4233:                node->coeffMatrix[j] = 0.0;
- 4234:          }
- 4235:          
- 4236:          // Set solution and RHS to BC value
- 4237:          node->mX  = nodeBnd->elbc;
- 4238:          node->qel = nodeBnd->elbc;
- 4239: 
- 4240:       } else {
- 4241:          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
- 4242: 
- 4243:          for (int j = 0; j < node->numNodes; j++) {
- 4244:                Node* nbNode = node->nodes[j];
- 4245:                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
- 4246:                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
- 4247:                   // Verify neighbor's BC value
- 4248:                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
- 4249: 
- 4250:                   // Subtract contribution to RHS
- 4251:                   node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
- 4252:                   node->coeffMatrix[j] = 0.0;  
- 4253:                }
- 4254:          }
- 4255:       }
- 4256:    }
+ 4216:    __global__ void setEssentialBC(void) {
+ 4217:       // Set essential boundary conditions 
+ 4218:       NODE(node); // Each boundary node
+ 4219:       NodeBoundary *nodeBnd = node->nodeBnd;
+ 4220:       
+ 4221: // nodeBnd->isEssentialBC = true;      
+ 4222:       // Check if this node has essential BC
+ 4223:       if (nodeBnd && nodeBnd->isEssentialBC) {
+ 4224:          // Verify BC value is valid
+ 4225:          assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
+ 4226: 
+ 4227:        
+ 4228:          // Set diagonal to 1 and zero off-diagonals
+ 4229:          node->coeffDiag = 1.0;
+ 4230: 
+ 4231:          for (int j = 0; j < node->numNodes; j++) {
+ 4232:                node->coeffMatrix[j] = 0.0;
+ 4233:          }
+ 4234:          
+ 4235:          // Set solution and RHS to BC value
+ 4236:          node->mX  = nodeBnd->elbc;
+ 4237:          node->qel = nodeBnd->elbc;
+ 4238: 
+ 4239:       } else {
+ 4240:          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
+ 4241: 
+ 4242:          for (int j = 0; j < node->numNodes; j++) {
+ 4243:                Node* nbNode = node->nodes[j];
+ 4244:                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
+ 4245:                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
+ 4246:                   // Verify neighbor's BC value
+ 4247:                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
+ 4248: 
+ 4249:                   // Subtract contribution to RHS
+ 4250:                   node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
+ 4251:                   node->coeffMatrix[j] = 0.0;  
+ 4252:                }
+ 4253:          }
+ 4254:       }
+ 4255:    }
+ 4256: 
  4257: 
- 4258: 
- 4259:    __global__ void updateElevation(void) {
- 4260:       NODE(node);
- 4261: 
- 4262:       node->eta2 = node->mX;
- 4263: 
- 4264:       node->updateZCoordData();
- 4265:    }
+ 4258:    __global__ void updateElevation(void) {
+ 4259:       NODE(node);
+ 4260: 
+ 4261:       node->eta2 = node->mX;
+ 4262: 
+ 4263:       node->updateZCoordData();
+ 4264:    }
+ 4265: 
  4266: 
- 4267: 
- 4268:    __global__ void computeVerticallyIntegratedVelocity(void) {
- 4269: 
- 4270:       SIDE(side);
+ 4267:    __global__ void computeVerticallyIntegratedVelocity(void) {
+ 4268: 
+ 4269:       SIDE(side);
+ 4270: 
  4271: 
- 4272: 
- 4273:       side->U = {0.0, 0.0}; 
- 4274:          
- 4275:       if(side->isDry) return;
- 4276: 
- 4277:       const Node *node1 = side->n1;
- 4278:       const Node *node2 = side->n2;
- 4279: 
- 4280:       // Vertically integrated velocity U (in ll if ics=2)
- 4281:       for (int k = side->kb; k < nvrt - 1; k++) { /// XXX CHECK INDICES
- 4282:          side->U += side->Dz(k + 1)*0.5*(side->u2[k] + side->u2[k + 1]);  // CHECK INDICES!!!!
- 4283:       }
- 4284: 
- 4285:    }
- 4286: 
- 4287:    __global__ void computeBottomDragVegetation(void) {
- 4288:       // UNFINISHED. CHECK THIS:
- 4289:       // How many kernels are needed? Why so many for loops?
- 4290:       // Is the loop on sides needed?
- 4291: 
- 4292:       NODE(node);
- 4293: 
- 4294:       const int    kb      = node->kb;
- 4295:       const double htot    = node->htot2();
- 4296:       const double rough   = node->rough;
+ 4272:       side->U = {0.0, 0.0}; 
+ 4273:          
+ 4274:       if(side->isDry) return;
+ 4275: 
+ 4276:       const Node *node1 = side->n1;
+ 4277:       const Node *node2 = side->n2;
+ 4278: 
+ 4279:       // Vertically integrated velocity U (in ll if ics=2)
+ 4280:       for (int k = side->kb; k < nvrt - 1; k++) { /// XXX CHECK INDICES
+ 4281:          side->U += side->Dz(k + 1)*0.5*(side->u2[k] + side->u2[k + 1]);  // CHECK INDICES!!!!
+ 4282:       }
+ 4283: 
+ 4284:    }
+ 4285: 
+ 4286:    __global__ void computeBottomDragVegetation(void) {
+ 4287:       // UNFINISHED. CHECK THIS:
+ 4288:       // How many kernels are needed? Why so many for loops?
+ 4289:       // Is the loop on sides needed?
+ 4290: 
+ 4291:       NODE(node);
+ 4292: 
+ 4293:       const int    kb      = node->kb;
+ 4294:       const double htot    = node->htot2();
+ 4295:       const double rough   = node->rough;
+ 4296: 
  4297: 
- 4298: 
- 4299:       if (node->isDry) {
- 4300:          // Default values for dry nodes
- 4301:          node->veg_alpha_vert_mean = node->veg_alpha0;
- 4302:          /// XXX CHECK INDICES
- 4303:          if constexpr(iveg != 0) for (int k = kb; k < nvrt; k++) node->veg_alpha3D[k] = node->veg_alpha0;
- 4304:       }
- 4305: 
- 4306:       // Compute bottom drag Cd
- 4307:       //--------------------------------
- 4308: 
- 4309:       // nchi = {-1, 0, 1} is the type of bottom drag.
- 4310:       if constexpr(nchi == 1) {
- 4311: 
- 4312:          bool ltmp = false; // for WBL iteration
- 4313: 
- 4314:          // Cdmax=-1 !max. Cd at node for this process (info only)
- 4315:          // Drag at nodes
- 4316:    /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
- 4317:    // !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
- 4318:         
- 4319:          const double rough = node->rough;
- 4320:          assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
- 4321:          if (node->rough == 0.0) {
- 4322:             node->Cd = 0.0;
- 4323: 
- 4324:          } else { //roughness >0 
- 4325:             
- 4326:             const double bthick_ori = node->z[kb + 1] - node->z[kb];  // thickness of bottom bnd layer
- 4327:             const double bthick = max(dzb_min, bthick_ori);
- 4328: 
- 4329:             assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
- 4330: 
- 4331:             double tmp = 1.0/(2.5*log(bthick/rough));
- 4332:             node->Cd = tmp*tmp;
- 4333: 
- 4334:          } // if rough
+ 4298:       if (node->isDry) {
+ 4299:          // Default values for dry nodes
+ 4300:          node->veg_alpha_vert_mean = node->veg_alpha0;
+ 4301:          /// XXX CHECK INDICES
+ 4302:          if constexpr(iveg != 0) for (int k = kb; k < nvrt; k++) node->veg_alpha3D[k] = node->veg_alpha0;
+ 4303:       }
+ 4304: 
+ 4305:       // Compute bottom drag Cd
+ 4306:       //--------------------------------
+ 4307: 
+ 4308:       // nchi = {-1, 0, 1} is the type of bottom drag.
+ 4309:       if constexpr(nchi == 1) {
+ 4310: 
+ 4311:          bool ltmp = false; // for WBL iteration
+ 4312: 
+ 4313:          // Cdmax=-1 !max. Cd at node for this process (info only)
+ 4314:          // Drag at nodes
+ 4315:    /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
+ 4316:    // !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
+ 4317:         
+ 4318:          const double rough = node->rough;
+ 4319:          assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
+ 4320:          if (node->rough == 0.0) {
+ 4321:             node->Cd = 0.0;
+ 4322: 
+ 4323:          } else { //roughness >0 
+ 4324:             
+ 4325:             const double bthick_ori = node->z[kb + 1] - node->z[kb];  // thickness of bottom bnd layer
+ 4326:             const double bthick = max(dzb_min, bthick_ori);
+ 4327: 
+ 4328:             assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
+ 4329: 
+ 4330:             double tmp = 1.0/(2.5*log(bthick/rough));
+ 4331:             node->Cd = tmp*tmp;
+ 4332: 
+ 4333:          } // if rough
+ 4334: 
  4335: 
- 4336: 
- 4337:          // RECOVER THIS: XXX
- 4338:          // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
- 4339:          // Output warning for WBL if iteration didn't converge
+ 4336:          // RECOVER THIS: XXX
+ 4337:          // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
+ 4338:          // Output warning for WBL if iteration didn't converge
+ 4339: 
  4340: 
- 4341: 
- 4342:       } // nchi==1
- 4343: 
- 4344:       //   Bottom stress in m^2/s^2
- 4345:       if (node->rho[kb + 1] >= -98.0)
- 4346:       {
- 4347:          const double mag_u = length(toVector2(node->u2[kb + 1]));
- 4348:          node->tau_bot = node->rho[kb + 1]*node->Cd*mag_u*toVector2(node->u2[kb + 1]); // units: kg/m/s^2 (Pa)
- 4349: 
- 4350:          // XXX In the original code there is an additional component of tau_bot, used in icm_sfm.F90 with this comment:
- 4351:          // !sediment erosion: this part needs more documentation
- 4352:       }
- 4353: 
- 4354:     
- 4355:       // Compute vegetation parameters
- 4356:       //--------------------------------
- 4357: 
- 4358:       // SAV constants
- 4359:       constexpr double veg_cfk   = 0.07; //Shimizu & Tsujimoto (1994)
- 4360:       constexpr double veg_cfpsi = 0.16;
- 4361: 
- 4362:       // Add vertical variation to veg_alpha and compute vertical mean etc.
- 4363:       if constexpr(iveg == 1) { //  Vertical variation specified by functions
- 4364: 
- 4365:          // Compute the vegetation "density" \alpha = D*N*Cd/2
- 4366:          // D, N and Cd are given as piecewise linear functions: veg_vert_scale_cd, veg_vert_scale_N, veg_vert_scale_D
- 4367:          int kbin = 0; // bin index
- 4368:          for (int k = kb; k < nvrt; k++) {
- 4369:             // Computes node height above the bottom level
- 4370:             const double tmp_h = node->z[k] - node->z[kb]; // >=0
- 4371:             assert(false && "Vertical variation of vegetation not implemented");
- 4372: 
- 4373:             // if (tmp_h >= veg_vert_z[nbins_veg_vert]) {
- 4374:             //    cff1 = veg_vert_scale_cd[nbins_veg_vert];
- 4375:             //    cff2 = veg_vert_scale_N [nbins_veg_vert];
- 4376:             //    cff3 = veg_vert_scale_D [nbins_veg_vert];
- 4377:             // } else {
- 4378:             //    // Find the bin at which the current vertical level is
- 4379:             //    while (kbin<nbins_veg_vert) {
- 4380:             //       const double zn = node->z[kbin];
- 4381:             //       if (tmp_h >= veg_vert_z[kbin] && tmp_h <= veg_vert_z[kbin+1]) {
- 4382:             //          break;
- 4383:             //       } // if
- 4384:             //       kbin++;
- 4385:             //    } // while
- 4386:             //    assert (kbin < nbins_veg_vert && "computeBottomDragVegetation: veg vert failed");
- 4387: 
- 4388:             //    // for linear interpolation, compute the ratio of the height above the bottom level to the bin width
- 4389:             //    const double zrat = (tmp_h - veg_vert_z[kbin])/(veg_vert_z[kbin+1] - veg_vert_z[kbin]);
- 4390:                
- 4391:             //    // Linear interpolation of the vegetation parameters
- 4392:             //    cff1 = veg_vert_scale_cd[kbin]*(1.0 - zrat) + veg_vert_scale_cd[kbin+1]*zrat;
- 4393:             //    cff2 = veg_vert_scale_N [kbin]*(1.0 - zrat) + veg_vert_scale_N [kbin+1]*zrat;
- 4394:             //    cff3 = veg_vert_scale_D [kbin]*(1.0 - zrat) + veg_vert_scale_D [kbin+1]*zrat;
- 4395:             // } // if rl10
- 4396: 
- 4397:             // node->veg_alpha3D[k] = node->veg_alpha0*cff1*cff2*cff3;
- 4398: 
- 4399:          } // for k
+ 4341:       } // nchi==1
+ 4342: 
+ 4343:       //   Bottom stress in m^2/s^2
+ 4344:       if (node->rho[kb + 1] >= -98.0)
+ 4345:       {
+ 4346:          const double mag_u = length(toVector2(node->u2[kb + 1]));
+ 4347:          node->tau_bot = node->rho[kb + 1]*node->Cd*mag_u*toVector2(node->u2[kb + 1]); // units: kg/m/s^2 (Pa)
+ 4348: 
+ 4349:          // XXX In the original code there is an additional component of tau_bot, used in icm_sfm.F90 with this comment:
+ 4350:          // !sediment erosion: this part needs more documentation
+ 4351:       }
+ 4352: 
+ 4353:     
+ 4354:       // Compute vegetation parameters
+ 4355:       //--------------------------------
+ 4356: 
+ 4357:       // SAV constants
+ 4358:       constexpr double veg_cfk   = 0.07; //Shimizu & Tsujimoto (1994)
+ 4359:       constexpr double veg_cfpsi = 0.16;
+ 4360: 
+ 4361:       // Add vertical variation to veg_alpha and compute vertical mean etc.
+ 4362:       if constexpr(iveg == 1) { //  Vertical variation specified by functions
+ 4363: 
+ 4364:          // Compute the vegetation "density" \alpha = D*N*Cd/2
+ 4365:          // D, N and Cd are given as piecewise linear functions: veg_vert_scale_cd, veg_vert_scale_N, veg_vert_scale_D
+ 4366:          int kbin = 0; // bin index
+ 4367:          for (int k = kb; k < nvrt; k++) {
+ 4368:             // Computes node height above the bottom level
+ 4369:             const double tmp_h = node->z[k] - node->z[kb]; // >=0
+ 4370:             assert(false && "Vertical variation of vegetation not implemented");
+ 4371: 
+ 4372:             // if (tmp_h >= veg_vert_z[nbins_veg_vert]) {
+ 4373:             //    cff1 = veg_vert_scale_cd[nbins_veg_vert];
+ 4374:             //    cff2 = veg_vert_scale_N [nbins_veg_vert];
+ 4375:             //    cff3 = veg_vert_scale_D [nbins_veg_vert];
+ 4376:             // } else {
+ 4377:             //    // Find the bin at which the current vertical level is
+ 4378:             //    while (kbin<nbins_veg_vert) {
+ 4379:             //       const double zn = node->z[kbin];
+ 4380:             //       if (tmp_h >= veg_vert_z[kbin] && tmp_h <= veg_vert_z[kbin+1]) {
+ 4381:             //          break;
+ 4382:             //       } // if
+ 4383:             //       kbin++;
+ 4384:             //    } // while
+ 4385:             //    assert (kbin < nbins_veg_vert && "computeBottomDragVegetation: veg vert failed");
+ 4386: 
+ 4387:             //    // for linear interpolation, compute the ratio of the height above the bottom level to the bin width
+ 4388:             //    const double zrat = (tmp_h - veg_vert_z[kbin])/(veg_vert_z[kbin+1] - veg_vert_z[kbin]);
+ 4389:                
+ 4390:             //    // Linear interpolation of the vegetation parameters
+ 4391:             //    cff1 = veg_vert_scale_cd[kbin]*(1.0 - zrat) + veg_vert_scale_cd[kbin+1]*zrat;
+ 4392:             //    cff2 = veg_vert_scale_N [kbin]*(1.0 - zrat) + veg_vert_scale_N [kbin+1]*zrat;
+ 4393:             //    cff3 = veg_vert_scale_D [kbin]*(1.0 - zrat) + veg_vert_scale_D [kbin+1]*zrat;
+ 4394:             // } // if rl10
+ 4395: 
+ 4396:             // node->veg_alpha3D[k] = node->veg_alpha0*cff1*cff2*cff3;
+ 4397: 
+ 4398:          } // for k
+ 4399: 
  4400: 
- 4401: 
- 4402:       } else { // Ganthy (iveg=2)
- 4403:       //  Modify canopy height, diameter, and density
- 4404: 
- 4405:          // Make sure there is vegetation on this node
- 4406:          if (node->veg_h_unbent > 0.0) {
- 4407:             const double wtmp2 = length(node->dav)*100.0; // cm/s
- 4408: 
- 4409:             node->veg_h = 0.72e-2*(4.657 - 0.158*wtmp2 + 0.262*veg_lai - 0.011*veg_lai*wtmp2 + 
- 4410:                                    0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784;
- 4411:             node->veg_h = max(node->veg_h, 1.0e-2);  //impose min of 1 cm
- 4412: 
- 4413:             const double phi_b = veg_cw*node->veg_di_unbent*node->veg_h_unbent/node->veg_h; // \phi_b
- 4414:             node->veg_di = (node->veg_di_unbent + phi_b)*0.5;
- 4415:             const double surpHeight = max(0.0, node->veg_h_unbent - node->veg_h); //surplus height
- 4416:             node->veg_nv = node->veg_nv_unbent*(1.0 + surpHeight/node->veg_h);
- 4417:          } // if veg_h_unbent
- 4418: 
- 4419:          for (int k = 0; k < nvrt; k++) {
- 4420:             node->veg_alpha3D[k] = 0.5*node->veg_di*node->veg_nv*node->veg_Cd;
- 4421:          } // for k
- 4422:       
- 4423: 
- 4424:       } // if iveg
- 4425:      
- 4426:          
- 4427: 
- 4428:       // Compute vertical mean of veg_alpha3D
- 4429:       if (iveg != 0) {
- 4430:          const double ztop = node->zTopCanopy(); // Top of the canopy
- 4431:          double sum1=0.0;
- 4432:          double sum2=0.0;
- 4433:          // Integrate over each level under the canopy...
- 4434:          for (int k=kb; k<nvrt-1 && node->z[k+1] <= ztop; k++) { /// XXX CHECK INDICES
- 4435:             const double Dz = node->Dz(k);
- 4436: 
- 4437:             sum1 += 0.5*(node->veg_alpha3D[k] + node->veg_alpha3D[k+1])*Dz;
- 4438:             sum2 += Dz;
- 4439: 
- 4440:          } // for k
- 4441: 
- 4442:          if (sum2 == 0.0) node->veg_alpha_vert_mean = node->veg_alpha3D[kb];
- 4443:          else             node->veg_alpha_vert_mean = sum1/sum2;
- 4444: 
- 4445:       } // if iveg
- 4446: 
- 4447:    }
- 4448: 
- 4449:    __global__ void computeVegetationAndDragParameters(void) {
- 4450:       // Computes the vegetation and drag model parameters:
- 4451:       // chi, \tilde\chi, beta, \breve{H}
- 4452:       
- 4453:       SIDE(side);
- 4454: 
- 4455:       const double htot = side->htot2();
- 4456:       const int    kb   = side->kb;
- 4457: 
- 4458:       assert(htot > 0.0 && "computeVegetationModelParameters: htot <= 0");
- 4459: 
- 4460:       const double veg_h     = side->veg_h();
- 4461:       const double veg_nv    = side->veg_nv();
- 4462:       const double veg_c     = side->veg_c();
- 4463:       const double veg_beta  = side->veg_beta;
- 4464:       const double veg_alpha = side->veg_alpha_vert_mean();
- 4465: 
- 4466:       // Compute the drag coefficients chi2 and chi (\tilde\chi in notes) // XXX change names, chi->chitilde, chi2->chi
- 4467:       // Velocity magnitude at the bottom level
- 4468:       // XXXX Check if we have added -dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1) to u2.
- 4469:       const double vmag1 = length(side->btu[kb + 1]); //BACKTRACKED VELOCITY
- 4470:       side->chi2 = side->Cd()*vmag1;
- 4471:       side->chi  = side->chi2;
- 4472:       if constexpr(iveg != 0) {
- 4473:          const Node *n1 = side->n1;
- 4474:          const Node *n2 = side->n2;
- 4475:          const double veg_alpha_bot = 0.5*(n1->veg_alpha3D[n1->kb] + n2->veg_alpha3D[n2->kb]);
- 4476:          side->chi = side->chi/(1.0 + veg_alpha_bot*vmag1*dt);
- 4477:       }
- 4478: 
- 4479:       // Calc consts in SAV model; make sure veg_[c2,beta]=0 at 2D, dry side, and emergent side
- 4480: 
- 4481:       // Compute the vertically averaged velocity magnitude Ua up to the top of the canopy.
- 4482:       // \int_{-h}^{z_v} |u|dz / H^\alpha = \bar{|u|}^\alpha
- 4483:       double magUa = 0.0;
- 4484:       if (iveg != 0 && side->is3D() && veg_h > 0.0) {
- 4485:          // 3D wet side with veg...
- 4486: 
- 4487:          double magUa = 0.0;
- 4488:          for (int k = kb; k < nvrt - 1; k++) { // XXX CHECK INDICES
- 4489:             if (side->hasVegetation(k + 1)) { //partial or full SAV layer
- 4490: 
- 4491:                // Velocity magnitude must be computed at the center of each level to perform the integration.
- 4492:                // The tricky part is to compute that velocity at the level that may be partially submerged.
- 4493:                const double zrat = side->zLevelVegRatio(k + 1); // in (0,1]
- 4494: 
- 4495:                // Velocity magnitude at the top (h) of the level (may be partially submerged)
- 4496:                const double uh = length((1.0 - zrat)*side->u2[k] + zrat*side->u2[k + 1]);
- 4497: 
- 4498:                // Velocity magnitude at the bottom (l) of the level
- 4499:                const double ul = length(side->u2[k]);
- 4500: 
- 4501:                const double Dz = zrat*side->Dz(k);  // Takes into account the partially submerged level
- 4502:                magUa += Dz*0.5*(uh + ul);
- 4503: 
- 4504:             } // if HasVegetation
- 4505:          } // for k
- 4506:          const double ua = magUa/min(htot, veg_h); // Vertical average
- 4507: 
- 4508:          // Computes beta, used for computing the stress term at the top of the canopy.      
- 4509:          side->veg_c2 = veg_alpha*dt*ua; // >=0
- 4510:          if (side->isSubmerged()) { // 3D wet submergent side with vegetation
- 4511:             const double zCpy = side->zTopCanopy();
- 4512:             const double I = max(1.0e-5, side->chi2*vmag1/(grav*htot)); // Energy gradient
- 4513:             const double Dz_veg = veg_h - side->Dz(kb + 1); // Distance from the top of the canopy to the top of the bottom level (equal to side->topOfCanopy() - side->zc[kb + 1])
- 4514:             const double beta2 = sqrt(sqrt(veg_nv)/veg_h)*(-0.32 - 0.85*log10((htot - veg_h)/veg_h*I));
- 4515:             const double beta = exp(beta2*Dz_veg) - 1.0; /// XXX CHECK INDICES
- 4516:             side->veg_beta = max(0.0, min(10.0, beta));  // Clamp to [0,10]
- 4517:          } // if isSubmerged
- 4518:       } // if iveg   
- 4519: 
- 4520:       // Computes the friction modified depth, \breve{H} in notes
- 4521:       if (side->is2D()) { // 2D
- 4522: 
- 4523:          double fricH = htot + side->chi2*dt; // Depth enhanced by the bottom friction and form drag, \tilde{H} in notes
- 4524:          if constexpr(iveg != 0) fricH += veg_alpha*vmag1*htot*dt;
- 4525: 
- 4526:          assert(fricH > 0.0 && "COMPUTE CONTINUITY EQUATION: Impossible dry 53");
- 4527: 
- 4528:          side->hhat = htot*htot/fricH; 
- 4529: 
- 4530:       } else { // 3D
- 4531:          side->hhat = htot - side->chi*dt; // Friction modified depth, \hat{H} in notes
- 4532: 
- 4533:          if constexpr(iveg != 0) {
- 4534:             
- 4535:             if (side->isSubmerged()) { 
- 4536:                const double Hhat_alpha = veg_h + veg_beta*side->chi*dt; 
- 4537:                side->hhat -= veg_c*Hhat_alpha;
- 4538: 
- 4539:             } else { // Emergent
- 4540:                side->hhat = side->hhat/(1.0 + side->veg_c2); // veg_c2 = alpha*|u|*dt
- 4541:             }
- 4542:          } // if iveg
- 4543: 
- 4544:          // Enforce positivity for 3D model
- 4545:          if (ihhat == 1) side->hhat = max(0.0, side->hhat);
- 4546:       } // if 3D
- 4547: 
- 4548:    }
+ 4401:       } else { // Ganthy (iveg=2)
+ 4402:       //  Modify canopy height, diameter, and density
+ 4403: 
+ 4404:          // Make sure there is vegetation on this node
+ 4405:          if (node->veg_h_unbent > 0.0) {
+ 4406:             const double wtmp2 = length(node->dav)*100.0; // cm/s
+ 4407: 
+ 4408:             node->veg_h = 0.72e-2*(4.657 - 0.158*wtmp2 + 0.262*veg_lai - 0.011*veg_lai*wtmp2 + 
+ 4409:                                    0.0022*wtmp2*wtmp2 + 0.048*veg_lai*veg_lai) - 0.00784;
+ 4410:             node->veg_h = max(node->veg_h, 1.0e-2);  //impose min of 1 cm
+ 4411: 
+ 4412:             const double phi_b = veg_cw*node->veg_di_unbent*node->veg_h_unbent/node->veg_h; // \phi_b
+ 4413:             node->veg_di = (node->veg_di_unbent + phi_b)*0.5;
+ 4414:             const double surpHeight = max(0.0, node->veg_h_unbent - node->veg_h); //surplus height
+ 4415:             node->veg_nv = node->veg_nv_unbent*(1.0 + surpHeight/node->veg_h);
+ 4416:          } // if veg_h_unbent
+ 4417: 
+ 4418:          for (int k = 0; k < nvrt; k++) {
+ 4419:             node->veg_alpha3D[k] = 0.5*node->veg_di*node->veg_nv*node->veg_Cd;
+ 4420:          } // for k
+ 4421:       
+ 4422: 
+ 4423:       } // if iveg
+ 4424:      
+ 4425:          
+ 4426: 
+ 4427:       // Compute vertical mean of veg_alpha3D
+ 4428:       if (iveg != 0) {
+ 4429:          const double ztop = node->zTopCanopy(); // Top of the canopy
+ 4430:          double sum1=0.0;
+ 4431:          double sum2=0.0;
+ 4432:          // Integrate over each level under the canopy...
+ 4433:          for (int k=kb; k<nvrt-1 && node->z[k+1] <= ztop; k++) { /// XXX CHECK INDICES
+ 4434:             const double Dz = node->Dz(k);
+ 4435: 
+ 4436:             sum1 += 0.5*(node->veg_alpha3D[k] + node->veg_alpha3D[k+1])*Dz;
+ 4437:             sum2 += Dz;
+ 4438: 
+ 4439:          } // for k
+ 4440: 
+ 4441:          if (sum2 == 0.0) node->veg_alpha_vert_mean = node->veg_alpha3D[kb];
+ 4442:          else             node->veg_alpha_vert_mean = sum1/sum2;
+ 4443: 
+ 4444:       } // if iveg
+ 4445: 
+ 4446:    }
+ 4447: 
+ 4448:    __global__ void computeVegetationAndDragParameters(void) {
+ 4449:       // Computes the vegetation and drag model parameters:
+ 4450:       // chi, \tilde\chi, beta, \breve{H}
+ 4451:       
+ 4452:       SIDE(side);
+ 4453: 
+ 4454:       const double htot = side->htot2();
+ 4455:       const int    kb   = side->kb;
+ 4456: 
+ 4457:       assert(htot > 0.0 && "computeVegetationModelParameters: htot <= 0");
+ 4458: 
+ 4459:       const double veg_h     = side->veg_h();
+ 4460:       const double veg_nv    = side->veg_nv();
+ 4461:       const double veg_c     = side->veg_c();
+ 4462:       const double veg_beta  = side->veg_beta;
+ 4463:       const double veg_alpha = side->veg_alpha_vert_mean();
+ 4464: 
+ 4465:       // Compute the drag coefficients chi2 and chi (\tilde\chi in notes) // XXX change names, chi->chitilde, chi2->chi
+ 4466:       // Velocity magnitude at the bottom level
+ 4467:       // XXXX Check if we have added -dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1) to u2.
+ 4468:       const double vmag1 = length(side->btu[kb + 1]); //BACKTRACKED VELOCITY
+ 4469:       side->chi2 = side->Cd()*vmag1;
+ 4470:       side->chi  = side->chi2;
+ 4471:       if constexpr(iveg != 0) {
+ 4472:          const Node *n1 = side->n1;
+ 4473:          const Node *n2 = side->n2;
+ 4474:          const double veg_alpha_bot = 0.5*(n1->veg_alpha3D[n1->kb] + n2->veg_alpha3D[n2->kb]);
+ 4475:          side->chi = side->chi/(1.0 + veg_alpha_bot*vmag1*dt);
+ 4476:       }
+ 4477: 
+ 4478:       // Calc consts in SAV model; make sure veg_[c2,beta]=0 at 2D, dry side, and emergent side
+ 4479: 
+ 4480:       // Compute the vertically averaged velocity magnitude Ua up to the top of the canopy.
+ 4481:       // \int_{-h}^{z_v} |u|dz / H^\alpha = \bar{|u|}^\alpha
+ 4482:       double magUa = 0.0;
+ 4483:       if (iveg != 0 && side->is3D() && veg_h > 0.0) {
+ 4484:          // 3D wet side with veg...
+ 4485: 
+ 4486:          double magUa = 0.0;
+ 4487:          for (int k = kb; k < nvrt - 1; k++) { // XXX CHECK INDICES
+ 4488:             if (side->hasVegetation(k + 1)) { //partial or full SAV layer
+ 4489: 
+ 4490:                // Velocity magnitude must be computed at the center of each level to perform the integration.
+ 4491:                // The tricky part is to compute that velocity at the level that may be partially submerged.
+ 4492:                const double zrat = side->zLevelVegRatio(k + 1); // in (0,1]
+ 4493: 
+ 4494:                // Velocity magnitude at the top (h) of the level (may be partially submerged)
+ 4495:                const double uh = length((1.0 - zrat)*side->u2[k] + zrat*side->u2[k + 1]);
+ 4496: 
+ 4497:                // Velocity magnitude at the bottom (l) of the level
+ 4498:                const double ul = length(side->u2[k]);
+ 4499: 
+ 4500:                const double Dz = zrat*side->Dz(k);  // Takes into account the partially submerged level
+ 4501:                magUa += Dz*0.5*(uh + ul);
+ 4502: 
+ 4503:             } // if HasVegetation
+ 4504:          } // for k
+ 4505:          const double ua = magUa/min(htot, veg_h); // Vertical average
+ 4506: 
+ 4507:          // Computes beta, used for computing the stress term at the top of the canopy.      
+ 4508:          side->veg_c2 = veg_alpha*dt*ua; // >=0
+ 4509:          if (side->isSubmerged()) { // 3D wet submergent side with vegetation
+ 4510:             const double zCpy = side->zTopCanopy();
+ 4511:             const double I = max(1.0e-5, side->chi2*vmag1/(grav*htot)); // Energy gradient
+ 4512:             const double Dz_veg = veg_h - side->Dz(kb + 1); // Distance from the top of the canopy to the top of the bottom level (equal to side->topOfCanopy() - side->zc[kb + 1])
+ 4513:             const double beta2 = sqrt(sqrt(veg_nv)/veg_h)*(-0.32 - 0.85*log10((htot - veg_h)/veg_h*I));
+ 4514:             const double beta = exp(beta2*Dz_veg) - 1.0; /// XXX CHECK INDICES
+ 4515:             side->veg_beta = max(0.0, min(10.0, beta));  // Clamp to [0,10]
+ 4516:          } // if isSubmerged
+ 4517:       } // if iveg   
+ 4518: 
+ 4519:       // Computes the friction modified depth, \breve{H} in notes
+ 4520:       if (side->is2D()) { // 2D
+ 4521: 
+ 4522:          double fricH = htot + side->chi2*dt; // Depth enhanced by the bottom friction and form drag, \tilde{H} in notes
+ 4523:          if constexpr(iveg != 0) fricH += veg_alpha*vmag1*htot*dt;
+ 4524: 
+ 4525:          assert(fricH > 0.0 && "COMPUTE CONTINUITY EQUATION: Impossible dry 53");
+ 4526: 
+ 4527:          side->hhat = htot*htot/fricH; 
+ 4528: 
+ 4529:       } else { // 3D
+ 4530:          side->hhat = htot - side->chi*dt; // Friction modified depth, \hat{H} in notes
+ 4531: 
+ 4532:          if constexpr(iveg != 0) {
+ 4533:             
+ 4534:             if (side->isSubmerged()) { 
+ 4535:                const double Hhat_alpha = veg_h + veg_beta*side->chi*dt; 
+ 4536:                side->hhat -= veg_c*Hhat_alpha;
+ 4537: 
+ 4538:             } else { // Emergent
+ 4539:                side->hhat = side->hhat/(1.0 + side->veg_c2); // veg_c2 = alpha*|u|*dt
+ 4540:             }
+ 4541:          } // if iveg
+ 4542: 
+ 4543:          // Enforce positivity for 3D model
+ 4544:          if (ihhat == 1) side->hhat = max(0.0, side->hhat);
+ 4545:       } // if 3D
+ 4546: 
+ 4547:    }
+ 4548: 
  4549: 
  4550: 
- 4551: 
- 4552:    __global__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int j, const int k, const double rho2, Vector2 &vec, double &diffRho) {
- 4553:    // Computes the density gradient between two elements, e1 and e2.
- 4554:    // If the neighbor element (e2doesn't exist (boundary or dry element), the density gradient is assumed to be
- 4555:    // zero in the direction normal to the side. 
- 4556:    // 
- 4557:    // NOTE: In fact it doesn't compute the gradient, but the difference in de-meaned density between e1 and e2 and
- 4558:    // the vector from e1 to e2 (or normal to side if neighbor is dry or not present
- 4559:    //
- 4560:    // Input:
- 4561:    //    e1: Element
- 4562:    //    e2: Neighbor element (or nullptr if boundary)
- 4563:    //    j: Index of the neighbor element (and the side of e1 that is shared with e2)
- 4564:    //    k: Index of the half-level at which the density is interpolated
- 4565:    //    rho2: De-meaned density at e2 interpolated at the k-th half-level of e1 (or zero if neighbor is dry or not present)
- 4566:    // 
- 4567:    // Output:
- 4568:    //    vec: Vector from e1 to e2 (or normal to side if neighbor is dry or not present)
- 4569:    //    diffRho: Difference in de-meaned density between e1 and e2 (or zero if neighbor is dry or not present)
- 4570: 
- 4571:       if (e2 == nullptr || e2->isDry) {
- 4572:          // Neighbor doesn't exist or is dry, we assume the density gradient is zero in the direction normal to the side.
- 4573: 
- 4574:          Side *side = e1->sides[j];
- 4575:          assert((side->otherElem(e1) == nullptr || side->otherElem(e1)->isDry) && "getRhoDiffAndVec: For boundary elements, side->otherElem(elem) must be nullptr or dry");
- 4576:                  
- 4577:          if constexpr(ics == 1) {
- 4578:             vec = side->n; // Normal vector to the side
- 4579:          } else {
- 4580:             // IMPLEMENT THIS XXXXXX
- 4581:             // !replace with xel, yel?
- 4582:             //                   call project_pt('g2l',xnd(n1),ynd(n1),znd(n1),(/xctr(i),yctr(i),zctr(i)/), &
- 4583:             //      &eframe(:,:,i),xn1,yn1,tmp)
- 4584:             //                   call project_pt('g2l',xnd(n2),ynd(n2),znd(n2),(/xctr(i),yctr(i),zctr(i)/), &
- 4585:             //      &eframe(:,:,i),xn2,yn2,tmp)
- 4586:          } //ics
- 4587:                    
- 4588:          diffRho = 0.0;
- 4589: 
- 4590:       } else { //internal and wet
- 4591:          if constexpr(ics==1) {
- 4592:             assert(e2 != nullptr || e2->isDry && "getRhoDiffAndVec: neighbor element is nullptr or dry");
- 4593: 
- 4594:             // Vector from e1 to e2
- 4595:             vec = toVector2(e2->center - e1->center);
- 4596: 
- 4597:          } else { 
- 4598:             // IMPLEMENT THIS XXXXXX
- 4599:             //                   call project_pt('g2l',xctr(ie),yctr(ie),zctr(ie),(/xctr(i),yctr(i),zctr(i)/), &
- 4600:             //      &eframe(:,:,i),xctr2,yctr2,tmp)
- 4601:             //                   alow(j)=xctr2
- 4602:             //                   bdia(j)=yctr2
- 4603:          } // ics
- 4604: 
- 4605:          diffRho = rho2 - e1->demeanedDensity(k);
- 4606:       }
- 4607: 
- 4608:    }
- 4609: 
- 4610:    __global__ void computeDensityCubicSplines(void) {
- 4611:       // Computes cubic splines of de-meaned density (rho - rho_mean) for all elements
- 4612: 
- 4613:       ELEM(elem);
- 4614: 
- 4615:       if (elem->isDry) return;
- 4616: 
- 4617:       const int kb = elem->kb;
- 4618: 
- 4619:       // Computes the cubic splines of de-meaned density (rho - rho_mean) for all elements
- 4620:       if (elem->is2D()) {
- 4621:          // In the 2D case, the density is constant at the prism level. 
- 4622:          // In this case, rho_z doesn't contain the z derivatives, but the actual de-meaned density value.
- 4623:          elem->rho_z[nvrt-1] = elem->demeanedDensity(nvrt-1);
- 4624:       } else { //3D
- 4625: 
- 4626:          // Lambda functions to access the function x,y points (x = z at element prism and y = de-meaned density)
- 4627:          auto getX = [elem] (int k) { return elem->z_prism(k); };
- 4628:          auto getY = [elem] (int k) { return elem->demeanedDensity(k); };
- 4629:          ///// XXXX CHECK INDICES!!!!!
- 4630:          initCubicSpline(kb, nvrt, getX, getY, 0.0, 0.0, elem->rho_spl);
- 4631:       } // 2D/3D
- 4632: 
- 4633:    }
- 4634: } // extern "C"
+ 4551:    __global__ void getRhoDiffAndVec(const Element *e1, const Element *e2, const int j, const int k, const double rho2, Vector2 &vec, double &diffRho) {
+ 4552:    // Computes the density gradient between two elements, e1 and e2.
+ 4553:    // If the neighbor element (e2doesn't exist (boundary or dry element), the density gradient is assumed to be
+ 4554:    // zero in the direction normal to the side. 
+ 4555:    // 
+ 4556:    // NOTE: In fact it doesn't compute the gradient, but the difference in de-meaned density between e1 and e2 and
+ 4557:    // the vector from e1 to e2 (or normal to side if neighbor is dry or not present
+ 4558:    //
+ 4559:    // Input:
+ 4560:    //    e1: Element
+ 4561:    //    e2: Neighbor element (or nullptr if boundary)
+ 4562:    //    j: Index of the neighbor element (and the side of e1 that is shared with e2)
+ 4563:    //    k: Index of the half-level at which the density is interpolated
+ 4564:    //    rho2: De-meaned density at e2 interpolated at the k-th half-level of e1 (or zero if neighbor is dry or not present)
+ 4565:    // 
+ 4566:    // Output:
+ 4567:    //    vec: Vector from e1 to e2 (or normal to side if neighbor is dry or not present)
+ 4568:    //    diffRho: Difference in de-meaned density between e1 and e2 (or zero if neighbor is dry or not present)
+ 4569: 
+ 4570:       if (e2 == nullptr || e2->isDry) {
+ 4571:          // Neighbor doesn't exist or is dry, we assume the density gradient is zero in the direction normal to the side.
+ 4572: 
+ 4573:          Side *side = e1->sides[j];
+ 4574:          assert((side->otherElem(e1) == nullptr || side->otherElem(e1)->isDry) && "getRhoDiffAndVec: For boundary elements, side->otherElem(elem) must be nullptr or dry");
+ 4575:                  
+ 4576:          if constexpr(ics == 1) {
+ 4577:             vec = side->n; // Normal vector to the side
+ 4578:          } else {
+ 4579:             // IMPLEMENT THIS XXXXXX
+ 4580:             // !replace with xel, yel?
+ 4581:             //                   call project_pt('g2l',xnd(n1),ynd(n1),znd(n1),(/xctr(i),yctr(i),zctr(i)/), &
+ 4582:             //      &eframe(:,:,i),xn1,yn1,tmp)
+ 4583:             //                   call project_pt('g2l',xnd(n2),ynd(n2),znd(n2),(/xctr(i),yctr(i),zctr(i)/), &
+ 4584:             //      &eframe(:,:,i),xn2,yn2,tmp)
+ 4585:          } //ics
+ 4586:                    
+ 4587:          diffRho = 0.0;
+ 4588: 
+ 4589:       } else { //internal and wet
+ 4590:          if constexpr(ics==1) {
+ 4591:             assert(e2 != nullptr || e2->isDry && "getRhoDiffAndVec: neighbor element is nullptr or dry");
+ 4592: 
+ 4593:             // Vector from e1 to e2
+ 4594:             vec = toVector2(e2->center - e1->center);
+ 4595: 
+ 4596:          } else { 
+ 4597:             // IMPLEMENT THIS XXXXXX
+ 4598:             //                   call project_pt('g2l',xctr(ie),yctr(ie),zctr(ie),(/xctr(i),yctr(i),zctr(i)/), &
+ 4599:             //      &eframe(:,:,i),xctr2,yctr2,tmp)
+ 4600:             //                   alow(j)=xctr2
+ 4601:             //                   bdia(j)=yctr2
+ 4602:          } // ics
+ 4603: 
+ 4604:          diffRho = rho2 - e1->demeanedDensity(k);
+ 4605:       }
+ 4606: 
+ 4607:    }
+ 4608: 
+ 4609:    __global__ void computeDensityCubicSplines(void) {
+ 4610:       // Computes cubic splines of de-meaned density (rho - rho_mean) for all elements
+ 4611: 
+ 4612:       ELEM(elem);
+ 4613: 
+ 4614:       if (elem->isDry) return;
+ 4615: 
+ 4616:       const int kb = elem->kb;
+ 4617: 
+ 4618:       // Computes the cubic splines of de-meaned density (rho - rho_mean) for all elements
+ 4619:       if (elem->is2D()) {
+ 4620:          // In the 2D case, the density is constant at the prism level. 
+ 4621:          // In this case, rho_z doesn't contain the z derivatives, but the actual de-meaned density value.
+ 4622:          elem->rho_z[nvrt-1] = elem->demeanedDensity(nvrt-1);
+ 4623:       } else { //3D
+ 4624: 
+ 4625:          // Lambda functions to access the function x,y points (x = z at element prism and y = de-meaned density)
+ 4626:          auto getX = [elem] (int k) { return elem->z_prism(k); };
+ 4627:          auto getY = [elem] (int k) { return elem->demeanedDensity(k); };
+ 4628:          ///// XXXX CHECK INDICES!!!!!
+ 4629:          initCubicSpline(kb, nvrt, getX, getY, 0.0, 0.0, elem->rho_spl);
+ 4630:       } // 2D/3D
+ 4631: 
+ 4632:    }
+ 4633: } // extern "C"
+ 4634: 
  4635: 
- 4636: 
- 4637: __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Element *elem2, int k) {
- 4638: // Interpolates the de-meaned density of elem2 at the same z coordinate as the k half-level of elem.
- 4639: 
- 4640:    if (elem2 == nullptr || elem2->isDry) return 0.0;
- 4641: 
- 4642:    const int kb  = elem->kb;
- 4643:    const int kb2 = elem2->kb;
- 4644: 
- 4645:    // z-coordinate of prism of elem
- 4646:    const double zp = elem->z_prism(k);
- 4647: 
- 4648:    double rho = 0.0;
- 4649: 
- 4650:    if (elem2->is2D()) {
- 4651:       return elem->rho_z[nvrt - 1]; // Remember that we stored the de-meaned density in rho_z for the 2D case.
- 4652: 
- 4653:    } else {  // 3D
- 4654: 
- 4655:       // eta_min may be < zmax
- 4656:       const double eta_min = min(elem->z[nvrt - 1], elem2->z[nvrt - 1]);
- 4657:       const double zmax    = max(elem->z[kb   + 1], elem2->z[kb   + 1]);
- 4658: 
- 4659:       // (Extrapolate density below bottom, we will fix it later)
- 4660:       // NOTE: interpolate densities at elem2 at coordinates from elem.
- 4661:       rho = evalCubicSpline(elem->rho_spl, zp, true);
- 4662:       // evalCubicSpline(nvrt-kbe(ie),swild2(kbe(ie)+1:nvrt,12), &
- 4663:       //      &erho(kbe(ie)+1:nvrt,ie)-rho_mean(kbe(ie)+1:nvrt,ie), &
- 4664:       //      &hp_int(kbe(ie)+1:nvrt,ie,1),nvrt-kbe(i),swild(kbe(i)+1:nvrt),ibot_fl,zmax,eta_min,swild2(kbe(i)+1:nvrt,j))
- 4665:    } // 2D/3D
- 4666:      
- 4667: 
- 4668:    // For the case where the elem is deeper than elem2, we extrapolated the density in evalCubicSpline.
- 4669:    // Now we need to fix it.
- 4670:    if (elem->z[k] < elem2->z[kb2]) {
- 4671:       // We are at a z level that doesn't exist at elem2, so we need to adjust the density 
- 4672: 
- 4673:       // There are two methods to adjust the density at the bottom of the element.
- 4674:       // iunder_deep=0: 
- 4675:       const double depth1 = abs(elem->z[kb]); // larger depth
- 4676: 
- 4677:       if (iunder_deep==0) {
- 4678: 
- 4679:          const double weight = clamp((depth1 - h1_bcc)/(h2_bcc - h1_bcc), 0.0, 1.0); // weight
- 4680: 
- 4681:          rho = (1.0 - weight)*rho + weight*elem->demeanedDensity(k);
- 4682: 
- 4683:       } else { // iunder_deep != 0
- 4684: 
- 4685:          const double diffDepth = abs(elem->z[kb] - elem2->z[kb2]); // Change??? XXX Was like this in the original code
- 4686: 
- 4687:          if (depth1 >= hw_depth && diffDepth >= hw_ratio*depth1) {
- 4688: 
- 4689:          //   Demeaned density at the same z coordinate as
- 4690:                rho = elem->demeanedDensity(k); // would make cupp() below=0
- 4691:          }
- 4692: 
- 4693:       } // if iunder_deep
- 4694:    } // if elem->z[kb] < elem2->z[kb]
- 4695: 
- 4696:    return rho;
- 4697: }
+ 4636: __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Element *elem2, int k) {
+ 4637: // Interpolates the de-meaned density of elem2 at the same z coordinate as the k half-level of elem.
+ 4638: 
+ 4639:    if (elem2 == nullptr || elem2->isDry) return 0.0;
+ 4640: 
+ 4641:    const int kb  = elem->kb;
+ 4642:    const int kb2 = elem2->kb;
+ 4643: 
+ 4644:    // z-coordinate of prism of elem
+ 4645:    const double zp = elem->z_prism(k);
+ 4646: 
+ 4647:    double rho = 0.0;
+ 4648: 
+ 4649:    if (elem2->is2D()) {
+ 4650:       return elem->rho_z[nvrt - 1]; // Remember that we stored the de-meaned density in rho_z for the 2D case.
+ 4651: 
+ 4652:    } else {  // 3D
+ 4653: 
+ 4654:       // eta_min may be < zmax
+ 4655:       const double eta_min = min(elem->z[nvrt - 1], elem2->z[nvrt - 1]);
+ 4656:       const double zmax    = max(elem->z[kb   + 1], elem2->z[kb   + 1]);
+ 4657: 
+ 4658:       // (Extrapolate density below bottom, we will fix it later)
+ 4659:       // NOTE: interpolate densities at elem2 at coordinates from elem.
+ 4660:       rho = evalCubicSpline(elem->rho_spl, zp, true);
+ 4661:       // evalCubicSpline(nvrt-kbe(ie),swild2(kbe(ie)+1:nvrt,12), &
+ 4662:       //      &erho(kbe(ie)+1:nvrt,ie)-rho_mean(kbe(ie)+1:nvrt,ie), &
+ 4663:       //      &hp_int(kbe(ie)+1:nvrt,ie,1),nvrt-kbe(i),swild(kbe(i)+1:nvrt),ibot_fl,zmax,eta_min,swild2(kbe(i)+1:nvrt,j))
+ 4664:    } // 2D/3D
+ 4665:      
+ 4666: 
+ 4667:    // For the case where the elem is deeper than elem2, we extrapolated the density in evalCubicSpline.
+ 4668:    // Now we need to fix it.
+ 4669:    if (elem->z[k] < elem2->z[kb2]) {
+ 4670:       // We are at a z level that doesn't exist at elem2, so we need to adjust the density 
+ 4671: 
+ 4672:       // There are two methods to adjust the density at the bottom of the element.
+ 4673:       // iunder_deep=0: 
+ 4674:       const double depth1 = abs(elem->z[kb]); // larger depth
+ 4675: 
+ 4676:       if (iunder_deep==0) {
+ 4677: 
+ 4678:          const double weight = clamp((depth1 - h1_bcc)/(h2_bcc - h1_bcc), 0.0, 1.0); // weight
+ 4679: 
+ 4680:          rho = (1.0 - weight)*rho + weight*elem->demeanedDensity(k);
+ 4681: 
+ 4682:       } else { // iunder_deep != 0
+ 4683: 
+ 4684:          const double diffDepth = abs(elem->z[kb] - elem2->z[kb2]); // Change??? XXX Was like this in the original code
+ 4685: 
+ 4686:          if (depth1 >= hw_depth && diffDepth >= hw_ratio*depth1) {
+ 4687: 
+ 4688:          //   Demeaned density at the same z coordinate as
+ 4689:                rho = elem->demeanedDensity(k); // would make cupp() below=0
+ 4690:          }
+ 4691: 
+ 4692:       } // if iunder_deep
+ 4693:    } // if elem->z[kb] < elem2->z[kb]
+ 4694: 
+ 4695:    return rho;
+ 4696: }
+ 4697: 
  4698: 
- 4699: 
- 4700: extern "C" {
- 4701:    __global__ void computeDensityGradient(void) {
- 4702: 
- 4703:       if constexpr(ibc != 0) return;
- 4704: 
- 4705:          // Compute the horizontal density gradient at each element.
- 4706:       // It works in two steps:
- 4707:       // 1. Interpolate the density at the neighboring elements at the same zcor as the prism of element i.
- 4708:       // 2. Compute the density gradient at elem by averaging the density gradients computed between elem and pairs of neighboring elements.
- 4709:       //    To compute one of these gradients (that it later averages), it solves a 2nd rank linear system like:
- 4710:       //             gradRho.r1 = rho1 - rho0
- 4711:       //             gradRho.r2 = rho2 - rho0
- 4712:       //    where r1, r2 are the vectors from the prism center to the neighboring prism centers.
- 4713:       // 
- 4714:       //  NOTE: We use de-meaned densities.
- 4715: 
- 4716:       ELEM(elem);
- 4717: 
- 4718:       if (elem->isDry) return;
- 4719: 
- 4720:       const int kb  = elem->kb;
- 4721:       const int i34 = elem->i34;
- 4722: 
- 4723:       for (int k = kb + 1; k < nvrt; k++) {
- 4724:          // Computes the density gradient at elem as average of the density gradients computed between elem and pairs of neighboring elements.
- 4725:          //             gradRho.r1 = rho1 - rho0
- 4726:          //             gradRho.r2 = rho2 - rho0
- 4727:          int icount = 0;
- 4728:          double sumRx = 0.0;
- 4729:          double sumRy = 0.0;
- 4730:          for (int j1=0; j1<i34; j1++) { 
- 4731: 
- 4732:             const int j2 = elem->nxq(j1 + 1);
- 4733: 
- 4734:             // Pairs of consecutive neighbor elements of elem
- 4735:             const Element *e1 = elem->nghbElems[j1];
- 4736:             const Element *e2 = elem->nghbElems[j2];
- 4737: 
- 4738:             // Using cubic splines, interpolate demeaned density difference at the same z half-levels as elem.
- 4739:             const double rho1 = interpolateDensityAtHalfLevel(elem, e1, k);
- 4740:             const double rho2 = interpolateDensityAtHalfLevel(elem, e2, k);
- 4741: if (elem->idx == 21) printf("$$AAAXXXXXXXA$$$ rho1 = %.16f, rho2 = %.16f\n", rho1, rho2);            
- 4742: 
- 4743:             // Compute the density difference and the vector from elem to e1 and e2
- 4744:             // getRhoDiffAndVec takes into account boundaries/dry elements
- 4745:             double diffRho1, diffRho2;
- 4746:             Vector2 vec1, vec2;
- 4747:             getRhoDiffAndVec(elem, e1, j1, k, rho1, vec1, diffRho1); // We could remove one of these calls, but it would make the code uglier.
- 4748:             getRhoDiffAndVec(elem, e2, j2, k, rho2, vec2, diffRho2);
- 4749: 
- 4750:             const double rl1 = length(vec1);
- 4751:             const double rl2 = length(vec2);
- 4752:             assert(rl1 > 0.0 && rl2 > 0.0 && "computeDensityInterpolation: one of rl1 or rl2 is 0");
- 4753: 
- 4754:             const double delta = cross(vec1, vec2);
- 4755:             const double sintheta = abs(delta)/(rl1*rl2);
- 4756: 
- 4757:             // To avoid problems, avoid elements with small angle between vectors
- 4758:             constexpr double sin_one_deg = 0.01745240643728351; // sin(pi/180.0). We use 1 degree as threshold for well-conditioned system
- 4759:             const bool validEq = (sintheta > sin_one_deg);
- 4760: 
- 4761:             if (validEq) {
- 4762:                // Solve the system of equations to get the density gradient at elem
- 4763:                icount++;
- 4764:                const double Rx = (vec2.y*diffRho1 - vec1.y*diffRho2)/delta;
- 4765:                const double Ry = (vec1.x*diffRho2 - vec2.x*diffRho1)/delta;
- 4766:                sumRx += Rx;
- 4767:                sumRy += Ry;
- 4768:             }
- 4769:          } // for j1
- 4770: 
- 4771:          // Compute the average density gradient at elem
- 4772:          if (icount==0) {
- 4773:            // Bad mesh quality; bail out with 0 b-cc
- 4774:            elem->gradRho[k] = {0.0, 0.0};
- 4775:          } else {
- 4776:            elem->gradRho[k] = {sumRx/icount, sumRy/icount};
- 4777:          }
- 4778: 
- 4779:       } // for k
- 4780: 
- 4781:    }
- 4782: 
- 4783:    __global__ void computeBaroclinicTerm(void) {
- 4784:    // Computes the baroclinic term at sides (at half levels).
- 4785:    // For this it has to compute the density gradient at the half-sides (face centers) and then integrate it vertically.
- 4786:    // The baroclinic term is -(g/rho_0)*int_z^\eta grad(rho) dz
- 4787: 
- 4788:       SIDE(side);
- 4789: 
- 4790:       if (side->isDry) return;
- 4791: 
- 4792:       const Element *e1 = side->elems[0];
- 4793:       const Element *e2 = side->elems[1];      
- 4794:       const int kb = side->kb;
- 4795:       
- 4796:       assert(e1 != nullptr || e2 != nullptr && "computeSideDensityGradient: side has no elements");
- 4797: 
- 4798:       // interpolates vertically the density gradient of the two elements at the half level/
- 4799: 
- 4800:       // Starts the integration at the surface and goes down to the bottom
- 4801:       int k1 = nvrt - 1;
- 4802:       int k2 = nvrt - 1;
- 4803: 
- 4804:       side->bcc[nvrt-1] = {0.0, 0.0};
- 4805:       for (int k = nvrt-2; k >= kb; k--) {
- 4806:       // For each prism level (from surface to bottom)...
- 4807: 
- 4808:          // For both elements, interpolate density gradient at the side's half level.
- 4809:          // The gradient at the side is the average of the gradients at the elements.
- 4810:          // w1, w2 are used to take into account boundary sides, with just one element.
- 4811:          double w1 = (e1!=nullptr) ? 1.0 : 0.0;
- 4812:          double w2 = (e2!=nullptr) ? 1.0 : 0.0;
- 4813:          const double wsum = w1 + w2;
- 4814:          w1 = w1/wsum;
- 4815:          w2 = w2/wsum;
- 4816:          assert(w1 + w2 > 0.99 && w1 + w2 < 1.01 && "computeSideDensityGradient: w1 + w2 is not 1");
- 4817: 
- 4818:          // Linear interpolation of both elements' density gradient at the shared side's level.
- 4819:          Vector2 gradRho = {0.0, 0.0};
- 4820:          if (e1 != nullptr && k > kb) {
- 4821:             // XXXX WHAT HAPPENS IF k1 < kb??? (check ibelow)
- 4822:             k1 = e1->findLevel(side->zc[k], k1); // finds the index at the half level starting the search at k1
- 4823:             const double zrat = (side->zc[k] - e1->z[k1])/(e1->z[k1 + 1] - e1->z[k1]);
- 4824:             
- 4825:             gradRho += (e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1 + 1]*zrat)*w1;
- 4826:          }      
- 4827:          if (e2 != nullptr && k > kb) {
- 4828:             k2 = e2->findLevel(side->zc[k], k2); // finds the index at the half level starting the search at k2
- 4829:             const double zrat = (side->zc[k] - e2->z[k2])/(e2->z[k2 + 1] - e2->z[k2]);
- 4830:             
- 4831:             gradRho += (e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat)*w2;
- 4832:          }
- 4833: 
- 4834:          if constexpr(ics==2) {
- 4835:             // IMPLEMENT THIS XXXXXX
- 4836:             // call project_hvec(swild(1),swild(2),eframe(:,:,ie),sframe2(:,:,i),tmp1,tmp2)
- 4837:             // swild(1)=tmp1
- 4838:             // swild(2)=tmp2
- 4839:          }
- 4840:          
- 4841:          // Integrate (using a central Gauss point) the density gradient from the surface to the bottom 
- 4842:          // multiplied by -rampbc*(g/rho0)  (In ll if ics=2)
- 4843:          // CHECK INDICES!!! XXX
- 4844:          const double grav3 = side->grav3();
- 4845:          side->bcc[k] = side->bcc[k + 1] - (rampbc*grav3/rho0)*side->Dz(k + 1)*gradRho;
- 4846: 
- 4847:       } // for
- 4848: 
- 4849:    }
+ 4699: extern "C" {
+ 4700:    __global__ void computeDensityGradient(void) {
+ 4701: 
+ 4702:       if constexpr(ibc != 0) return;
+ 4703: 
+ 4704:          // Compute the horizontal density gradient at each element.
+ 4705:       // It works in two steps:
+ 4706:       // 1. Interpolate the density at the neighboring elements at the same zcor as the prism of element i.
+ 4707:       // 2. Compute the density gradient at elem by averaging the density gradients computed between elem and pairs of neighboring elements.
+ 4708:       //    To compute one of these gradients (that it later averages), it solves a 2nd rank linear system like:
+ 4709:       //             gradRho.r1 = rho1 - rho0
+ 4710:       //             gradRho.r2 = rho2 - rho0
+ 4711:       //    where r1, r2 are the vectors from the prism center to the neighboring prism centers.
+ 4712:       // 
+ 4713:       //  NOTE: We use de-meaned densities.
+ 4714: 
+ 4715:       ELEM(elem);
+ 4716: 
+ 4717:       if (elem->isDry) return;
+ 4718: 
+ 4719:       const int kb  = elem->kb;
+ 4720:       const int i34 = elem->i34;
+ 4721: 
+ 4722:       for (int k = kb + 1; k < nvrt; k++) {
+ 4723:          // Computes the density gradient at elem as average of the density gradients computed between elem and pairs of neighboring elements.
+ 4724:          //             gradRho.r1 = rho1 - rho0
+ 4725:          //             gradRho.r2 = rho2 - rho0
+ 4726:          int icount = 0;
+ 4727:          double sumRx = 0.0;
+ 4728:          double sumRy = 0.0;
+ 4729:          for (int j1=0; j1<i34; j1++) { 
+ 4730: 
+ 4731:             const int j2 = elem->nxq(j1 + 1);
+ 4732: 
+ 4733:             // Pairs of consecutive neighbor elements of elem
+ 4734:             const Element *e1 = elem->nghbElems[j1];
+ 4735:             const Element *e2 = elem->nghbElems[j2];
+ 4736: 
+ 4737:             // Using cubic splines, interpolate demeaned density difference at the same z half-levels as elem.
+ 4738:             const double rho1 = interpolateDensityAtHalfLevel(elem, e1, k);
+ 4739:             const double rho2 = interpolateDensityAtHalfLevel(elem, e2, k);
+ 4740: if (elem->idx == 21) printf("$$AAAXXXXXXXA$$$ rho1 = %.16f, rho2 = %.16f\n", rho1, rho2);            
+ 4741: 
+ 4742:             // Compute the density difference and the vector from elem to e1 and e2
+ 4743:             // getRhoDiffAndVec takes into account boundaries/dry elements
+ 4744:             double diffRho1, diffRho2;
+ 4745:             Vector2 vec1, vec2;
+ 4746:             getRhoDiffAndVec(elem, e1, j1, k, rho1, vec1, diffRho1); // We could remove one of these calls, but it would make the code uglier.
+ 4747:             getRhoDiffAndVec(elem, e2, j2, k, rho2, vec2, diffRho2);
+ 4748: 
+ 4749:             const double rl1 = length(vec1);
+ 4750:             const double rl2 = length(vec2);
+ 4751:             assert(rl1 > 0.0 && rl2 > 0.0 && "computeDensityInterpolation: one of rl1 or rl2 is 0");
+ 4752: 
+ 4753:             const double delta = cross(vec1, vec2);
+ 4754:             const double sintheta = abs(delta)/(rl1*rl2);
+ 4755: 
+ 4756:             // To avoid problems, avoid elements with small angle between vectors
+ 4757:             constexpr double sin_one_deg = 0.01745240643728351; // sin(pi/180.0). We use 1 degree as threshold for well-conditioned system
+ 4758:             const bool validEq = (sintheta > sin_one_deg);
+ 4759: 
+ 4760:             if (validEq) {
+ 4761:                // Solve the system of equations to get the density gradient at elem
+ 4762:                icount++;
+ 4763:                const double Rx = (vec2.y*diffRho1 - vec1.y*diffRho2)/delta;
+ 4764:                const double Ry = (vec1.x*diffRho2 - vec2.x*diffRho1)/delta;
+ 4765:                sumRx += Rx;
+ 4766:                sumRy += Ry;
+ 4767:             }
+ 4768:          } // for j1
+ 4769: 
+ 4770:          // Compute the average density gradient at elem
+ 4771:          if (icount==0) {
+ 4772:            // Bad mesh quality; bail out with 0 b-cc
+ 4773:            elem->gradRho[k] = {0.0, 0.0};
+ 4774:          } else {
+ 4775:            elem->gradRho[k] = {sumRx/icount, sumRy/icount};
+ 4776:          }
+ 4777: 
+ 4778:       } // for k
+ 4779: 
+ 4780:    }
+ 4781: 
+ 4782:    __global__ void computeBaroclinicTerm(void) {
+ 4783:    // Computes the baroclinic term at sides (at half levels).
+ 4784:    // For this it has to compute the density gradient at the half-sides (face centers) and then integrate it vertically.
+ 4785:    // The baroclinic term is -(g/rho_0)*int_z^\eta grad(rho) dz
+ 4786: 
+ 4787:       SIDE(side);
+ 4788: 
+ 4789:       if (side->isDry) return;
+ 4790: 
+ 4791:       const Element *e1 = side->elems[0];
+ 4792:       const Element *e2 = side->elems[1];      
+ 4793:       const int kb = side->kb;
+ 4794:       
+ 4795:       assert(e1 != nullptr || e2 != nullptr && "computeSideDensityGradient: side has no elements");
+ 4796: 
+ 4797:       // interpolates vertically the density gradient of the two elements at the half level/
+ 4798: 
+ 4799:       // Starts the integration at the surface and goes down to the bottom
+ 4800:       int k1 = nvrt - 1;
+ 4801:       int k2 = nvrt - 1;
+ 4802: 
+ 4803:       side->bcc[nvrt-1] = {0.0, 0.0};
+ 4804:       for (int k = nvrt-2; k >= kb; k--) {
+ 4805:       // For each prism level (from surface to bottom)...
+ 4806: 
+ 4807:          // For both elements, interpolate density gradient at the side's half level.
+ 4808:          // The gradient at the side is the average of the gradients at the elements.
+ 4809:          // w1, w2 are used to take into account boundary sides, with just one element.
+ 4810:          double w1 = (e1!=nullptr) ? 1.0 : 0.0;
+ 4811:          double w2 = (e2!=nullptr) ? 1.0 : 0.0;
+ 4812:          const double wsum = w1 + w2;
+ 4813:          w1 = w1/wsum;
+ 4814:          w2 = w2/wsum;
+ 4815:          assert(w1 + w2 > 0.99 && w1 + w2 < 1.01 && "computeSideDensityGradient: w1 + w2 is not 1");
+ 4816: 
+ 4817:          // Linear interpolation of both elements' density gradient at the shared side's level.
+ 4818:          Vector2 gradRho = {0.0, 0.0};
+ 4819:          if (e1 != nullptr && k > kb) {
+ 4820:             // XXXX WHAT HAPPENS IF k1 < kb??? (check ibelow)
+ 4821:             k1 = e1->findLevel(side->zc[k], k1); // finds the index at the half level starting the search at k1
+ 4822:             const double zrat = (side->zc[k] - e1->z[k1])/(e1->z[k1 + 1] - e1->z[k1]);
+ 4823:             
+ 4824:             gradRho += (e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1 + 1]*zrat)*w1;
+ 4825:          }      
+ 4826:          if (e2 != nullptr && k > kb) {
+ 4827:             k2 = e2->findLevel(side->zc[k], k2); // finds the index at the half level starting the search at k2
+ 4828:             const double zrat = (side->zc[k] - e2->z[k2])/(e2->z[k2 + 1] - e2->z[k2]);
+ 4829:             
+ 4830:             gradRho += (e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat)*w2;
+ 4831:          }
+ 4832: 
+ 4833:          if constexpr(ics==2) {
+ 4834:             // IMPLEMENT THIS XXXXXX
+ 4835:             // call project_hvec(swild(1),swild(2),eframe(:,:,ie),sframe2(:,:,i),tmp1,tmp2)
+ 4836:             // swild(1)=tmp1
+ 4837:             // swild(2)=tmp2
+ 4838:          }
+ 4839:          
+ 4840:          // Integrate (using a central Gauss point) the density gradient from the surface to the bottom 
+ 4841:          // multiplied by -rampbc*(g/rho0)  (In ll if ics=2)
+ 4842:          // CHECK INDICES!!! XXX
+ 4843:          const double grav3 = side->grav3();
+ 4844:          side->bcc[k] = side->bcc[k + 1] - (rampbc*grav3/rho0)*side->Dz(k + 1)*gradRho;
+ 4845: 
+ 4846:       } // for
+ 4847: 
+ 4848:    }
+ 4849: 
  4850: 
  4851: 
- 4852: 
- 4853:    __global__ void computeHorGradientAtSide(void) {
- 4854: 
- 4855:       // Compute the horizontal density gradient at each element.
- 4856:       // It works in two steps:
- 4857:       // 1. Interpolate the density at the neighboring elements at the same zcor as the prism of element i.
- 4858:       // 2. Compute the density gradient at elem by averaging the density gradients computed between elem and pairs of neighboring elements.
- 4859:       //    To compute one of these gradients (that it later averages), it solves a 2nd rank linear system like:
- 4860:       //             gradRho.r1 = rho1 - rho0
- 4861:       //             gradRho.r2 = rho2 - rho0
- 4862:       //    where r1, r2 are the vectors from the prism center to the neighboring prism centers.
- 4863:       // 
- 4864:       //  NOTE: We use de-meaned densities.
- 4865: 
- 4866:       SIDE(side);
- 4867: 
- 4868: // printf("side->isDry: %d\n", side->isDry);
- 4869:       if (side->isDry) return;
- 4870: 
- 4871:       // Computes the gradient of the variables at the side center.
- 4872:       auto isWet1 = [](const Element* e) { return !(e->isDry); };
- 4873:       auto isWet2 = [](const Element* e) { return !(e->isDry2()); };
- 4874:       auto isWet3 = [](const Element* e) { return !(e->depth >= tip_dp); };
- 4875: 
- 4876:       side->gradEta1 = side->grad2(&Node::eta1, isWet1);
- 4877:       side->gradEta2 = side->grad2(&Node::eta2, isWet2);
- 4878:       side->gradETP  = side->grad2(&Node::ETP,  isWet3);
- 4879:       side->gradPr   = side->grad2(&Node::pr,   isWet1);
+ 4852:    __global__ void computeHorGradientAtSide(void) {
+ 4853: 
+ 4854:       // Compute the horizontal density gradient at each element.
+ 4855:       // It works in two steps:
+ 4856:       // 1. Interpolate the density at the neighboring elements at the same zcor as the prism of element i.
+ 4857:       // 2. Compute the density gradient at elem by averaging the density gradients computed between elem and pairs of neighboring elements.
+ 4858:       //    To compute one of these gradients (that it later averages), it solves a 2nd rank linear system like:
+ 4859:       //             gradRho.r1 = rho1 - rho0
+ 4860:       //             gradRho.r2 = rho2 - rho0
+ 4861:       //    where r1, r2 are the vectors from the prism center to the neighboring prism centers.
+ 4862:       // 
+ 4863:       //  NOTE: We use de-meaned densities.
+ 4864: 
+ 4865:       SIDE(side);
+ 4866: 
+ 4867: // printf("side->isDry: %d\n", side->isDry);
+ 4868:       if (side->isDry) return;
+ 4869: 
+ 4870:       // Computes the gradient of the variables at the side center.
+ 4871:       auto isWet1 = [](const Element* e) { return !(e->isDry); };
+ 4872:       auto isWet2 = [](const Element* e) { return !(e->isDry2()); };
+ 4873:       auto isWet3 = [](const Element* e) { return !(e->depth >= tip_dp); };
+ 4874: 
+ 4875:       side->gradEta1 = side->grad2(&Node::eta1, isWet1);
+ 4876:       side->gradEta2 = side->grad2(&Node::eta2, isWet2);
+ 4877:       side->gradETP  = side->grad2(&Node::ETP,  isWet3);
+ 4878:       side->gradPr   = side->grad2(&Node::pr,   isWet1);
+ 4879: 
  4880: 
- 4881: 
- 4882:    }
+ 4881:    }
+ 4882: 
  4883: 
- 4884: 
- 4885:    __global__ void solveMomentumEquations(double time) {
- 4886: 
- 4887:       double alow[nvrt], cupp[nvrt], bdia[nvrt];
- 4888:       Vector2 rrhs[nvrt], u[nvrt], soln[nvrt], gam[nvrt];
- 4889: 
- 4890:       SIDE(side);
- 4891: 
- 4892:       if (side->isDry) 
- 4893:       {
- 4894:          for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};         
- 4895: 
- 4896:          return;
- 4897:       }
- 4898: 
- 4899:       const Node *n1 = side->n1;
- 4900:       const Node *n2 = side->n2;
- 4901: 
- 4902:       const int kb = side->kb;
- 4903: 
- 4904:       const double veg_h = side->veg_h();
- 4905:       const double grav3 = side->grav3();
- 4906: 
- 4907:       if (side->is2D()) {
- 4908:          // Warning: Do not use htot2, which is updated.
- 4909:          const double htot = side->htot1();
- 4910:          const double hhat = side->hhat;
- 4911: 
- 4912:          assert(hhat > 0.0 && htot > 0.0 && "solveMomentumEquations: Impossible");
- 4913: 
- 4914:          Vector2 tau2 = {0.0, 0.0};
- 4915:           
- 4916:          if constexpr(ics==1) {
- 4917:             tau2 = side->tau();
- 4918: 
- 4919:          } else {
- 4920:             assert(false && "Not implemented: ics == 2");
- 4921:             // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
- 4922:             // call project_hvec(tau(1,node2),tau(2,node2),pframe(:,:,node2),sframe2(:,:,j),tt1,ss1)
- 4923:             // taux2=(vn1+tt1)*0.5d0
- 4924:             // tauy2=(vn2+ss1)*0.5d0
- 4925:          } // if ics         
- 4926: 
- 4927:          // hat_gam has units of m/s
- 4928: 
- 4929:          const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
- 4930: 
- 4931:          Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
- 4932:                            side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 + thetai*side->gradEta2));
- 4933: 
- 4934:          hat_gam += dt*side->nuGradU[nvrt-1];  // XXXX compute nuGradU
- 4935: 
- 4936: if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, hat_gam.x = %.16f, hhat = %.16f, htot = %.16f\n", hat_gam.x*hhat/htot, hat_gam.x, hhat, htot);
- 4937:          const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvelx, rmaxvelx);
- 4938:          const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
- 4939: 
- 4940:          for (int k = 0; k < nvrt; k++) side->u2[k] = {ux, uy};
+ 4884:    __global__ void solveMomentumEquations(double time) {
+ 4885: 
+ 4886:       double alow[nvrt], cupp[nvrt], bdia[nvrt];
+ 4887:       Vector2 rrhs[nvrt], u[nvrt], soln[nvrt], gam[nvrt];
+ 4888: 
+ 4889:       SIDE(side);
+ 4890: 
+ 4891:       if (side->isDry) 
+ 4892:       {
+ 4893:          for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};         
+ 4894: 
+ 4895:          return;
+ 4896:       }
+ 4897: 
+ 4898:       const Node *n1 = side->n1;
+ 4899:       const Node *n2 = side->n2;
+ 4900: 
+ 4901:       const int kb = side->kb;
+ 4902: 
+ 4903:       const double veg_h = side->veg_h();
+ 4904:       const double grav3 = side->grav3();
+ 4905: 
+ 4906:       if (side->is2D()) {
+ 4907:          // Warning: Do not use htot2, which is updated.
+ 4908:          const double htot = side->htot1();
+ 4909:          const double hhat = side->hhat;
+ 4910: 
+ 4911:          assert(hhat > 0.0 && htot > 0.0 && "solveMomentumEquations: Impossible");
+ 4912: 
+ 4913:          Vector2 tau2 = {0.0, 0.0};
+ 4914:           
+ 4915:          if constexpr(ics==1) {
+ 4916:             tau2 = side->tau();
+ 4917: 
+ 4918:          } else {
+ 4919:             assert(false && "Not implemented: ics == 2");
+ 4920:             // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
+ 4921:             // call project_hvec(tau(1,node2),tau(2,node2),pframe(:,:,node2),sframe2(:,:,j),tt1,ss1)
+ 4922:             // taux2=(vn1+tt1)*0.5d0
+ 4923:             // tauy2=(vn2+ss1)*0.5d0
+ 4924:          } // if ics         
+ 4925: 
+ 4926:          // hat_gam has units of m/s
+ 4927: 
+ 4928:          const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
+ 4929: 
+ 4930:          Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
+ 4931:                            side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 + thetai*side->gradEta2));
+ 4932: 
+ 4933:          hat_gam += dt*side->nuGradU[nvrt-1];  // XXXX compute nuGradU
+ 4934: 
+ 4935: if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, hat_gam.x = %.16f, hhat = %.16f, htot = %.16f\n", hat_gam.x*hhat/htot, hat_gam.x, hhat, htot);
+ 4936:          const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvelx, rmaxvelx);
+ 4937:          const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
+ 4938: 
+ 4939:          for (int k = 0; k < nvrt; k++) side->u2[k] = {ux, uy};
+ 4940: 
  4941: 
- 4942: 
- 4943:       }
- 4944:       else { // 3D
- 4945: 
- 4946:          // For 3D it is necessary to solve an implicit tridiagonal system.
- 4947:          // 
- 4948:          // Each line of the tridiagonal system include variables for layers k-1, k, k+1.
- 4949:          // However, for the vegetation terms, the canopy complicates things, because the vertical 
- 4950:          // integration is only done up to the canopy. In this case we use the notation "t" (top)
- 4951:          // to indicate the "top" level, which may not coincide with a layer. "t" can stand for both
- 4952:          // k+1 and k.
+ 4942:       }
+ 4943:       else { // 3D
+ 4944: 
+ 4945:          // For 3D it is necessary to solve an implicit tridiagonal system.
+ 4946:          // 
+ 4947:          // Each line of the tridiagonal system include variables for layers k-1, k, k+1.
+ 4948:          // However, for the vegetation terms, the canopy complicates things, because the vertical 
+ 4949:          // integration is only done up to the canopy. In this case we use the notation "t" (top)
+ 4950:          // to indicate the "top" level, which may not coincide with a layer. "t" can stand for both
+ 4951:          // k+1 and k.
+ 4952: 
  4953: 
- 4954: 
- 4955:    
+ 4954:    
+ 4955: 
  4956: 
- 4957: 
- 4958:          const int ndim = nvrt - kb;
- 4959:          const double zTopCanopy = side->zTopCanopy();
- 4960: 
- 4961:          // Initialize the tridiagonal system
- 4962:          for (int k = kb + 1; k < nvrt; k++) {
- 4963:             
- 4964:             const int kin = k - (kb + 1);
- 4965: 
- 4966:             // Vertical viscosity at the face center
- 4967:             const double dfz = 1e-6; //0.25*(side->dfv(k) + side->dfv(k + 1)); XXXXX
- 4968:            
- 4969: 
- 4970:             alow[kin] = 0.0;
- 4971:             cupp[kin] = 0.0;
- 4972:             bdia[kin] = 0.0;
- 4973: 
- 4974:             double cff1 = 1.0; //init \bar{c^{k+1}}              
- 4975:             // Vegetation term: alpha*|u^n|*dt*H(dv-d)*u^{n+1}
- 4976: 
- 4977:             // We divide the code into two parts, one (L) that deals with layers k, k+1, and another (R) that deals with k-1, k.
- 4978:             // There is a special case when k is the bottom layer, where the bottom drag is applied.
- 4979:             // Notice that the top boundary is not included implicitly, because it depends on tau, but not on u.
- 4980: 
- 4981:             // First part: layers k, k+1
- 4982:             if (k < nvrt - 1) {
- 4983:                              
- 4984:                if constexpr(iveg != 0) {
- 4985: 
- 4986:                   // If there is vegetation at this level...
- 4987:                   if (zTopCanopy > side->zc[k]) {
- 4988:                      // If the canopy is above the k layer...
- 4989:                      
- 4990:                      // Computes the velocity at the level above (typically layer k+1, unless the canopy is below it)
- 4991:                      const double zt = min(zTopCanopy, side->zc[k + 1]);
- 4992:                      const double zrat = (zt - side->zc[k])/side->Dz(k + 1); // value in (0,1], 1 means that the canopy is above zt.
- 4993:                      const Vector2 ut2 = (1.0 - zrat)*side->u2[k] + zrat*side->u2[k + 1];
- 4994: 
- 4995:                      // Computes the velocity magnitude at the face center (the section of the face covered by the vegetation)
- 4996:                      const double vmag2 = length(ut2);
- 4997:                      const double vmag1 = length(side->u2[k]);
- 4998:                      const double vmag = 0.5*(vmag1 + vmag2);
- 4999:                      
- 5000:                      // Computes the vegetation alpha at the face center
- 5001:                      const double veg_alpha_sd = 0.5*(side->veg_alpha3D(k) + side->veg_alpha3D(k+1));
- 5002: 
- 5003:                      cff1 += veg_alpha_sd*dt*vmag;
- 5004: 
- 5005:                   } // if (zTopCanopy
- 5006:                } // if iveg
- 5007: 
- 5008:                const double dzz = side->Dz(k + 1);
- 5009:                const double tmp = dt*dfz/dzz;
- 5010:                assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
- 5011: 
- 5012:                cupp[kin] += cff1*dzz/6.0 - tmp;
- 5013:                bdia[kin] += cff1*dzz/3.0 + tmp;
- 5014:             }
+ 4957:          const int ndim = nvrt - kb;
+ 4958:          const double zTopCanopy = side->zTopCanopy();
+ 4959: 
+ 4960:          // Initialize the tridiagonal system
+ 4961:          for (int k = kb + 1; k < nvrt; k++) {
+ 4962:             
+ 4963:             const int kin = k - (kb + 1);
+ 4964: 
+ 4965:             // Vertical viscosity at the face center
+ 4966:             const double dfz = 1e-6; //0.5*(side->dfv(k) + side->dfv(k + 1)); XXXXX
+ 4967:            
+ 4968: 
+ 4969:             alow[kin] = 0.0;
+ 4970:             cupp[kin] = 0.0;
+ 4971:             bdia[kin] = 0.0;
+ 4972: 
+ 4973:             double cff1 = 1.0; //init \bar{c^{k+1}}              
+ 4974:             // Vegetation term: alpha*|u^n|*dt*H(dv-d)*u^{n+1}
+ 4975: 
+ 4976:             // We divide the code into two parts, one (L) that deals with layers k, k+1, and another (R) that deals with k-1, k.
+ 4977:             // There is a special case when k is the bottom layer, where the bottom drag is applied.
+ 4978:             // Notice that the top boundary is not included implicitly, because it depends on tau, but not on u.
+ 4979: 
+ 4980:             // First part: layers k, k+1
+ 4981:             if (k < nvrt - 1) {
+ 4982:                              
+ 4983:                if constexpr(iveg != 0) {
+ 4984: 
+ 4985:                   // If there is vegetation at this level...
+ 4986:                   if (zTopCanopy > side->zc[k]) {
+ 4987:                      // If the canopy is above the k layer...
+ 4988:                      
+ 4989:                      // Computes the velocity at the level above (typically layer k+1, unless the canopy is below it)
+ 4990:                      const double zt = min(zTopCanopy, side->zc[k + 1]);
+ 4991:                      const double zrat = (zt - side->zc[k])/side->Dz(k + 1); // value in (0,1], 1 means that the canopy is above zt.
+ 4992:                      const Vector2 ut2 = (1.0 - zrat)*side->u2[k] + zrat*side->u2[k + 1];
+ 4993: 
+ 4994:                      // Computes the velocity magnitude at the face center (the section of the face covered by the vegetation)
+ 4995:                      const double vmag2 = length(ut2);
+ 4996:                      const double vmag1 = length(side->u2[k]);
+ 4997:                      const double vmag = 0.5*(vmag1 + vmag2);
+ 4998:                      
+ 4999:                      // Computes the vegetation alpha at the face center
+ 5000:                      const double veg_alpha_sd = 0.5*(side->veg_alpha3D(k) + side->veg_alpha3D(k+1));
+ 5001: 
+ 5002:                      cff1 += veg_alpha_sd*dt*vmag;
+ 5003: 
+ 5004:                   } // if (zTopCanopy
+ 5005:                } // if iveg
+ 5006: 
+ 5007:                const double dzz = side->Dz(k + 1);
+ 5008:                const double tmp = dt*dfz/dzz;
+ 5009:                assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
+ 5010: 
+ 5011:                cupp[kin] += cff1*dzz/6.0 - tmp;
+ 5012:                bdia[kin] += cff1*dzz/3.0 + tmp;
+ 5013:             }
+ 5014: 
  5015: 
- 5016: 
- 5017:             // Second part: layers k-1, k
- 5018:             if (k > kb + 1) {
- 5019: 
- 5020:                double cff1 = 1.0; //init \bar{c^k}
- 5021: 
- 5022:                if constexpr(iveg != 0) {
- 5023:                   // If there is vegetation at this level...
- 5024:                   if (zTopCanopy > side->zc[k-1]) {
- 5025:                      const double zz1 = min(zTopCanopy, side->zc[k]);
- 5026:                      const double zrat = (zz1 - side->zc[k-1])/side->Dz(k); // value in (0,1]
- 5027: 
- 5028:                      const Vector2 ut2 = (1.0 - zrat)*side->u2[k-1] + zrat*side->u2[k];
- 5029: 
- 5030:                      const double vmag2 = length(ut2);
- 5031:                      const double vmag1 = length(side->u2[k-1]);
- 5032:                      const double vmag = 0.5*(vmag1 + vmag2);
- 5033: 
- 5034:                      // Computes the vegetation alpha at the face center
- 5035:                      const double veg_alpha_sd = 0.5*(side->veg_alpha3D(k) + side->veg_alpha3D(k-1));
- 5036:                      cff1 += veg_alpha_sd*dt*vmag;
- 5037:                   } // if zTopCanopy
- 5038: 
- 5039:                } // if iveg
- 5040: 
- 5041:                const double dzz = side->Dz(k);
- 5042:                const double tmp = dt*dfz/dzz;
- 5043:                assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
- 5044: 
- 5045:                alow[kin] += cff1*dzz/6.0 - tmp;
- 5046:                bdia[kin] += cff1*dzz/3.0 + tmp;
- 5047: 
- 5048:             } else { // Bottom boundary
- 5049:                // This occurs at the bottom, where the bottom drag is applied.
- 5050: 
- 5051:                bdia[kin] += dt*side->chi2; // XXXX
+ 5016:             // Second part: layers k-1, k
+ 5017:             if (k > kb + 1) {
+ 5018: 
+ 5019:                double cff1 = 1.0; //init \bar{c^k}
+ 5020: 
+ 5021:                if constexpr(iveg != 0) {
+ 5022:                   // If there is vegetation at this level...
+ 5023:                   if (zTopCanopy > side->zc[k-1]) {
+ 5024:                      const double zz1 = min(zTopCanopy, side->zc[k]);
+ 5025:                      const double zrat = (zz1 - side->zc[k-1])/side->Dz(k); // value in (0,1]
+ 5026: 
+ 5027:                      const Vector2 ut2 = (1.0 - zrat)*side->u2[k-1] + zrat*side->u2[k];
+ 5028: 
+ 5029:                      const double vmag2 = length(ut2);
+ 5030:                      const double vmag1 = length(side->u2[k-1]);
+ 5031:                      const double vmag = 0.5*(vmag1 + vmag2);
+ 5032: 
+ 5033:                      // Computes the vegetation alpha at the face center
+ 5034:                      const double veg_alpha_sd = 0.5*(side->veg_alpha3D(k) + side->veg_alpha3D(k-1));
+ 5035:                      cff1 += veg_alpha_sd*dt*vmag;
+ 5036:                   } // if zTopCanopy
+ 5037: 
+ 5038:                } // if iveg
+ 5039: 
+ 5040:                const double dzz = side->Dz(k);
+ 5041:                const double tmp = dt*dfz/dzz;
+ 5042:                assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
+ 5043: 
+ 5044:                alow[kin] += cff1*dzz/6.0 - tmp;
+ 5045:                bdia[kin] += cff1*dzz/3.0 + tmp;
+ 5046: 
+ 5047:             } else { // Bottom boundary
+ 5048:                // This occurs at the bottom, where the bottom drag is applied.
+ 5049: 
+ 5050:                bdia[kin] += dt*side->chi2; // XXXX
+ 5051: 
  5052: 
- 5053: 
- 5054:             } // if (k > kb + 1)
+ 5053:             } // if (k > kb + 1)
+ 5054: 
  5055: 
  5056: 
- 5057: 
- 5058:          } // for (int k
+ 5057:          } // for (int k
+ 5058: 
  5059: 
  5060: 
- 5061: 
- 5062:          // Computes the RHS.
- 5063:          // -----------------
- 5064: 
- 5065:          //	BC to be imposed at the end.
- 5066: 
- 5067:          const Vector2 gradETP  = side->gradETP;
- 5068:          const Vector2 gradPr   = side->gradPr;
- 5069:          const Vector2 gradEta1 = side->gradEta1;
- 5070:          const Vector2 gradEta2 = side->gradEta2;
- 5071: 
- 5072:          const Vector2 *btu = side->btu;
- 5073:          const Vector2 *u2  = side->u2;
- 5074:          const double coriolis = side->coriolis;
- 5075:          const Vector2 *nuGradU = side->nuGradU;
+ 5061:          // Computes the RHS.
+ 5062:          // -----------------
+ 5063: 
+ 5064:          //	BC to be imposed at the end.
+ 5065: 
+ 5066:          const Vector2 gradETP  = side->gradETP;
+ 5067:          const Vector2 gradPr   = side->gradPr;
+ 5068:          const Vector2 gradEta1 = side->gradEta1;
+ 5069:          const Vector2 gradEta2 = side->gradEta2;
+ 5070: 
+ 5071:          const Vector2 *btu = side->btu;
+ 5072:          const Vector2 *u2  = side->u2;
+ 5073:          const double coriolis = side->coriolis;
+ 5074:          const Vector2 *nuGradU = side->nuGradU;
+ 5075: 
  5076: 
- 5077: 
- 5078:          const Vector2 grad2D = grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0;
- 5079: 
- 5080:          for (int k = kb + 1; k < nvrt; k++) {
- 5081:             const int kin = k - kb - 1;
- 5082: 
- 5083:             const double dz_0 = side->Dz(k);
- 5084:             const double dz_1 = (k < nvrt - 1) ? side->Dz(k + 1) : 0.0;  // k always < nvrt - 1 when used.
- 5085: 
- 5086:             rrhs[kin] = {0.0, 0.0};
- 5087:             double dz = 0.0;
- 5088: 
- 5089:             // dz is the distance between the center of the k-th layer and the center of the (k+1)-th layer
- 5090:             // In the boundary layers, it is the distance between the center of the layer and the boundary.
- 5091:             if (k < nvrt  ) dz += dz_1;
- 5092:             if (k > kb + 1) dz += dz_0;
- 5093: 
- 5094:             // Elevation gradient, atmospheric pressure and tidal potential
- 5095:             rrhs[kin] = - 0.5*dz*dt*grad2D;
- 5096: if (side->idx == 21) printf("$$AAAA$$$ gradETP[%d] = %.16f, %.16f, dz = %.16f\n", k, rrhs[kin].x, rrhs[kin].y, dz);            
- 5097:       
- 5098: 
- 5099:             // Coriolis, advection, wind stress, and horizontal viscosity
- 5100:             if (k < nvrt - 1) {
+ 5077:          const Vector2 grad2D = grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0;
+ 5078: 
+ 5079:          for (int k = kb + 1; k < nvrt; k++) {
+ 5080:             const int kin = k - kb - 1;
+ 5081: 
+ 5082:             const double dz_0 = side->Dz(k);
+ 5083:             const double dz_1 = (k < nvrt - 1) ? side->Dz(k + 1) : 0.0;  // k always < nvrt - 1 when used.
+ 5084: 
+ 5085:             rrhs[kin] = {0.0, 0.0};
+ 5086:             double dz = 0.0;
+ 5087: 
+ 5088:             // dz is the distance between the center of the k-th layer and the center of the (k+1)-th layer
+ 5089:             // In the boundary layers, it is the distance between the center of the layer and the boundary.
+ 5090:             if (k < nvrt  ) dz += dz_1;
+ 5091:             if (k > kb + 1) dz += dz_0;
+ 5092: 
+ 5093:             // Elevation gradient, atmospheric pressure and tidal potential
+ 5094:             rrhs[kin] = - 0.5*dz*dt*grad2D;
+ 5095: if (side->idx == 21) printf("$$AAAA$$$ gradETP[%d] = %.16f, %.16f, dz = %.16f\n", k, rrhs[kin].x, rrhs[kin].y, dz);            
+ 5096:       
+ 5097: 
+ 5098:             // Coriolis, advection, wind stress, and horizontal viscosity
+ 5099:             if (k < nvrt - 1) {
+ 5100: 
  5101: 
- 5102: 
- 5103:                rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
- 5104:                                         dt*(coriolis*rot90(2.0*u2[k] + u2[k + 1]) + 
- 5105:                                             2.0*nuGradU[k] + nuGradU[k + 1]));
- 5106:                                                 
- 5107: // if (side->idx == 21) printf("$$BBBB$$$ dz_1 = %.16f, coriolis = %.16f, btu[%d] = %.16f, %.16f, u2[%d] = %.16f, %.16f, nuGradU[%d] = %.16f, %.16f\n", dz_1, coriolis, k, btu[k].x, btu[k].y, k, u2[k].x, u2[k].y, k, nuGradU[k].x, nuGradU[k].y);            
- 5108:                //diff stress tensors 1006
- 5109:                if constexpr(itur==5) {  // 1018:itur==5 XXX What is itur?
- 5110:                   // Does it make sense to have dz_1 multiplying and dividing? XXX
- 5111:                   assert(false && "Not implemented: itur == 5");
- 5112:                   // rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
- 5113:                }
- 5114: 
- 5115:             } else { // k == nvrt - 1 SURFACE
- 5116:                Vector2 tau2 = {0.0, 0.0};
- 5117:                if constexpr(ics==1) {
- 5118:                   tau2 = side->tau();
- 5119:       
- 5120:                } else {
- 5121:                   assert(false && "Not implemented: ics == 2");
- 5122:                   // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
- 5123:                   // call project_hvec(tau(1,node2),tau(2,node2),pframe(:,:,node2),sframe2(:,:,j),tt1,ss1)
- 5124:                   // taux2=(vn1+tt1)*0.5d0
- 5125:                   // tauy2=(vn2+ss1)*0.5d0
- 5126:                } // if ics
- 5127: 
- 5128:                rrhs[kin] += dt*tau2;
- 5129: 
- 5130:             } // if k<nvrt
- 5131: 
- 5132:             if (k > kb + 1) {
- 5133:                rrhs[kin] += (dz_0/6.0)*(2.0*btu[k] + btu[k - 1] + 
- 5134:                                        dt*(coriolis*rot90(2.0*u2[k] + u2[k - 1]) + 
- 5135:                                            2.0*nuGradU[k] + nuGradU[k - 1]));
- 5136: if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] = %.16f, %.16f, u2[%d] = %.16f, %.16f, nuGradU[%d] = %.16f, %.16f\n", dz_0, coriolis, k, btu[k].x, btu[k].y, k, u2[k].x, u2[k].y, k, nuGradU[k].x, nuGradU[k].y);            
- 5137: 
- 5138:                // diff stress tensors 1006
- 5139:                if constexpr(itur==5) { // 1018:itur==5 XXX What is itur?
- 5140:                   assert(false && "Not implemented: itur == 5");
- 5141:                   // Does it make sense to have dz_0 multiplying and dividing? XXXX
- 5142:                   // rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0;
- 5143:                }
- 5144: 
- 5145:             } // if k>kbs + 1
- 5146: 
- 5147:             // Baroclinic
- 5148:             Vector2 *bcc = side->bcc;
- 5149:             if constexpr(ibc == 0) {
- 5150:                if (k < nvrt  ) rrhs[kin] += (dz_1*dt/6.0)*(2.0*bcc[k] + bcc[k+1]);
- 5151:                if (k > kb + 1) rrhs[kin] += (dz_0*dt/6.0)*(2.0*bcc[k] + bcc[k-1]);
- 5152: 
- 5153:             } // if ibc==0
- 5154: 
- 5155:          } // k=kb + 1,nvrt
+ 5102:                rrhs[kin] += (dz_1/6.0)*(2.0*btu[k] + btu[k + 1] + 
+ 5103:                                         dt*(coriolis*rot90(2.0*u2[k] + u2[k + 1]) + 
+ 5104:                                             2.0*nuGradU[k] + nuGradU[k + 1]));
+ 5105:                                                 
+ 5106: // if (side->idx == 21) printf("$$BBBB$$$ dz_1 = %.16f, coriolis = %.16f, btu[%d] = %.16f, %.16f, u2[%d] = %.16f, %.16f, nuGradU[%d] = %.16f, %.16f\n", dz_1, coriolis, k, btu[k].x, btu[k].y, k, u2[k].x, u2[k].y, k, nuGradU[k].x, nuGradU[k].y);            
+ 5107:                //diff stress tensors 1006
+ 5108:                if constexpr(itur==5) {  // 1018:itur==5 XXX What is itur?
+ 5109:                   // Does it make sense to have dz_1 multiplying and dividing? XXX
+ 5110:                   assert(false && "Not implemented: itur == 5");
+ 5111:                   // rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
+ 5112:                }
+ 5113: 
+ 5114:             } else { // k == nvrt - 1 SURFACE
+ 5115:                Vector2 tau2 = {0.0, 0.0};
+ 5116:                if constexpr(ics==1) {
+ 5117:                   tau2 = side->tau();
+ 5118:       
+ 5119:                } else {
+ 5120:                   assert(false && "Not implemented: ics == 2");
+ 5121:                   // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
+ 5122:                   // call project_hvec(tau(1,node2),tau(2,node2),pframe(:,:,node2),sframe2(:,:,j),tt1,ss1)
+ 5123:                   // taux2=(vn1+tt1)*0.5d0
+ 5124:                   // tauy2=(vn2+ss1)*0.5d0
+ 5125:                } // if ics
+ 5126: 
+ 5127:                rrhs[kin] += dt*tau2;
+ 5128: 
+ 5129:             } // if k<nvrt
+ 5130: 
+ 5131:             if (k > kb + 1) {
+ 5132:                rrhs[kin] += (dz_0/6.0)*(2.0*btu[k] + btu[k - 1] + 
+ 5133:                                        dt*(coriolis*rot90(2.0*u2[k] + u2[k - 1]) + 
+ 5134:                                            2.0*nuGradU[k] + nuGradU[k - 1]));
+ 5135: if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] = %.16f, %.16f, u2[%d] = %.16f, %.16f, nuGradU[%d] = %.16f, %.16f\n", dz_0, coriolis, k, btu[k].x, btu[k].y, k, u2[k].x, u2[k].y, k, nuGradU[k].x, nuGradU[k].y);            
+ 5136: 
+ 5137:                // diff stress tensors 1006
+ 5138:                if constexpr(itur==5) { // 1018:itur==5 XXX What is itur?
+ 5139:                   assert(false && "Not implemented: itur == 5");
+ 5140:                   // Does it make sense to have dz_0 multiplying and dividing? XXXX
+ 5141:                   // rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0;
+ 5142:                }
+ 5143: 
+ 5144:             } // if k>kbs + 1
+ 5145: 
+ 5146:             // Baroclinic
+ 5147:             Vector2 *bcc = side->bcc;
+ 5148:             if constexpr(ibc == 0) {
+ 5149:                if (k < nvrt  ) rrhs[kin] += (dz_1*dt/6.0)*(2.0*bcc[k] + bcc[k+1]);
+ 5150:                if (k > kb + 1) rrhs[kin] += (dz_0*dt/6.0)*(2.0*bcc[k] + bcc[k-1]);
+ 5151: 
+ 5152:             } // if ibc==0
+ 5153: 
+ 5154:          } // k=kb + 1,nvrt
+ 5155: 
  5156: 
- 5157: 
- 5158: // if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("AAAAAA kb = %d, alow[%d] = %.16f, bdia[%d] = %.16f, cupp[%d] = %.16f, rrhs[%d] = %.16f, %.16f\n", kb, k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k].x, rrhs[k].y);   
- 5159:          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
- 5160: // for (int k=nvrt-kb-1; k < nvrt; k++) { soln[k] = {0.0, 0.0}; side->u2[k] = {0.0, 0.0}; }
- 5161: // if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, Dz[%d] = %.16f, soln[%d] = %.16f, %.16f\n", kb, k, side->Dz(k), k, soln[k].x, soln[k].y);   
- 5162: 
- 5163: // for (int k=0; k<nvrt; k++) soln[k] = u[k];
- 5164:          for (int k = kb + 1; k < nvrt; k++) {
- 5165:             const int kin = k - kb - 1;
- 5166: 
- 5167:             // Velocity is always clamped to maximum values
- 5168:             side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
- 5169:          } // k
- 5170: // if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\n", k, soln[k].x, soln[k].y);   
- 5171:       } // if side->is2D()
- 5172:       
- 5173: 
- 5174:       // Impose velocity boundary condition at the bottom
- 5175:       if constexpr(imm == 2) { // 3D bed deformation model
- 5176:          double dep;
- 5177:          Vector2 vel;
- 5178: 
- 5179:          assert(false && "Not implemented: imm == 2");
- 5180:          //update_bdef(time, x0, y0, dep, vel);
- 5181:          // side->u2[kb] = vel;
- 5182: 
- 5183:       } else { // imm = 0 or 1
- 5184:          if (side->Cd() == 0.0) {
- 5185:             side->u2[kb] = side->u2[kb + 1];
- 5186:          } else if (nvrt - 1 > kb + 1) { // 3D no slip bottom   XXXXX use is3D()?
- 5187: // printf("XXXXXXXXX computeFlowBcVelocities: 3D no slip bottom, side idx = %d\n", side->idx);
- 5188:             side->u2[kb] = {0.0, 0.0};
- 5189:          }
- 5190:           
- 5191:       } // if imm
- 5192: 
- 5193:       // The velocities below the bottom level are set to zero
- 5194:       for (int k=0; k < kb - 1; k++) side->u2[k] = {0.0, 0.0};
+ 5157: // if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("AAAAAA kb = %d, alow[%d] = %.16f, bdia[%d] = %.16f, cupp[%d] = %.16f, rrhs[%d] = %.16f, %.16f\n", kb, k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k].x, rrhs[k].y);   
+ 5158:          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
+ 5159: // for (int k=nvrt-kb-1; k < nvrt; k++) { soln[k] = {0.0, 0.0}; side->u2[k] = {0.0, 0.0}; }
+ 5160: // if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, Dz[%d] = %.16f, soln[%d] = %.16f, %.16f\n", kb, k, side->Dz(k), k, soln[k].x, soln[k].y);   
+ 5161: 
+ 5162: // for (int k=0; k<nvrt; k++) soln[k] = u[k];
+ 5163:          for (int k = kb; k < nvrt; k++) {
+ 5164:             const int kin = k - kb - 1;
+ 5165: 
+ 5166:             // Velocity is always clamped to maximum values
+ 5167:             side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
+ 5168:          } // k
+ 5169: // if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\n", k, soln[k].x, soln[k].y);   
+ 5170:       } // if side->is2D()
+ 5171:       
+ 5172: 
+ 5173:       // Impose velocity boundary condition at the bottom
+ 5174:       if constexpr(imm == 2) { // 3D bed deformation model
+ 5175:          double dep;
+ 5176:          Vector2 vel;
+ 5177: 
+ 5178:          assert(false && "Not implemented: imm == 2");
+ 5179:          //update_bdef(time, x0, y0, dep, vel);
+ 5180:          // side->u2[kb] = vel;
+ 5181: 
+ 5182:       } else { // imm = 0 or 1
+ 5183:          if (side->Cd() == 0.0) {
+ 5184:             side->u2[kb] = side->u2[kb + 1];
+ 5185:          } else if (nvrt - 1 > kb + 1) { // 3D no slip bottom   XXXXX use is3D()?
+ 5186: // printf("XXXXXXXXX computeFlowBcVelocities: 3D no slip bottom, side idx = %d\n", side->idx);
+ 5187:             side->u2[kb] = {0.0, 0.0};
+ 5188:          }
+ 5189:           
+ 5190:       } // if imm
+ 5191: 
+ 5192:       // The velocities below the bottom level are set to zero
+ 5193:       for (int k = 0; k <= kb - 1; k++) side->u2[k] = {0.0, 0.0};
+ 5194: 
  5195: 
- 5196: 
- 5197:    }
+ 5196:    }
+ 5197: 
  5198: 
- 5199: 
- 5200:    __global__ void applyMomentumBC(void) {
- 5201: 
- 5202:       SIDE_BND(sideBnd);
- 5203: 
- 5204:       Side *side = sideBnd->side;
- 5205:       const BoundarySegment *segment = sideBnd->segment;
- 5206:       const Node *n1 = side->n1;
- 5207:       const Node *n2 = side->n2;
- 5208: 
- 5209:       assert(segment != nullptr && "applyMomentumBC: segment is nullptr");
- 5210: 
- 5211:       // REMEMEBER, this is a trick, segment can be a pointer or (-1, -2)
- 5212:       const bool isLand = segment->isLand;
- 5213:       const int ifltype = segment->ifltype;
- 5214: 
- 5215:       const int kb = side->kb;
- 5216: 
- 5217:       if (!isLand && ifltype != 0) {
- 5218:          const Vector2 *ubc = sideBnd->ubc;
- 5219:   
- 5220:          for (int k = kb; k < nvrt; k++) {
- 5221:             
- 5222:             assert(ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
- 5223:                    && (ubc[k].x <= 98 && ubc[k].y <= 98)) && "Momentum BC: Side has no velocity boundary conditions");
- 5224: 
- 5225:             if (ifltype == -1) {
- 5226:                // Flather 1
- 5227: 
- 5228:                const double depth = side->depth();
- 5229: 
- 5230:                assert(depth > 0.0 && "Flather bnd has 0 or negative depth");
- 5231: 
- 5232:                const double vnorm = sqrt(grav/depth)*(side->eta2() - sideBnd->etaMeanBnd()) + dot(ubc[k], side->n);
- 5233: 
- 5234:                side->u2[k] = vnorm*side->n;
- 5235: 
- 5236:             } else if (ifltype == -2) { // Discharge
- 5237: 
- 5238:                const double eta1 = side->eta1();
- 5239:                const double eta2 = side->eta2();
- 5240:                const double htot = side->htot2();
- 5241: 
- 5242:                // Discharge is a polynomial. See disch_coef in readTides. We must implement this.
- 5243:                assert(false && "Not implemented: Discharge bc");
- 5244:                // const double dischrg = discharge(eta1);
- 5245:                const double dischrg = 0.0; // XXX REMOVE
- 5246:                
- 5247: 
- 5248:                assert(htot > 0.0 && "Discharge bc has 0 or negative htot");
- 5249: 
- 5250:                const double vnorm = dischrg*eta2/htot;
- 5251: 
- 5252:                side->u2[k] = vnorm*side->n;
- 5253: 
- 5254: 
- 5255:             }
- 5256:             else if (ifltype == -4 || ifltype == -5) { // 3D radiation
- 5257:                const double vnorm = dot(side->u2[k], side->n);
- 5258: 
- 5259:                double rat;
- 5260:                if (vnorm <= 0.0) rat = segment->vobc1; // incoming
- 5261:                else              rat = segment->vobc2; // outgoing
+ 5199:    __global__ void applyMomentumBC(void) {
+ 5200: 
+ 5201:       SIDE_BND(sideBnd);
+ 5202: 
+ 5203:       Side *side = sideBnd->side;
+ 5204:       const BoundarySegment *segment = sideBnd->segment;
+ 5205:       const Node *n1 = side->n1;
+ 5206:       const Node *n2 = side->n2;
+ 5207: 
+ 5208:       assert(segment != nullptr && "applyMomentumBC: segment is nullptr");
+ 5209: 
+ 5210:       // REMEMEBER, this is a trick, segment can be a pointer or (-1, -2)
+ 5211:       const bool isLand = segment->isLand;
+ 5212:       const int ifltype = segment->ifltype;
+ 5213: 
+ 5214:       const int kb = side->kb;
+ 5215: 
+ 5216:       if (!isLand && ifltype != 0) {
+ 5217:          const Vector2 *ubc = sideBnd->ubc;
+ 5218:   
+ 5219:          for (int k = kb; k < nvrt; k++) {
+ 5220:             
+ 5221:             assert(ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
+ 5222:                    && (ubc[k].x <= 98 && ubc[k].y <= 98)) && "Momentum BC: Side has no velocity boundary conditions");
+ 5223: 
+ 5224:             if (ifltype == -1) {
+ 5225:                // Flather 1
+ 5226: 
+ 5227:                const double depth = side->depth();
+ 5228: 
+ 5229:                assert(depth > 0.0 && "Flather bnd has 0 or negative depth");
+ 5230: 
+ 5231:                const double vnorm = sqrt(grav/depth)*(side->eta2() - sideBnd->etaMeanBnd()) + dot(ubc[k], side->n);
+ 5232: 
+ 5233:                side->u2[k] = vnorm*side->n;
+ 5234: 
+ 5235:             } else if (ifltype == -2) { // Discharge
+ 5236: 
+ 5237:                const double eta1 = side->eta1();
+ 5238:                const double eta2 = side->eta2();
+ 5239:                const double htot = side->htot2();
+ 5240: 
+ 5241:                // Discharge is a polynomial. See disch_coef in readTides. We must implement this.
+ 5242:                assert(false && "Not implemented: Discharge bc");
+ 5243:                // const double dischrg = discharge(eta1);
+ 5244:                const double dischrg = 0.0; // XXX REMOVE
+ 5245:                
+ 5246: 
+ 5247:                assert(htot > 0.0 && "Discharge bc has 0 or negative htot");
+ 5248: 
+ 5249:                const double vnorm = dischrg*eta2/htot;
+ 5250: 
+ 5251:                side->u2[k] = vnorm*side->n;
+ 5252: 
+ 5253:             }
+ 5254:             else if (ifltype == -4 || ifltype == -5) { // 3D radiation
+ 5255:                const double vnorm = dot(side->u2[k], side->n);
+ 5256: 
+ 5257:                double rat;
+ 5258:                if (vnorm <= 0.0) rat = segment->vobc1; // incoming
+ 5259:                else              rat = segment->vobc2; // outgoing
+ 5260: 
+ 5261:                side->u2[k] = (1.0 - rat)*side->u2[k] + rat*ubc[k];
  5262: 
- 5263:                side->u2[k] = (1.0 - rat)*side->u2[k] + rat*ubc[k];
- 5264:             }
- 5265:             else { // not Flather or 3D radiation
+ 5263:             }
+ 5264:             else { // not Flather or 3D radiation
+ 5265: if (side->idx == 305) printf("------------------------>4 side->idx = %d, subc[%d] = %.16f, %.16f, su2[%d] = %.16f, %.16f\n", side->idx, k, ubc[k].x, ubc[k].y, k-1, side->u2[k-1].x, side->u2[k-1].y);                              
  5266:                side->u2[k] = ubc[k];
  5267: 
  5268:             } // if (segment->ifltype...
@@ -5274,7 +5274,7 @@
  5274: 
  5275:          if constexpr(islip == 0) { // free slip
  5276: 
- 5277:             for (int k=kb; k < nvrt; k++) {
+ 5277:             for (int k = kb; k < nvrt; k++) {
  5278: 
  5279:                const Vector2 t = side->t();
  5280:                const Vector2 n = side->n;
