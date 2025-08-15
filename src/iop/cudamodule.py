@@ -156,9 +156,9 @@ class CudaSourceManager:
 
             debug_options = (
                     "-std=c++20",
-                    "-lineinfo",
-                    "--ptxas-options=-v",  # Show resource usage
-                    "--device-debug"  # Enable device debug information
+                    # "-lineinfo",
+                    # "--ptxas-options=-v",  # Show resource usage
+                    # "--device-debug"  # Enable device debug information
 
                 )
             mod = cp.RawModule(code=processed_source, options=debug_options)

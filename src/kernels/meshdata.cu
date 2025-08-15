@@ -637,6 +637,63 @@ __device__ void Element::shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const
 
 }
 
+__device__ double Element::intPhiPhi(int i1, int i2) const {
+   // return \int \phi_i1*\phi_i2 dA, where phi_i1 and phi_i2 are the shape functions of the nodes i1 and i2.
+   // The integral is computed analytically, using the shape functions in xi and eta coordinates and the Jacobian.
+   // The formula for the integral is:
+   // (area/16)(1+\xi_i\xi_j/3)(1+\eta_i\eta_j/3) + (coe_1/96)(1+\eta_i\eta_j/3)(\xi_i+\xi_j) + (coe_2/96)(1+\xi_i\xi_j/3)(\eta_i+\eta_j)\]
+
+   const Node *n0 = nodes[0];
+   const Node *n1 = nodes[1];
+   const Node *n2 = nodes[2];
+   const Node *n3 = nodes[3];
+   const double coe1 = (n1->p.x - n0->p.x)*(n2->p.y - n3->p.y) - (n2->p.x - n3->p.x)*(n1->p.y - n0->p.y);
+   const double coe2 = (n2->p.x - n1->p.x)*(n3->p.y - n0->p.y) - (n3->p.x - n0->p.x)*(n2->p.y - n1->p.y);
+
+   double xi_term  = 1.0 + (ixi_n[i1]*ixi_n[i2])/3.0;
+   double eta_term = 1.0 + (iet_n[i1]*iet_n[i2])/3.0;
+   double eta_sum  = iet_n[i1] + iet_n[i2];
+   double xi_sum   = ixi_n[i1] + ixi_n[i2];
+
+   return (1.0/16.0)*area[ie]*xi_term*eta_term + (coe2/96.0)*xi_term*eta_sum + (coe1/96.0)*eta_term*xi_sum;
+}
+   
+__device__ double Element::intGradPhiGradPhi(int i1, int i2) const {
+   // return \int (grad phi_i1) * (grad phi_i2) dA, where phi_i1 and phi_i2 are the shape functions of the nodes i1 and i2.
+   // The integral is computed by using the 2x2 Gauss-Legendre quadrature points in xi and eta coordinates.
+   // Again, it uses the Jacobian to compute the integral in x,y coordinates.
+
+   // 2x2 quadrature points
+   constexpr double eta_qp[4] = {-1.0/sqrt(3.0), 1.0/sqrt(3.0), -1.0/sqrt(3.0), 1.0/sqrt(3.0)};
+   constexpr double xi_qp [4] = {-1.0/sqrt(3.0), -1.0/sqrt(3.0), 1.0/sqrt(3.0), 1.0/sqrt(3.0)};
+
+   const double x_xi = 0.25*(nodes[0]->p.x + pt[i]*nodes[0]->p.x);
+   const double x_et = 0.25*(nodes[0]->p.x + pt[j]*nodes[0]->p.x);
+   const double y_xi = 0.25*(nodes[0]->p.y + pt[i]*nodes[0]->p.y);
+   const double y_et = 0.25*(nodes[0]->p.y + pt[j]*nodes[0]->p.y);
+
+   MAKE a FUNCTION FOR THE ELEMENT JACOBIAN
+   const double jacobian = area[ie]/4.0 + eta_qp[i1]/8.0*coe1 + xi_qp[i1]/8.0*coe2;
+   quad_int=0.0
+   do i=1,2 !eta pt
+     do j=1,2 !xi pt
+       n
+       if(rjac<=0._rkind) call parallel_abort('quad_int: Jac<=0')
+       x_xi=0.25_rkind*(wild(1)+pt(i)*wild(3)) !dx/d\xi
+       x_et=0.25_rkind*(wild(5)+pt(j)*wild(3))
+       y_xi=0.25_rkind*(wild(2)+pt(i)*wild(4))
+       y_et=0.25_rkind*(wild(6)+pt(j)*wild(4))
+
+       // Following 4 do not have Jacobian
+       phiip_x = (1.0/4.0)*(y_et*ixi_n(ip)*(1.0+iet_n(ip)*pt(i)) - y_xi*iet_n(ip)*(1.0+ixi_n(ip)*pt(j))) !d\phi_ip/dx *J
+       phiip_y = (1.0/4.0)*(x_xi*iet_n(ip)*(1.0+ixi_n(ip)*pt(j)) - x_et*ixi_n(ip)*(1.0+iet_n(ip)*pt(i)))
+       phill_x = (1.0/4.0)*(y_et*ixi_n(ll)*(1.0+iet_n(ll)*pt(i)) - y_xi*iet_n(ll)*(1.0+ixi_n(ll)*pt(j)))
+       phill_y = (1.0/4.0)*(x_xi*iet_n(ll)*(1.0+ixi_n(ll)*pt(j)) - x_et*ixi_n(ll)*(1.0+iet_n(ll)*pt(i)))
+
+
+//       return (phiip_x*phill_x+phiip_y*phill_y)/rjac;
+}
+
 
 /**  Interpolate velocities at a given point (xt,yt,zt)
 
@@ -1023,11 +1080,7 @@ __device__ void Node::updateKb(void) {
 
    if constexpr(ivcor == 1) return;
 
-
-   // Check if node is wet
-   const bool isDry = (htot2() <= h0);  // XXX Check if we are doing this elsewhere
-
-   if (isDry) return;
+   if (isDry2()) return;
 
    if constexpr(ivcor == 2) {  // SZ coordinates
       
@@ -1220,6 +1273,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
    int idxNodeBoundary = 0;  
    for (int i = 0; i < np; i++)
    {
+printf("NODE i = %d, np = %d\n", i, np);      
       Node &node = localNodeData[i];
 
       node.idx = i;
@@ -1275,6 +1329,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
       node.Cd = drag[i];
       node.rough = roughness[i];
+printf("NODE idx = %d, Cd = %.16f, rough = %.16f\n", i, node.Cd, node.rough);
       for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
 
       // Links the node to the boundary information
@@ -1335,6 +1390,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
    int idxSideBoundary = 0;
    for (int i = 0; i < ns; i++)
    {
+if (i%1000 == 0) printf("SIDE i = %d, ns = %d\n", i, ns);      
       Side &side = localSideData[i];
       side.idx = i;
       // finding the pointer to the nodes that form the side
@@ -1477,6 +1533,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
    printf("Processing %d elements\n", ne);
    for (int i = 0; i < ne; i++)
    {
+printf("ELEMENT i = %d, ne = %d\n", i, ne);      
       Element &elem = localElemData[i];
       elem.idx = i;
       for (int j = 0; j < i34[i]; j++) {
@@ -1590,7 +1647,6 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 }
 
 
-
 extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Setup coefficient matrix, sparsem, for the shallow water wave equation
    // No elevation essential b.c. are imposed yet but other b.c. is imposed
@@ -1621,7 +1677,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // Integral I_1 
       // \bar{\breve{H}} 
       const double hhatb = elem->mean(&Side::hhat);        
-
 
       assert((hhatb >= 0.0 || ihhat != 1) && "Invalid hhat");
 
@@ -1665,6 +1720,43 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       else { // Quad
          // XXX IMPLEMENT THIS
          assert(false && "Quad not implemented in setupCoefficientMatrix");
+
+         // To clarify the notation in this section: 
+         //   i stands for the node under consideration (node1)
+         //   j (node2), k (node3), l (node4) are the other nodes of the quad.
+         const int id2 = elem->nxq(1 + id1);
+         const int id3 = elem->nxq(2 + id1);
+         const int id4 = elem->nxq(3 + id1);
+         Node *node2 = elem->nodes[id2];
+         Node *node3 = elem->nodes[id3];
+         Node *node4 = elem->nodes[id4];         
+
+         // integrals of phi_i*phi_j, phi_i*phi_k, phi_i*phi_l
+         const double ipp_ii = elem->intPhiPhi(id1, id1);
+         const double ipp_ij = elem->intPhiPhi(id1, id2);
+         const double ipp_ik = elem->intPhiPhi(id1, id3);
+         const double ipp_il = elem->intPhiPhi(id1, id4);
+
+         // integrals of (grad phi_i) * (grad phi_j), (grad phi_i) * (grad phi_k), (grad phi_i) * (grad phi_l)
+         const double igpgp_ii = elem->intGradPhiGradPhi(id1, id1);
+         const double igpgp_ij = elem->intGradPhiGradPhi(id1, id2);
+         const double igpgp_ik = elem->intGradPhiGradPhi(id1, id3);
+         const double igpgp_il = elem->intGradPhiGradPhi(id1, id4);
+
+         // Computes the different components of integral I_1 of each node with respect to node i.
+         const double I1_ii = ipp_ii + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ii;
+         const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
+         const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
+         const double I1_il = ipp_il + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_il;
+
+         node1->addToSparseMatrix(node1, I1_ii);
+         node1->addToSparseMatrix(node2, I1_ij); 
+         node1->addToSparseMatrix(node3, I1_ik);
+         node1->addToSparseMatrix(node4, I1_il);
+  
+
+
+      
       } 
 
  
@@ -2011,7 +2103,6 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
 
    assert(n >= 1       && "TRIDAG: n must be >= 1");
    assert(b[0] != 0.0  && "TRIDAG: b[0]=0");
-// printf("AAAAAA a[0] = %f, b[0] = %f, c[0] = %f, rhs[0] = %f\n", a[0], b[0], c[0], rhs[0]);   
 
    double bet = b[0];
    if constexpr (nc == 1) {
@@ -2023,7 +2114,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
    for (int j = 1; j < n; j++) {
       gam[j] = c[j - 1]/bet;
       bet = b[j] - a[j]*gam[j];
-// printf("RRR bet = %f, b[%d] = %f, a[%d] = %f, gam[%d] = %f\n", bet, j, b[j], j, a[j], j, gam[j]);
+
       assert (bet != 0.0 && "TRIDIAGONAL SOLVER: bet=0");
 
       if constexpr (nc == 1) {
@@ -2484,6 +2575,8 @@ extern "C" {
  
       const bool isDry = side->isDry;
 
+   
+
       if (isDry) {
          for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] = {0.0, 0.0};
          return;
@@ -2665,7 +2758,6 @@ extern "C" {
             }
 
             side->nuGradU[k] = hvis_coef0*sumU/dt;
-if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->nuGradU[k].x, side->nuGradU[k].y);            
    
          }
       }
@@ -2741,8 +2833,8 @@ if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->n
       const Node *node2 = side->n2;
 
       // Vertically integrated velocity U (in ll if ics=2)
-      for (int k = side->kb; k < nvrt - 1; k++) { /// XXX CHECK INDICES
-         side->U += side->Dz(k + 1)*0.5*(side->u2[k] + side->u2[k + 1]);  // CHECK INDICES!!!!
+      for (int k = side->kb; k < nvrt - 1; k++) { 
+         side->U += side->Dz(k + 1)*0.5*(side->u2[k] + side->u2[k + 1]);  
       }
 
    }
@@ -2754,17 +2846,21 @@ if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->n
 
       NODE(node);
 
+            
       const int    kb      = node->kb;
-      const double htot    = node->htot2();
+      const double htot    = node->htot2(); 
       const double rough   = node->rough;
 
 
       if (node->isDry) {
          // Default values for dry nodes
          node->veg_alpha_vert_mean = node->veg_alpha0;
-         /// XXX CHECK INDICES
          if constexpr(iveg != 0) for (int k = kb; k < nvrt; k++) node->veg_alpha3D[k] = node->veg_alpha0;
+
+         return;
+       
       }
+
 
       // Compute bottom drag Cd
       //--------------------------------
@@ -2780,12 +2876,13 @@ if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->n
    // !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
         
          const double rough = node->rough;
+        
          assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
          if (node->rough == 0.0) {
             node->Cd = 0.0;
 
          } else { //roughness >0 
-            
+          
             const double bthick_ori = node->z[kb + 1] - node->z[kb];  // thickness of bottom bnd layer
             const double bthick = max(dzb_min, bthick_ori);
 
@@ -2804,6 +2901,8 @@ if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->n
 
       } // nchi==1
 
+
+
       //   Bottom stress in m^2/s^2
       if (node->rho[kb + 1] >= -98.0)
       {
@@ -2814,7 +2913,7 @@ if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->n
          // !sediment erosion: this part needs more documentation
       }
 
-    
+  
       // Compute vegetation parameters
       //--------------------------------
 
@@ -2862,7 +2961,7 @@ if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->n
          } // for k
 
 
-      } else { // Ganthy (iveg=2)
+      } else { // Ganthy (iveg==2)
       //  Modify canopy height, diameter, and density
 
          // Make sure there is vegetation on this node
@@ -2887,21 +2986,19 @@ if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->n
       } // if iveg
      
          
-
       // Compute vertical mean of veg_alpha3D
       if (iveg != 0) {
          const double ztop = node->zTopCanopy(); // Top of the canopy
          double sum1=0.0;
          double sum2=0.0;
          // Integrate over each level under the canopy...
-         for (int k=kb; k<nvrt-1 && node->z[k+1] <= ztop; k++) { /// XXX CHECK INDICES
+         for (int k = kb; (k < nvrt - 1) || (node->z[k + 1] <= ztop); k++) { /// XXX CHECK INDICES
             const double Dz = node->Dz(k);
 
-            sum1 += 0.5*(node->veg_alpha3D[k] + node->veg_alpha3D[k+1])*Dz;
+            sum1 += 0.5*(node->veg_alpha3D[k] + node->veg_alpha3D[k + 1])*Dz;
             sum2 += Dz;
 
          } // for k
-
          if (sum2 == 0.0) node->veg_alpha_vert_mean = node->veg_alpha3D[kb];
          else             node->veg_alpha_vert_mean = sum1/sum2;
 
@@ -2914,6 +3011,8 @@ if (side->idx == 21) printf("$$AAAA$$$ nuGradU[%d] = %.16f, %.16f\n", k, side->n
       // chi, \tilde\chi, beta, \breve{H}
       
       SIDE(side);
+
+      if (side->isDry) return;
 
       const double htot = side->htot2();
       const int    kb   = side->kb;
@@ -3248,6 +3347,8 @@ if (elem->idx == 21) printf("$$AAAXXXXXXXA$$$ rho1 = %.16f, rho2 = %.16f\n", rho
    // For this it has to compute the density gradient at the half-sides (face centers) and then integrate it vertically.
    // The baroclinic term is -(g/rho_0)*int_z^\eta grad(rho) dz
 
+      if (ibc == 1) return;
+
       SIDE(side);
 
       if (side->isDry) return;
@@ -3256,16 +3357,16 @@ if (elem->idx == 21) printf("$$AAAXXXXXXXA$$$ rho1 = %.16f, rho2 = %.16f\n", rho
       const Element *e2 = side->elems[1];      
       const int kb = side->kb;
       
-      assert(e1 != nullptr || e2 != nullptr && "computeSideDensityGradient: side has no elements");
+      assert(e1 != nullptr || e2 != nullptr && "computeSideDensityGradient: side needs to have at least one element");
 
       // interpolates vertically the density gradient of the two elements at the half level/
 
-      // Starts the integration at the surface and goes down to the bottom
-      int k1 = nvrt - 1;
-      int k2 = nvrt - 1;
+      int k1 = max(kb, nvrt / 2);
+      int k2 = max(kb, nvrt / 2);
 
+      // Starts the integration at the surface and goes down to the bottom
       side->bcc[nvrt-1] = {0.0, 0.0};
-      for (int k = nvrt-2; k >= kb; k--) {
+      for (int k = nvrt - 2; k >= kb; k--) {
       // For each prism level (from surface to bottom)...
 
          // For both elements, interpolate density gradient at the side's half level.
@@ -3282,9 +3383,12 @@ if (elem->idx == 21) printf("$$AAAXXXXXXXA$$$ rho1 = %.16f, rho2 = %.16f\n", rho
          Vector2 gradRho = {0.0, 0.0};
          if (e1 != nullptr && k > kb) {
             // XXXX WHAT HAPPENS IF k1 < kb??? (check ibelow)
+            
             k1 = e1->findLevel(side->zc[k], k1); // finds the index at the half level starting the search at k1
             const double zrat = (side->zc[k] - e1->z[k1])/(e1->z[k1 + 1] - e1->z[k1]);
-            
+            // assert(zrat >= 0.0 && zrat <= 1.0 && "computeSideDensityGradient: zrat is not in [0, 1]");
+printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %.16f, z[%d] = %.16f, zrat = %.16f\n",
+      k1, side->idx, k, side->zc[k], k1, e1->z[k1], k1 + 1, e1->z[k1 + 1], e1->gradRho[k1].x, e1->gradRho[k1].y, zrat);            
             gradRho += (e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1 + 1]*zrat)*w1;
          }      
          if (e2 != nullptr && k > kb) {
@@ -3295,6 +3399,7 @@ if (elem->idx == 21) printf("$$AAAXXXXXXXA$$$ rho1 = %.16f, rho2 = %.16f\n", rho
          }
 
          if constexpr(ics==2) {
+            assert(false && "Not implemented: ics == 2");
             // IMPLEMENT THIS XXXXXX
             // call project_hvec(swild(1),swild(2),eframe(:,:,ie),sframe2(:,:,i),tmp1,tmp2)
             // swild(1)=tmp1
@@ -3556,8 +3661,6 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
 
             // Elevation gradient, atmospheric pressure and tidal potential
             rrhs[kin] = - 0.5*dz*dt*grad2D;
-if (side->idx == 21) printf("$$AAAA$$$ gradETP[%d] = %.16f, %.16f, dz = %.16f\n", k, rrhs[kin].x, rrhs[kin].y, dz);            
-      
 
             // Coriolis, advection, wind stress, and horizontal viscosity
             if (k < nvrt - 1) {
@@ -3596,7 +3699,6 @@ if (side->idx == 21) printf("$$AAAA$$$ gradETP[%d] = %.16f, %.16f, dz = %.16f\n"
                rrhs[kin] += (dz_0/6.0)*(2.0*btu[k] + btu[k - 1] + 
                                        dt*(coriolis*rot90(2.0*u2[k] + u2[k - 1]) + 
                                            2.0*nuGradU[k] + nuGradU[k - 1]));
-if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] = %.16f, %.16f, u2[%d] = %.16f, %.16f, nuGradU[%d] = %.16f, %.16f\n", dz_0, coriolis, k, btu[k].x, btu[k].y, k, u2[k].x, u2[k].y, k, nuGradU[k].x, nuGradU[k].y);            
 
                // diff stress tensors 1006
                if constexpr(itur==5) { // 1018:itur==5 XXX What is itur?
@@ -3618,19 +3720,16 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
          } // k=kb + 1,nvrt
 
 
-// if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("AAAAAA kb = %d, alow[%d] = %.16f, bdia[%d] = %.16f, cupp[%d] = %.16f, rrhs[%d] = %.16f, %.16f\n", kb, k, alow[k], k, bdia[k], k, cupp[k], k, rrhs[k].x, rrhs[k].y);   
-         tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
-// for (int k=nvrt-kb-1; k < nvrt; k++) { soln[k] = {0.0, 0.0}; side->u2[k] = {0.0, 0.0}; }
-// if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBB kb = %d, Dz[%d] = %.16f, soln[%d] = %.16f, %.16f\n", kb, k, side->Dz(k), k, soln[k].x, soln[k].y);   
 
-// for (int k=0; k<nvrt; k++) soln[k] = u[k];
+         tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
+
          for (int k = kb + 1; k < nvrt; k++) {  // YYYYYYYYY can be kb 
             const int kin = k - kb - 1;
 
             // Velocity is always clamped to maximum values
             side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
          } // k
-// if (side->idx == 21) for (int k=0; k<nvrt; k++) printf("BBBBBB soln[%d] = %.16f\n", k, soln[k].x, soln[k].y);   
+
       } // if side->is2D()
       
 
@@ -3646,8 +3745,8 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
       } else { // imm = 0 or 1
          if (side->Cd() == 0.0) {
             side->u2[kb] = side->u2[kb + 1];
-         } else if (nvrt - 1 > kb + 1) { // 3D no slip bottom   XXXXX use is3D()?
-// printf("XXXXXXXXX computeFlowBcVelocities: 3D no slip bottom, side idx = %d\n", side->idx);
+
+         } else if (side->is3D()) { // 3D no slip bottom   
             side->u2[kb] = {0.0, 0.0};
          }
           
@@ -3726,7 +3825,6 @@ if (side->idx == 21) printf("$$CCCC$$$ dz_0 = %.16f, coriolis = %.16f, btu[%d] =
 
             }
             else { // not Flather or 3D radiation
-if (side->idx == 305) printf("------------------------>4 side->idx = %d, subc[%d] = %.16f, %.16f, su2[%d] = %.16f, %.16f\n", side->idx, k, ubc[k].x, ubc[k].y, k-1, side->u2[k-1].x, side->u2[k-1].y);                              
                side->u2[k] = ubc[k];
 
             } // if (segment->ifltype...
@@ -3835,8 +3933,8 @@ if (side->idx == 305) printf("------------------------>4 side->idx = %d, subc[%d
 
 
       if (node->isDry2()) { 
-
-         assert((ivcor != 2) && (node->depth < mesh->h_s) && "Deep depth dry");
+printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, node->depth, mesh->h_s, h0, node->htot2());      
+         assert((ivcor != 2) || (node->depth < mesh->h_s) && "Deep depth dry");
 
          if constexpr(ivcor != 1) node->kb = 0;
 

@@ -94,7 +94,7 @@ def schism_init(core, opt):
         sys.exit()
         # levels1(0, 0)
 
-    return int(ntime.item()), int(nrec.item())
+    return int(ntime.item()), int(nrec)
 
 
     

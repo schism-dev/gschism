@@ -756,7 +756,7 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::tuple,               // nodeNeighElems
            py::tuple                // nodeNeighNodes
            >
-readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPartitions) {
+readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPartitions, int ncor) {
 
     
     // Read the header information
@@ -1052,7 +1052,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
 
     // Read the longitude and latitude of the nodes if the file is present
     Array2D<double> nodeCoords_ll(0, 0);
-    if (filename_ll != "") {
+    if (filename_ll != "" && ncor > 0) {
         
         printFormatted(ansi::green("Reading longitude and latitude from %s"), filename_ll.c_str());
         
@@ -1070,11 +1070,11 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
             iss >> tmp_nElements >> tmp_nNodes;
 
             if (tmp_nNodes != nNodes) {
-                throw std::runtime_error("Number of nodes in the .gr3 file does not match the number of nodes in the .gr3 file");
+                throw std::runtime_error("Number of nodes in the .ll file does not match the number of nodes in the .gr3 file");
             }
 
             if (tmp_nElements != nElements) {
-                throw std::runtime_error("Number of elements in the .gr3 file does not match the number of elements in the .gr3 file");
+                throw std::runtime_error("Number of elements in the .ll file does not match the number of elements in the .gr3 file");
             }
 
             // Read the longitude and latitude of the nodes
@@ -1255,7 +1255,7 @@ readVGrid(const std::string& filename, int nNodes) {
 
         file >> nvrt >> kz >> h_s;  
         std::getline(file, dummy);
-
+printf("SSSS nvrt = %d, kz = %d, h_s = %f\n", nvrt, kz, h_s);
         // Since kz is a number of levels and not an index, we'll call it nz
         int nz = kz;
        
@@ -1278,11 +1278,12 @@ readVGrid(const std::string& filename, int nNodes) {
         std::vector<double> cs(nvrt);
         std::vector<double> dcs(nvrt);
         std::vector<double> ztot(nvrt);
-    
+printf("SSAASS nz = %d, nvrt = %d\n", nz, nvrt);    
         // Read the z levels
         for (int k = 0; k < nz - 1 ; k++) {
             int level_number;
             file >> level_number >> ztot[k];
+printf("SSSS level_number = %d, ztot[%d] = %f\n", level_number, k, ztot[k]);
 
             
             if (level_number != k + 1) {  // Convert to 0-based indexing
@@ -1304,7 +1305,7 @@ readVGrid(const std::string& filename, int nNodes) {
 
         // Level nz is not neccesary to be read.
         std::getline(file,  dummy);  
-        std::getline(file,  dummy); 
+printf("SSSS dummy = %s\n", dummy.c_str());
 
         // Read the sigma levels
         sigma[0] = -1.0; //bottom
@@ -1318,6 +1319,7 @@ readVGrid(const std::string& filename, int nNodes) {
         file >> h_c >> theta_b >> theta_f >> dummy;
 
         std::getline(file, dummy); 
+printf("h_c = %f, theta_b = %f, theta_f = %f, h_s = %f\n", h_c, theta_b, theta_f, h_s);        
         if (h_c<5.0 || h_c>=h_s) {
             throw std::runtime_error("h_c needs to be larger to avoid 2nd type abnormaty: " + std::to_string(h_c));
         }

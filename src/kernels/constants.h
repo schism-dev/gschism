@@ -18,9 +18,9 @@ constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
 constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
-constexpr int ncor = 0;               // Option to include Coriolis force
+constexpr int ncor = 1;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 45;          // Reference latitude for Coriolis force
+constexpr double sfea0 = 24;          // Reference latitude for Coriolis force
 
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
@@ -36,11 +36,11 @@ constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometri
 constexpr double veg_lai = 1; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 0;            // Number of tidal potential components
-constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
+constexpr int ntip = 8;            // Number of tidal potential components
+constexpr double tip_dp = 50;   // cut-off depth for applying tidal potential
 
 // Boundary forcing frequencies
-constexpr int nbfr = 1;            // Number of boundary forcing frequencies
+constexpr int nbfr = 8;            // Number of boundary forcing frequencies
 
 // Boundary condition types
 constexpr int nettype = 0;      // Total number of type I elevation boundaries
@@ -58,9 +58,9 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 17; // Number of vertical levels
-constexpr int nzlev   = 7; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 11; // Number of sigma levels (in contrast to z levels)
+constexpr int nvrt    = 2; // Number of vertical levels
+constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;
@@ -68,16 +68,16 @@ constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
-constexpr int nland = 1; // Number of land boundary segments
-constexpr int mnlnd = 31; // Maximum number of nodes per land boundary segment
+constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
+constexpr int nland = 43; // Number of land boundary segments
+constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
 
-constexpr double thetai = 0.6;
+constexpr double thetai = 1;
 
-constexpr double rmaxvel = 10; // Maximum velocity for the x-component
+constexpr double rmaxvel = 4; // Maximum velocity for the x-component
 constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
@@ -88,8 +88,8 @@ constexpr double velmin_btrack = 0.0001; //XXXX
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 300;  // Time step  XXX 
+constexpr double dt = 120;  // Time step  XXX 
 
-constexpr double h0 = 0.01;  // Minimum water depth [m]
+constexpr double h0 = 0.0001;  // Minimum water depth [m]
 
 enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, U=6, V=7, nx=8, ny=9, hhat=10, ghatx=11, ghaty=12, ssign=13, btu=14, btv=15, bccx=16, bccy=17, uth=18, vth=19, ubc=20, vbc=21, island=22, ifltype=23, elbc=24, eta=25, area=26, qel=27, depth=28, radius=29, xlon=30, ylat=31, kb=32, n1=33, n2=34, htot=35, gradEta1x=36, gradEta1y=37, gradEta2x=38, gradEta2y=39, gradETPx=40, gradETPy=41, gradPrx=42, gradPry=43}; // Var codes for getElementVar, getNodeVar...

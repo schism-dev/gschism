@@ -15,6 +15,9 @@ constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
 
+constexpr double ixi_n[4] = {-1, 1, 1,-1}; // Local  xi-coordinate of the vertices of a quad 
+constexpr double iet_n[4] = {-1,-1, 1, 1}; // Local eta-coordinate of the vertices of a quad
+
 #define INT_MAX 2147483647
 
 // Time ramps ---------------------------------------------------------------------------
@@ -439,7 +442,7 @@ struct Element {
                      ((nodes[3] == node) << 3)) - 1;
       
       assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
-      return res;
+      return res;  
    }
 
    __inline__ __device__ int sideLocalIdx(const Side *side) const {
@@ -457,18 +460,30 @@ struct Element {
    __inline__ __device__ int findLevel(double z1, int k) const {
       // Starting at index k, find sequentially the level that contains z
 
+      // For testing purposes, forgets k and performs a full search.
+      for (k = kb; k < nvrt - 1; k++) {
+         if (idx==46) printf("((()))))) kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", k, k, z[k], k + 1, z[k + 1]);            
+         if (z1 >= z[k] && z1 < z[k + 1]) return k;
+      }
+      return nvrt - 2;
+
+
       // if z is already betweeen z[k] and z[k+1], return k
-      if (z1 >= z[k] && z1 < z[k+1]) return k;
-      else if (z1 < z[k]) { 
+      if (idx==46) for (int kkk=0; kkk<nvrt; kkk++) printf("##>>>>  z[%d] = %.16f\n", kkk, z[kkk]);             
+if (idx==46) printf("##>>>>#### kk = %d, z1 = %.16f, z[%d] = %.16f, z[%d] = %.16f\n", k, z1, k, z[k], k + 1, z[k + 1]);       
+      if (z1 >= z[k] && z1 < z[k + 1]) return k;
+      else if (z1 <  z[k]) { 
          // Search for increasing levels
          for (int kk = k; kk < nvrt - 1; kk++) {
+if (idx==46) printf("##>>#### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, z[kk], kk + 1, z[kk + 1]);            
             if (z1 >= z[kk] && z1 < z[kk + 1]) return kk;
          }
          return nvrt - 1;
       }
       else {
          // Search for decreasing levels
-         for (int kk = k; kk > 0; kk--) {
+         for (int kk = k; kk >= kb; kk--) {
+if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, z[kk], kk + 1, z[kk + 1]);             
             if (z1 >= z[kk] && z1 < z[kk + 1]) return kk;
          }
          return 0;
@@ -493,6 +508,10 @@ struct Element {
    __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
    
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
+
+   __device__ double intPhiPhi(int i1, int i2) const;
+   
+   __device__ double intGradPhiGradPhi(int i1, int i2) const;
 
    __device__ Vector2 grad2(double *a) const
    {

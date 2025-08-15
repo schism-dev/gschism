@@ -47,8 +47,7 @@ from python.schism_init import readNamelist, schism_init
 from python.schism_step import schism_step
 from python.schism_consts import *
 import python.cuda_functions as cufunc
-# tracktest = '/media/jmg/Elements/src/gschism/src/temp/tracktest.txt'
-# tracktest = '/home/jo.gonzalez/src/gschism/src/temp/tracktest.txt'
+
 
 
 
@@ -56,7 +55,7 @@ import python.cuda_functions as cufunc
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
-in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN01c'
+in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
 
 
 # import src.io.readSflux as readSflux
@@ -168,6 +167,8 @@ if __name__ == "__main__":
 
     from iop.readTides import read_bctides
 
+    namelist = readNamelist(in_dir)
+
 
     hgrid_file    = os.path.join(in_dir, 'hgrid.gr3')
     hgrid_ll_file = os.path.join(in_dir, 'hgrid.ll')
@@ -177,7 +178,7 @@ if __name__ == "__main__":
     numPartitions = 1
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
         nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
-            module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions)
+            module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions, namelist.opt.ncor)
     
 
     nope, mnond  = iond.shape
@@ -214,9 +215,7 @@ if __name__ == "__main__":
 
    
 
-    namelist = readNamelist(in_dir)
-
-
+  
     # Read in bottom friction coefficients 
     nchi = namelist.opt.nchi
     drag      = np.zeros(nodeCoords.shape[1])
@@ -316,94 +315,7 @@ if __name__ == "__main__":
         ax.add_collection(lc)
 
 
-        if False:
-            import re
 
-
-            with open(tracktest, 'r') as f:
-                text = f.read()
-                # Parse the text (assuming it's in a string called 'text')
-                pattern = r'\$\$\$\s+(\d+),\s+(\d+),\s+([-\d.]+),\s+([-\d.]+)'
-                matches = re.findall(pattern, text)
-
-                    # New pattern for time points
-                time_pattern = r'<>T = ([\d.]+), ([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)'
-                time_matches = re.findall(time_pattern, text)
-
-                # Convert time matches to arrays for plotting
-                time_points = []
-                times = []
-                for t, x, y, z in time_matches:
-                    time_points.append([float(x), float(y)])
-                    times.append(float(t))
-
-                time_points = np.array(time_points)
-
-                # Convert matches to arrays for plotting
-                points = []
-                elem_indices = []
-                side_indices = []
-
-                for elem_idx, side_idx, x, y in matches:
-                    points.append([float(x), float(y)])
-                    elem_indices.append(int(elem_idx))
-                    side_indices.append(int(side_idx))
-
-                points = np.array(points)
-
-                # Plot the polyline
-                try:
-                    plt.plot(points[:,0], points[:,1], 'g--', label='Path')
-                    plt.plot(points[:,0], points[:,1], 'g.')
-                except:
-                    pass
-
-                # Add labels for elements and sides
-                for i in range(len(points)-1):
-                    # Get triangle nodes for element i
-                    tri_nodes = elnode[:3,elem_indices[i]].get()
-                    
-                    # Calculate triangle centroid
-                    centroid_x = np.mean(nodeCoords[0,tri_nodes].get())
-                    centroid_y = np.mean(nodeCoords[1,tri_nodes].get())
-                    
-                    # Element label at centroid
-                    plt.annotate(f'E{elem_indices[i]}', 
-                                (centroid_x, centroid_y),
-                                xytext=(0, 0),
-                                textcoords='offset points',
-                                color='green',
-                                fontsize=6,
-                                alpha=0.6)
-                    
-                    # Get side nodes
-                    side_nodes = isidenode[:,side_indices[i]].get()
-                    
-                    # Calculate side midpoint using actual node coordinates
-                    mid_x = np.mean(nodeCoords[0,side_nodes].get())
-                    mid_y = np.mean(nodeCoords[1,side_nodes].get())
-                    
-                    # Side label at true midpoint
-                    plt.annotate(f'S{side_indices[i]}',
-                                (mid_x, mid_y),
-                                xytext=(0, 3),
-                                textcoords='offset points',
-                                color='blue',
-                                fontsize=6,
-                                alpha=0.3)
-                    
-                        # Add time points and labels
-                plt.plot(time_points[:,0], time_points[:,1], 'r.', markersize=8)
-                # for i, (x, y) in enumerate(time_points):
-                #     plt.annotate(f't={times[i]:.3f}', 
-                #             (x, y),
-                #             xytext=(5, 5),
-                #             textcoords='offset points',
-                #             color='red',
-                #             fontsize=8,
-                #             alpha=0.5)
-            
-     
         # Add element labels at centroids
         for i in range(elnode.shape[1]):
             # Get triangle nodes
@@ -519,9 +431,9 @@ if __name__ == "__main__":
             elnode_part = cp.array(elnode[:, partElements == ipart])
 
             # Reserves GPU memory for the structs
-            nodesMem = cp.zeros(max(numPartNodes)   *nodesSize, dtype=cp.int8)
-            elemsMem = cp.zeros(max(numPartElements)*elemsSize, dtype=cp.int8)
-            sidesMem = cp.zeros(max(numPartSides)   *sidesSize, dtype=cp.int8)
+            nodesMem = cp.zeros(max(numPartNodes).item()   *nodesSize, dtype=cp.int8)
+            elemsMem = cp.zeros(max(numPartElements).item()*elemsSize, dtype=cp.int8)
+            sidesMem = cp.zeros(max(numPartSides).item()   *sidesSize, dtype=cp.int8)
 
             # Memory for boundary nodes objects in each partition (We store in each device the BoundaryNodes objects 
             # corresponding to the nodes in the partition)
