@@ -591,6 +591,50 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
    __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
 
+   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
+   __device__ __forceinline__ Point2 GaussPoint(int idx) const {
+       constexpr double g = 0.5773502691896257; // 1/sqrt(3)
+       assert(idx >= 0 && idx < 4 && "GaussPoint: idx out of range");
+       const double eta = (idx & 1) ? +g : -g;
+       const double xi  = (idx & 2) ? +g : -g;
+       return {eta, xi};
+   }  
+
+   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
+   __device__ __forceinline__ double etaSign(int idx) const {
+      // bit1: 0 -> -1, 1 -> +1
+      assert(idx >= 0 && idx < 4 && "etaSign: idx out of range");
+      return (idx & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
+   }
+
+   __device__ __forceinline__ double xiSign(int idx) const {
+      // +1 if (bit0 XOR bit1), else -1
+      assert(idx >= 0 && idx < 4 && "xiSign: idx out of range");
+      return ((idx & 1) ^ (idx >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
+
+   }
+
+   // Shape function Phi_idx at a given point p = (eta,xi), idx = 0,1,2,3
+   __device__ __forceinline__ double Phi(int idx, Point2 p) const {
+      return 0.25*(1.0 + p.x*etaSign(idx))*(1.0 + p.y*xiSign(idx));
+   }
+
+   // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi) 
+   __device__ __forceinline__ double dPhi_dxi(int idx, Point2 p) const {
+      return 0.25*xiSign(idx)*(1.0 + p.x*etaSign(idx));
+   }   
+
+   // Derivative of shape function Phi_idx/deta at a given point p = (eta,xi) 
+   __device__ __forceinline__ double dPhi_deta(int idx, Point2 p) const {
+      return 0.25*(1.0 + p.y*xiSign(idx))*etaSign(idx);
+   }      
+   
+   __inline__ __device__ double detJ_eta(void) const;
+
+   __inline__ __device__ double detJ_xi(void) const;
+
+   __inline__ __device__ double jacobianDet(Point2 p) const { return area/4.0 + detJ_eta()*p.x + detJ_xi()*p.y; }
+
    // Check if the element is dry using the more up-to-date elevation.
    __inline__ __device__ bool isDry2(void) const;
 
@@ -608,7 +652,7 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
    __device__ double intPhiPhi(int i1, int i2) const;
-   
+
    __device__ double intGradPhiGradPhi(int i1, int i2) const;
 
    __device__ Vector2 grad2(double *a) const
@@ -2059,10 +2103,8 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
       double ar1 = signedArea(nodes[0]->p2(), nodes[2]->p2(), nodes[3]->p2());
       double ar2 = signedArea(nodes[0]->p2(), nodes[1]->p2(), nodes[3]->p2());
       double ar3 = signedArea(nodes[1]->p2(), nodes[2]->p2(), nodes[3]->p2());
-      if (ar1 < 0.0 || ar2 < 0.0 || ar3 < 0.0) {
-         // XXX Aren't we computing a signed area? why is it not allowed to be negative?
-         Error("Negative area found in quad element");
-      }
+      assert (ar1 >= 0.0 && ar2 >= 0.0 && ar3 >= 0.0 && "Negative area found in quad element");
+
       res += ar1;
    }
 
@@ -2076,6 +2118,15 @@ __inline__ __device__ bool Element::isDry2(void) const { return (nodes[0]->isDry
                                                                 (i34==4 && nodes[3]->isDry2());
 }
 
+__inline__ __device__ double Element::detJ_eta(void) const {
+   return (nodes[1]->p.x - nodes[0]->p.x)*(nodes[2]->p.y - nodes[3]->p.y) 
+        - (nodes[2]->p.x - nodes[3]->p.x)*(nodes[1]->p.y - nodes[0]->p.y);
+}
+
+__inline__ __device__ double Element::detJ_xi(void) const {
+   return (nodes[2]->p.x - nodes[1]->p.x)*(nodes[3]->p.y - nodes[0]->p.y) 
+        - (nodes[3]->p.x - nodes[0]->p.x)*(nodes[2]->p.y - nodes[1]->p.y);
+}
 
 __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const { 
    // In boundary sides, the element 1 is nullptr
@@ -2194,46 +2245,89 @@ __device__ void Element::shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const
 
 __device__ double Element::intPhiPhi(int i1, int i2) const {
    // return \int \phi_i1*\phi_i2 dA, where phi_i1 and phi_i2 are the shape functions of the nodes i1 and i2.
-   // const Node *n0 = nodes[0];
-   // const Node *n1 = nodes[1];
-   // const Node *n2 = nodes[2];
-   // const Node *n3 = nodes[3];
-   // const double coe1 = (n1->p.x - n0->p.x)*(n2->p.y - n3->p.y) - (n2->p.x - n3->p.x)*(n1->p.y - n0->p.y);
-   // const double coe2 = (n2->p.x - n1->p.x)*(n3->p.y - n0->p.y) - (n3->p.x - n0->p.x)*(n2->p.y - n1->p.y);
+   // The integral is computed analytically, using the shape functions in xi and eta coordinates and the Jacobian.
+   // The formula for the integral is:
+   // (area/16)(1+\xi_i\xi_j/3)(1+\eta_i\eta_j/3) + (detJ_xi/12)(1+\eta_i\eta_j/3)(\xi_i+\xi_j) + (detJ_eta/12)(1+\xi_i\xi_j/3)(\eta_i+\eta_j)\]
 
-   // double xi_coupling  = 1.0 + (ixi_n[i1]*ixi_n[i2])/3.0;
-   // double eta_coupling = 1.0 + (iet_n[i1]*iet_n[i2])/3.0;
-   // double eta_sum = iet_n[i1] + iet_n[i2];
-   // double xi_sum  = ixi_n[i1] + ixi_n[i2];
+   printf("intPhiPhi: TEST\n");
 
-   // return (1.0/16.0)*xi_coupling*(area[ie]*eta_coupling + (coe2/8.0)*eta_sum) + 
-   //        (coe1/96.0)*eta_coupling*xi_sum;
+   const Node *n0 = nodes[0];
+   const Node *n1 = nodes[1];
+   const Node *n2 = nodes[2];
+   const Node *n3 = nodes[3];
+
+   const Vector2 p0 = n0->p2();
+   const Vector2 p1 = n1->p2();
+   const Vector2 p2 = n2->p2();
+   const Vector2 p3 = n3->p2();
+
+   double xi_term  = 1.0 + (ixi_n[i1]*ixi_n[i2])/3.0;
+   double eta_term = 1.0 + (iet_n[i1]*iet_n[i2])/3.0;
+   double eta_sum  = iet_n[i1] + iet_n[i2];
+   double xi_sum   = ixi_n[i1] + ixi_n[i2];
+
+   return (1.0/16.0)*area*xi_term*eta_term + (detJ_xi()/12.0)*xi_term*eta_sum + (detJ_eta()/12.0)*eta_term*xi_sum;
 }
    
+
 __device__ double Element::intGradPhiGradPhi(int i1, int i2) const {
-   // return \int (grad phi_i1) * (grad phi_i2) dA, where phi_i1 and phi_i2 are the shape functions of the nodes i1 and i2.
+   // return \int (grad phi_i1).(grad phi_i2) dA, where phi_i1 and phi_i2 are the shape functions of the nodes i1 and i2.
+   // The integral is computed by using the 2x2 Gauss-Legendre quadrature points in xi and eta coordinates.
+   // Again, it uses the determinant of the Jacobian to compute the integral in x,y coordinates.
+   // The formula is also based on the identity:
+   //   dPhi/dx = (1/det J) * [ (dPhi/dxi)*(dy/deta) - (dPhi/deta)*(dy/dxi)]
+   //   dPhi/dy = (1/det J) * [-(dPhi/dxi)*(dx/deta) + (dPhi/deta)*(dx/dxi)]
+
+   printf("intGradPhiGradPhi: TEST\n");   
+
+   assert(isQuad() && i1 >= 0 && i2 >= 0 && i1 < 4 && i2 < 4 && "intGradPhiGradPhi: not quad");
+
+   const double x0 = nodes[0]->p.x;
+   const double y0 = nodes[0]->p.y;
+   const double x1 = nodes[1]->p.x;
+   const double y1 = nodes[1]->p.y;
+   const double x2 = nodes[2]->p.x;
+   const double y2 = nodes[2]->p.y;
+   const double x3 = nodes[3]->p.x;
+   const double y3 = nodes[3]->p.y;
+
+   double res = 0.0;
    
-//    quad_int=0._rkind
-//    do i=1,2 !eta pt
-//      do j=1,2 !xi pt
-//        rjac=area(ie)/4._rkind+pt(j)/8._rkind*coe1+pt(i)/8._rkind*coe2 !Jacobian
-//        if(rjac<=0._rkind) call parallel_abort('quad_int: Jac<=0')
-//        x_xi=0.25_rkind*(wild(1)+pt(i)*wild(3)) !dx/d\xi
-//        x_et=0.25_rkind*(wild(5)+pt(j)*wild(3))
-//        y_xi=0.25_rkind*(wild(2)+pt(i)*wild(4))
-//        y_et=0.25_rkind*(wild(6)+pt(j)*wild(4))
-//        !Following 4 do not have Jacobian
-//        phiip_x=y_et/4._rkind*real(ixi_n(ip),rkind)*(1._rkind+real(iet_n(ip),rkind)*pt(i))- &
-// &y_xi/4._rkind*real(iet_n(ip),rkind)*(1._rkind+real(ixi_n(ip),rkind)*pt(j)) !d\phi_ip/dx *J
-//        phiip_y=x_xi/4._rkind*real(iet_n(ip),rkind)*(1._rkind+real(ixi_n(ip),rkind)*pt(j))- &
-// &x_et/4._rkind*real(ixi_n(ip),rkind)*(1._rkind+real(iet_n(ip),rkind)*pt(i))
-//        phill_x=y_et/4._rkind*real(ixi_n(ll),rkind)*(1._rkind+real(iet_n(ll),rkind)*pt(i))- &
-// &y_xi/4._rkind*real(iet_n(ll),rkind)*(1._rkind+real(ixi_n(ll),rkind)*pt(j))
-//        phill_y=x_xi/4._rkind*real(iet_n(ll),rkind)*(1._rkind+real(ixi_n(ll),rkind)*pt(j))- &
-// &x_et/4._rkind*real(ixi_n(ll),rkind)*(1._rkind+real(iet_n(ll),rkind)*pt(i))
+   // Quadrature points in xi and eta coordinates
+   #pragma unroll
+   for (int i = 0; i < 4; i++) {
+      // For each quadrature point...
 
+      const Point2 p = GaussPoint(i);
+      const double eta = p.x;
+      const double xi  = p.y;
 
-//       return (phiip_x*phill_x+phiip_y*phill_y)/rjac;
+      // Jacobian entries at the Gauss point p
+      const double dx_dxi  = 0.25 * ( (x1 + x2 - x0 - x3) + xi *(x0 + x2 - x1 - x3) );
+      const double dx_deta = 0.25 * ( (x2 + x3 - x0 - x1) + eta*(x0 + x2 - x1 - x3) );
+      const double dy_dxi  = 0.25 * ( (y1 + y2 - y0 - y3) + xi *(y0 + y2 - y1 - y3) );
+      const double dy_deta = 0.25 * ( (y2 + y3 - y0 - y1) + eta*(y0 + y2 - y1 - y3) );      
+
+      const double detJ = jacobianDet(p);
+      assert(detJ > 0.0 && "Negative or zero determinant of the Jacobian in intGradPhiGradPhi");
+
+      // Derivatives of the shape functions i1, i2 at the Gauss point p
+      const double dPhi_dxi_1  = dPhi_dxi (i1, p);
+      const double dPhi_deta_1 = dPhi_deta(i1, p);
+      const double dPhi_dxi_2  = dPhi_dxi (i2, p);
+      const double dPhi_deta_2 = dPhi_deta(i2, p);
+
+      // Transform the derivatives of the shape functions to x,y coordinates (this formula leaves a multiplicative factor detJ)
+      const double dPhi_dx_1_detJ =  dy_deta * dPhi_dxi_1 - dy_dxi * dPhi_deta_1;
+      const double dPhi_dy_1_detJ = -dx_deta * dPhi_dxi_1 + dx_dxi * dPhi_deta_1;
+      const double dPhi_dx_2_detJ =  dy_deta * dPhi_dxi_2 - dy_dxi * dPhi_deta_2;
+      const double dPhi_dy_2_detJ = -dx_deta * dPhi_dxi_2 + dx_dxi * dPhi_deta_2;
+
+      // Contribution to the integral from the Gauss point for grad(phi_i1).grad(phi_i2)
+      res += (dPhi_dx_1_detJ*dPhi_dx_2_detJ + dPhi_dy_1_detJ*dPhi_dy_2_detJ)/detJ;
+   }
+
+   return res;
 }
 
 

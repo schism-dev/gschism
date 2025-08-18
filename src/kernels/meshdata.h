@@ -493,6 +493,50 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
    __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
 
+   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
+   __device__ __forceinline__ Point2 GaussPoint(int idx) const {
+       constexpr double g = 0.5773502691896257; // 1/sqrt(3)
+       assert(idx >= 0 && idx < 4 && "GaussPoint: idx out of range");
+       const double eta = (idx & 1) ? +g : -g;
+       const double xi  = (idx & 2) ? +g : -g;
+       return {eta, xi};
+   }  
+
+   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
+   __device__ __forceinline__ double etaSign(int idx) const {
+      // bit1: 0 -> -1, 1 -> +1
+      assert(idx >= 0 && idx < 4 && "etaSign: idx out of range");
+      return (idx & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
+   }
+
+   __device__ __forceinline__ double xiSign(int idx) const {
+      // +1 if (bit0 XOR bit1), else -1
+      assert(idx >= 0 && idx < 4 && "xiSign: idx out of range");
+      return ((idx & 1) ^ (idx >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
+
+   }
+
+   // Shape function Phi_idx at a given point p = (eta,xi), idx = 0,1,2,3
+   __device__ __forceinline__ double Phi(int idx, Point2 p) const {
+      return 0.25*(1.0 + p.x*etaSign(idx))*(1.0 + p.y*xiSign(idx));
+   }
+
+   // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi) 
+   __device__ __forceinline__ double dPhi_dxi(int idx, Point2 p) const {
+      return 0.25*xiSign(idx)*(1.0 + p.x*etaSign(idx));
+   }   
+
+   // Derivative of shape function Phi_idx/deta at a given point p = (eta,xi) 
+   __device__ __forceinline__ double dPhi_deta(int idx, Point2 p) const {
+      return 0.25*(1.0 + p.y*xiSign(idx))*etaSign(idx);
+   }      
+   
+   __inline__ __device__ double detJ_eta(void) const;
+
+   __inline__ __device__ double detJ_xi(void) const;
+
+   __inline__ __device__ double jacobianDet(Point2 p) const { return area/4.0 + detJ_eta()*p.x + detJ_xi()*p.y; }
+
    // Check if the element is dry using the more up-to-date elevation.
    __inline__ __device__ bool isDry2(void) const;
 
@@ -510,7 +554,7 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
    __device__ double intPhiPhi(int i1, int i2) const;
-   
+
    __device__ double intGradPhiGradPhi(int i1, int i2) const;
 
    __device__ Vector2 grad2(double *a) const
