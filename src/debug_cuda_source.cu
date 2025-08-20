@@ -187,7 +187,8 @@ using Point3  = double3;
 __device__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
     return make_double2(a.x + b.x, a.y + b.y);
 }
-
+using Vector2 = double2; 
+using Vector3 = double3;
 __device__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
     a.x += b.x;
     a.y += b.y;
@@ -497,7 +498,7 @@ struct Element {
 
    bool isDry;                // True if the element is dry
 
-   Vector3 center;            // Element center coordinates
+   Vector2 center;         // Element center coordinates
    double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
@@ -644,7 +645,7 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
 
    __inline__ __device__ void nudgeToBarycenter(Point2 &p) const {
       // Nudges the point (x,y) to the barycenter of the element
-      p = (1-eps)*p + eps*toVector2(center);
+      p = (1-eps)*p + eps*center;
    }
 
    __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
@@ -687,7 +688,8 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
    __device__ void setFrame(void) {
 
       double ar1, ar2;
-      computeLonLat(center, ar1, ar2);
+      assert(false && "setFrame: center should be a Vector3???");
+     // computeLonLat(center, ar1, ar2); XXXX
 
       frame.update(ar1, ar2);        
     }
@@ -802,9 +804,9 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
 
    }      
 
-
-   __device__ double interpolate(int level, const double shapeCoords[4], double (Node::*func)(int) const) const {
-      double values[4];
+   template<typename T>
+   __device__ T interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const {
+      T values[4];
       getNodalValues(level, func, values);
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -1070,8 +1072,8 @@ struct Side {
    } 
    __inline__ __device__ bool hasVegetation(int k) const { return zTopCanopy() > zc[k]; }
    __inline__ __device__ bool isSubmerged(void)    const { return veg_h() < 0.99*htot2(); }
-   __inline__ __device__ bool is2D(void) const { return kb == nvrt - 2; }
-   __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 2; }
+   __inline__ __device__ bool is2D(void) const { assert(kb <= nvrt - 2); return kb == nvrt - 2; }
+   __inline__ __device__ bool is3D(void) const { assert(kb <= nvrt - 2); return kb <  nvrt - 2; }
 
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {
@@ -1087,7 +1089,7 @@ struct Side {
       const double dot_prod1 = -dot(u, n);
 
       // Vector from side center to element 0 centroid
-      const Vector2 v2 = toVector2(elems[0]->center) - center;
+      const Vector2 v2 = elems[0]->center - center;
 
       // Dot product of the vector with the side normal vector
       const double dot_prod2 = dot(v2, n);
@@ -1186,7 +1188,8 @@ struct Node {
    int numSides;       // Number of sides that are connected to this node
 
    Point3 p;
-   Vector3 u2[nvrt];
+   Vector2 u2[nvrt];
+   double  w2[nvrt];
    Vector2 utmp[nvrt];  // Temporary array to store velocities
    double z[nvrt];
    double lon, lat;
@@ -1277,6 +1280,8 @@ struct Node {
    __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
    __inline__ __device__ double htot2(void) const { return eta2 + depth; }
    __inline__ __device__ double zTopCanopy(void) const { return z[kb] + veg_h; } 
+   
+   __inline__ __device__ Vector3 uvw2(int k) const { return {u2[k].x, u2[k].y, w2[k]}; }
 
    __inline__ __device__ bool isDry2(void) const { return htot2() <= h0; } // isDry, but updated to use eta2
 
@@ -1452,6 +1457,15 @@ struct Mesh {
       sinh_theta_f = sinh(theta_f);
 
    }
+
+   __device__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
+                  double *node_coords, double *node_coords_ll, bool use_ll,
+                  double *wind_rotate_angle, 
+                  int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                  int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                  int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                  int *localNodePart,     int *localElemPart,     int *localSidePart,
+                  double *drag, double *roughness);
 
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *node_coords_ll, bool use_ll,
@@ -1940,7 +1954,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // The new velocity components are computed from the tangential velocity and the tangent vector.
    const double us = vtan*nextSide->t().x;
    const double vs = vtan*nextSide->t().y;
-   const double ws = 0.5*(nextSide->n1->u2[jlev].z + nextSide->n2->u2[jlev].z);
+   const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);
 
    // Compute the new "tracked" time based on the remaining segment length and the original velocity.
    const double len2 = norm2(intersection - toPoint2(xt));
@@ -2405,7 +2419,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    }
 
    // Interpolate horizontally and vertically the velocities at the two levels L, R
-   u_int = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
+   u_int = wght1*interpolate(L, shpCoord, &Node::uvw2) + wght2*interpolate(R, shpCoord, &Node::uvw2);
 
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
@@ -2568,7 +2582,7 @@ __inline__ __device__ bool Side::btrack(
 
 
    // Initial velocities
-   u_int = {u2[jlev].x, u2[jlev].y, 0.5*(n1->u2[jlev].z + n2->u2[jlev].z)};
+   u_int = {u2[jlev].x, u2[jlev].y, 0.5*(n1->w2[jlev] + n2->w2[jlev])};
 
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards(toVector2(u_int));
@@ -2716,13 +2730,15 @@ __device__ void Node::updateKb(void) {
 
    if constexpr(ivcor == 1) return;
 
+
    if (isDry2()) return;
 
    if constexpr(ivcor == 2) {  // SZ coordinates
       
       // Compute bottom level index
       if (depth <= mesh->h_s) {
-         kb = nzlev;
+         kb = izlev;
+         
       } else {
          kb = -1;
          int L = 0;
@@ -2880,6 +2896,128 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
    return -1;
 }
 
+
+__device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
+                                    double *node_coords, double *node_coords_ll, bool use_ll,
+                                    double *wind_rotate_angle, 
+                                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                                    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                                    int *localNodePart,     int *localElemPart,     int *localSidePart,
+                                    double *drag, double *roughness) {
+
+   NODE(pnode);  
+   const int i = idx_node;
+   Node &node(*pnode);
+
+   node.idx = i;
+
+   const int idxNodeStart = nodeNeighNodesStart[i];
+   const int idxNodeEnd   = nodeNeighNodesStart[i+1];
+   node.numNodes = idxNodeEnd - idxNodeStart;
+   node.nodes = nodeNeighNodes + idxNodeStart;
+   node.coeffMatrix = coeffMatrixMem + idxNodeStart;
+
+
+   const int idxElemStart = nodeNeighElemsStart[i];
+   const int idxElemEnd   = nodeNeighElemsStart[i+1];      
+   node.numElements = idxElemEnd - idxElemStart;
+   node.elements = nodeNeighElems + idxElemStart;
+
+   
+   for (int idx = idxNodeStart; idx < idxNodeEnd; idx++) {
+      const int idxNodeGlobal = nodeNeighNodesIndices[idx];
+      const int partNode = localNodePart[idxNodeGlobal]; 
+      const int idxNode  = localNodeIndices[idxNodeGlobal];
+
+      Node *node_ptr = nodes[partNode] + idxNode;
+      
+      nodeNeighNodes[idx] = node_ptr;
+   }
+
+
+   for (int idx = idxElemStart; idx < idxElemEnd; idx++) {
+      const int idxElemGlobal = nodeNeighElemsIndices[idx];
+      const int partElem = localElemPart[idxElemGlobal];
+      const int idxElem  = localElemIndices[idxElemGlobal];
+
+      Element *elem_ptr = elems[partElem] + idxElem;
+
+      nodeNeighElems[idx] = elem_ptr;
+   }      
+
+
+   node.wind_angle = wind_rotate_angle[i];
+
+
+   node.p.x   = node_coords[i * 3];
+   node.p.y   = node_coords[i * 3 + 1];
+   node.p.z   = node_coords[i * 3 + 2];  // XXX this is probably wrong
+   node.depth = node_coords[i * 3 + 2];
+
+   node.numSides = 0;
+
+   node.Cd = drag[i];
+   node.rough = roughness[i];
+
+   for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
+
+   // Links the node to the boundary information
+   if (isbnd[i] >= 0) {
+
+      // Get the index of the node boundary
+      const int idxNodeBoundary = atomicAdd(sharedIdxNodeBoundary, 1);
+      
+      node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
+      node.nodeBnd->node = &node;
+
+      node.nodeBnd->sideBnd1 = nullptr;
+      node.nodeBnd->sideBnd2 = nullptr;
+
+      if (isbnd[i]>=0) {
+
+         node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
+         
+         node.nodeBnd->segment->ifltype = (isbnd[i]==0)?3:0;
+         node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
+
+         // Initialize the length and area of the segment to nan to indicate that they are not yet computed
+         node.nodeBnd->segment->clen  = nan("1");
+         node.nodeBnd->segment->carea = nan("1");
+
+      }
+//          else {  XXXXXX
+//             node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+// printf("EEEEEPP isbnd[i] = %d, node.nodeBnd->segment = %p\n", isbnd[i], node.nodeBnd->segment);            
+//          }
+      
+
+   }
+   else {
+      node.nodeBnd = nullptr; // For internal nodes
+
+      if (isbnd[i] == landSegment) {
+         node.nodeBnd = &landBoundaryNode;
+         node.nodeBnd->segment = &landBoundarySegment;
+      }
+      // node.nodeBnd->node = &node;
+      // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+      // // node.nodeBnd = nullptr;
+      // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+      
+   }
+
+   // XXXX GAUSSIAN HILL VELOCITIES
+#ifdef GAUSSIAN_HILL_VELOCITIES
+      if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+      constexpr double rot_per = 3000.0;
+      constexpr double rot_f = 0.0*2.0*pi/rot_per;
+      for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f}; node.w2[k] = 0.0; }
+   // XXXXX
+#endif
+
+}
+
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 double *node_coords, double *node_coords_ll, bool use_ll,
                 double *wind_rotate_angle, 
@@ -3015,7 +3153,7 @@ printf("NODE idx = %d, Cd = %.16f, rough = %.16f\n", i, node.Cd, node.rough);
          if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
          constexpr double rot_per = 3000.0;
          constexpr double rot_f = 0.0*2.0*pi/rot_per;
-         for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f, 0.0}; }
+         for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f}; node.w2[k] = 0.0; }
       // XXXXX
 #endif
    }
@@ -3169,7 +3307,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
    printf("Processing %d elements\n", ne);
    for (int i = 0; i < ne; i++)
    {
-printf("ELEMENT i = %d, ne = %d\n", i, ne);      
+if (i%1000 == 0) printf("ELEMENT i = %d, ne = %d\n", i, ne);      
       Element &elem = localElemData[i];
       elem.idx = i;
       for (int j = 0; j < i34[i]; j++) {
@@ -3200,8 +3338,7 @@ printf("ELEMENT i = %d, ne = %d\n", i, ne);
          center += elem.nodes[j]->p2()/i34[i];
          elem.depth  += elem.nodes[j]->p.z/i34[i];
       }
-      elem.center.x = center.x;
-      elem.center.y = center.y;
+      elem.center = center;
 
 
       
@@ -4389,7 +4526,7 @@ extern "C" {
                const Side *side1 = elem->sides[elem->nxq(idxSide + 1)];
                const Side *side2 = elem->sides[elem->nxq(idxSide - 1)];
 
-               sumU += side1->u2[k] + side2->u2[k] - 2*side->u2[k];
+               sumU += side1->u2[k] + side2->u2[k] - 2*side->u2[k];   // XXXX Is this correct?
 
             }
 
@@ -4482,12 +4619,12 @@ extern "C" {
 
       NODE(node);
 
-            
+
       const int    kb      = node->kb;
       const double htot    = node->htot2(); 
       const double rough   = node->rough;
 
-
+      
       if (node->isDry) {
          // Default values for dry nodes
          node->veg_alpha_vert_mean = node->veg_alpha0;
@@ -4496,7 +4633,6 @@ extern "C" {
          return;
        
       }
-
 
       // Compute bottom drag Cd
       //--------------------------------
@@ -4538,18 +4674,18 @@ extern "C" {
       } // nchi==1
 
 
-
       //   Bottom stress in m^2/s^2
       if (node->rho[kb + 1] >= -98.0)
       {
-         const double mag_u = length(toVector2(node->u2[kb + 1]));
-         node->tau_bot = node->rho[kb + 1]*node->Cd*mag_u*toVector2(node->u2[kb + 1]); // units: kg/m/s^2 (Pa)
+         const double mag_u = length(node->u2[kb + 1]);
+         node->tau_bot = node->rho[kb + 1]*node->Cd*mag_u*node->u2[kb + 1]; // units: kg/m/s^2 (Pa)
 
          // XXX In the original code there is an additional component of tau_bot, used in icm_sfm.F90 with this comment:
          // !sediment erosion: this part needs more documentation
       }
+    
 
-  
+
       // Compute vegetation parameters
       //--------------------------------
 
@@ -4621,7 +4757,7 @@ extern "C" {
 
       } // if iveg
      
-         
+
       // Compute vertical mean of veg_alpha3D
       if (iveg != 0) {
          const double ztop = node->zTopCanopy(); // Top of the canopy
@@ -4790,7 +4926,7 @@ extern "C" {
             assert(e2 != nullptr || e2->isDry && "getRhoDiffAndVec: neighbor element is nullptr or dry");
 
             // Vector from e1 to e2
-            vec = toVector2(e2->center - e1->center);
+            vec = e2->center - e1->center;
 
          } else { 
             // IMPLEMENT THIS XXXXXX
@@ -5113,7 +5249,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
          const double htot = side->htot1();
          const double hhat = side->hhat;
 
-         assert(hhat > 0.0 && htot > 0.0 && "solveMomentumEquations: Impossible");
+         // assert(hhat > 0.0 && htot > 0.0 && "solveMomentumEquations: Impossible");
 
          Vector2 tau2 = {0.0, 0.0};
           
@@ -5137,7 +5273,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
          hat_gam += dt*side->nuGradU[nvrt-1];  // XXXX compute nuGradU
 
-if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, hat_gam.x = %.16f, hhat = %.16f, htot = %.16f\n", hat_gam.x*hhat/htot, hat_gam.x, hhat, htot);
+
          const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvelx, rmaxvelx);
          const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
 
@@ -5356,7 +5492,6 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
          } // k=kb + 1,nvrt
 
 
-
          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
 
          for (int k = kb + 1; k < nvrt; k++) {  // YYYYYYYYY can be kb 
@@ -5569,14 +5704,16 @@ if (abs(hat_gam.x*hhat/htot) > rmaxvelx) printf("hat_gam.x*hhat/htot = %.16f, ha
 
 
       if (node->isDry2()) { 
-printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, node->depth, mesh->h_s, h0, node->htot2());      
+
          assert((ivcor != 2) || (node->depth < mesh->h_s) && "Deep depth dry");
 
          if constexpr(ivcor != 1) node->kb = 0;
 
       } else {
 
+         // Compute the updated node's kb index. This must be done before compZCoord() is called.
          node->updateKb();
+
          for (int k = node->kb; k < nvrt; k++) node->z[k] = node->compZCoord(k); 
 
       }
@@ -5670,7 +5807,7 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
                   icount++;
 
                   // Assume small element size in wet/dry zone so pframes are close to each other
-                  utmp += node->u2[k];
+                  utmp += node->uvw2(k);
                   
                   ttmp += node->tracers[k].tracer[0]; 
                   stmp += node->tracers[k].tracer[1]; 
@@ -5679,7 +5816,8 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
 
             if(icount > 0) {
                const double inv_icount = 1.0/icount;
-               node->u2[k]     = inv_icount*utmp;
+               node->u2[k]     = {inv_icount*utmp.x, inv_icount*utmp.y};
+               node->w2[k]     = inv_icount*utmp.z;
                node->tracers[k].tracer[0]   = inv_icount*ttmp;
                node->tracers[k].tracer[1]   = inv_icount*stmp;
             }
@@ -5716,7 +5854,7 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
             side->zc[k] = 0.5*(n1->z[max(k, kb1)] + n2->z[max(k, kb2)]);
 
          
-            assert((k < side->kb + 1) || (side->zc[k] - side->zc[k-1] > 0.0) && "Weird side (3)");
+            assert(((k < side->kb + 1) || (side->zc[k] - side->zc[k-1] > 0.0)) && "Weird side (3)");
 
             // Compute velocity for re-wetted sides 
             if ((it != iths) && (side->isDry && isWet)) {
@@ -5757,7 +5895,8 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
       NODE(node);
 
       for (int k = 0; k < nvrt; k++) {
-         node->u2[k]   = {0.0, 0.0, 0.0};
+         node->u2[k]   = {0.0, 0.0};
+         node->w2[k]   = 0.0;
          node->utmp[k] = {0.0, 0.0};
          node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
       }
@@ -5774,7 +5913,7 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
          Node *node = elem->nodes[j];
 
          for (int k = node->kb; k < nvrt; k++) {
-            atomicAdd(&(node->u2[k].z), elem->w[k]*elem->area);
+            atomicAdd(&(node->w2[k]), elem->w[k]*elem->area);
          }
          atomicAdd(&(node->tmp.d), elem->area);
       }
@@ -5785,7 +5924,7 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
    // Divides by the total area of the elements sharing the    node.
       NODE(node);
 
-      for (int k = node->kb; k < nvrt; k++) node->u2[k].z = node->u2[k].z / node->tmp.d;  // node->tmp.d contains the total area of the elements sharing the node
+      for (int k = node->kb; k < nvrt; k++) node->w2[k] = node->w2[k] / node->tmp.d;  // node->tmp.d contains the total area of the elements sharing the node
    }
 
 
@@ -5843,7 +5982,8 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
       NODE(node);
 
       for (int k = 0; k < nvrt; k++) {
-         node->u2[k] = toVector3(node->utmp[k], node->u2[k].z);
+         node->u2[k] = node->utmp[k];
+         node->w2[k] = node->w2[k];
       }
       
    }   
@@ -5884,7 +6024,7 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
       NODE_BND(nodebnd);
 
       if (nodebnd->segment != nullptr && nodebnd->segment->ifltype != 0) {
-         for (int k = 0; k < nvrt; k++) nodebnd->node->u2[k] = {0.0, 0.0, 0.0};
+         for (int k = 0; k < nvrt; k++) { nodebnd->node->u2[k] = {0.0, 0.0}; nodebnd->node->w2[k] = 0.0; }
       }
 
    }
@@ -5903,18 +6043,21 @@ printf("NODE i = %d, depth = %f, h_s = %f, h0 = %f, htot2 = %f\n", node->idx, no
             Node *n1 = sidebnd->side->n1;
             Node *n2 = sidebnd->side->n2;
 
-            // Cast the u2 vector into a Vector2 
-            Vector2& n1_u2 = *reinterpret_cast<Vector2*>(&n1->u2[k]);
-            Vector2& n2_u2 = *reinterpret_cast<Vector2*>(&n2->u2[k]);
+
+            Vector2 n1_u2(n1->u2[k]);
+            Vector2 n2_u2(n2->u2[k]);
 
             if (n1->nodeBnd->segment == sidebnd->segment) {
                atomicAdd(&(n1_u2.x), sidebnd->side->u2[k].x/n1->nodeBnd->numSidesForAverage());
+               atomicAdd(&(n1_u2.y), sidebnd->side->u2[k].y/n1->nodeBnd->numSidesForAverage());
             }
             if (n2->nodeBnd->segment == sidebnd->segment) {
                atomicAdd(&(n2_u2.x), sidebnd->side->u2[k].x/n2->nodeBnd->numSidesForAverage());
+               atomicAdd(&(n2_u2.y), sidebnd->side->u2[k].y/n2->nodeBnd->numSidesForAverage());
             }
 
          }
+
       }
 
    }
@@ -7413,6 +7556,22 @@ extern "C"
                        emo, efa, umo, ufa, vmo, vfa);
   }
 
+extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
+   double *node_coords, double *node_coords_ll, bool use_ll, double *wind_rotate_angle, 
+   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+   int *localNodePart,     int *localElemPart,     int *localSidePart,
+   double *drag, double *roughness) {
+
+   mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
+                       node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
+                       nodeNeighNodesStart, nodeNeighNodesIndices,
+                       nodeNeighElemsStart, nodeNeighElemsIndices,
+                       localNodeIndices, localElemIndices, localSideIndices,
+                       localNodePart, localElemPart, localSidePart,
+                       drag, roughness);
+}  
 
 
 
@@ -7730,7 +7889,7 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
    else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
    else if (varCode == (int)VarCode::v && k >= 0)       var[idx] = node->u2[k].y;
-   else if (varCode == (int)VarCode::w && k >= 0)       var[idx] = node->u2[k].z;
+   else if (varCode == (int)VarCode::w && k >= 0)       var[idx] = node->w2[k];
    
    else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
       

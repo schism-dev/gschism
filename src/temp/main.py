@@ -278,18 +278,21 @@ if __name__ == "__main__":
 
         fig, ax = plt.subplots(figsize=(12, 8))
         
+        plotLabels = False
+
         # Plot all nodes
         plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.', alpha=0.3, markersize=.3)
 
-        # Add node labels
-        for i in range(nodeCoords.shape[1]):
-            plt.annotate(f'N{i}', 
-                        (nodeCoords[0,i].get(), nodeCoords[1,i].get()),
-                        xytext=(2, 2),
-                        textcoords='offset points',
-                        color='black',
-                        fontsize=6,
-                        alpha=0.5)
+        if plotLabels:
+            # Add node labels
+            for i in range(nodeCoords.shape[1]):
+                plt.annotate(f'N{i}', 
+                            (nodeCoords[0,i].get(), nodeCoords[1,i].get()),
+                            xytext=(2, 2),
+                            textcoords='offset points',
+                            color='black',
+                            fontsize=6,
+                            alpha=0.5)
 
         nodes = elnode[:3,:].get()
         # Append the first node to close the triangle
@@ -316,41 +319,42 @@ if __name__ == "__main__":
 
 
 
-        # Add element labels at centroids
-        for i in range(elnode.shape[1]):
-            # Get triangle nodes
-            tri_nodes = elnode[:3,i].get()
-            
-            # Calculate triangle centroid
-            centroid_x = np.mean(nodeCoords[0,tri_nodes].get())
-            centroid_y = np.mean(nodeCoords[1,tri_nodes].get())
-            
-            # Element label at centroid
-            plt.annotate(f'E{i}', 
-                        (centroid_x, centroid_y),
-                        xytext=(0, 0),
-                        textcoords='offset points',
-                        color='red',
-                        fontsize=6,
-                        alpha=0.6)
+        if plotLabels:
+            # Add element labels at centroids
+            for i in range(elnode.shape[1]):
+                # Get triangle nodes
+                tri_nodes = elnode[:3,i].get()
+                
+                # Calculate triangle centroid
+                centroid_x = np.mean(nodeCoords[0,tri_nodes].get())
+                centroid_y = np.mean(nodeCoords[1,tri_nodes].get())
+                
+                # Element label at centroid
+                plt.annotate(f'E{i}', 
+                            (centroid_x, centroid_y),
+                            xytext=(0, 0),
+                            textcoords='offset points',
+                            color='red',
+                            fontsize=6,
+                            alpha=0.6)
 
-        # Add side labels
-        for i in range(isidenode.shape[1]):
-            # Get side nodes
-            side_nodes = isidenode[:,i].get()
-            
-            # Calculate side midpoint
-            mid_x = np.mean(nodeCoords[0,side_nodes].get())
-            mid_y = np.mean(nodeCoords[1,side_nodes].get())
-            
-            # Side label at midpoint
-            plt.annotate(f'S{i}',
-                        (mid_x, mid_y),
-                        xytext=(0, 3),
-                        textcoords='offset points',
-                        color='blue',
-                        fontsize=6,
-                        alpha=0.3)
+            # Add side labels
+            for i in range(isidenode.shape[1]):
+                # Get side nodes
+                side_nodes = isidenode[:,i].get()
+                
+                # Calculate side midpoint
+                mid_x = np.mean(nodeCoords[0,side_nodes].get())
+                mid_y = np.mean(nodeCoords[1,side_nodes].get())
+                
+                # Side label at midpoint
+                plt.annotate(f'S{i}',
+                            (mid_x, mid_y),
+                            xytext=(0, 3),
+                            textcoords='offset points',
+                            color='blue',
+                            fontsize=6,
+                            alpha=0.3)
 
             
         # Prevent plot distortion by setting equal aspect ratio

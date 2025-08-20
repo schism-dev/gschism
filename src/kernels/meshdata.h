@@ -89,7 +89,8 @@ using Point3  = double3;
 __device__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
     return make_double2(a.x + b.x, a.y + b.y);
 }
-
+using Vector2 = double2; 
+using Vector3 = double3;
 __device__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
     a.x += b.x;
     a.y += b.y;
@@ -399,7 +400,7 @@ struct Element {
 
    bool isDry;                // True if the element is dry
 
-   Vector3 center;            // Element center coordinates
+   Vector2 center;         // Element center coordinates
    double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
@@ -546,7 +547,7 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
 
    __inline__ __device__ void nudgeToBarycenter(Point2 &p) const {
       // Nudges the point (x,y) to the barycenter of the element
-      p = (1-eps)*p + eps*toVector2(center);
+      p = (1-eps)*p + eps*center;
    }
 
    __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
@@ -589,7 +590,8 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
    __device__ void setFrame(void) {
 
       double ar1, ar2;
-      computeLonLat(center, ar1, ar2);
+      assert(false && "setFrame: center should be a Vector3???");
+     // computeLonLat(center, ar1, ar2); XXXX
 
       frame.update(ar1, ar2);        
     }
@@ -704,9 +706,9 @@ if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
 
    }      
 
-
-   __device__ double interpolate(int level, const double shapeCoords[4], double (Node::*func)(int) const) const {
-      double values[4];
+   template<typename T>
+   __device__ T interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const {
+      T values[4];
       getNodalValues(level, func, values);
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -972,8 +974,8 @@ struct Side {
    } 
    __inline__ __device__ bool hasVegetation(int k) const { return zTopCanopy() > zc[k]; }
    __inline__ __device__ bool isSubmerged(void)    const { return veg_h() < 0.99*htot2(); }
-   __inline__ __device__ bool is2D(void) const { return kb == nvrt - 2; }
-   __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 2; }
+   __inline__ __device__ bool is2D(void) const { assert(kb <= nvrt - 2); return kb == nvrt - 2; }
+   __inline__ __device__ bool is3D(void) const { assert(kb <= nvrt - 2); return kb <  nvrt - 2; }
 
    // Get valid starting element (for backtracking)
    __inline__ __device__ Element* getStartElement() {
@@ -989,7 +991,7 @@ struct Side {
       const double dot_prod1 = -dot(u, n);
 
       // Vector from side center to element 0 centroid
-      const Vector2 v2 = toVector2(elems[0]->center) - center;
+      const Vector2 v2 = elems[0]->center - center;
 
       // Dot product of the vector with the side normal vector
       const double dot_prod2 = dot(v2, n);
@@ -1088,7 +1090,8 @@ struct Node {
    int numSides;       // Number of sides that are connected to this node
 
    Point3 p;
-   Vector3 u2[nvrt];
+   Vector2 u2[nvrt];
+   double  w2[nvrt];
    Vector2 utmp[nvrt];  // Temporary array to store velocities
    double z[nvrt];
    double lon, lat;
@@ -1179,6 +1182,8 @@ struct Node {
    __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
    __inline__ __device__ double htot2(void) const { return eta2 + depth; }
    __inline__ __device__ double zTopCanopy(void) const { return z[kb] + veg_h; } 
+   
+   __inline__ __device__ Vector3 uvw2(int k) const { return {u2[k].x, u2[k].y, w2[k]}; }
 
    __inline__ __device__ bool isDry2(void) const { return htot2() <= h0; } // isDry, but updated to use eta2
 
@@ -1354,6 +1359,15 @@ struct Mesh {
       sinh_theta_f = sinh(theta_f);
 
    }
+
+   __device__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
+                  double *node_coords, double *node_coords_ll, bool use_ll,
+                  double *wind_rotate_angle, 
+                  int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                  int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                  int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                  int *localNodePart,     int *localElemPart,     int *localSidePart,
+                  double *drag, double *roughness);
 
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *node_coords_ll, bool use_ll,

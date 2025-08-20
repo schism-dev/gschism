@@ -1255,7 +1255,7 @@ readVGrid(const std::string& filename, int nNodes) {
 
         file >> nvrt >> kz >> h_s;  
         std::getline(file, dummy);
-printf("SSSS nvrt = %d, kz = %d, h_s = %f\n", nvrt, kz, h_s);
+
         // Since kz is a number of levels and not an index, we'll call it nz
         int nz = kz;
        

@@ -12,6 +12,9 @@ project_root = None
 # Global CUDA function declarations
 createMesh = None
 populateMesh = None
+populateNodes = None
+populateSides = None
+populateElements = None
 getStructSizes = None
 initTidalHarmonicConstituents = None
 printMatrix = None
@@ -62,7 +65,8 @@ getSideVar = None
 test = None
 
 def initializeCudaKernelManager(_project_root):
-    global createMesh, populateMesh, getStructSizes, initTidalHarmonicConstituents, cuda_manager, project_root, mod
+    global createMesh, populateMesh, populateNodes, populateSides, populateElements, getStructSizes
+    global initTidalHarmonicConstituents, cuda_manager, project_root, mod
 
     project_root = _project_root
 

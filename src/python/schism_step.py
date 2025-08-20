@@ -137,7 +137,7 @@ def checkU():
     max_idx = 0
     max_level = 0
     var1 = monitor.getSideVar("u", 0)
-    for i in range(1, 17):
+    for i in range(1, 2):
         var2 = monitor.getSideVar("u", i)
         diff = np.abs(var1 - var2)
         max_diff = np.max(diff)
@@ -153,7 +153,7 @@ def checkU():
     max_idx = 0
     max_level = 0
     var1 = monitor.getNodeVar("u", 0)
-    for i in range(1, 17):
+    for i in range(1, 2):
         var2 = monitor.getNodeVar("u", i)
         diff = np.abs(var1 - var2)
         max_diff = np.max(diff)
@@ -304,7 +304,7 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
     # Precompute elevation gradient, atmo. pressure and earth tidal potential 
     cufunc.computeHorGradientAtSide()  # lines -7296
 
-    checkU()
+    # checkU()
     cufunc.solveMomentumEquations(time)
     # checkU()
     
@@ -353,8 +353,8 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
     # if not res:
     #     raise ValueError("Mesh is not valid")
 
-    var = monitor.getNodeVar("eta")
-    eta[:, it] = var
+    # var = monitor.getNodeVar("eta")
+    # eta[:, it] = var
     # cufunc.getElementVar(monitor.varCodeDict["x"], var, 0) # monitor.varCodeDict["x"]
 
 
