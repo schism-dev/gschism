@@ -553,13 +553,52 @@ if __name__ == "__main__":
             globalElemIndices = cp.arange(numPartElements[ipart]).astype(cp.int32)[maskElemsPart]
             globalSideIndices = cp.arange(numPartSides   [ipart]).astype(cp.int32)[maskSidesPart]
 
+    sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
+             'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
+    cufunc.initializeCudaFunctions(sizes)
 
     for ipart in range(n_gpus):
         with cp.cuda.Device(ipart):
             # Adds additional information to the mesh object. This function deals with the actual data
             # of the mesh, including the nodes, elements, sides, and their neighbors.
+            sharedIdxNodeBoundary  = cp.zeros(1, dtype=cp.int32) - 1 # the first increment makes it 0
+            sharedIdxSideBoundary  = cp.zeros(1, dtype=cp.int32) - 1 
+
+            cufunc.populateNodes(i34Part, isbnd, sharedIdxNodeBoundary, 
+                       nodeCoordsPart, nodeCoords_llPart, use_ll, windRotateAnglePart, 
+                       nodeNeighNodesStart, nodeNeighNodes,
+                       nodeNeighElemsStart, nodeNeighElems,
+                       localNodeIndices, localElemIndices, localSideIndices,
+                       localNodePart, localElemPart, localSidePart,
+                       drag, roughness)
+
+            cufunc.populateSides(i34Part, sharedIdxSideBoundary,
+                       nodeCoordsPart, nodeCoords_llPart, use_ll,
+                       windRotateAnglePart,   
+                       isdel, isidenode, isbnd,
+                       nond, nlnd, iond, ilnd,                                  
+                       nodeNeighNodesStart, nodeNeighNodes,
+                       nodeNeighElemsStart, nodeNeighElems,
+                       globalNodeIndices, globalElemIndices, globalSideIndices,
+                       localNodeIndices, localElemIndices, localSideIndices,
+                       localNodePart, localElemPart, localSidePart,
+                       drag, roughness);        
+
+            cufunc.populateElements(i34Part, elnodePart, elsidePart,
+                       nodeCoordsPart, nodeCoords_llPart, use_ll,
+                       windRotateAnglePart,   
+                       isdel, isidenode, isbnd,
+                       nond, nlnd, iond, ilnd,                                  
+                       nodeNeighNodesStart, nodeNeighNodes,
+                       nodeNeighElemsStart, nodeNeighElems,
+                       globalNodeIndices, globalElemIndices, globalSideIndices,
+                       localNodeIndices, localElemIndices, localSideIndices,
+                       localNodePart, localElemPart, localSidePart,
+                       drag, roughness);                                             
+
+
             cufunc.populateMesh(i34Part, elnodePart, elsidePart, nodeCoordsPart, nodeCoords_llPart, use_ll,
-                                windRotateAnglePart, 
+                                windRotateAnglePart, sharedIdxNodeBoundary, sharedIdxSideBoundary,
                                 isdel, isidenode, isbnd,
                                 nond, nlnd, iond, ilnd, 
                                 nodeNeighNodesStart, nodeNeighNodes,
@@ -572,12 +611,15 @@ if __name__ == "__main__":
                                 bctides.umo, bctides.ufa,
                                 bctides.vmo, bctides.vfa)
 
+            cufunc.populateBoundaryNodes(nond, 
+                                         bctides.emo, bctides.efa, 
+                                         bctides.umo, bctides.ufa,
+                                         bctides.vmo, bctides.vfa)                                
+
             # # test((1,), (1,), (-2.21334,  0.76058, -1.0))
             # cufunc.test(12.0,  1.0, -1.0)
 
-    sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
-             'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
-    cufunc.initializeCudaFunctions(sizes)
+
 
     ntime, nrec = schism_init(namelist.core, namelist.opt)
 

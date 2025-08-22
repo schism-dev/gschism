@@ -1369,9 +1369,39 @@ struct Mesh {
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
                   double *drag, double *roughness);
 
+   __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
+                  double *node_coords, double *node_coords_ll, bool use_ll,
+                  double *wind_rotate_angle,   
+                  int *isdel, int *isidenode, int *isbnd,
+                  int *nond, int *nlnd, int *iond, int *ilnd,                                  
+                  int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                  int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                  int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+                  int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                  int *localNodePart,     int *localElemPart,     int *localSidePart,
+                  double *drag, double *roughness);          
+
+   __device__ void populateElements(int *i34, int *elnode, int *elside,
+                     double *node_coords, double *node_coords_ll, bool use_ll,
+                     double *wind_rotate_angle,   
+                     int *isdel, int *isidenode, int *isbnd,
+                     int *nond, int *nlnd, int *iond, int *ilnd,                                  
+                     int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                     int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                     int *localNodePart,     int *localElemPart,     int *localSidePart,
+                     double *drag, double *roughness);   
+                     
+
+   __device__ void populateBoundaryNodes(int *nond, 
+                                          double *emo, double *efa, 
+                                          double *umo, double *ufa, 
+                                          double *vmo, double *vfa);                    
+
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *node_coords_ll, bool use_ll,
-                   double *wind_rotate_angle, 
+                   double *wind_rotate_angle, int *sharedIdxNodeBoundary, int *sharedIdxSideBoundary,
                    int *isdel, int *isidenode, int *isbnd,
                    int *nond, int *nlnd, int *iond, int *ilnd,
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
@@ -1451,7 +1481,7 @@ __device__ __inline__ int nxq(int index, int size) {
 extern "C" {
    __global__ void getStructSizes(int* sizes);
 
-   __global__ void printMatrix(void);
+   __global__ void printMatrix(bool full = true);
 
    __global__ void returnMatrix(double *res);
 
@@ -1500,8 +1530,9 @@ extern "C" {
 
    }
 
+   __global__ void initializeScalars(double *scalars);
  
-   __global__ void initializePreconditionedResidual(double *scalars);
+   __global__ void initializePreconditionedResidual(void);
 
    __global__ void computeMatrixProductAndDotProducts(void);
 

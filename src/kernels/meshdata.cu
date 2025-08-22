@@ -28,6 +28,10 @@ __device__ Mesh* mesh = nullptr;
                    Node *node = &(mesh->localNodeData[idx_node]); \
                    if (idx_node >= mesh->np) return;
 
+#define NODE_ALL(node, valid) const int idx_node = threadIdx.x + blockIdx.x * blockDim.x;       \
+                              Node *node = &(mesh->localNodeData[idx_node]); \
+                              const bool valid = (idx_node < mesh->np);                   
+
 
 #define NODE_BND(node_bnd) const int idx_node_bnd = threadIdx.x + blockIdx.x * blockDim.x; \
                            NodeBoundary *node_bnd = &(mesh->localNodeBoundaryMem[idx_node_bnd]); \
@@ -1306,6 +1310,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.coeffMatrix = coeffMatrixMem + idxNodeStart;
 
 
+
    const int idxElemStart = nodeNeighElemsStart[i];
    const int idxElemEnd   = nodeNeighElemsStart[i+1];      
    node.numElements = idxElemEnd - idxElemStart;
@@ -1333,6 +1338,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       nodeNeighElems[idx] = elem_ptr;
    }      
 
+// printf("NODE i = %d, node = %p, node.numNodes = %d\n", node.idx, &node, node.numNodes);      
 
    node.wind_angle = wind_rotate_angle[i];
 
@@ -1346,15 +1352,16 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    node.Cd = drag[i];
    node.rough = roughness[i];
-
+   
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
 
    // Links the node to the boundary information
    if (isbnd[i] >= 0) {
 
+     
       // Get the index of the node boundary
-      const int idxNodeBoundary = atomicAdd(sharedIdxNodeBoundary, 1);
-      
+      const int idxNodeBoundary = atomicAdd(sharedIdxNodeBoundary, 1) + 1;
+
       node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
       node.nodeBnd->node = &node;
 
@@ -1381,6 +1388,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    }
    else {
+
       node.nodeBnd = nullptr; // For internal nodes
 
       if (isbnd[i] == landSegment) {
@@ -1405,9 +1413,284 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
 }
 
+__device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
+                                    double *node_coords, double *node_coords_ll, bool use_ll,
+                                    double *wind_rotate_angle,   
+                                    int *isdel, int *isidenode, int *isbnd,
+                                    int *nond, int *nlnd, int *iond, int *ilnd,                                  
+                                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+                                    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                                    int *localNodePart,     int *localElemPart,     int *localSidePart,
+                                    double *drag, double *roughness) {
+
+
+   SIDE(pside);
+   Side &side(*pside);
+   const int i = idx_side;
+
+   side.idx = i;  
+   
+   // Parameters used to compute a linear approximation of the Coriolis coefficient around the reference latitude sfea0
+   const double fc   = 2.0*omega_e*sin(sfea0);
+   const double beta = 2.0*omega_e*cos(sfea0);
+
+   // finding the pointer to the nodes that form the side
+   const int idx_n1 = isidenode[globalSideIndices[i]*2];
+   const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
+
+   const int locidx_n1 = localNodeIndices[idx_n1];
+   const int locidx_n2 = localNodeIndices[idx_n2];
+   const int part_n1 =   localNodePart[idx_n1];
+   const int part_n2 =   localNodePart[idx_n2];
+
+   side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
+   side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
+
+   // Counts the number of sides connected to each node
+   side.n1->numSides++;
+   side.n2->numSides++;
+
+   // Normal, unitary vector to the side
+   side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
+   side.n = normalize(side.n);
+
+   // Side boundary type
+   NodeBoundary *n1bnd = side.n1->nodeBnd;
+   NodeBoundary *n2bnd = side.n2->nodeBnd;
+
+   if (n1bnd != nullptr && n2bnd != nullptr) 
+   // If both nodes are on the boundary, then the side may be on the boundary
+   {
+      bool isLand = false;
+      int isbs = findSideBoundaryType(side, iond, nond, ilnd, nlnd, isLand);
+
+      if (isbs > -1) {
+
+         const int idxSideBoundary = atomicAdd(sharedIdxSideBoundary, 1) + 1;
+
+         side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+         if      ( isLand) side.sideBnd->segment = &landBoundarySegment;
+         else if (!isLand) side.sideBnd->segment = &(localSegmentMem[isbs]);
+
+         // Links each node boundary to the side boundary using the first available side boundary pointer
+         if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
+         else                            n1bnd->sideBnd2 = side.sideBnd;
+
+         if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
+         else                            n2bnd->sideBnd2 = side.sideBnd;
+         
+         side.sideBnd->side = &side;
+
+      }
+      
+   }
+   else side.sideBnd = nullptr;
+
+
+
+   // finding the pointer to the elements that share the side
+   const int idx_e1 = isdel[globalSideIndices[i]*2];
+   const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
+
+   if (idx_e1 > -1) {
+      const int locidx_e1 = localElemIndices[idx_e1];
+      const int part_e1 =  localElemPart[idx_e1];
+      side.elems[0] = elems[part_e1] + locidx_e1;
+
+   }
+   else {
+      side.elems[0] = nullptr;
+   }
+
+   if (idx_e2 > -1) {
+      const int locidx_e2 = localElemIndices[idx_e2];
+      const int part_e2 =  localElemPart[idx_e2];
+      side.elems[1] = elems[part_e2] + locidx_e2;
+   }
+   else {
+      side.elems[1] = nullptr;
+   }
+
+   // Compute the center of the side
+   side.center = 0.5*(side.n1->p2() + side.n2->p2());
+
+   assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
+   side.shapiro = shapiro0;
+
+#ifdef GAUSSIAN_HILL_VELOCITIES
+// XXXX
+if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+constexpr double rot_per=3000.0;
+constexpr double rot_f=0.0*2.0*pi/rot_per;
+for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
+// XXXXX      
+#endif
+   // Compute the z level at the center of the side
+   for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);
+
+   // Compute the length of the side
+   const Vector2 vLen = side.n2->p2() - side.n1->p2();
+   side.len = sqrt(dot(vLen, vLen));
+
+
+   // Compute the Coriolis coefficient
+
+   if constexpr(ncor == -1 || ncor == 0) {
+      side.coriolis = coricoef;
+   }
+   else {
+      const double sphi = side.lat();  // Latitude at the center of the side
+
+      if constexpr(ics == 1) {
+         side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
+      }
+      else {
+         side.coriolis = 2.0*omega_e*sin(sphi);
+      }
+   }
+}
+
+
+__device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
+   double *node_coords, double *node_coords_ll, bool use_ll,
+   double *wind_rotate_angle,   
+   int *isdel, int *isidenode, int *isbnd,
+   int *nond, int *nlnd, int *iond, int *ilnd,                                  
+   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+   int *localNodePart,     int *localElemPart,     int *localSidePart,
+   double *drag, double *roughness) {
+
+   ELEM(pelem);
+   Element &elem(*pelem);
+   const int i = idx_elem;
+   
+   elem.idx = i;
+
+   for (int j = 0; j < i34[i]; j++) {
+      const int idxNode = elnode[i*4 + j];  
+      const int idxSide = elside[i*4 + j];
+      
+      elem.nodes[j] = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
+      elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
+
+
+      // Find the neighboring element  
+      if (elem.sides[j]->elems[0] == &elem) {
+         elem.nghbElems[j] = elem.sides[j]->elems[1];
+      }
+      else {
+         elem.nghbElems[j] = elem.sides[j]->elems[0];
+      }
+      
+   }
+
+   elem.i34 = i34[i];
+
+   // Compute the centroid of the element and its depth
+   Vector2 center = {0.0, 0.0};
+   elem.depth = 0.0;
+   for (int j = 0; j < i34[i]; j++) {
+      center += elem.nodes[j]->p2()/i34[i];
+      elem.depth  += elem.nodes[j]->p.z/i34[i];
+   }
+   elem.center = center;
+
+   
+   // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
+   // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
+
+   elem.area = elem.computeSignedArea(); 
+   elem.radius = sqrt(elem.area)/pi; 
+   
+   // Determines which way the normal vector to each side is oriented.
+   // The orientation means that for each side, elems[0] points to elems[1]. In the boundary this guarantees that the normal vector is pointing outwards.
+   for (int j = 0; j < i34[i]; j++)  
+   {
+      if (elem.sides[j]->elems[0] == &elem) {
+         elem.ssign[j] =  1.0;
+      }
+      else {
+         elem.ssign[j] = -1.0;
+      }
+
+   }
+
+   // Derivatives of shape functions
+   //  For ics=2, this is done inside element/ll frame XXX
+   //  For quads, the derivative is evaluated at centroid
+   for (int j = 0; j < elem.i34; j++) {
+      const double area = elem.area;
+      const int id2 = elem.nxq(1 + j);
+      const int id3 = elem.nxq(2 + j);
+      const int id4 = elem.nxq(3 + j);
+      if (elem.isTri()) {
+         // This expression can be derived from the derivatives of the shape functions in area coordinates.
+         // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
+         // da1/dx = (y1 - y2)/(2*area)
+         const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id3]->p.y)/(2*area); 
+         const double dPhi_j_dy = (elem.nodes[id3]->p.x - elem.nodes[id2]->p.x)/(2*area); 
+         elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
+      }
+      else  { // Quad; evaluate at centroid
+         const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id4]->p.y)/(2*area); 
+         const double dPhi_j_dy = (elem.nodes[id4]->p.x - elem.nodes[id2]->p.x)/(2*area); 
+         elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
+      } // if Tri
+
+   } // for j   
+   
+   
+
+}
+
+__device__ void Mesh::populateBoundaryNodes(int *nond, 
+                                            double *emo, double *efa, 
+                                            double *umo, double *ufa, 
+                                            double *vmo, double *vfa) {
+
+   NODE_BND(nodeBnd);
+   const int idx = idx_node_bnd;                                             
+
+   // Need to compute the segment index and the index of the node on the segment
+   int sumNodes = 0;
+   int iseg;
+   for (iseg = 0; iseg < nope; iseg++) {
+      // for each segment...
+      sumNodes += nond[iseg];
+      if (idx > sumNodes) break;
+   }
+   if (iseg == nope) iseg--;
+   assert(idx <= sumNodes && "idx is out of bounds");
+   sumNodes -= nond[iseg];
+
+   const int ind  = idx - sumNodes;
+if (idx > 1000) printf("iseg = %d of %d, ind = %d of %d, idx = %d, mesh->nbp = %d\n", iseg, nope, ind, nond[iseg], idx, mesh->nbp);
+
+
+   nodeBnd->isEssentialBC = true;
+   nodeBnd->elbc = 0.0;
+
+   for (int jfr = 0; jfr < nbfr; jfr++) {
+
+      const int idx = iseg*mnond*nbfr + ind*nbfr + jfr;
+      nodeBnd->efa[jfr] = efa[idx];
+      nodeBnd->emo[jfr] = emo[idx];
+      nodeBnd->umo[jfr] = {umo[idx], vmo[idx]};
+      nodeBnd->ufa[jfr] = {ufa[idx], vfa[idx]};
+
+   }
+        
+
+}
+
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 double *node_coords, double *node_coords_ll, bool use_ll,
-                double *wind_rotate_angle, 
+                double *wind_rotate_angle, int *sharedIdxNodeBoundary, int *sharedIdxSideBoundary,
                 int *isdel, int *isidenode, int *isbnd,
                 int *nond, int *nlnd, int *iond, int *ilnd, 
                 int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
@@ -1420,18 +1703,23 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
                 double *umo, double *ufa, 
                 double *vmo, double *vfa) {
 
-   printf("Populating mesh for partition %d\n", partNum);
+   // printf("Populating mesh for partition %d\n", partNum);
 
-   // Horizontal grid
-   printf("Processing %d nodes\n", np);   
+   // // Horizontal grid
+   // printf("Processing %d nodes\n", np);   
 
-   
-   // Parameters used to compute a linear approximation of the Coriolis coefficient around the reference latitude sfea0
-   const double fc   = 2.0*omega_e*sin(sfea0);
-   const double beta = 2.0*omega_e*cos(sfea0);
 
+   // // Parameters used to compute a linear approximation of the Coriolis coefficient around the reference latitude sfea0
+   // const double fc   = 2.0*omega_e*sin(sfea0);
+   // const double beta = 2.0*omega_e*cos(sfea0);
+
+   nbs = *sharedIdxSideBoundary;
+   nbp = *sharedIdxNodeBoundary;
+
+return;
 
    int idxNodeBoundary = 0;  
+#ifdef popo      
    for (int i = 0; i < np; i++)
    {
 printf("NODE i = %d, np = %d\n", i, np);      
@@ -1545,7 +1833,7 @@ printf("NODE idx = %d, Cd = %.16f, rough = %.16f\n", i, node.Cd, node.rough);
 #endif
    }
 
-   nbp = idxNodeBoundary;
+  nbp = idxNodeBoundary;
 
    printf("Processing %d sides\n", ns);
    int idxSideBoundary = 0;
@@ -1691,6 +1979,9 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 
    }
 
+
+
+
    printf("Processing %d elements\n", ne);
    for (int i = 0; i < ne; i++)
    {
@@ -1775,12 +2066,14 @@ if (i%1000 == 0) printf("ELEMENT i = %d, ne = %d\n", i, ne);
 
    }
 
+#endif
 
    // Processing the boundary nodes
    int idx = 0;
    for (int iseg = 0; iseg < nope; iseg++) {
       // for each segment...
-      
+      idx++;
+
       for (int ind = 0; ind < nlnd[iseg]; ind++) {
          // for each node on the segment...
 
@@ -1799,7 +2092,7 @@ if (i%1000 == 0) printf("ELEMENT i = %d, ne = %d\n", i, ne);
 
          }
 
-         idx++;
+         
       }
 
    }
@@ -1944,8 +2237,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // Integral of \nabla\phi_i \cdot \pmb{E}
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
      
-// printf(">>> k = %d, node idx = %d, elem->idx = %d, Umean = %.15e,%.15e, I_4_1 = %.15e, I_4_2 = %.15e, node1->qel = %.15e\n", j, node1->idx, elem->idx, Umean.x, Umean.y, I_4_1, I_4_2, dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2));
-// printf(">>> k = %d, node idx = %d, elem->idx = %d, ghat1 = %.15e,%.15e, gradPhi = %.15e,%.15e\n", j, node1->idx, elem->idx, elem->ghat1.x, elem->ghat1.y, gradPhi_1.x, gradPhi_1.y);
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
 
       // Additional terms 
@@ -1979,8 +2270,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          if (!elem->isDry) {
            const Vector2 gradEta = elem->grad2(&Node::eta2);
 
-           node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
-// printf("BBB>>>  elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta) = %.15e\n",  elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta));
+          node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
+
          }
 
       } // isTri
@@ -1999,17 +2290,16 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       } // isQuad
 
 
-      node1->qel += (dt/elem->i34)*elem->vsource;
+     node1->qel += (dt/elem->i34)*elem->vsource;
       
 
    } // for all elements connected to the node
    
 
-
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2,6 are not needed if essential b.c. are enforced by elminating rows and columns
    NodeBoundary *nodeBnd = node1->nodeBnd;
-   if (nodeBnd != nullptr)  { 
+   if (nodeBnd != nullptr && nodeBnd != &(mesh->landBoundaryNode))  { 
       // If it is an open boundary node...
 
       // At least one open bnd side, maybe two
@@ -2018,13 +2308,15 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          // Gets each of the sides sharing the node. 
          SideBoundary *sideBnd = nodeBnd->sideBnd(l);
 
-         if (sideBnd == nullptr) continue; // Skip if no boundary side
+         // if (sideBnd == nullptr) continue; // Skip if no boundary side
 
-         const Node *node2 = sideBnd->side->otherNode(node1); // Other node of the side
+         
 
          // XXXX CAN WE DO THIS MORE NATURALLY IN A SideBnd Loop?
          if (sideBnd != nullptr) {
             // If the side is on a boundary...
+
+            const Node *node2 = sideBnd->side->otherNode(node1); // Other node of the side
 
             // Get the boundary segment
             const BoundarySegment *sideSegment = sideBnd->segment;
@@ -2048,7 +2340,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
                      Vn += 0.5*(side->zc[k+1] - side->zc[k])*(vn1 + vn2);
                   }
-
+printf("side->idx = %d, side->len = %f, Vn = %f\n",  side->idx, side->len, Vn);
                   ri3 = 0.5*side->len*Vn;
                }
 
@@ -2081,7 +2373,9 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
                } // if Flather or Discharge
 
+// printf("node1 = %p, thetai = %f, dt = %f, ri3 = %f\n", node1, thetai, dt, ri3);
                node1->qel -= thetai*dt*ri3;
+
 
             } // I_3
           
@@ -2951,10 +3245,10 @@ extern "C" {
          // Set solution and RHS to BC value
          node->mX  = nodeBnd->elbc;
          node->qel = nodeBnd->elbc;
-
+// printf("bbbbb\n");
       } else {
          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
-
+// printf("aaaaaa\n");
          for (int j = 0; j < node->numNodes; j++) {
                Node* nbNode = node->nodes[j];
                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
@@ -2963,7 +3257,7 @@ extern "C" {
                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
                   // Subtract contribution to RHS
-                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
+                  // node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
                }
          }
@@ -5918,7 +6212,7 @@ extern "C"
                                  
   __global__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *node_coords_ll, bool use_ll,
-                   double *wind_rotate_angle, 
+                   double *wind_rotate_angle,  int *sharedIdxNodeBoundary, int *sharedIdxSideBoundary,
                    int *isdel, int *isidenode, int *isbnd,
                    int *nond, int *nlnd, int *iond, int *ilnd, 
                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
@@ -5932,6 +6226,7 @@ extern "C"
                    double *vmo, double *vfa) {
 
     mesh->populateMesh(i34, elnode, elside, node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
+                       sharedIdxNodeBoundary, sharedIdxSideBoundary,
                        isdel, isidenode, isbnd,
                        nond, nlnd, iond, ilnd, 
                        nodeNeighNodesStart, nodeNeighNodesIndices,
@@ -5960,6 +6255,56 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        drag, roughness);
 }  
 
+extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,
+                                         double *node_coords, double *node_coords_ll, bool use_ll,
+                                         double *wind_rotate_angle,   
+                                         int *isdel, int *isidenode, int *isbnd,
+                                         int *nond, int *nlnd, int *iond, int *ilnd,                                  
+                                         int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                                         int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                                         int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+                                         int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+                                         int *localNodePart,     int *localElemPart,     int *localSidePart,
+                                         double *drag, double *roughness) {
+   mesh->populateSides(i34, sharedIdxSideBoundary,
+                       node_coords, node_coords_ll, use_ll,
+                       wind_rotate_angle,   
+                       isdel, isidenode, isbnd,
+                       nond, nlnd, iond, ilnd,                                  
+                       nodeNeighNodesStart, nodeNeighNodesIndices, nodeNeighElemsStart, nodeNeighElemsIndices, globalNodeIndices, globalElemIndices, globalSideIndices, localNodeIndices, localElemIndices, localSideIndices, localNodePart, localElemPart, localSidePart, drag, roughness);                          
+
+}
+
+extern "C" __global__ void populateElements(int *i34, int *elnode, int *elside,
+   double *node_coords, double *node_coords_ll, bool use_ll,
+   double *wind_rotate_angle,   
+   int *isdel, int *isidenode, int *isbnd,
+   int *nond, int *nlnd, int *iond, int *ilnd,                                  
+   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+   int *localNodePart,     int *localElemPart,     int *localSidePart,
+   double *drag, double *roughness) {
+   mesh->populateElements(i34, elnode, elside,
+                          node_coords, node_coords_ll, use_ll,
+                          wind_rotate_angle,   
+                          isdel, isidenode, isbnd,
+                          nond, nlnd, iond, ilnd,                                  
+                          nodeNeighNodesStart, nodeNeighNodesIndices, nodeNeighElemsStart, nodeNeighElemsIndices, globalNodeIndices, globalElemIndices, globalSideIndices, localNodeIndices, localElemIndices, localSideIndices, localNodePart, localElemPart, localSidePart, drag, roughness);                          
+
+} 
+
+extern "C" __global__ void populateBoundaryNodes(int *nond, 
+                                                double *emo, double *efa, 
+                                                double *umo, double *ufa, 
+                                                double *vmo, double *vfa) {
+   mesh->populateBoundaryNodes(nond, emo, efa, umo, ufa, vmo, vfa);
+
+}
+
+
+
 
 
 extern "C"  __global__ void destroyMeshCPU(void) {
@@ -5983,21 +6328,24 @@ __global__ void getStructSizes(int* sizes)  {
 }
 
 
-__global__ void printMatrix(void) {
+__global__ void printMatrix(bool full) {
    // Debugging: print the matrix
 
    const int size = mesh->np;
+   double sum = 0.0;
    for (int idx_node = 0; idx_node < size; idx_node++) {
       const Node *node = mesh->localNodeData + idx_node;
-      printf("idx_node = %d [%d] diag=%lf, [", idx_node, node->numNodes, node->coeffDiag);
+      if (full) printf("idx_node = %d [%d] diag=%lf, [", idx_node, node->numNodes, node->coeffDiag);
       for (int j = 0; j < node->numNodes; j++) {
          Node* nbNode = node->nodes[j];
-         if (node->coeffMatrix[j] != 0.0) printf("%d:%f,  ", nbNode->idx, node->coeffMatrix[j]);
+         if (full && node->coeffMatrix[j] != 0.0) printf("%d:%f,  ", nbNode->idx, node->coeffMatrix[j]);
+         sum += node->coeffMatrix[j];
       }
-      printf("]\n");
+      if (full) printf("]\n");
+
 
    }
-
+   if (!full) printf("sum=%lf\n", sum);
 }
 
 
@@ -6163,13 +6511,21 @@ __global__ void updateSearchDirection() {
 
 }
 
-__global__ void initializePreconditionedResidual(double *scalars) {
+__global__ void initializeScalars(double *scalars) {
 
-    extern __shared__ double s_rMr[BLOCK_SIZE];  
+   // These point to a cupy array in the host code
+   rMr_old = scalars + 0;
+   rMr_new = scalars + 1;
+   pAp     = scalars + 2;
+}
+
+__global__ void initializePreconditionedResidual(void) {
+
+    __shared__ double s_rMr[BLOCK_SIZE];  
 
     s_rMr[threadIdx.x] = 0.0;
 
-    NODE(node);
+    NODE_ALL(node, valid);
     const int tid = threadIdx.x;
     // For the first iteration:
     // 1. Initial solution x = 0 (already set)
@@ -6178,27 +6534,25 @@ __global__ void initializePreconditionedResidual(double *scalars) {
 
 // XXX we should use the guess solution here    
 
-    // Set initial residual r = b (from qel)
-    node->mR = node->qel;
+    double l_rMr = 0.0;
+    if (valid) {
+      // Set initial residual r = b (from qel)
+      node->mR = node->qel;
 
-    // Compute z = M^-1 * r (preconditioned residual)
-    const double z = node->mR / node->coeffDiag;
+      // Compute z = M^-1 * r (preconditioned residual)
+      const double z = node->mR / node->coeffDiag;
 
-    // Set initial search direction p = z
-    node->mP = z;
+      // Set initial search direction p = z
+      node->mP = z;
 
-    // Initialize other variables needed for CG
-    node->mX = 0.0;  // Initial solution
-    node->mAp = 0.0; // Will be computed in first iteration
+      // Initialize other variables needed for CG
+      node->mX = 0.0;  // Initial solution
+      node->mAp = 0.0; // Will be computed in first iteration
 
-    // These point to a cupy array in the host code
-    rMr_old = scalars + 0;
-    rMr_new = scalars + 1;
-    pAp     = scalars + 2;
 
-    // Computes the first r'Mr (reduction)
-    const double l_rMr = node->mR*node->mR/node->coeffDiag;  // r'M^-1r
-
+      // Computes the first r'Mr (reduction)
+      l_rMr = node->mR*node->mR/node->coeffDiag;  // r'M^-1r
+    }
     // 4) write into shared-mem
     s_rMr[tid] = l_rMr;
 

@@ -23,10 +23,11 @@ def solveWaveEquation(maxIter=10000, tol=1e-16):
     # cufunc.printMatrix()
 
     scalars = cp.zeros(3, dtype=cp.float64) # rMr_old, rMr_new, pAp
+    cufunc.initializeScalars(scalars)
 
 
     # Compute initial preconditioned residual Mr
-    cufunc.initializePreconditionedResidual(scalars)
+    cufunc.initializePreconditionedResidual()
     cp.cuda.Device().synchronize()
 
     rMr_new = scalars[1].item()

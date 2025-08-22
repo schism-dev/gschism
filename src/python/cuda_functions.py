@@ -15,6 +15,7 @@ populateMesh = None
 populateNodes = None
 populateSides = None
 populateElements = None
+populateBoundaryNodes = None
 getStructSizes = None
 initTidalHarmonicConstituents = None
 printMatrix = None
@@ -65,7 +66,7 @@ getSideVar = None
 test = None
 
 def initializeCudaKernelManager(_project_root):
-    global createMesh, populateMesh, populateNodes, populateSides, populateElements, getStructSizes
+    global createMesh, getStructSizes
     global initTidalHarmonicConstituents, cuda_manager, project_root, mod
 
     project_root = _project_root
@@ -89,7 +90,6 @@ def initializeCudaKernelManager(_project_root):
         try:
             sizes = {'global': 1}
             createMesh     = mod.get_function('createMesh',     sizes, kernel_type='global')
-            populateMesh   = mod.get_function('populateMesh',   sizes, kernel_type='global')
             getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='global')
             initTidalHarmonicConstituents = mod.get_function('initTidalHarmonicConstituents', sizes, kernel_type='global')
 
@@ -105,6 +105,7 @@ def initializeCudaKernelManager(_project_root):
 
 def initializeCudaFunctions(sizes):
     global mod
+    global populateMesh, populateNodes, populateSides, populateElements, populateBoundaryNodes
     global scaleGravity, computeTimeRamps
     global computeBedDeformation, computeTidalPotential
     global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
@@ -113,7 +114,7 @@ def initializeCudaFunctions(sizes):
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
-    global initializePreconditionedResidual, printMatrix, returnMatrix
+    global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix
     global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
@@ -121,6 +122,12 @@ def initializeCudaFunctions(sizes):
 
     # Get kernel functions with better error handling
     try:
+        populateMesh                        = mod.get_function('populateMesh',                        sizes, kernel_type='global')
+        populateNodes                       = mod.get_function('populateNodes',                       sizes, kernel_type='nodes')
+        populateSides                       = mod.get_function('populateSides',                       sizes, kernel_type='sides')
+        populateElements                    = mod.get_function('populateElements',                    sizes, kernel_type='elements')
+        populateBoundaryNodes               = mod.get_function('populateBoundaryNodes',               sizes, kernel_type='nodeBnd')
+
         scaleGravity                        = mod.get_function('scaleGravity',                        sizes, kernel_type='nodes')
         computeTimeRamps                    = mod.get_function('computeTimeRamps',                    sizes, kernel_type='global')
         computeBedDeformation               = mod.get_function('computeBedDeformation',               sizes, kernel_type='global')
@@ -143,6 +150,7 @@ def initializeCudaFunctions(sizes):
         computeMatrixProductAndDotProducts  = mod.get_function('computeMatrixProductAndDotProducts',  sizes, kernel_type='nodes')
         updateSolutionAndDotProducts        = mod.get_function('updateSolutionAndDotProducts',        sizes, kernel_type='nodes')
         updateSearchDirection               = mod.get_function('updateSearchDirection',               sizes, kernel_type='nodes')
+        initializeScalars                   = mod.get_function('initializeScalars',                   sizes, kernel_type='global')
         initializePreconditionedResidual    = mod.get_function('initializePreconditionedResidual',    sizes, kernel_type='nodes')
         computeHorGradientAtSide            = mod.get_function('computeHorGradientAtSide',            sizes, kernel_type='sides')
         solveMomentumEquations              = mod.get_function('solveMomentumEquations',              sizes, kernel_type='sides')
