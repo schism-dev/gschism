@@ -6,4 +6,4 @@ blockSize = 256
 
 varCodes = "x,y,z,u,v,w,U,V,nx,ny,hhat,ghatx,ghaty,ssign,btu,btv,bccx,bccy,uth,vth,ubc,vbc," + \
            "island,ifltype,elbc,eta,area,qel,depth,radius,xlon,ylat,kb,n1,n2," + \
-           "htot,gradEta1x,gradEta1y,gradEta2x,gradEta2y,gradETPx,gradETPy,gradPrx,gradPry"
+           "htot,gradEta1x,gradEta1y,gradEta2x,gradEta2y,gradETPx,gradETPy,gradPrx,gradPry,idx"

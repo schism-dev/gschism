@@ -62,6 +62,7 @@ shapiroFilter2 = None
 getElementVar = None
 getNodeVar = None
 getSideVar = None
+getSideBndVar = None
 
 test = None
 
@@ -118,7 +119,7 @@ def initializeCudaFunctions(sizes):
     global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
-    global getElementVar, getNodeVar, getSideVar
+    global getElementVar, getNodeVar, getSideVar, getSideBndVar
 
     # Get kernel functions with better error handling
     try:
@@ -176,6 +177,7 @@ def initializeCudaFunctions(sizes):
         getElementVar                       = mod.get_function('getElementVar',                       sizes, kernel_type='elements')
         getNodeVar                          = mod.get_function('getNodeVar',                          sizes, kernel_type='nodes')   
         getSideVar                          = mod.get_function('getSideVar',                          sizes, kernel_type='sides')   
+        getSideBndVar                       = mod.get_function('getSideBndVar',                       sizes, kernel_type='sideBnd')
 
         test = mod.get_function('test', sizes, kernel_type='global')
     except Exception as e:

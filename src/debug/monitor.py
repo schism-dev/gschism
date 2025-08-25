@@ -25,11 +25,12 @@ numNodes = 0
 numElements = 0
 numSides = 0
 
-def init(nNodes, nElements, nSides):
-    global numNodes, numElements, numSides
+def init(nNodes, nElements, nSides, nSideBnds):
+    global numNodes, numElements, numSides, numSideBnds
     numNodes = nNodes
     numElements = nElements
     numSides = nSides
+    numSideBnds = nSideBnds
 
 def getElementVar(varname, k = -1, j = -1):
     varCode = varCodeDict[varname]
@@ -48,6 +49,12 @@ def getSideVar(varname, k = -1):
     var = cp.zeros(numSides, dtype=cp.float64)
     cufunc.getSideVar(varCode, var, k)
     return var.get()
+
+def getSideBndVar(varname, k = -1):
+    varCode = varCodeDict[varname]
+    var = cp.zeros(numSideBnds, dtype=cp.float64)
+    cufunc.getSideBndVar(varCode, var, k)
+    return var.get()    
 
 
 def intToRGB(color_array):

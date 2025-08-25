@@ -93,7 +93,7 @@ constexpr double dt = 120;  // Time step  XXX
 
 constexpr double h0 = 0.0001;  // Minimum water depth [m]
 
-enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, U=6, V=7, nx=8, ny=9, hhat=10, ghatx=11, ghaty=12, ssign=13, btu=14, btv=15, bccx=16, bccy=17, uth=18, vth=19, ubc=20, vbc=21, island=22, ifltype=23, elbc=24, eta=25, area=26, qel=27, depth=28, radius=29, xlon=30, ylat=31, kb=32, n1=33, n2=34, htot=35, gradEta1x=36, gradEta1y=37, gradEta2x=38, gradEta2y=39, gradETPx=40, gradETPy=41, gradPrx=42, gradPry=43}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, U=6, V=7, nx=8, ny=9, hhat=10, ghatx=11, ghaty=12, ssign=13, btu=14, btv=15, bccx=16, bccy=17, uth=18, vth=19, ubc=20, vbc=21, island=22, ifltype=23, elbc=24, eta=25, area=26, qel=27, depth=28, radius=29, xlon=30, ylat=31, kb=32, n1=33, n2=34, htot=35, gradEta1x=36, gradEta1y=37, gradEta2x=38, gradEta2y=39, gradETPx=40, gradETPy=41, gradPrx=42, gradPry=43, idx=44}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -1646,6 +1646,7 @@ extern "C" {
 // END INCLUDE: meshdata.h
 #include <cuda_runtime.h>
 
+
 __device__ double *debugPlot = nullptr;
 __device__ int *debugPlotIdx = nullptr;
 __device__ int debugPlotMutex = 0;
@@ -2907,9 +2908,11 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
          // Consecutive nodes in the land boundary segment
          const int b1 = ilnd[i*mnlnd + j];
          const int b2 = ilnd[i*mnlnd + j + 1];
+        
 
          if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
             isLand = true;
+printf("ilnd[%d] = %d, ilnd[%d] = %d, n1 = %d, n2 = %d\n", i*mnlnd + j, b1, i*mnlnd + j + 1, b2, n1, n2);             
             return i;
          }
       }
@@ -2928,6 +2931,7 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
          }
       }
    }
+
    return -1;
 }
 
@@ -3110,28 +3114,30 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
       bool isLand = false;
       int isbs = findSideBoundaryType(side, iond, nond, ilnd, nlnd, isLand);
 
-      if (isbs > -1) {
+      assert(isLand || isbs>=0);
+      const int idxSideBoundary = atomicAdd(sharedIdxSideBoundary, 1) + 1;
 
-         const int idxSideBoundary = atomicAdd(sharedIdxSideBoundary, 1) + 1;
+      side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+      if   (isLand) side.sideBnd->segment = &landBoundarySegment;
+      else          side.sideBnd->segment = &(localSegmentMem[isbs]);
 
-         side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
-         if      ( isLand) side.sideBnd->segment = &landBoundarySegment;
-         else if (!isLand) side.sideBnd->segment = &(localSegmentMem[isbs]);
+      assert (isLand == side.sideBnd->segment->isLand);
 
-         // Links each node boundary to the side boundary using the first available side boundary pointer
-         if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
-         else                            n1bnd->sideBnd2 = side.sideBnd;
+      // Links each node boundary to the side boundary using the first available side boundary pointer
+      if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
+      else                            n1bnd->sideBnd2 = side.sideBnd;
 
-         if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
-         else                            n2bnd->sideBnd2 = side.sideBnd;
-         
-         side.sideBnd->side = &side;
+      if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
+      else                            n2bnd->sideBnd2 = side.sideBnd;
+      
+      side.sideBnd->side = &side;
 
-      }
       
    }
-   else side.sideBnd = nullptr;
-
+   else 
+   {
+      side.sideBnd = nullptr;
+   }
 
 
    // finding the pointer to the elements that share the side
@@ -3363,354 +3369,354 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 return;
 
    int idxNodeBoundary = 0;  
-#ifdef popo      
-   for (int i = 0; i < np; i++)
-   {
-printf("NODE i = %d, np = %d\n", i, np);      
-      Node &node = localNodeData[i];
+// #ifdef popo      
+//    for (int i = 0; i < np; i++)
+//    {
+// printf("NODE i = %d, np = %d\n", i, np);      
+//       Node &node = localNodeData[i];
 
-      node.idx = i;
+//       node.idx = i;
 
-      const int idxNodeStart = nodeNeighNodesStart[i];
-      const int idxNodeEnd   = nodeNeighNodesStart[i+1];
-      node.numNodes = idxNodeEnd - idxNodeStart;
-      node.nodes = nodeNeighNodes + idxNodeStart;
-      node.coeffMatrix = coeffMatrixMem + idxNodeStart;
+//       const int idxNodeStart = nodeNeighNodesStart[i];
+//       const int idxNodeEnd   = nodeNeighNodesStart[i+1];
+//       node.numNodes = idxNodeEnd - idxNodeStart;
+//       node.nodes = nodeNeighNodes + idxNodeStart;
+//       node.coeffMatrix = coeffMatrixMem + idxNodeStart;
 
 
 
-      const int idxElemStart = nodeNeighElemsStart[i];
-      const int idxElemEnd   = nodeNeighElemsStart[i+1];      
-      node.numElements = idxElemEnd - idxElemStart;
-      node.elements = nodeNeighElems + idxElemStart;
+//       const int idxElemStart = nodeNeighElemsStart[i];
+//       const int idxElemEnd   = nodeNeighElemsStart[i+1];      
+//       node.numElements = idxElemEnd - idxElemStart;
+//       node.elements = nodeNeighElems + idxElemStart;
 
 
       
-      for (int idx = idxNodeStart; idx < idxNodeEnd; idx++) {
-         const int idxNodeGlobal = nodeNeighNodesIndices[idx];
-         const int partNode = localNodePart[idxNodeGlobal]; 
-         const int idxNode  = localNodeIndices[idxNodeGlobal];
+//       for (int idx = idxNodeStart; idx < idxNodeEnd; idx++) {
+//          const int idxNodeGlobal = nodeNeighNodesIndices[idx];
+//          const int partNode = localNodePart[idxNodeGlobal]; 
+//          const int idxNode  = localNodeIndices[idxNodeGlobal];
 
 
-         Node *node_ptr = nodes[partNode] + idxNode;
+//          Node *node_ptr = nodes[partNode] + idxNode;
          
-         nodeNeighNodes[idx] = node_ptr;
-      }
+//          nodeNeighNodes[idx] = node_ptr;
+//       }
 
-      for (int idx = idxElemStart; idx < idxElemEnd; idx++) {
-         const int idxElemGlobal = nodeNeighElemsIndices[idx];
-         const int partElem = localElemPart[idxElemGlobal];
-         const int idxElem  = localElemIndices[idxElemGlobal];
+//       for (int idx = idxElemStart; idx < idxElemEnd; idx++) {
+//          const int idxElemGlobal = nodeNeighElemsIndices[idx];
+//          const int partElem = localElemPart[idxElemGlobal];
+//          const int idxElem  = localElemIndices[idxElemGlobal];
 
-         Element *elem_ptr = elems[partElem] + idxElem;
+//          Element *elem_ptr = elems[partElem] + idxElem;
 
-         nodeNeighElems[idx] = elem_ptr;
-      }      
+//          nodeNeighElems[idx] = elem_ptr;
+//       }      
 
 
-      node.wind_angle = wind_rotate_angle[i];
+//       node.wind_angle = wind_rotate_angle[i];
 
-      // Element **elements; // pointer to the elements connected to this node
-      // int numElements;   // number of elements shared by this node
+//       // Element **elements; // pointer to the elements connected to this node
+//       // int numElements;   // number of elements shared by this node
 
-      node.p.x   = node_coords[i * 3];
-      node.p.y   = node_coords[i * 3 + 1];
-      node.p.z   = node_coords[i * 3 + 2];  // XXX this is probably wrong
-      node.depth = node_coords[i * 3 + 2];
+//       node.p.x   = node_coords[i * 3];
+//       node.p.y   = node_coords[i * 3 + 1];
+//       node.p.z   = node_coords[i * 3 + 2];  // XXX this is probably wrong
+//       node.depth = node_coords[i * 3 + 2];
 
-      node.numSides = 0;
+//       node.numSides = 0;
 
-      node.Cd = drag[i];
-      node.rough = roughness[i];
-printf("NODE idx = %d, Cd = %.16f, rough = %.16f\n", i, node.Cd, node.rough);
-      for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
+//       node.Cd = drag[i];
+//       node.rough = roughness[i];
+// printf("NODE idx = %d, Cd = %.16f, rough = %.16f\n", i, node.Cd, node.rough);
+//       for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
 
-      // Links the node to the boundary information
-      if (isbnd[i] >= 0) {
+//       // Links the node to the boundary information
+//       if (isbnd[i] >= 0) {
        
-         node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
-         node.nodeBnd->node = &node;
+//          node.nodeBnd = &(localNodeBoundaryMem[idxNodeBoundary]);
+//          node.nodeBnd->node = &node;
 
-         node.nodeBnd->sideBnd1 = nullptr;
-         node.nodeBnd->sideBnd2 = nullptr;
+//          node.nodeBnd->sideBnd1 = nullptr;
+//          node.nodeBnd->sideBnd2 = nullptr;
 
-         if (isbnd[i]>=0) {
+//          if (isbnd[i]>=0) {
 
-            node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
+//             node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
             
-            node.nodeBnd->segment->ifltype = (isbnd[i]==0)?3:0;
-            node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
+//             node.nodeBnd->segment->ifltype = (isbnd[i]==0)?3:0;
+//             node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
 
-            // Initialize the length and area of the segment to nan to indicate that they are not yet computed
-            node.nodeBnd->segment->clen  = nan("1");
-            node.nodeBnd->segment->carea = nan("1");
+//             // Initialize the length and area of the segment to nan to indicate that they are not yet computed
+//             node.nodeBnd->segment->clen  = nan("1");
+//             node.nodeBnd->segment->carea = nan("1");
 
-         }
-//          else {  XXXXXX
-//             node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
-// printf("EEEEEPP isbnd[i] = %d, node.nodeBnd->segment = %p\n", isbnd[i], node.nodeBnd->segment);            
+//          }
+// //          else {  XXXXXX
+// //             node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+// // printf("EEEEEPP isbnd[i] = %d, node.nodeBnd->segment = %p\n", isbnd[i], node.nodeBnd->segment);            
+// //          }
+         
+//          idxNodeBoundary++;
+//       }
+//       else {
+//          node.nodeBnd = nullptr; // For internal nodes
+
+//          if (isbnd[i] == landSegment) {
+//             node.nodeBnd = &landBoundaryNode;
+//             node.nodeBnd->segment = &landBoundarySegment;
+//          }
+//          // node.nodeBnd->node = &node;
+//          // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+//          // // node.nodeBnd = nullptr;
+//          // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
+        
+//       }
+
+//       // XXXX GAUSSIAN HILL VELOCITIES
+// #ifdef GAUSSIAN_HILL_VELOCITIES
+//          if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+//          constexpr double rot_per = 3000.0;
+//          constexpr double rot_f = 0.0*2.0*pi/rot_per;
+//          for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f}; node.w2[k] = 0.0; }
+//       // XXXXX
+// #endif
+//    }
+
+//   nbp = idxNodeBoundary;
+
+//    printf("Processing %d sides\n", ns);
+//    int idxSideBoundary = 0;
+//    for (int i = 0; i < ns; i++)
+//    {
+// if (i%1000 == 0) printf("SIDE i = %d, ns = %d\n", i, ns);      
+//       Side &side = localSideData[i];
+//       side.idx = i;
+//       // finding the pointer to the nodes that form the side
+//       const int idx_n1 = isidenode[globalSideIndices[i]*2];
+//       const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
+
+//       const int locidx_n1 = localNodeIndices[idx_n1];
+//       const int locidx_n2 = localNodeIndices[idx_n2];
+//       const int part_n1 =   localNodePart[idx_n1];
+//       const int part_n2 =   localNodePart[idx_n2];
+
+//       side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
+//       side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
+
+//       // Counts the number of sides connected to each node
+//       side.n1->numSides++;
+//       side.n2->numSides++;
+
+//       // Normal, unitary vector to the side
+//       side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
+//       side.n = normalize(side.n);
+
+//       // Side boundary type
+//       NodeBoundary *n1bnd = side.n1->nodeBnd;
+//       NodeBoundary *n2bnd = side.n2->nodeBnd;
+
+//       if (n1bnd != nullptr && n2bnd != nullptr) 
+//       // If both nodes are on the boundary, then the side may be on the boundary
+//       {
+//          bool isLand = false;
+//          int isbs = findSideBoundaryType(side, iond, nond, ilnd, nlnd, isLand);
+
+//          if (isbs > -1) {
+//             side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+//             if      ( isLand) side.sideBnd->segment = &landBoundarySegment;
+//             else if (!isLand) side.sideBnd->segment = &(localSegmentMem[isbs]);
+
+//             // Links each node boundary to the side boundary using the first available side boundary pointer
+//             if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
+//             else                            n1bnd->sideBnd2 = side.sideBnd;
+
+//             if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
+//             else                            n2bnd->sideBnd2 = side.sideBnd;
+          
+//             side.sideBnd->side = &side;
+//             idxSideBoundary++;
+
 //          }
          
-         idxNodeBoundary++;
-      }
-      else {
-         node.nodeBnd = nullptr; // For internal nodes
 
-         if (isbnd[i] == landSegment) {
-            node.nodeBnd = &landBoundaryNode;
-            node.nodeBnd->segment = &landBoundarySegment;
-         }
-         // node.nodeBnd->node = &node;
-         // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
-         // // node.nodeBnd = nullptr;
-         // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
-        
-      }
+//       // }
+//       // 
 
-      // XXXX GAUSSIAN HILL VELOCITIES
-#ifdef GAUSSIAN_HILL_VELOCITIES
-         if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
-         constexpr double rot_per = 3000.0;
-         constexpr double rot_f = 0.0*2.0*pi/rot_per;
-         for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f}; node.w2[k] = 0.0; }
-      // XXXXX
-#endif
-   }
 
-  nbp = idxNodeBoundary;
 
-   printf("Processing %d sides\n", ns);
-   int idxSideBoundary = 0;
-   for (int i = 0; i < ns; i++)
-   {
-if (i%1000 == 0) printf("SIDE i = %d, ns = %d\n", i, ns);      
-      Side &side = localSideData[i];
-      side.idx = i;
-      // finding the pointer to the nodes that form the side
-      const int idx_n1 = isidenode[globalSideIndices[i]*2];
-      const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
 
-      const int locidx_n1 = localNodeIndices[idx_n1];
-      const int locidx_n2 = localNodeIndices[idx_n2];
-      const int part_n1 =   localNodePart[idx_n1];
-      const int part_n2 =   localNodePart[idx_n2];
+// //       // XXXX YYYY NOTE: I'm chosing the boundary type of the first node. This may not be correct.
+// // printf("Here2: %d, idxSideBoundary = %d, side.n1->idx = %d, side.n2->idx = %d\n", i, idxSideBoundary, side.n1->idx, side.n2->idx);      
+// //       if (n1bnd != nullptr || n2bnd != nullptr) 
+// //       {
+// // printf("Here2.5: %d, idxSideBoundary = %d\n", i, idxSideBoundary);           
+// //          side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+// // printf("Here2.6: %d, side.sideBnd = %p, n1bnd = %p, n2bnd = %p\n", i, side.sideBnd, n1bnd, n2bnd);           
+// // // printf("Here2.7: %d, side.sideBnd->segment = %p, n1bnd->segment = %p, n2bnd->segment = %p\n", i, side.sideBnd->segment, n1bnd->segment, n2bnd->segment);      
+// // if (side.sideBnd->segment == nullptr) continue;
+// //          if (n1bnd != nullptr) side.sideBnd->segment = n1bnd->segment;
+// //          else                  side.sideBnd->segment = n2bnd->segment;
+// //          side.sideBnd->side = &side;
+// //          idxSideBoundary++;
+// // printf("EERRREEEE side.sideBnd = %p, n1bnd = %p, n2bnd = %p, n1bnd->segment = %p, n2bnd->segment = %p\n", side.sideBnd, n1bnd, n2bnd, n1bnd->segment, n2bnd->segment);
+//       }
+//       else side.sideBnd = nullptr;
 
-      side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
-      side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
+//       nbs = idxSideBoundary;
 
-      // Counts the number of sides connected to each node
-      side.n1->numSides++;
-      side.n2->numSides++;
+//       // finding the pointer to the elements that share the side
+//       const int idx_e1 = isdel[globalSideIndices[i]*2];
+//       const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
 
-      // Normal, unitary vector to the side
-      side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
-      side.n = normalize(side.n);
+//       if (idx_e1 > -1) {
+//          const int locidx_e1 = localElemIndices[idx_e1];
+//          const int part_e1 =  localElemPart[idx_e1];
+//          side.elems[0] = elems[part_e1] + locidx_e1;
 
-      // Side boundary type
-      NodeBoundary *n1bnd = side.n1->nodeBnd;
-      NodeBoundary *n2bnd = side.n2->nodeBnd;
+//       }
+//       else {
+//          side.elems[0] = nullptr;
+//       }
 
-      if (n1bnd != nullptr && n2bnd != nullptr) 
-      // If both nodes are on the boundary, then the side may be on the boundary
-      {
-         bool isLand = false;
-         int isbs = findSideBoundaryType(side, iond, nond, ilnd, nlnd, isLand);
+//       if (idx_e2 > -1) {
+//          const int locidx_e2 = localElemIndices[idx_e2];
+//          const int part_e2 =  localElemPart[idx_e2];
+//          side.elems[1] = elems[part_e2] + locidx_e2;
+//       }
+//       else {
+//          side.elems[1] = nullptr;
+//       }
 
-         if (isbs > -1) {
-            side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
-            if      ( isLand) side.sideBnd->segment = &landBoundarySegment;
-            else if (!isLand) side.sideBnd->segment = &(localSegmentMem[isbs]);
+//       // Compute the center of the side
+//       side.center = 0.5*(side.n1->p2() + side.n2->p2());
 
-            // Links each node boundary to the side boundary using the first available side boundary pointer
-            if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
-            else                            n1bnd->sideBnd2 = side.sideBnd;
+//       assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
+//       side.shapiro = shapiro0;
 
-            if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
-            else                            n2bnd->sideBnd2 = side.sideBnd;
-          
-            side.sideBnd->side = &side;
-            idxSideBoundary++;
+// #ifdef GAUSSIAN_HILL_VELOCITIES
+// // XXXX
+// if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+// constexpr double rot_per=3000.0;
+// constexpr double rot_f=0.0*2.0*pi/rot_per;
+// for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
+// // XXXXX      
+// #endif
+//       // Compute the z level at the center of the side
+//       for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);
 
-         }
+//       // Compute the length of the side
+//       const Vector2 vLen = side.n2->p2() - side.n1->p2();
+//       side.len = sqrt(dot(vLen, vLen));
+
+
+//       // Compute the Coriolis coefficient
+
+//       if constexpr(ncor == -1 || ncor == 0) {
+//          side.coriolis = coricoef;
+//       }
+//       else {
+//          const double sphi = side.lat();  // Latitude at the center of the side
+
+//          if constexpr(ics == 1) {
+//             side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
+//          }
+//          else {
+//             side.coriolis = 2.0*omega_e*sin(sphi);
+//          }
+//       }
+
+
+//    }
+
+
+
+
+//    printf("Processing %d elements\n", ne);
+//    for (int i = 0; i < ne; i++)
+//    {
+// if (i%1000 == 0) printf("ELEMENT i = %d, ne = %d\n", i, ne);      
+//       Element &elem = localElemData[i];
+//       elem.idx = i;
+//       for (int j = 0; j < i34[i]; j++) {
+//          const int idxNode = elnode[i*4 + j];  
+//          const int idxSide = elside[i*4 + j];
          
-
-      // }
-      // 
-
+//          elem.nodes[j] = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
+//          elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
 
 
 
-//       // XXXX YYYY NOTE: I'm chosing the boundary type of the first node. This may not be correct.
-// printf("Here2: %d, idxSideBoundary = %d, side.n1->idx = %d, side.n2->idx = %d\n", i, idxSideBoundary, side.n1->idx, side.n2->idx);      
-//       if (n1bnd != nullptr || n2bnd != nullptr) 
+//          // Find the neighboring element  
+//          if (elem.sides[j]->elems[0] == &elem) {
+//             elem.nghbElems[j] = elem.sides[j]->elems[1];
+//          }
+//          else {
+//             elem.nghbElems[j] = elem.sides[j]->elems[0];
+//          }
+         
+//       }
+
+//       elem.i34 = i34[i];
+
+//       // Compute the centroid of the element and its depth
+//       Vector2 center = {0.0, 0.0};
+//       elem.depth = 0.0;
+//       for (int j = 0; j < i34[i]; j++) {
+//          center += elem.nodes[j]->p2()/i34[i];
+//          elem.depth  += elem.nodes[j]->p.z/i34[i];
+//       }
+//       elem.center = center;
+
+
+      
+//       // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
+//       // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
+
+//       elem.area = elem.computeSignedArea(); 
+//       elem.radius = sqrt(elem.area)/pi; 
+      
+//       // Determines which way the normal vector to each side is oriented.
+//       // The orientation means that for each side, elems[0] points to elems[1]. In the boundary this guarantees that the normal vector is pointing outwards.
+//       for (int j = 0; j < i34[i]; j++)  
 //       {
-// printf("Here2.5: %d, idxSideBoundary = %d\n", i, idxSideBoundary);           
-//          side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
-// printf("Here2.6: %d, side.sideBnd = %p, n1bnd = %p, n2bnd = %p\n", i, side.sideBnd, n1bnd, n2bnd);           
-// // printf("Here2.7: %d, side.sideBnd->segment = %p, n1bnd->segment = %p, n2bnd->segment = %p\n", i, side.sideBnd->segment, n1bnd->segment, n2bnd->segment);      
-// if (side.sideBnd->segment == nullptr) continue;
-//          if (n1bnd != nullptr) side.sideBnd->segment = n1bnd->segment;
-//          else                  side.sideBnd->segment = n2bnd->segment;
-//          side.sideBnd->side = &side;
-//          idxSideBoundary++;
-// printf("EERRREEEE side.sideBnd = %p, n1bnd = %p, n2bnd = %p, n1bnd->segment = %p, n2bnd->segment = %p\n", side.sideBnd, n1bnd, n2bnd, n1bnd->segment, n2bnd->segment);
-      }
-      else side.sideBnd = nullptr;
+//          if (elem.sides[j]->elems[0] == &elem) {
+//             elem.ssign[j] =  1.0;
+//          }
+//          else {
+//             elem.ssign[j] = -1.0;
+//          }
 
-      nbs = idxSideBoundary;
+//       }
 
-      // finding the pointer to the elements that share the side
-      const int idx_e1 = isdel[globalSideIndices[i]*2];
-      const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
+//       // Derivatives of shape functions
+//       //  For ics=2, this is done inside element/ll frame XXX
+//       //  For quads, the derivative is evaluated at centroid
+//       const int i34 = elem.i34;
+//       for (int j = 0; j < i34; j++) {
+//          const double area = elem.area;
+//          const int id2 = elem.nxq(1 + j);
+//          const int id3 = elem.nxq(2 + j);
+//          const int id4 = elem.nxq(3 + j);
+//          if (elem.isTri()) {
+//             // This expression can be derived from the derivatives of the shape functions in area coordinates.
+//             // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
+//             // da1/dx = (y1 - y2)/(2*area)
+//             const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id3]->p.y)/(2*area); 
+//             const double dPhi_j_dy = (elem.nodes[id3]->p.x - elem.nodes[id2]->p.x)/(2*area); 
+//             elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
+//          }
+//          else  { // Quad; evaluate at centroid
+//             const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id4]->p.y)/(2*area); 
+//             const double dPhi_j_dy = (elem.nodes[id4]->p.x - elem.nodes[id2]->p.x)/(2*area); 
+//             elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
+//          } // if Tri
 
-      if (idx_e1 > -1) {
-         const int locidx_e1 = localElemIndices[idx_e1];
-         const int part_e1 =  localElemPart[idx_e1];
-         side.elems[0] = elems[part_e1] + locidx_e1;
+//       } // for j
 
-      }
-      else {
-         side.elems[0] = nullptr;
-      }
+//    }
 
-      if (idx_e2 > -1) {
-         const int locidx_e2 = localElemIndices[idx_e2];
-         const int part_e2 =  localElemPart[idx_e2];
-         side.elems[1] = elems[part_e2] + locidx_e2;
-      }
-      else {
-         side.elems[1] = nullptr;
-      }
-
-      // Compute the center of the side
-      side.center = 0.5*(side.n1->p2() + side.n2->p2());
-
-      assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
-      side.shapiro = shapiro0;
-
-#ifdef GAUSSIAN_HILL_VELOCITIES
-// XXXX
-if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
-constexpr double rot_per=3000.0;
-constexpr double rot_f=0.0*2.0*pi/rot_per;
-for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
-// XXXXX      
-#endif
-      // Compute the z level at the center of the side
-      for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);
-
-      // Compute the length of the side
-      const Vector2 vLen = side.n2->p2() - side.n1->p2();
-      side.len = sqrt(dot(vLen, vLen));
-
-
-      // Compute the Coriolis coefficient
-
-      if constexpr(ncor == -1 || ncor == 0) {
-         side.coriolis = coricoef;
-      }
-      else {
-         const double sphi = side.lat();  // Latitude at the center of the side
-
-         if constexpr(ics == 1) {
-            side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
-         }
-         else {
-            side.coriolis = 2.0*omega_e*sin(sphi);
-         }
-      }
-
-
-   }
-
-
-
-
-   printf("Processing %d elements\n", ne);
-   for (int i = 0; i < ne; i++)
-   {
-if (i%1000 == 0) printf("ELEMENT i = %d, ne = %d\n", i, ne);      
-      Element &elem = localElemData[i];
-      elem.idx = i;
-      for (int j = 0; j < i34[i]; j++) {
-         const int idxNode = elnode[i*4 + j];  
-         const int idxSide = elside[i*4 + j];
-         
-         elem.nodes[j] = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
-         elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
-
-
-
-         // Find the neighboring element  
-         if (elem.sides[j]->elems[0] == &elem) {
-            elem.nghbElems[j] = elem.sides[j]->elems[1];
-         }
-         else {
-            elem.nghbElems[j] = elem.sides[j]->elems[0];
-         }
-         
-      }
-
-      elem.i34 = i34[i];
-
-      // Compute the centroid of the element and its depth
-      Vector2 center = {0.0, 0.0};
-      elem.depth = 0.0;
-      for (int j = 0; j < i34[i]; j++) {
-         center += elem.nodes[j]->p2()/i34[i];
-         elem.depth  += elem.nodes[j]->p.z/i34[i];
-      }
-      elem.center = center;
-
-
-      
-      // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
-      // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
-
-      elem.area = elem.computeSignedArea(); 
-      elem.radius = sqrt(elem.area)/pi; 
-      
-      // Determines which way the normal vector to each side is oriented.
-      // The orientation means that for each side, elems[0] points to elems[1]. In the boundary this guarantees that the normal vector is pointing outwards.
-      for (int j = 0; j < i34[i]; j++)  
-      {
-         if (elem.sides[j]->elems[0] == &elem) {
-            elem.ssign[j] =  1.0;
-         }
-         else {
-            elem.ssign[j] = -1.0;
-         }
-
-      }
-
-      // Derivatives of shape functions
-      //  For ics=2, this is done inside element/ll frame XXX
-      //  For quads, the derivative is evaluated at centroid
-      const int i34 = elem.i34;
-      for (int j = 0; j < i34; j++) {
-         const double area = elem.area;
-         const int id2 = elem.nxq(1 + j);
-         const int id3 = elem.nxq(2 + j);
-         const int id4 = elem.nxq(3 + j);
-         if (elem.isTri()) {
-            // This expression can be derived from the derivatives of the shape functions in area coordinates.
-            // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
-            // da1/dx = (y1 - y2)/(2*area)
-            const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id3]->p.y)/(2*area); 
-            const double dPhi_j_dy = (elem.nodes[id3]->p.x - elem.nodes[id2]->p.x)/(2*area); 
-            elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
-         }
-         else  { // Quad; evaluate at centroid
-            const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id4]->p.y)/(2*area); 
-            const double dPhi_j_dy = (elem.nodes[id4]->p.x - elem.nodes[id2]->p.x)/(2*area); 
-            elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
-         } // if Tri
-
-      } // for j
-
-   }
-
-#endif
+// #endif
 
    // Processing the boundary nodes
    int idx = 0;
@@ -3951,6 +3957,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
          // Gets each of the sides sharing the node. 
          SideBoundary *sideBnd = nodeBnd->sideBnd(l);
+
+printf("l = %d, sideBnd = %p\n", l, sideBnd);         
 
          // if (sideBnd == nullptr) continue; // Skip if no boundary side
 
@@ -4674,11 +4682,9 @@ extern "C" {
       const bool isDry = side->isDry;
 
    
+      for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] = {0.0, 0.0};
 
-      if (isDry) {
-         for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] = {0.0, 0.0};
-         return;
-      }
+      if (isDry) return;
 
       // For wet sides in open boundaries...
       const Vector2 n = side->n;
@@ -4691,59 +4697,48 @@ extern "C" {
       const double r_uth0 = ramp*segment->qthcon/segment->carea;  // r_ stands for ramp-up
       const Vector2 r_nuth0 = r_uth0*n;
 
-      for (int k = 0; k < nvrt; k++) {
-         Vector2 r_uth    = {0.0, 0.0};    // r_ stands for ramp-up
-         Vector2 r_u1_bar = {0.0, 0.0};
-      
-         if (ifltype == 1 || ifltype == 2) {
-         
-            assert(segment->carea > 0.0 && "computeFlowBcVelocities: dry bnd side");
 
-            const double unth0 = segment->qthcon*ramp/segment->carea;
-            
-            r_uth = unth0*n;  // This case has no ramp-up
-            
-         } else if (ifltype == -1) { // Flather 1
+      if (ifltype == 1 || ifltype == 2) {
+      
+         assert(segment->carea > 0.0 && "computeFlowBcVelocities: dry bnd side");
+
+         const double unth0 = segment->qthcon*ramp/segment->carea;
+         
+         for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] += unth0*n;  // This case has no ramp-up
+         
+      } else if (ifltype == -1) { // Flather 1
+
+         for (int k = 0; k < nvrt; k++) {
 
             // uth is the normal vel.; no ramp up
             const double uth = sideBnd->nuth(k);
-            r_uth = uth*n;
             assert(uth >= -98.0 && uth <=  98.0 && "computeFlowBcVelocities: wrong velocity b.c. at side");
 
+            sideBnd->ubc[k] += uth*n;
+         }
 
-         } else if (ifltype == 3 || ifltype == 5) {
-            // vnth0=0 !normal vel.
+      } else if (ifltype == 3 || ifltype == 5) {
+         // vnth0=0 !normal vel.
 
-            // Computes the contribution to the velocity from all tide frequencies
-            for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
+         Vector2 r_u1_bar = {0.0, 0.0};
+         // Computes the contribution to the velocity from all tide frequencies
+         for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
 
-               const Vector2 ufa  = sideBnd->ufa(jfr); 
-               const Vector2 umo  = sideBnd->umo(jfr); 
+            const Vector2 ufa  = sideBnd->ufa(jfr); 
+            const Vector2 umo  = sideBnd->umo(jfr); 
 
-               const int ncyc = int(amig[jfr]*time/(2.0*pi));
-               const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
-               const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
-               r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
-            }
+            const int ncyc = int(amig[jfr]*time/(2.0*pi));
+            const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
+            const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
+            r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
+         }
 
-         } // if (ifltype = 3 || ifltype == 5
+         for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] += r_u1_bar;
+
+      } // if (ifltype = 3 || ifltype == 5
 
 
-         switch (ifltype) {
-            case 1:
-            case 2:
-            case 4:
-               sideBnd->ubc[k] = r_uth;
-               break;
-            case 3:
-               sideBnd->ubc[k] = r_u1_bar;
-               break;
-            case 5:
-               sideBnd->ubc[k] = r_uth + r_u1_bar;
-               break;
-         } // switch
 
-      } // for k
    }
 
    __global__ void computeElevationBoundaryConditions(double time) {
@@ -5866,7 +5861,6 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
       assert(segment != nullptr && "applyMomentumBC: segment is nullptr");
 
-      // REMEMEBER, this is a trick, segment can be a pointer or (-1, -2)
       const bool isLand = segment->isLand;
       const int ifltype = segment->ifltype;
 
@@ -8315,7 +8309,8 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::uth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).x:0.0;
    else if (varCode == (int)VarCode::vth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
    else if (varCode == (int)VarCode::ifltype && k == -1) var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->ifltype:0.0;
-   else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->isLand:0.0;
+   // else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?(double)(side->sideBnd->segment->isLand):7.7;
+   else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd != nullptr ? (double)((unsigned long long)(side->sideBnd->segment) & 0xFFFFFFFF) : 7.7;
    else if (varCode == (int)VarCode::hhat && k == -1)    var[idx] = side->hhat;
    else if (varCode == (int)VarCode::gradEta1x   && k == -1)    var[idx] = side->gradEta1.x;
    else if (varCode == (int)VarCode::gradEta1y   && k == -1)    var[idx] = side->gradEta1.y;
@@ -8326,4 +8321,20 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::gradPrx   && k == -1)    var[idx] = side->gradPr.x;
    else if (varCode == (int)VarCode::gradPry   && k == -1)    var[idx] = side->gradPr.y;
    else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
+}
+
+
+extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
+   // Get the value of a variable from an side
+   // varName is the name of the variable to get
+   // var is the array to store the value
+   // k is the vertical level index of the variable to get
+   SIDE_BND(sideBnd);   
+
+   int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-7;
+   if (sideBnd->segment->isLand) idx = -1;
+
+   if      (varCode == (int)VarCode::idx     && k == -1)   var[idx_side_bnd] = idx;
+   else if (varCode == (int)VarCode::ifltype && k == -1)   var[idx_side_bnd] = (sideBnd->segment!=nullptr)?sideBnd->segment->ifltype:-1.1;
+
 }

@@ -382,7 +382,7 @@ if __name__ == "__main__":
     numSides = isdel.shape[1]  
  
 
-    monitor.init(numNodes, numElements, numSides)
+    
     # Get the struct sizes
     sizes = cp.zeros(6, dtype=cp.int32)
     cufunc.getStructSizes(sizes)
@@ -420,6 +420,9 @@ if __name__ == "__main__":
         # Count the number of boundary sides in the partition
         numPartBoundarySides.append((partSides[cp.unique(ilnd)] == ipart).sum().get())
         print(f"Partition {ipart} has {numPartBoundarySides} boundary sides")
+
+
+    monitor.init(numNodes, numElements, numSides, numPartBoundarySides) # XXX not valid for multiGPU
        
     nodesMemList = []
     elemsMemList = []
@@ -444,7 +447,7 @@ if __name__ == "__main__":
             boundaryNodesMem = cp.zeros(max(numPartBoundaryNodes)*boundaryNodesSize, dtype=cp.int8)
 
             # We don't know the number of boundary sides in each partition, so we reserve as much as the number of boundary nodes.
-            boundarySidesMem  = cp.zeros((max(numPartBoundaryNodes)+1)*sideBoundarySize,  dtype=cp.int8)
+            boundarySidesMem  = cp.zeros((max(numPartBoundarySides)+1)*sideBoundarySize,  dtype=cp.int8)
 
             # We save all the segment info in all partitions.
             segmentMem = cp.zeros(ilnd.shape[0]*segmentSize, dtype=cp.int8)
