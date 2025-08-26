@@ -113,7 +113,7 @@ public:
     const T& operator()(size_t i, size_t j) const {
        ARRAY_BOUNDS_CHECK(i, j, sizeI, sizeJ);
 
-        return data[i * sizeJ + j];
+       return data[i * sizeJ + j];
     }
 
     // Get dimensions

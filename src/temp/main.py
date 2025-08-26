@@ -412,7 +412,8 @@ if __name__ == "__main__":
         print(f"Partition {ipart} has {numPartSides} sides")
        
         # Count the number of boundary nodes in the partition
-        idxBndNodes = cp.unique(cp.concatenate([ilnd.flatten(), iond.flatten()]))
+        # idxBndNodes = cp.unique(cp.concatenate([ilnd.flatten(), iond.flatten()]))
+        idxBndNodes = cp.unique(iond.flatten())
         idxBndNodes = idxBndNodes[idxBndNodes >= 0]
         numPartBoundaryNodes.append((partNodes[idxBndNodes] == ipart).sum().get())
         print(f"Partition {ipart} has {numPartBoundaryNodes} boundary nodes")

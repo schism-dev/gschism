@@ -839,6 +839,7 @@ __inline__ __device__ double SideBoundary::getBoundaryArrayValueWeight(void) con
    } else if (n2_match) {
       return 0.0;
    }
+
    return 0.0;
 }
 
@@ -1257,18 +1258,21 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
    // Indices of the nodes that form the side
    const int n1 = side.n1->idx;
    const int n2 = side.n2->idx;
-
+   isLand = false;
+   
+if (n1 == 10) printf("nland = %d, nope = %d, ilnd[0] = %d, ilnd[1*nland] = %d, ilnd[2*nland] = %d, ilnd[3*nland] = %d\n", nland, nope, ilnd[0], ilnd[1*nland], ilnd[2*nland], ilnd[3*nland]);
    // Check if the side is on a land boundary
    for (int i = 0; i < nland; i++) {
       for (int j = 0; j < nlnd[i] - 1; j++) {
          // Consecutive nodes in the land boundary segment
-         const int b1 = ilnd[i*mnlnd + j];
-         const int b2 = ilnd[i*mnlnd + j + 1];
-        
+         const int b1 = ilnd[i + j*nland];
+         const int b2 = ilnd[i + (j + 1)*nland];
+
+         assert(b1 != -1 && b2 != -1);
 
          if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
+            
             isLand = true;
-printf("ilnd[%d] = %d, ilnd[%d] = %d, n1 = %d, n2 = %d\n", i*mnlnd + j, b1, i*mnlnd + j + 1, b2, n1, n2);             
             return i;
          }
       }
@@ -1278,8 +1282,10 @@ printf("ilnd[%d] = %d, ilnd[%d] = %d, n1 = %d, n2 = %d\n", i*mnlnd + j, b1, i*mn
    for (int i = 0; i < nope; i++) {
       for (int j = 0; j < nond[i] - 1; j++) {
          // Consecutive nodes in the open boundary segment
-         const int b1 = iond[i*mnond + j];
-         const int b2 = iond[i*mnond + j + 1];
+         const int b1 = iond[i + j*nope];
+         const int b2 = iond[i + (j + 1)*nope];
+
+         assert(b1 != -1 && b2 != -1);
 
          if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
             isLand = false;
@@ -1287,7 +1293,7 @@ printf("ilnd[%d] = %d, ilnd[%d] = %d, n1 = %d, n2 = %d\n", i*mnlnd + j, b1, i*mn
          }
       }
    }
-
+printf("side.idx = %d, n1 = %d, n2 = %d\n", side.idx, n1, n2);             
    return -1;
 }
 
@@ -1465,30 +1471,34 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    NodeBoundary *n2bnd = side.n2->nodeBnd;
 
    if (n1bnd != nullptr && n2bnd != nullptr) 
-   // If both nodes are on the boundary, then the side may be on the boundary
+   // If both nodes are on the boundary, then the side may be on the boundary (Notice that there are cases where the side is not on the boundary, but both nodes are on the boundary)
    {
       bool isLand = false;
       int isbs = findSideBoundaryType(side, iond, nond, ilnd, nlnd, isLand);
-
-      assert(isLand || isbs>=0);
-      const int idxSideBoundary = atomicAdd(sharedIdxSideBoundary, 1) + 1;
-
-      side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
-      if   (isLand) side.sideBnd->segment = &landBoundarySegment;
-      else          side.sideBnd->segment = &(localSegmentMem[isbs]);
-
-      assert (isLand == side.sideBnd->segment->isLand);
-
-      // Links each node boundary to the side boundary using the first available side boundary pointer
-      if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
-      else                            n1bnd->sideBnd2 = side.sideBnd;
-
-      if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
-      else                            n2bnd->sideBnd2 = side.sideBnd;
       
-      side.sideBnd->side = &side;
+      if (isbs > -1) {
+         // assert(isLand || isbs>=0);
+         const int idxSideBoundary = atomicAdd(sharedIdxSideBoundary, 1) + 1;
 
-      
+         side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+         if   (isLand) side.sideBnd->segment = &landBoundarySegment;
+         else          side.sideBnd->segment = &(localSegmentMem[isbs]);
+
+         assert (isLand == side.sideBnd->segment->isLand);
+
+         // Links each node boundary to the side boundary using the first available side boundary pointer
+         if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
+         else                            n1bnd->sideBnd2 = side.sideBnd;
+
+         if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
+         else                            n2bnd->sideBnd2 = side.sideBnd;
+         
+         side.sideBnd->side = &side;
+
+      }
+      else {
+         side.sideBnd = nullptr;
+      }
    }
    else 
    {
@@ -1659,6 +1669,7 @@ __device__ void Mesh::populateBoundaryNodes(int *nond,
                                             double *umo, double *ufa, 
                                             double *vmo, double *vfa) {
 
+   printf("mesh->nbp = %d, idx = %d\n", mesh->nbp, threadIdx.x + blockIdx.x * blockDim.x);                                             
    NODE_BND(nodeBnd);
    const int idx = idx_node_bnd;                                             
 
@@ -3036,11 +3047,12 @@ extern "C" {
       const Side *side = sideBnd->side;
  
       const bool isDry = side->isDry;
+      const bool isLand = sideBnd->segment->isLand;
 
    
       for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] = {0.0, 0.0};
 
-      if (isDry) return;
+      if (isDry || isLand) return;
 
       // For wet sides in open boundaries...
       const Vector2 n = side->n;
@@ -3060,7 +3072,7 @@ extern "C" {
 
          const double unth0 = segment->qthcon*ramp/segment->carea;
          
-         for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] += unth0*n;  // This case has no ramp-up
+         // for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] += unth0*n;  // This case has no ramp-up
          
       } else if (ifltype == -1) { // Flather 1
 
@@ -3070,7 +3082,7 @@ extern "C" {
             const double uth = sideBnd->nuth(k);
             assert(uth >= -98.0 && uth <=  98.0 && "computeFlowBcVelocities: wrong velocity b.c. at side");
 
-            sideBnd->ubc[k] += uth*n;
+            // sideBnd->ubc[k] += uth*n;
          }
 
       } else if (ifltype == 3 || ifltype == 5) {
@@ -3086,8 +3098,12 @@ extern "C" {
             const int ncyc = int(amig[jfr]*time/(2.0*pi));
             const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
             const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
-            r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
+            r_u1_bar += {1.0, 1.0}; //ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
+            if (sideBnd->side->idx == 159434) {
+               printf("idx = %d, n1 = %d, n2 = %d, r_u1_bar = %f, %f, ufa = %f, %f, umo = %f, %f, arg = %f, %f, ncyc = %d, face[jfr] = %f\n", sideBnd->side->idx, sideBnd->side->n1->idx, sideBnd->side->n2->idx, r_u1_bar.x, r_u1_bar.y, sideBnd->ufa(0).x, sideBnd->ufa(0).y, sideBnd->umo(0).x, sideBnd->umo(0).y, argx, argy, ncyc, face[jfr]);
+            }
          }
+
 
          for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] += r_u1_bar;
 
@@ -6665,8 +6681,8 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::uth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).x:0.0;
    else if (varCode == (int)VarCode::vth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
    else if (varCode == (int)VarCode::ifltype && k == -1) var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->ifltype:0.0;
-   // else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?(double)(side->sideBnd->segment->isLand):7.7;
-   else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd != nullptr ? (double)((unsigned long long)(side->sideBnd->segment) & 0xFFFFFFFF) : 7.7;
+   else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?(double)(side->sideBnd->segment->isLand):7.7;
+   // else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd != nullptr ? (double)((unsigned long long)(side->sideBnd->segment) & 0xFFFFFFFF) : 7.7;
    else if (varCode == (int)VarCode::hhat && k == -1)    var[idx] = side->hhat;
    else if (varCode == (int)VarCode::gradEta1x   && k == -1)    var[idx] = side->gradEta1.x;
    else if (varCode == (int)VarCode::gradEta1y   && k == -1)    var[idx] = side->gradEta1.y;
@@ -6687,8 +6703,8 @@ extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
    // k is the vertical level index of the variable to get
    SIDE_BND(sideBnd);   
 
-   int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-7;
-   if (sideBnd->segment->isLand) idx = -1;
+   int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-1;
+   if (sideBnd->segment->isLand) idx = -7;
 
    if      (varCode == (int)VarCode::idx     && k == -1)   var[idx_side_bnd] = idx;
    else if (varCode == (int)VarCode::ifltype && k == -1)   var[idx_side_bnd] = (sideBnd->segment!=nullptr)?sideBnd->segment->ifltype:-1.1;
