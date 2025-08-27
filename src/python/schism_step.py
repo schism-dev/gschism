@@ -6,7 +6,7 @@ import debug.monitor as monitor
 # from cupy import cudaMemcpyFromSymbol
 
 
-def solveWaveEquation(maxIter=10000, tol=1e-16):
+def solveWaveEquation(maxIter=1000, tol=1e-12): # XXXX
     """
     Solve wave equation using Conjugate Gradient method.
     Assumes all arrays are already stored in Node as doubles.

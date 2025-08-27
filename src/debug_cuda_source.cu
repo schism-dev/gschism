@@ -1123,6 +1123,7 @@ struct Side {
 
 // This struct is used to store the boundary information for a node.
 struct NodeBoundary {   
+   int idx;
    BoundarySegment *segment;
    Node *node;
    
@@ -1492,7 +1493,7 @@ struct Mesh {
                      double *drag, double *roughness);   
                      
 
-   __device__ void populateBoundaryNodes(int *nond, 
+   __device__ void populateBoundaryNodes(int *nond, int *iond,
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa);                    
@@ -2507,7 +2508,14 @@ __inline__ __device__ Vector2 SideBoundary::ufa(int jfr) const {
    const NodeBoundary *n1Bnd = side->n1->nodeBnd;
    const NodeBoundary *n2Bnd = side->n2->nodeBnd;
 
+if (side->n1->idx == 52357 || side->n2->idx == 52357) 
+{ Vector2 res = w1*n1Bnd->ufa[jfr] + w2*n2Bnd->ufa[jfr]; // XXXX
+   // printf("ufa = %f, %f, ufa1.x = %f, ufa2.x = %f, w1 = %f, w2 = %f, n1 = %d, n2 = %d, jfr = %d\n", 
+   // res.x ,res.y, n1Bnd->ufa[jfr].x,  n2Bnd->ufa[jfr].x, w1, w2, side->n1->idx, side->n2->idx, jfr);    
+}
+
    return w1*n1Bnd->ufa[jfr] + w2*n2Bnd->ufa[jfr];
+
 }
 
 
@@ -2812,7 +2820,8 @@ __device__ __inline__ void Node::updateZCoordData(void) {
       
       // Compute bottom level index
       if (depth <= mesh->h_s) {
-            kb = nzlev - 1;
+            kb = izlev;
+
       } else {
          kb = -1;
          for (int i = 0; i < nzlev; i++) {
@@ -2839,7 +2848,8 @@ __device__ double Node::compZCoord(int k) const {
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
 
-  
+// if (htot2() <= h0) printf("idx = %d, htot2() = %f, h0 = %f\n", idx, htot2(), h0); XXX
+if (htot2() <= h0) return 0.0; // XXX
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
    if constexpr(ivcor == 2) {
@@ -2937,7 +2947,7 @@ if (n1 == 10) printf("nland = %d, nope = %d, ilnd[0] = %d, ilnd[1*nland] = %d, i
          }
       }
    }
-printf("side.idx = %d, n1 = %d, n2 = %d\n", side.idx, n1, n2);             
+// printf("side.idx = %d, n1 = %d, n2 = %d\n", side.idx, n1, n2);             
    return -1;
 }
 
@@ -3308,29 +3318,32 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
 
 }
 
-__device__ void Mesh::populateBoundaryNodes(int *nond, 
+__device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
                                             double *emo, double *efa, 
                                             double *umo, double *ufa, 
                                             double *vmo, double *vfa) {
 
-   printf("mesh->nbp = %d, idx = %d\n", mesh->nbp, threadIdx.x + blockIdx.x * blockDim.x);                                             
-   NODE_BND(nodeBnd);
-   const int idx = idx_node_bnd;                                             
 
-   // Need to compute the segment index and the index of the node on the segment
-   int sumNodes = 0;
-   int iseg;
+   NODE_BND(nodeBnd);
+   const int idx = idx_node_bnd;    
+
+   nodeBnd->idx = idx;
+
+   // Need to find the segment index and the index of the node on the segment
+   int idxNode = -1;
+   int iseg, i;
    for (iseg = 0; iseg < nope; iseg++) {
       // for each segment...
-      sumNodes += nond[iseg];
-      if (idx > sumNodes) break;
+      for (i = 0; i < nond[iseg]; i++) {
+         idxNode = iond[iseg + i*nope];
+         if (idxNode == nodeBnd->node->idx) goto found; // Cleanest way to exit the double loop
+         
+      }
    }
-   if (iseg == nope) iseg--;
-   assert(idx <= sumNodes && "idx is out of bounds");
-   sumNodes -= nond[iseg];
 
-   const int ind  = idx - sumNodes;
-if (idx > 1000) printf("iseg = %d of %d, ind = %d of %d, idx = %d, mesh->nbp = %d\n", iseg, nope, ind, nond[iseg], idx, mesh->nbp);
+   assert(iseg < nope && "iseg is out of bounds");
+
+found: // Jump here if the node is found
 
 
    nodeBnd->isEssentialBC = true;
@@ -3338,11 +3351,11 @@ if (idx > 1000) printf("iseg = %d of %d, ind = %d of %d, idx = %d, mesh->nbp = %
 
    for (int jfr = 0; jfr < nbfr; jfr++) {
 
-      const int idx = iseg*mnond*nbfr + ind*nbfr + jfr;
-      nodeBnd->efa[jfr] = efa[idx];
-      nodeBnd->emo[jfr] = emo[idx];
-      nodeBnd->umo[jfr] = {umo[idx], vmo[idx]};
-      nodeBnd->ufa[jfr] = {ufa[idx], vfa[idx]};
+      const int idx2 = iseg*mnond*nbfr + i + jfr*mnond; //XXXXX
+      nodeBnd->efa[jfr] = efa[idx2];
+      nodeBnd->emo[jfr] = emo[idx2];
+      nodeBnd->umo[jfr] = {umo[idx2], vmo[idx2]};
+      nodeBnd->ufa[jfr] = {ufa[idx2], vfa[idx2]};
 
    }
         
@@ -3969,10 +3982,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          // Gets each of the sides sharing the node. 
          SideBoundary *sideBnd = nodeBnd->sideBnd(l);
 
-printf("l = %d, sideBnd = %p\n", l, sideBnd);         
-
          // if (sideBnd == nullptr) continue; // Skip if no boundary side
-
          
 
          // XXXX CAN WE DO THIS MORE NATURALLY IN A SideBnd Loop?
@@ -4003,7 +4013,7 @@ printf("l = %d, sideBnd = %p\n", l, sideBnd);
 
                      Vn += 0.5*(side->zc[k+1] - side->zc[k])*(vn1 + vn2);
                   }
-printf("side->idx = %d, side->len = %f, Vn = %f\n",  side->idx, side->len, Vn);
+
                   ri3 = 0.5*side->len*Vn;
                }
 
@@ -4716,7 +4726,7 @@ extern "C" {
 
          const double unth0 = segment->qthcon*ramp/segment->carea;
          
-         // for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] += unth0*n;  // This case has no ramp-up
+         for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] += unth0*n;  // This case has no ramp-up
          
       } else if (ifltype == -1) { // Flather 1
 
@@ -4726,7 +4736,7 @@ extern "C" {
             const double uth = sideBnd->nuth(k);
             assert(uth >= -98.0 && uth <=  98.0 && "computeFlowBcVelocities: wrong velocity b.c. at side");
 
-            // sideBnd->ubc[k] += uth*n;
+            sideBnd->ubc[k] += uth*n;
          }
 
       } else if (ifltype == 3 || ifltype == 5) {
@@ -4742,10 +4752,7 @@ extern "C" {
             const int ncyc = int(amig[jfr]*time/(2.0*pi));
             const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
             const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
-            r_u1_bar += {1.0, 1.0}; //ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
-            if (sideBnd->side->idx == 159434) {
-               printf("idx = %d, n1 = %d, n2 = %d, r_u1_bar = %f, %f, ufa = %f, %f, umo = %f, %f, arg = %f, %f, ncyc = %d, face[jfr] = %f\n", sideBnd->side->idx, sideBnd->side->n1->idx, sideBnd->side->n2->idx, r_u1_bar.x, r_u1_bar.y, sideBnd->ufa(0).x, sideBnd->ufa(0).y, sideBnd->umo(0).x, sideBnd->umo(0).y, argx, argy, ncyc, face[jfr]);
-            }
+            r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
          }
 
 
@@ -7949,11 +7956,11 @@ extern "C" __global__ void populateElements(int *i34, int *elnode, int *elside,
 
 } 
 
-extern "C" __global__ void populateBoundaryNodes(int *nond, 
+extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
                                                 double *emo, double *efa, 
                                                 double *umo, double *ufa, 
                                                 double *vmo, double *vfa) {
-   mesh->populateBoundaryNodes(nond, emo, efa, umo, ufa, vmo, vfa);
+   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa);
 
 }
 

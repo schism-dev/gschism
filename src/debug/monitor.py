@@ -204,3 +204,40 @@ def plotSideVar(varname, level=-1):
     # plt.pause(0.0)
     
     return True
+
+def plotNodeVar(varname, level=-1):
+    global fig, ax
+    
+    # Create or clear the figure
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.clear()
+    
+    # Get node coordinates for plotting
+    x = getNodeVar("x")
+    y = getNodeVar("y")
+    
+    # Get the variable to plot
+    var = getNodeVar(varname, level)
+    
+    # Create scatter plot of nodes with colors based on the variable
+    scatter = plt.scatter(x, y, c=var, cmap='viridis', s=50, 
+                         edgecolors='none',  # Remove black edges
+                         vmin=-0.01, vmax=0.01) 
+    
+    # Add colorbar
+    plt.colorbar(scatter, label=varname)
+    
+    # # Optional: Plot node connections if needed
+    # # If you want to show the mesh structure:
+    # n1 = getSideVar("n1").astype(int)
+    # n2 = getSideVar("n2").astype(int)
+    # segments = np.stack([np.column_stack([x[n1], y[n1]]), 
+    #                     np.column_stack([x[n2], y[n2]])], axis=1)
+    # lc = LineCollection(segments, colors='gray', alpha=0.2, linewidths=0.5)
+    # ax.add_collection(lc)
+    
+    ax.autoscale()
+    plt.title(f'Node Variable: {varname}')
+    plt.show(block=True)
+    
+    return True

@@ -615,7 +615,7 @@ if __name__ == "__main__":
                                 bctides.umo, bctides.ufa,
                                 bctides.vmo, bctides.vfa)
 
-            cufunc.populateBoundaryNodes(nond, 
+            cufunc.populateBoundaryNodes(nond, iond,
                                          bctides.emo, bctides.efa, 
                                          bctides.umo, bctides.ufa,
                                          bctides.vmo, bctides.vfa)                                

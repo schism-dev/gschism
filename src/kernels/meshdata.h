@@ -1025,6 +1025,7 @@ struct Side {
 
 // This struct is used to store the boundary information for a node.
 struct NodeBoundary {   
+   int idx;
    BoundarySegment *segment;
    Node *node;
    
@@ -1394,7 +1395,7 @@ struct Mesh {
                      double *drag, double *roughness);   
                      
 
-   __device__ void populateBoundaryNodes(int *nond, 
+   __device__ void populateBoundaryNodes(int *nond, int *iond,
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa);                    
