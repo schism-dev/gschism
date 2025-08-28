@@ -863,12 +863,6 @@ __inline__ __device__ Vector2 SideBoundary::ufa(int jfr) const {
    const NodeBoundary *n1Bnd = side->n1->nodeBnd;
    const NodeBoundary *n2Bnd = side->n2->nodeBnd;
 
-if (side->n1->idx == 52357 || side->n2->idx == 52357) 
-{ Vector2 res = w1*n1Bnd->ufa[jfr] + w2*n2Bnd->ufa[jfr]; // XXXX
-   // printf("ufa = %f, %f, ufa1.x = %f, ufa2.x = %f, w1 = %f, w2 = %f, n1 = %d, n2 = %d, jfr = %d\n", 
-   // res.x ,res.y, n1Bnd->ufa[jfr].x,  n2Bnd->ufa[jfr].x, w1, w2, side->n1->idx, side->n2->idx, jfr);    
-}
-
    return w1*n1Bnd->ufa[jfr] + w2*n2Bnd->ufa[jfr];
 
 }
@@ -1169,7 +1163,10 @@ __device__ void Node::updateKb(void) {
 __device__ __inline__ void Node::updateZCoordData(void) {
 // XXX: To be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
-   if (isDry2()) return;
+   if (isDry2()) {
+      kb = -1;
+      return;
+   }
 
    if constexpr(ivcor == 2) {  // SZ coordinates
       
@@ -1203,8 +1200,9 @@ __device__ double Node::compZCoord(int k) const {
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
 
+   if (isDry2()) return 0.0;
 // if (htot2() <= h0) printf("idx = %d, htot2() = %f, h0 = %f\n", idx, htot2(), h0); XXX
-if (htot2() <= h0) return 0.0; // XXX
+// if (htot2() <= h0) return 0.0; // XXX
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
    if constexpr(ivcor == 2) {
@@ -1698,8 +1696,7 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
 
    assert(iseg < nope && "iseg is out of bounds");
 
-found: // Jump here if the node is found
-
+found: // Jumped here when the node was found
 
    nodeBnd->isEssentialBC = true;
    nodeBnd->elbc = 0.0;
@@ -3274,7 +3271,7 @@ extern "C" {
                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
                   // Subtract contribution to RHS
-                  // node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
+                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
                }
          }
@@ -4450,7 +4447,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
       const Node *n3 = elem->nodes[2];  
       const Node *n4 = elem->nodes[3]; // nullptr for triangles
 
-   //    if(elem->isDry2()) {
+   //    if(elem->isDry2()) { // XXXX
    //        write(errmsg,*)'level0: Element-node inconsistency (0):',ielg(i),idry_e2(i), &
    //   &iplg(elnode(1:i34(i),i)),idry2(elnode(1:i34(i),i)),idry(elnode(1:i34(i),i))
    //        call parallel_abort(errmsg)
@@ -6401,30 +6398,29 @@ __global__ void computeMatrixProductAndDotProducts() {
    // NODE(node);   
    const int idx_node = threadIdx.x + blockIdx.x * blockDim.x; 
    Node *node = &(mesh->localNodeData[idx_node]); 
-   if (idx_node < mesh->np) {
+      if (idx_node < mesh->np) {
 
+      const double diag = node->coeffDiag;
+      const double r    = node->mR;
+      const double p    = node->mP;  
 
-   const double diag = node->coeffDiag;
-   const double r    = node->mR;
-   const double p    = node->mP;  
+      // apply preconditioner on the fly:
+      // const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
 
-   // apply preconditioner on the fly:
-   // const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
+      // 4) compute Ap = A.p
+      double Ap = node->coeffDiag * node->mP;
+      for (int j = 0; j < node->numNodes; ++j) {
+         const Node *nbNode = node->nodes[j];
+         Ap += node->coeffMatrix[j] * nbNode->mP;
 
-   // 4) compute Ap = A.p
-   double Ap = node->coeffDiag * node->mP;
-   for (int j = 0; j < node->numNodes; ++j) {
-      const Node *nbNode = node->nodes[j];
-      Ap += node->coeffMatrix[j] * nbNode->mP;
+      }
 
-   }
+      node->mAp = Ap;
+      
 
-   node->mAp = Ap;
-    
-
-   // 5) dot-products individual products (r'Mr, p'Ap) (REDUCTION)
-   // const double l_rMr = r*Mr;  // r'Mr
-   l_pAp = p*Ap;  // p'Ap
+      // 5) dot-products individual products (r'Mr, p'Ap) (REDUCTION)
+      // const double l_rMr = r*Mr;  // r'Mr
+      l_pAp = p*Ap;  // p'Ap
 
 
    }
@@ -6642,7 +6638,8 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::htot && k == -1)   var[idx] = node->htot2();
    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
    else if (varCode == (int)VarCode::elbc && k == -1)   var[idx] = node->nodeBnd!=nullptr?node->nodeBnd->elbc:0.0;
-   else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;   
+   else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;  
+   else if (varCode == (int)VarCode::isdry && k == -1)  var[idx] = node->isDry?1.0:0.0;
    else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
    else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
    else if (varCode == (int)VarCode::v && k >= 0)       var[idx] = node->u2[k].y;
@@ -6667,6 +6664,7 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    if      (varCode == (int)VarCode::z && k >= 0)        var[idx] = side->zc[k];
    else if (varCode == (int)VarCode::x && k == -1)       var[idx] = side->center.x;
    else if (varCode == (int)VarCode::y && k == -1)       var[idx] = side->center.y;
+   else if (varCode == (int)VarCode::isdry && k == -1)   var[idx] = side->isDry?1.0:0.0;
    else if (varCode == (int)VarCode::nx && k == -1)      var[idx] = side->n.x;
    else if (varCode == (int)VarCode::ny && k == -1)      var[idx] = side->n.y;
    else if (varCode == (int)VarCode::u && k >= 0)        var[idx] = side->u2[k].x;

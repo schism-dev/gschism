@@ -93,7 +93,7 @@ constexpr double dt = 120;  // Time step  XXX
 
 constexpr double h0 = 0.0001;  // Minimum water depth [m]
 
-enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, U=6, V=7, nx=8, ny=9, hhat=10, ghatx=11, ghaty=12, ssign=13, btu=14, btv=15, bccx=16, bccy=17, uth=18, vth=19, ubc=20, vbc=21, island=22, ifltype=23, elbc=24, eta=25, area=26, qel=27, depth=28, radius=29, xlon=30, ylat=31, kb=32, n1=33, n2=34, htot=35, gradEta1x=36, gradEta1y=37, gradEta2x=38, gradEta2y=39, gradETPx=40, gradETPy=41, gradPrx=42, gradPry=43, idx=44}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, y=1, z=2, u=3, v=4, w=5, U=6, V=7, nx=8, ny=9, hhat=10, ghatx=11, ghaty=12, ssign=13, btu=14, btv=15, bccx=16, bccy=17, uth=18, vth=19, ubc=20, vbc=21, island=22, ifltype=23, elbc=24, isdry=25, eta=26, area=27, qel=28, depth=29, radius=30, xlon=31, ylat=32, kb=33, n1=34, n2=35, htot=36, gradEta1x=37, gradEta1y=38, gradEta2x=39, gradEta2y=40, gradETPx=41, gradETPy=42, gradPrx=43, gradPry=44, idx=45}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -2508,12 +2508,6 @@ __inline__ __device__ Vector2 SideBoundary::ufa(int jfr) const {
    const NodeBoundary *n1Bnd = side->n1->nodeBnd;
    const NodeBoundary *n2Bnd = side->n2->nodeBnd;
 
-if (side->n1->idx == 52357 || side->n2->idx == 52357) 
-{ Vector2 res = w1*n1Bnd->ufa[jfr] + w2*n2Bnd->ufa[jfr]; // XXXX
-   // printf("ufa = %f, %f, ufa1.x = %f, ufa2.x = %f, w1 = %f, w2 = %f, n1 = %d, n2 = %d, jfr = %d\n", 
-   // res.x ,res.y, n1Bnd->ufa[jfr].x,  n2Bnd->ufa[jfr].x, w1, w2, side->n1->idx, side->n2->idx, jfr);    
-}
-
    return w1*n1Bnd->ufa[jfr] + w2*n2Bnd->ufa[jfr];
 
 }
@@ -2814,7 +2808,10 @@ __device__ void Node::updateKb(void) {
 __device__ __inline__ void Node::updateZCoordData(void) {
 // XXX: To be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
-   if (isDry2()) return;
+   if (isDry2()) {
+      kb = -1;
+      return;
+   }
 
    if constexpr(ivcor == 2) {  // SZ coordinates
       
@@ -2848,8 +2845,9 @@ __device__ double Node::compZCoord(int k) const {
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
 
+   if (isDry2()) return 0.0;
 // if (htot2() <= h0) printf("idx = %d, htot2() = %f, h0 = %f\n", idx, htot2(), h0); XXX
-if (htot2() <= h0) return 0.0; // XXX
+// if (htot2() <= h0) return 0.0; // XXX
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
    if constexpr(ivcor == 2) {
@@ -3343,8 +3341,7 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
 
    assert(iseg < nope && "iseg is out of bounds");
 
-found: // Jump here if the node is found
-
+found: // Jumped here when the node was found
 
    nodeBnd->isEssentialBC = true;
    nodeBnd->elbc = 0.0;
@@ -4919,7 +4916,7 @@ extern "C" {
                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
                   // Subtract contribution to RHS
-                  // node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
+                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
                }
          }
@@ -6095,7 +6092,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
       const Node *n3 = elem->nodes[2];  
       const Node *n4 = elem->nodes[3]; // nullptr for triangles
 
-   //    if(elem->isDry2()) {
+   //    if(elem->isDry2()) { // XXXX
    //        write(errmsg,*)'level0: Element-node inconsistency (0):',ielg(i),idry_e2(i), &
    //   &iplg(elnode(1:i34(i),i)),idry2(elnode(1:i34(i),i)),idry(elnode(1:i34(i),i))
    //        call parallel_abort(errmsg)
@@ -8046,30 +8043,29 @@ __global__ void computeMatrixProductAndDotProducts() {
    // NODE(node);   
    const int idx_node = threadIdx.x + blockIdx.x * blockDim.x; 
    Node *node = &(mesh->localNodeData[idx_node]); 
-   if (idx_node < mesh->np) {
+      if (idx_node < mesh->np) {
 
+      const double diag = node->coeffDiag;
+      const double r    = node->mR;
+      const double p    = node->mP;  
 
-   const double diag = node->coeffDiag;
-   const double r    = node->mR;
-   const double p    = node->mP;  
+      // apply preconditioner on the fly:
+      // const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
 
-   // apply preconditioner on the fly:
-   // const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
+      // 4) compute Ap = A.p
+      double Ap = node->coeffDiag * node->mP;
+      for (int j = 0; j < node->numNodes; ++j) {
+         const Node *nbNode = node->nodes[j];
+         Ap += node->coeffMatrix[j] * nbNode->mP;
 
-   // 4) compute Ap = A.p
-   double Ap = node->coeffDiag * node->mP;
-   for (int j = 0; j < node->numNodes; ++j) {
-      const Node *nbNode = node->nodes[j];
-      Ap += node->coeffMatrix[j] * nbNode->mP;
+      }
 
-   }
+      node->mAp = Ap;
+      
 
-   node->mAp = Ap;
-    
-
-   // 5) dot-products individual products (r'Mr, p'Ap) (REDUCTION)
-   // const double l_rMr = r*Mr;  // r'Mr
-   l_pAp = p*Ap;  // p'Ap
+      // 5) dot-products individual products (r'Mr, p'Ap) (REDUCTION)
+      // const double l_rMr = r*Mr;  // r'Mr
+      l_pAp = p*Ap;  // p'Ap
 
 
    }
@@ -8287,7 +8283,8 @@ extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::htot && k == -1)   var[idx] = node->htot2();
    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
    else if (varCode == (int)VarCode::elbc && k == -1)   var[idx] = node->nodeBnd!=nullptr?node->nodeBnd->elbc:0.0;
-   else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;   
+   else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;  
+   else if (varCode == (int)VarCode::isdry && k == -1)  var[idx] = node->isDry?1.0:0.0;
    else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
    else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
    else if (varCode == (int)VarCode::v && k >= 0)       var[idx] = node->u2[k].y;
@@ -8312,6 +8309,7 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    if      (varCode == (int)VarCode::z && k >= 0)        var[idx] = side->zc[k];
    else if (varCode == (int)VarCode::x && k == -1)       var[idx] = side->center.x;
    else if (varCode == (int)VarCode::y && k == -1)       var[idx] = side->center.y;
+   else if (varCode == (int)VarCode::isdry && k == -1)   var[idx] = side->isDry?1.0:0.0;
    else if (varCode == (int)VarCode::nx && k == -1)      var[idx] = side->n.x;
    else if (varCode == (int)VarCode::ny && k == -1)      var[idx] = side->n.y;
    else if (varCode == (int)VarCode::u && k >= 0)        var[idx] = side->u2[k].x;

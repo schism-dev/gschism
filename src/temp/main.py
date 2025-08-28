@@ -6,6 +6,7 @@ from setuptools.command.build_ext import build_ext
 import sys
 import cupy as cp
 import debug.monitor as monitor
+import time
 
 # For profiling
 from line_profiler import LineProfiler
@@ -631,14 +632,22 @@ if __name__ == "__main__":
     schism_step_wrapped = profiler(schism_step)
 
     eta = np.zeros([numNodes, ntime], dtype=cp.float64)
+    start_time = time.time()
     for t in range(0, ntime, 1):
-        print(f">>>>>>>>>>>>>Step {t}")
+        print(f"> Step {t}, simulation time: {t*namelist.core.dt:.2f} s")
         # schism_step_wrapped(t, namelist, bctides, sflux, eta)
-        # profiler.print_stats()
+
         schism_step(t, namelist, bctides, sflux, eta)
+
+        print(' SUM = ', np.abs(monitor.getNodeVar('eta')).sum())
         pass
 
-        
+    end_time = time.time()
+    total_time = end_time - start_time
+    print(f"\nTotal execution time: {total_time:.3f} s")
+    print(f"Average time per step: {(total_time/ntime):.3f} s")
+
+    profiler.print_stats()    
     pass
 
 

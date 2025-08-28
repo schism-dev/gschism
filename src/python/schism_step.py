@@ -6,7 +6,7 @@ import debug.monitor as monitor
 # from cupy import cudaMemcpyFromSymbol
 
 
-def solveWaveEquation(maxIter=1000, tol=1e-12): # XXXX
+def solveWaveEquation(maxIter=1000, tol=1e-12): 
     """
     Solve wave equation using Conjugate Gradient method.
     Assumes all arrays are already stored in Node as doubles.
@@ -20,7 +20,7 @@ def solveWaveEquation(maxIter=1000, tol=1e-12): # XXXX
     if cp.cuda.runtime.getDeviceCount() > 1:
         raise ValueError("This function is not YET parallelized for multiple GPUs. Reductions need to be extended to all devices.")
     
-    # cufunc.printMatrix()
+
 
     scalars = cp.zeros(3, dtype=cp.float64) # rMr_old, rMr_new, pAp
     cufunc.initializeScalars(scalars)
@@ -294,7 +294,7 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
 
 
     #  Solve the wave equation
-    solveWaveEquation()
+    solveWaveEquation(maxIter = opt.mxitn0, tol = opt.rtol0)
 
 
     cufunc.updateElevation()

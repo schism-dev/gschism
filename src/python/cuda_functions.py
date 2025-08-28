@@ -81,7 +81,7 @@ def initializeCudaKernelManager(_project_root):
         # Create the module with preprocessing
         mod, combined_source = cuda_manager.create_module(
             source_file, 
-            options=("-std=c++20", '-diag-suppress=64,1055')
+            options=("-std=c++20", '-diag-suppress=64,1055', '-D_FORCE_INLINES')
         )
 
         # Optionally save the combined source for debugging

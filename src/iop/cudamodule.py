@@ -35,6 +35,7 @@ import cupy as cp
 import sys
 
 import iop.cudaKernelWrapper as ckw
+from python.schism_consts import DEBUG
 
 # ANSI color codes for terminal output
 class Colors:
@@ -154,14 +155,15 @@ class CudaSourceManager:
             if options is None:
                 options = ("-std=c++17",)
 
-            debug_options = (
-                    "-std=c++20",
-                    # "-lineinfo",
-                    # "--ptxas-options=-v",  # Show resource usage
-                    # "--device-debug"  # Enable device debug information
+            if DEBUG:
+                options = (
+                        "-std=c++20",
+                        # "-lineinfo",
+                        # "--ptxas-options=-v",  # Show resource usage
+                        # "--device-debug"  # Enable device debug information
 
-                )
-            mod = cp.RawModule(code=processed_source, options=debug_options)
+                    )   
+            mod = cp.RawModule(code=processed_source, options = options)
             
             # Return a wrapped module that handles function lookup errors
             return self.WrappedCudaModule(mod, processed_source, self), processed_source
