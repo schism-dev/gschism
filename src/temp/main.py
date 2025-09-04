@@ -7,6 +7,7 @@ import sys
 import cupy as cp
 import debug.monitor as monitor
 import time
+from iop.writeOutput import writeOutput, initializeOutput
 
 # For profiling
 from line_profiler import LineProfiler
@@ -424,7 +425,7 @@ if __name__ == "__main__":
         print(f"Partition {ipart} has {numPartBoundarySides} boundary sides")
 
 
-    monitor.init(numNodes, numElements, numSides, numPartBoundarySides) # XXX not valid for multiGPU
+    monitor.init(numNodes, numElements, numSides, numPartBoundarySides, nvrt) # XXX not valid for multiGPU
        
     nodesMemList = []
     elemsMemList = []
@@ -621,25 +622,28 @@ if __name__ == "__main__":
                                          bctides.umo, bctides.ufa,
                                          bctides.vmo, bctides.vfa)                                
 
-            # # test((1,), (1,), (-2.21334,  0.76058, -1.0))
-            # cufunc.test(12.0,  1.0, -1.0)
+
 
 
 
     ntime, nrec = schism_init(namelist.core, namelist.opt)
+
+    initializeOutput(r'c:\Users\jmgonzalez\src\temp', numNodes, numElements, numSides, nvrt, nodesSize, elemsSize, sidesSize)
+
 
     profiler = LineProfiler() 
     schism_step_wrapped = profiler(schism_step)
 
     eta = np.zeros([numNodes, ntime], dtype=cp.float64)
     start_time = time.time()
-    for t in range(0, ntime, 1):
-        print(f"> Step {t}, simulation time: {t*namelist.core.dt:.2f} s")
+    for it in range(1, ntime + 1, 1):
+        print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
         # schism_step_wrapped(t, namelist, bctides, sflux, eta)
 
-        schism_step(t, namelist, bctides, sflux, eta)
+        schism_step(it, namelist, bctides, sflux, eta)
 
-        print(' SUM = ', np.abs(monitor.getNodeVar('eta')).sum())
+        writeOutput(it, namelist.core)
+        # print(f'done solver; etatot={np.abs(monitor.getNodeVar("eta")).sum():.2f}; average |eta|={np.abs(monitor.getNodeVar("eta")).mean():.2f}')
         pass
 
     end_time = time.time()

@@ -130,8 +130,8 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
 
     # Add var codes for getElementVar, getNodeVar...
     # Create enum string with integer values
-    var_codes_list = varCodes.split(',')
-    enum_str = ', '.join([f"{code}={i}" for i, code in enumerate(var_codes_list)])
+
+    enum_str = ', '.join([f"{code}={i}" for i, code in enumerate(varInfoDict.keys())])
     output = output.replace("__VARCODES__", enum_str)
     
     # Write output file

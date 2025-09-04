@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 import matplotlib
+from python.schism_consts import varInfoDict
 
 matplotlib.use('TkAgg') 
 
@@ -18,40 +19,242 @@ debugPlotIdx[0] = 0
 fig = None
 ax  = None
 
-# Create dictionary mapping variable names to indices
-varCodeDict = {var: idx for idx, var in enumerate(varCodes.split(','))}
 
 numNodes = 0
 numElements = 0
 numSides = 0
+numSideBnds = 0
+nvrt = 0
 
-def init(nNodes, nElements, nSides, nSideBnds):
-    global numNodes, numElements, numSides, numSideBnds
+def init(nNodes, nElements, nSides, nSideBnds, numVrt):
+    global numNodes, numElements, numSides, numSideBnds, nvrt
     numNodes = nNodes
     numElements = nElements
     numSides = nSides
     numSideBnds = nSideBnds
+    nvrt = numVrt
 
-def getElementVar(varname, k = -1, j = -1):
-    varCode = varCodeDict[varname]
+
+
+def getElementVar(varName, k = -1):
+    varInfo = varInfoDict[varName]
+    varCode = list(varInfoDict.keys()).index(varName)
+    varType = varInfo['type']
+    is3D = varInfo['is3D']
+
+    # if is3D and k == -1:
+    #     raise ValueError("k must be provided for 3D variables")
+
+    if not is3D and k != -1:
+        raise ValueError("k cannot be provided for 2D variables")
+
+
+    offset      = cp.zeros(1, dtype=cp.uint64)   
+    addr        = cp.zeros(1, dtype=cp.uint64)
+    sizeElement = cp.zeros(1, dtype=cp.uint64)
+    sizeType    = cp.zeros(1, dtype=cp.uint64)
+    cufunc.getElementVarAddr(varCode, addr, offset, sizeElement, sizeType)
+    sizeElement = sizeElement.item()
+
+    if offset.get() != -1:
+        # If offset is not -1, then the variable is directly mapped in memory
+
+        if varType == 'double':
+            if is3D:
+                shape = (nvrt, numElements)
+                strides = (8, sizeElement)  # 8 bytes for double, then stride for next element
+            else:
+                shape = (numElements,)
+                strides = (sizeElement,)
+            dtype = cp.float64
+        elif varType == 'Vector2':
+            if is3D:
+                shape = (2, nvrt, numElements)
+                strides = (8, 8*nvrt, sizeElement)  # 8 bytes for double, then 8*nvrt for next level, then stride for next element
+            else:
+                shape = (2, numElements)
+                strides = (8, sizeElement)
+            dtype = cp.float64
+        elif varType == 'int' or varType == 'bool':
+            if is3D:
+                shape = (nvrt, numElements)
+                strides = (4, sizeElement)  # 4 bytes for int, then stride for next element
+            else:
+                shape = (numElements,)
+                strides = (sizeElement,)
+            dtype = cp.int32
+        elif varType == 'FaceIndices':
+            shape = (4, numElements)
+            strides = (8, sizeElement,) # 8 bytes for the pointer
+            dtype = cp.uint64
+        elif varType == 'pointer':
+            shape = (numElements,)
+            strides = (sizeElement,)
+            dtype = cp.uint64
+        else:
+            raise ValueError(f"Invalid variable type: {varType}")
+            
+        view = cp.ndarray(shape=shape, dtype=dtype, strides=strides, order='F',
+                          memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(addr.item() + offset.item(), 0, owner=None), 0)) 
+
+        return view
+
+    
+
+    # var = cp.zeros(numElements, dtype=cp.float64)
+    # cufunc.getElementVar(varCode, var, k, j)
+    # return var.get()    
+    raise ValueError(f"Variable {varName} is not mapped in memory")
+
+
+def getSideVar(varName, k = -1):
+    varInfo = varInfoDict[varName]
+    varCode = list(varInfoDict.keys()).index(varName)
+    varType = varInfo['type']
+    is3D = varInfo['is3D']
+
+    # if is3D and k == -1:
+    #     raise ValueError("k must be provided for 3D variables")
+
+    if not is3D and k != -1:
+        raise ValueError("k cannot be provided for 2D variables")
+
+
+    offset      = cp.zeros(1, dtype=cp.uint64)   
+    addr        = cp.zeros(1, dtype=cp.uint64)
+    sizeSide    = cp.zeros(1, dtype=cp.uint64)
+    sizeType    = cp.zeros(1, dtype=cp.uint64)
+    cufunc.getSideVarAddr(varCode, addr, offset, sizeSide, sizeType)
+    sizeSide = sizeSide.item()
+
+    if offset.get() != -1:
+        # If offset is not -1, then the variable is directly mapped in memory
+
+        if varType == 'double':
+            if is3D:
+                shape = (nvrt, numSides)
+                strides = (8, sizeSide)  # 8 bytes for double, then stride for next element
+            else:
+                shape = (numSides,)
+                strides = (sizeSide,)
+            dtype = cp.float64
+        elif varType == 'Vector2':
+            if is3D:
+                shape = (2, nvrt, numSides)
+                strides = (8, 8*nvrt, sizeSide)  # 8 bytes for double, then 8*nvrt for next level, then stride for next element
+            else:
+                shape = (2, numSides)
+                strides = (8, sizeSide)
+            dtype = cp.float64
+        elif varType == 'int' or varType == 'bool':
+            if is3D:
+                shape = (nvrt, numSides)
+                strides = (4, sizeSide)  # 4 bytes for int, then stride for next element
+            else:
+                shape = (numSides,)
+                strides = (sizeSide,)
+            dtype = cp.int32
+        elif varType == 'pointer':
+            if is3D:
+                shape = (nvrt, numSides)
+                strides = (4, sizeSide)  # 4 bytes for int, then stride for next element
+            else:
+                shape = (numSides,)
+                strides = (sizeSide,)
+            dtype = cp.uint64            
+        else:
+            raise ValueError(f"Invalid variable type: {varType}")
+            
+        view = cp.ndarray(shape=shape, dtype=dtype, strides=strides, order='F',
+                          memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(addr.item() + offset.item(), 0, owner=None), 0)) 
+
+        return view
+
+    
+
+    # var = cp.zeros(numElements, dtype=cp.float64)
+    # cufunc.getElementVar(varCode, var, k, j)
+    # return var.get()    
+    raise ValueError(f"Variable {varName} is not mapped in memory")
+
+def getNodeVar(varName, k = -1):
+    varInfo = varInfoDict[varName]
+    varCode = list(varInfoDict.keys()).index(varName)
+    varType = varInfo['type']
+    is3D = varInfo['is3D']
+
+    # if is3D and k == -1:
+    #     raise ValueError("k must be provided for 3D variables")
+
+    if not is3D and k != -1:
+        raise ValueError("k cannot be provided for 2D variables")
+
+
+    offset      = cp.zeros(1, dtype=cp.uint64)   
+    addr        = cp.zeros(1, dtype=cp.uint64)
+    sizeNode    = cp.zeros(1, dtype=cp.uint64)
+    sizeType    = cp.zeros(1, dtype=cp.uint64)
+    cufunc.getNodeVarAddr(varCode, addr, offset, sizeNode, sizeType)
+    sizeNode = sizeNode.item()
+
+    if offset.get() != cp.uint32(cp.int32(-1)):
+        # If offset is not -1, then the variable is directly mapped in memory
+
+        if varType == 'double':
+            if is3D:
+                shape = (nvrt, numNodes)
+                strides = (8, sizeNode)  # 8 bytes for double, then stride for next element
+            else:
+                shape = (numNodes,)
+                strides = (sizeNode,)
+            dtype = cp.float64
+        elif varType == 'Vector2':
+            if is3D:
+                shape = (2, nvrt, numNodes)
+                strides = (8, 8*nvrt, sizeNode)  # 8 bytes for double, then 8*nvrt for next level, then stride for next element
+            else:
+                shape = (2, numNodes)
+                strides = (8, sizeNode)
+            dtype = cp.float64
+        elif varType == 'int' or varType == 'bool':
+            if is3D:
+                shape = (nvrt, numNodes)
+                strides = (4, sizeNode)  # 4 bytes for int, then stride for next element
+            else:
+                shape = (numNodes,)
+                strides = (sizeNode,)
+            dtype = cp.int32
+        else:
+            raise ValueError(f"Invalid variable type: {varType}")
+            
+        view = cp.ndarray(shape=shape, dtype=dtype, strides=strides, order='F',
+                          memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(addr.item() + offset.item(), 0, owner=None), 0)) 
+
+        return view
+
+  
+    raise ValueError(f"Variable {varName} is not mapped in memory")
+
+def getElementVarX(varname, k = -1, j = -1):
+    varInfo = varInfoDict[varname]
     var = cp.zeros(numElements, dtype=cp.float64)
     cufunc.getElementVar(varCode, var, k, j)
     return var.get()
 
-def getNodeVar(varname, k = -1):
-    varCode = varCodeDict[varname]
+def getNodeVarX(varname, k = -1):
+    varInfo = varInfoDict[varname]
     var = cp.zeros(numNodes, dtype=cp.float64)
     cufunc.getNodeVar(varCode, var, k)
     return var.get()
 
-def getSideVar(varname, k = -1):
-    varCode = varCodeDict[varname]
+def getSideVarX(varname, k = -1):
+    varInfo = varInfoDict[varname]
     var = cp.zeros(numSides, dtype=cp.float64)
     cufunc.getSideVar(varCode, var, k)
     return var.get()
 
 def getSideBndVar(varname, k = -1):
-    varCode = varCodeDict[varname]
+    varInfo = varInfoDict[varname]
     var = cp.zeros(numSideBnds, dtype=cp.float64)
     cufunc.getSideBndVar(varCode, var, k)
     return var.get()    

@@ -176,7 +176,7 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
 
     dt = core.dt
 
-    time = (it + 1)*dt
+    time = it*dt
 
     # Broadcast to global module (XXX I think this is not needed)
     # time_stamp=time; it_main=it
@@ -365,8 +365,7 @@ def schism_step(it: int, namelist, bctides, sflux, eta):
     # Optional calculations
 
 
-    # I/O
-    writeOutput.writeOutput(it)   
+    
 
 
 

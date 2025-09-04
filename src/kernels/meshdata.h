@@ -1090,7 +1090,7 @@ struct Node {
 
    int numSides;       // Number of sides that are connected to this node
 
-   Point3 p;
+   Point2 p;
    Vector2 u2[nvrt];
    double  w2[nvrt];
    Vector2 utmp[nvrt];  // Temporary array to store velocities
@@ -1175,8 +1175,8 @@ struct Node {
       u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
    }
 
-   __device__ Point2 p2(void) const { return {p.x, p.y}; }
-   __device__ Point3 p3(int k) const { return {p.x, p.y, z[k]}; }
+
+   __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }
 
    __device__ double sigmaTransitionDepth(void) const;
 

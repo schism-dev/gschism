@@ -63,6 +63,9 @@ getElementVar = None
 getNodeVar = None
 getSideVar = None
 getSideBndVar = None
+getElementVarAddr = None
+getSideVarAddr = None
+getNodeVarAddr = None
 
 test = None
 
@@ -120,6 +123,7 @@ def initializeCudaFunctions(sizes):
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
     global getElementVar, getNodeVar, getSideVar, getSideBndVar
+    global getElementVarAddr, getSideVarAddr, getNodeVarAddr
 
     # Get kernel functions with better error handling
     try:
@@ -172,12 +176,16 @@ def initializeCudaFunctions(sizes):
         setVelocityOpenBndNodes             = mod.get_function('setVelocityOpenBndNodes',             sizes, kernel_type='sideBnd')
         computeVerticalVelocity             = mod.get_function('computeVerticalVelocity',             sizes, kernel_type='elements')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
+
         printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='global')
         returnMatrix                        = mod.get_function('returnMatrix',                        sizes, kernel_type='global')
         getElementVar                       = mod.get_function('getElementVar',                       sizes, kernel_type='elements')
         getNodeVar                          = mod.get_function('getNodeVar',                          sizes, kernel_type='nodes')   
         getSideVar                          = mod.get_function('getSideVar',                          sizes, kernel_type='sides')   
         getSideBndVar                       = mod.get_function('getSideBndVar',                       sizes, kernel_type='sideBnd')
+        getElementVarAddr                   = mod.get_function('getElementVarAddr',                   sizes, kernel_type='global')
+        getSideVarAddr                      = mod.get_function('getSideVarAddr',                      sizes, kernel_type='global')
+        getNodeVarAddr                      = mod.get_function('getNodeVarAddr',                      sizes, kernel_type='global')
 
         test = mod.get_function('test', sizes, kernel_type='global')
     except Exception as e:
