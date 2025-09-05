@@ -114,6 +114,16 @@ def writeOutput(it, core):
         nSCHISM_hgrid_edge_nodes_var[:, 1] = n2_cpu
         del n1_cpu, n2_cpu
 
+
+        view = monitor.getNodeVar("depth")
+        depth_cpu = view.get()
+        depth_var = data.variables['depth']
+        depth_var[:] = depth_cpu
+        del depth_cpu
+
+        min_depth_var = data.variables['minimum_depth']
+        min_depth_var[:] = 0.0001
+
         
 
 
@@ -150,7 +160,9 @@ def writeOutput(it, core):
 
 
 
-
+    # if it >100:
+    #     data.close()
+    #     exit()
 
 
 
