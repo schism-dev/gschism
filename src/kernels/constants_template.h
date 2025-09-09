@@ -1,3 +1,5 @@
+constexpr double deg2rad = 3.14159265358979323846/180.0;
+
 constexpr int BLOCK_SIZE = __BLOCK_SIZE__;
 
 constexpr int N_TRACERS = __N_TRACERS__;
@@ -20,7 +22,7 @@ constexpr double shapiro0 = __SHAPIRO0__;    // Shapiro filter parameter
 constexpr int niter_shap = __NITER_SHAP__;   // Number of iterations for Shapiro filter
 constexpr int ncor = __NCOR__;               // Option to include Coriolis force
 constexpr double coricoef = __CORICOEF__;    // Coriolis force coefficient
-constexpr double sfea0 = __SFEA0__;          // Reference latitude for Coriolis force
+constexpr double sfea0 = __SFEA0__*deg2rad; // Reference latitude for Coriolis force
 
 
 constexpr int nchi = __NCHI__;  // Option to compute drag coefficients chi and chi2

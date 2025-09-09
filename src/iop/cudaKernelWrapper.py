@@ -29,13 +29,20 @@ class CudaKernelWrapper:
     def __call__(self, *args, async_launch=False, **kwargs):
         """Execute the kernel on all devices"""
 
-        # Launch on all devices
-        for device_id in range(self.n_gpus):
-            with cp.cuda.Device(device_id):
-                num_blocks = (self.num_items + self.threads_per_block - 1) // self.threads_per_block
-                self.kernel_func((num_blocks,), (self.threads_per_block,), args)
-                if not async_launch:
-                    cp.cuda.Stream.null.synchronize()
+        if self.n_gpus == 1:
+            # Launch on one device only
+            num_blocks = (self.num_items + self.threads_per_block - 1) // self.threads_per_block
+            self.kernel_func((num_blocks,), (self.threads_per_block,), args)
+            if not async_launch:
+                cp.cuda.Stream.null.synchronize()
+        else:
+            # Launch on all devices
+            for device_id in range(self.n_gpus):
+                with cp.cuda.Device(device_id):
+                    num_blocks = (self.num_items + self.threads_per_block - 1) // self.threads_per_block
+                    self.kernel_func((num_blocks,), (self.threads_per_block,), args)
+                    if not async_launch:
+                        cp.cuda.Stream.null.synchronize()
 
     def async_(self, *args, **kwargs):
         """Async version of the kernel execution"""

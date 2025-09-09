@@ -210,7 +210,7 @@ def getNodeVar(varName, k = -1):
             dtype = cp.float64
         elif varType == 'Vector2':
             if is3D:
-                shape = (2, nvrt, numNodes)
+                shape = (2, nvrt, numNodes)  # XXXXX  check 2*nvrt
                 strides = (8, 8*nvrt, sizeNode)  # 8 bytes for double, then 8*nvrt for next level, then stride for next element
             else:
                 shape = (2, numNodes)

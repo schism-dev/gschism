@@ -133,6 +133,7 @@ class CudaSourceManager:
         
         return result
     
+    
     def create_module(self, main_file, options=None):
         """
         Create a CuPy RawModule from a main source file with preprocessing.
@@ -173,6 +174,7 @@ class CudaSourceManager:
             self.process_error_message(error_msg, processed_source)
             raise
     
+
     class WrappedCudaModule:
         """Wrapper for CuPy RawModule that provides better error handling."""
         

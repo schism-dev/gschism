@@ -1,4 +1,6 @@
 // BEGIN INCLUDE: constants.h
+constexpr double deg2rad = 3.14159265358979323846/180.0;
+
 constexpr int BLOCK_SIZE = 256;
 
 constexpr int N_TRACERS = 2;
@@ -21,7 +23,7 @@ constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
 constexpr int ncor = 1;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 24;          // Reference latitude for Coriolis force
+constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
 
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
@@ -3009,6 +3011,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.p.y   = node_coords[i * 3 + 1];
    node.depth = node_coords[i * 3 + 2];
 
+   node.lon = node_coords_ll[i * 2    ]*deg2rad;
+   node.lat = node_coords_ll[i * 2 + 1]*deg2rad;
+
    node.numSides = 0;
 
    node.Cd = drag[i];
@@ -3210,12 +3215,15 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
    else {
       const double sphi = side.lat();  // Latitude at the center of the side
 
+
       if constexpr(ics == 1) {
+         // XXXXXXX
          side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
       }
       else {
          side.coriolis = 2.0*omega_e*sin(sphi);
       }
+
    }
 }
 
@@ -5230,7 +5238,6 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
          for (int k = 0; k < nvrt; k++) side->u2[k] = {ux, uy};
 
-
       }
       else { // 3D
 
@@ -5243,9 +5250,6 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
          // k+1 and k.
 
 
-   
-
-
          const int ndim = nvrt - kb;
          const double zTopCanopy = side->zTopCanopy();
 
@@ -5256,8 +5260,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
             // Vertical viscosity at the face center
             const double dfz = 1e-2; //0.5*(side->dfv(k) + side->dfv(k + 1)); XXXXX
-           
-
+ 
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
             bdia[kin] = 0.0;
@@ -5341,9 +5344,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
                bdia[kin] += dt*side->chi2; // XXXX
 
-
             } // if (k > kb + 1)
-
 
 
          } // for (int k
@@ -7083,8 +7084,6 @@ __global__ void checkMassConservation(Tracers* sumtr) {
       }
    }
 
-   
-
    //  This function returns per element sums. A reduction must be done on the host side.
 }
 
@@ -7674,7 +7673,7 @@ __global__ void computeMatrixProductAndDotProducts() {
       node->mAp = Ap;
       
 
-      // 5) dot-products individual products (r'Mr, p'Ap) (REDUCTION)
+      // 5) dot-products individual products (r'Mr, p'Ap) (Will be reduced later)
       // const double l_rMr = r*Mr;  // r'Mr
       l_pAp = p*Ap;  // p'Ap
 

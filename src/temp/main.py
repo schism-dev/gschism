@@ -46,7 +46,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__f
 from iop.cudamodule import CudaSourceManager
 from iop.processConstantsHeader import processConstants
 from python.schism_init import readNamelist, schism_init
-from python.schism_step import schism_step
+from python.schism_step import schism_step, solveWaveEquation
 from python.schism_consts import *
 import python.cuda_functions as cufunc
 
@@ -633,12 +633,13 @@ if __name__ == "__main__":
 
     profiler = LineProfiler() 
     schism_step_wrapped = profiler(schism_step)
+    profiler.add_function(solveWaveEquation)
 
     eta = np.zeros([numNodes, ntime], dtype=cp.float64)
     start_time = time.time()
     for it in range(1, ntime + 1, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
-        # schism_step_wrapped(t, namelist, bctides, sflux, eta)
+        # schism_step_wrapped(it, namelist, bctides, sflux, eta)
 
         schism_step(it, namelist, bctides, sflux, eta)
 
