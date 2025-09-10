@@ -1318,16 +1318,16 @@ printf("SSSS dummy = %s\n", dummy.c_str());
         sigma[nsiglev - 1] = 0.0; //surface
         
         std::getline(file, dummy);  // Skip "S levels" comment
-        // std::getline(file, dummy); 
-        
+        std::getline(file, dummy);  // XXXXXX WHY SOMETIMES WE NEED TO SKIP THIS LINE?
+printf("dummy = %s\n", dummy.c_str());        
 
         // Read sigma level parameters
         file >> h_c >> theta_b >> theta_f >> dummy;
 
         std::getline(file, dummy); 
-printf("h_c = %f, theta_b = %f, theta_f = %f, h_s = %f\n", h_c, theta_b, theta_f, h_s);        
+printf("h_c = %f, theta_b = %f, theta_f = %f, h_s = %f, dummy = %s\n", h_c, theta_b, theta_f, h_s, dummy.c_str());        
         if (h_c<5.0 || h_c>=h_s) {
-            throw std::runtime_error("h_c needs to be larger to avoid 2nd type abnormaty: " + std::to_string(h_c));
+            throw std::runtime_error("h_c needs to be larger to avoid 2nd type abnormality: " + std::to_string(h_c));
         }
         if (theta_b<0.0 || theta_b>1.0) {
             throw std::runtime_error("Wrong theta_b: " + std::to_string(theta_b));

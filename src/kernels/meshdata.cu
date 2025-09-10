@@ -1317,7 +1317,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    NODE(pnode);  
    const int i = idx_node;
    Node &node(*pnode);
-
+   printf("isbnd = %p\n", isbnd);
+   printf("isbnd[i] = %d\n", isbnd[i]);
    node.idx = i;
 
    const int idxNodeStart = nodeNeighNodesStart[i];
@@ -1364,8 +1365,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.p.y   = node_coords[i * 3 + 1];
    node.depth = node_coords[i * 3 + 2];
 
+   if (use_ll) {
    node.lon = node_coords_ll[i * 2    ]*deg2rad;
    node.lat = node_coords_ll[i * 2 + 1]*deg2rad;
+   }
+
 
    node.numSides = 0;
 
@@ -1374,6 +1378,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
 
+   
    // Links the node to the boundary information
    if (isbnd[i] >= 0) {
 
@@ -1568,7 +1573,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
    else {
       const double sphi = side.lat();  // Latitude at the center of the side
 
-
+// XXXXXX ERROR WHEN use_ll is false??????
       if constexpr(ics == 1) {
          // XXXXXXX
          side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
@@ -1596,7 +1601,7 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
    ELEM(pelem);
    Element &elem(*pelem);
    const int i = idx_elem;
-   
+
    elem.idx = i;
 
    for (int j = 0; j < i34[i]; j++) {
@@ -1623,6 +1628,10 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
    Vector2 center = {0.0, 0.0};
    elem.depth = 0.0;
    for (int j = 0; j < i34[i]; j++) {
+
+XXX printf("WWW i = %d, node = %p, elem.i34 = %d\n", i, elem.nodes[j], elem.i34);    
+
+return;     
       center += elem.nodes[j]->p/i34[i];
       elem.depth  += elem.nodes[j]->depth/i34[i];
    }
@@ -1738,8 +1747,8 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
    // XXXXXX THIS function does almost nothing. 
 
-   nbs = *sharedIdxSideBoundary;
-   nbp = *sharedIdxNodeBoundary;
+   nbs = *sharedIdxSideBoundary + 1;
+   nbp = *sharedIdxNodeBoundary + 1;
 
 
 }
@@ -6069,7 +6078,8 @@ __global__ void updateSolutionAndDotProducts(void) {
 
    
    // Compute alpha
-   const double alpha = (*rMr_old)/(*pAp);
+   const double alpha = (*rMr_old)/(*pAp); 
+
 
    assert(*pAp != 0.0 && "updateSolutionAndDotProducts: pAp = 0.0");
 

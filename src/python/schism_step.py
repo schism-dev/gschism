@@ -2,6 +2,7 @@ import python.cuda_functions as cufunc
 import iop.readSflux as readSflux
 import iop.writeOutput as writeOutput
 import cupy as cp
+import numpy as np
 import debug.monitor as monitor
 # from cupy import cudaMemcpyFromSymbol
 
@@ -19,7 +20,6 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
     # Checks that there's only one GPU device, otherwise it will fail
     if cp.cuda.runtime.getDeviceCount() > 1:
         raise ValueError("This function is not YET parallelized for multiple GPUs. Reductions need to be extended to all devices.")
-    
 
 
     scalars = cp.zeros(3, dtype=cp.float64) # rMr_old, rMr_new, pAp
@@ -54,13 +54,13 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
         # Sync to make sure rr reduction is finished
         cp.cuda.Device().synchronize()
 
-        # fetch rr_new = <r, r> from the device
+        # fetch rr_new and rr_old = <r, r> from the device
         rMr_new = scalars[1].item()
         rMr_old = scalars[0].item()
 
         if rMr_new <= tol*tol * rMr_0:
             break
-        if (cp.isnan(rMr_new)):
+        if (np.isnan(rMr_new)):
             raise ValueError("rMr_new is NaN")
         # update p ← z + beta*p on GPU
         cufunc.updateSearchDirection()

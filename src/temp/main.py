@@ -57,7 +57,8 @@ import python.cuda_functions as cufunc
 # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
-in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
+# in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
+in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN01c'
 
 
 # import src.io.readSflux as readSflux
@@ -638,6 +639,7 @@ if __name__ == "__main__":
     eta = np.zeros([numNodes, ntime], dtype=cp.float64)
     start_time = time.time()
     for it in range(1, ntime + 1, 1):
+    # for it in range(1, 25, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
         # schism_step_wrapped(it, namelist, bctides, sflux, eta)
 
