@@ -7968,6 +7968,10 @@ extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset,
          *offset = (int)((char*)&nodes[0].p.x - (char*)nodes);
          *sizeType = sizeof(Vector2);
          break;
+      case (int)VarCode::z:
+         *offset = (int)((char*)&nodes[0].z[0] - (char*)nodes);
+         *sizeType = sizeof(double);
+         break;
       case (int)VarCode::kb:
          *offset = (int)((char*)&nodes[0].kb - (char*)nodes);
          *sizeType = sizeof(int);

@@ -235,6 +235,8 @@ def getNodeVar(varName, k = -1):
   
     raise ValueError(f"Variable {varName} is not mapped in memory")
 
+
+# XXXX REMOVE THESE FUNCTIONS and the corresponding ones in the kernels
 def getElementVarX(varname, k = -1, j = -1):
     varInfo = varInfoDict[varname]
     var = cp.zeros(numElements, dtype=cp.float64)

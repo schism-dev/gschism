@@ -7968,147 +7968,151 @@
  7968:          *offset = (int)((char*)&nodes[0].p.x - (char*)nodes);
  7969:          *sizeType = sizeof(Vector2);
  7970:          break;
- 7971:       case (int)VarCode::kb:
- 7972:          *offset = (int)((char*)&nodes[0].kb - (char*)nodes);
- 7973:          *sizeType = sizeof(int);
+ 7971:       case (int)VarCode::z:
+ 7972:          *offset = (int)((char*)&nodes[0].z[0] - (char*)nodes);
+ 7973:          *sizeType = sizeof(double);
  7974:          break;
- 7975:       case (int)VarCode::isdry:
- 7976:          *offset = (int)((char*)&nodes[0].isDry - (char*)nodes);
+ 7975:       case (int)VarCode::kb:
+ 7976:          *offset = (int)((char*)&nodes[0].kb - (char*)nodes);
  7977:          *sizeType = sizeof(int);
- 7978:          break;         
- 7979:       case (int)VarCode::w:
- 7980:          *offset = (int)((char*)&nodes[0].w2 - (char*)nodes);
- 7981:          *sizeType = sizeof(double);
- 7982:          break;
- 7983:       case (int)VarCode::u:
- 7984:          *offset = (int)((char*)&nodes[0].u2[0].x - (char*)nodes);
- 7985:          *sizeType = sizeof(Vector2);
- 7986:          break;         
- 7987:       default:
- 7988:          *offset = -1;    
- 7989:    }  
- 7990:    
- 7991: }
- 7992: 
- 7993: extern "C" __global__ void getElementVar(int varCode, bool is3D, double *var1, double *var2, int *ivar1, int *ivar2, int k = -1, int j = -1) {
- 7994:    // Get the value of a variable from an element
- 7995:    // varName is the name of the variable to get
- 7996:    // var is the array to store the value
- 7997:    // k is the vertical level index of the variable to get
- 7998: 
- 7999:    ELEM(elem);
- 8000:    
- 8001:    int idx = elem->idx;
- 8002:    int i = threadIdx.x + blockIdx.x * blockDim.x;
- 8003: 
- 8004:    // printf("getElementVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
- 8005:    if      (varCode == (int)VarCode::w)       { var1[idx] = elem->w[k];}
- 8006:    else if (varCode == (int)VarCode::z)       { var1[idx] = elem->z[k];}
- 8007:    else if (varCode == (int)VarCode::x)       { var1[idx] = elem->center.x; var2[idx] = elem->center.x;}
- 8008:    else if (varCode == (int)VarCode::area)    { var1[idx] = elem->area;}
- 8009:    else if (varCode == (int)VarCode::depth)   { var1[idx] = elem->depth;}
- 8010:    else if (varCode == (int)VarCode::radius)  { var1[idx] = elem->radius;}
- 8011:    else if (varCode == (int)VarCode::lonlat)  { var1[idx] = elem->xlon;     var2[idx] = elem->ylat;}
- 8012:    else if (varCode == (int)VarCode::ghat)    { var1[idx] = elem->ghat1.x;  var2[idx] = elem->ghat1.y;}
- 8013:    else if (varCode == (int)VarCode::kb)      { ivar1[idx] = elem->kb;}
- 8014:    else if (varCode == (int)VarCode::ssign && j > -1)  {ivar1[idx] = elem->ssign[j];}
- 8015:    else if (i==0) printf("getElementVar: varCode = %d, k = %d not found\n", varCode, k);
- 8016:       
- 8017:    
- 8018: }
- 8019: 
- 8020: 
- 8021: extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
- 8022:    // Get the value of a variable from an node
- 8023:    // varName is the name of the variable to get
- 8024:    // var is the array to store the value
- 8025:    // k is the vertical level index of the variable to get
- 8026: 
- 8027:    NODE(node);
- 8028:    
- 8029:    int idx = node->idx;
- 8030:    int i = threadIdx.x + blockIdx.x * blockDim.x;
- 8031: 
- 8032:    // printf("getNodeVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
- 8033:    
- 8034:    if      (varCode == (int)VarCode::z && k >= 0)       var[idx] = node->z[k];
- 8035:    else if (varCode == (int)VarCode::x && k == -1)      var[idx] = node->p.x;
- 8036:    else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = node->depth;
- 8037:    else if (varCode == (int)VarCode::htot && k == -1)   var[idx] = node->htot2();
- 8038:    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
- 8039:    else if (varCode == (int)VarCode::elbc && k == -1)   var[idx] = node->nodeBnd!=nullptr?node->nodeBnd->elbc:0.0;
- 8040:    else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;  
- 8041:    else if (varCode == (int)VarCode::isdry && k == -1)  var[idx] = node->isDry?1.0:0.0;
- 8042:    else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
- 8043:    else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
- 8044:    else if (varCode == (int)VarCode::w && k >= 0)       var[idx] = node->w2[k];
- 8045:    
- 8046:    else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
- 8047:       
- 8048:    
- 8049: }
- 8050: 
- 8051: 
- 8052: extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
- 8053:    // Get the value of a variable from an side
- 8054:    // varName is the name of the variable to get
- 8055:    // var is the array to store the value
- 8056:    // k is the vertical level index of the variable to get
- 8057:    SIDE(side);
- 8058:    
- 8059:    int idx = side->idx;
- 8060:    int i = threadIdx.x + blockIdx.x * blockDim.x;
- 8061: 
- 8062:    if      (varCode == (int)VarCode::z && k >= 0)        var[idx] = side->zc[k];
- 8063:    else if (varCode == (int)VarCode::x && k == -1)       var[idx] = side->center.x;
- 8064:    // else if (varCode == (int)VarCode::y && k == -1)       var[idx] = side->center.y;
- 8065:    else if (varCode == (int)VarCode::isdry && k == -1)   var[idx] = side->isDry?1.0:0.0;
- 8066:    else if (varCode == (int)VarCode::nx && k == -1)      var[idx] = side->n.x;
- 8067:    else if (varCode == (int)VarCode::ny && k == -1)      var[idx] = side->n.y;
- 8068:    else if (varCode == (int)VarCode::u && k >= 0)        var[idx] = side->u2[k].x;
- 8069:    // else if (varCode == (int)VarCode::v && k >= 0)        var[idx] = side->u2[k].y;
- 8070:    else if (varCode == (int)VarCode::U && k == -1)       var[idx] = side->U.x;
- 8071:    // else if (varCode == (int)VarCode::V && k == -1)       var[idx] = side->U.y;   
- 8072:    else if (varCode == (int)VarCode::depth && k == -1)   var[idx] = side->depth();
- 8073:    else if (varCode == (int)VarCode::kb && k == -1)      var[idx] = (double)(side->kb);
- 8074:    else if (varCode == (int)VarCode::n1 && k == -1)      var[idx] = side->n1->idx;
- 8075:    else if (varCode == (int)VarCode::n2 && k == -1)      var[idx] = side->n2->idx;
- 8076:    else if (varCode == (int)VarCode::eta && k == -1)     var[idx] = side->eta2();
- 8077:    else if (varCode == (int)VarCode::btu && k >= 0)      var[idx] = side->btu[k].x;
- 8078:    // else if (varCode == (int)VarCode::btv && k >= 0)      var[idx] = side->btu[k].y;
- 8079:    else if (varCode == (int)VarCode::bcc && k >= 0)     var[idx] = side->bcc[k].x;
- 8080:    // else if (varCode == (int)VarCode::bccy && k >= 0)     var[idx] = side->bcc[k].y;
- 8081:    else if (varCode == (int)VarCode::ubc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].x:0.0;
- 8082:    // else if (varCode == (int)VarCode::vbc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].y:0.0;
- 8083:    else if (varCode == (int)VarCode::uth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).x:0.0;
- 8084:    // else if (varCode == (int)VarCode::vth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
- 8085:    else if (varCode == (int)VarCode::ifltype && k == -1) var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->ifltype:0.0;
- 8086:    else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?(double)(side->sideBnd->segment->isLand):7.7;
- 8087:    // else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd != nullptr ? (double)((unsigned long long)(side->sideBnd->segment) & 0xFFFFFFFF) : 7.7;
- 8088:    else if (varCode == (int)VarCode::hhat && k == -1)    var[idx] = side->hhat;
- 8089:    // else if (varCode == (int)VarCode::gradEta1x   && k == -1)    var[idx] = side->gradEta1.x;
- 8090:    // else if (varCode == (int)VarCode::gradEta1y   && k == -1)    var[idx] = side->gradEta1.y;
- 8091:    // else if (varCode == (int)VarCode::gradEta2x   && k == -1)    var[idx] = side->gradEta2.x;
- 8092:    // else if (varCode == (int)VarCode::gradEta2y   && k == -1)    var[idx] = side->gradEta2.y;
- 8093:    // else if (varCode == (int)VarCode::gradETPx   && k == -1)    var[idx] = side->gradETP.x;
- 8094:    // else if (varCode == (int)VarCode::gradETPy   && k == -1)    var[idx] = side->gradETP.y;
- 8095:    // else if (varCode == (int)VarCode::gradPrx   && k == -1)    var[idx] = side->gradPr.x;
- 8096:    // else if (varCode == (int)VarCode::gradPry   && k == -1)    var[idx] = side->gradPr.y;
- 8097:    else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
- 8098: }
- 8099: 
- 8100: 
- 8101: extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
- 8102:    // Get the value of a variable from an side
- 8103:    // varName is the name of the variable to get
- 8104:    // var is the array to store the value
- 8105:    // k is the vertical level index of the variable to get
- 8106:    SIDE_BND(sideBnd);   
- 8107: 
- 8108:    int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-1;
- 8109:    if (sideBnd->segment->isLand) idx = -7;
- 8110: 
- 8111:    if      (varCode == (int)VarCode::idx     && k == -1)   var[idx_side_bnd] = idx;
- 8112:    else if (varCode == (int)VarCode::ifltype && k == -1)   var[idx_side_bnd] = (sideBnd->segment!=nullptr)?sideBnd->segment->ifltype:-1.1;
- 8113: 
- 8114: }
+ 7978:          break;
+ 7979:       case (int)VarCode::isdry:
+ 7980:          *offset = (int)((char*)&nodes[0].isDry - (char*)nodes);
+ 7981:          *sizeType = sizeof(int);
+ 7982:          break;         
+ 7983:       case (int)VarCode::w:
+ 7984:          *offset = (int)((char*)&nodes[0].w2 - (char*)nodes);
+ 7985:          *sizeType = sizeof(double);
+ 7986:          break;
+ 7987:       case (int)VarCode::u:
+ 7988:          *offset = (int)((char*)&nodes[0].u2[0].x - (char*)nodes);
+ 7989:          *sizeType = sizeof(Vector2);
+ 7990:          break;         
+ 7991:       default:
+ 7992:          *offset = -1;    
+ 7993:    }  
+ 7994:    
+ 7995: }
+ 7996: 
+ 7997: extern "C" __global__ void getElementVar(int varCode, bool is3D, double *var1, double *var2, int *ivar1, int *ivar2, int k = -1, int j = -1) {
+ 7998:    // Get the value of a variable from an element
+ 7999:    // varName is the name of the variable to get
+ 8000:    // var is the array to store the value
+ 8001:    // k is the vertical level index of the variable to get
+ 8002: 
+ 8003:    ELEM(elem);
+ 8004:    
+ 8005:    int idx = elem->idx;
+ 8006:    int i = threadIdx.x + blockIdx.x * blockDim.x;
+ 8007: 
+ 8008:    // printf("getElementVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
+ 8009:    if      (varCode == (int)VarCode::w)       { var1[idx] = elem->w[k];}
+ 8010:    else if (varCode == (int)VarCode::z)       { var1[idx] = elem->z[k];}
+ 8011:    else if (varCode == (int)VarCode::x)       { var1[idx] = elem->center.x; var2[idx] = elem->center.x;}
+ 8012:    else if (varCode == (int)VarCode::area)    { var1[idx] = elem->area;}
+ 8013:    else if (varCode == (int)VarCode::depth)   { var1[idx] = elem->depth;}
+ 8014:    else if (varCode == (int)VarCode::radius)  { var1[idx] = elem->radius;}
+ 8015:    else if (varCode == (int)VarCode::lonlat)  { var1[idx] = elem->xlon;     var2[idx] = elem->ylat;}
+ 8016:    else if (varCode == (int)VarCode::ghat)    { var1[idx] = elem->ghat1.x;  var2[idx] = elem->ghat1.y;}
+ 8017:    else if (varCode == (int)VarCode::kb)      { ivar1[idx] = elem->kb;}
+ 8018:    else if (varCode == (int)VarCode::ssign && j > -1)  {ivar1[idx] = elem->ssign[j];}
+ 8019:    else if (i==0) printf("getElementVar: varCode = %d, k = %d not found\n", varCode, k);
+ 8020:       
+ 8021:    
+ 8022: }
+ 8023: 
+ 8024: 
+ 8025: extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
+ 8026:    // Get the value of a variable from an node
+ 8027:    // varName is the name of the variable to get
+ 8028:    // var is the array to store the value
+ 8029:    // k is the vertical level index of the variable to get
+ 8030: 
+ 8031:    NODE(node);
+ 8032:    
+ 8033:    int idx = node->idx;
+ 8034:    int i = threadIdx.x + blockIdx.x * blockDim.x;
+ 8035: 
+ 8036:    // printf("getNodeVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
+ 8037:    
+ 8038:    if      (varCode == (int)VarCode::z && k >= 0)       var[idx] = node->z[k];
+ 8039:    else if (varCode == (int)VarCode::x && k == -1)      var[idx] = node->p.x;
+ 8040:    else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = node->depth;
+ 8041:    else if (varCode == (int)VarCode::htot && k == -1)   var[idx] = node->htot2();
+ 8042:    else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
+ 8043:    else if (varCode == (int)VarCode::elbc && k == -1)   var[idx] = node->nodeBnd!=nullptr?node->nodeBnd->elbc:0.0;
+ 8044:    else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;  
+ 8045:    else if (varCode == (int)VarCode::isdry && k == -1)  var[idx] = node->isDry?1.0:0.0;
+ 8046:    else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
+ 8047:    else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
+ 8048:    else if (varCode == (int)VarCode::w && k >= 0)       var[idx] = node->w2[k];
+ 8049:    
+ 8050:    else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
+ 8051:       
+ 8052:    
+ 8053: }
+ 8054: 
+ 8055: 
+ 8056: extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
+ 8057:    // Get the value of a variable from an side
+ 8058:    // varName is the name of the variable to get
+ 8059:    // var is the array to store the value
+ 8060:    // k is the vertical level index of the variable to get
+ 8061:    SIDE(side);
+ 8062:    
+ 8063:    int idx = side->idx;
+ 8064:    int i = threadIdx.x + blockIdx.x * blockDim.x;
+ 8065: 
+ 8066:    if      (varCode == (int)VarCode::z && k >= 0)        var[idx] = side->zc[k];
+ 8067:    else if (varCode == (int)VarCode::x && k == -1)       var[idx] = side->center.x;
+ 8068:    // else if (varCode == (int)VarCode::y && k == -1)       var[idx] = side->center.y;
+ 8069:    else if (varCode == (int)VarCode::isdry && k == -1)   var[idx] = side->isDry?1.0:0.0;
+ 8070:    else if (varCode == (int)VarCode::nx && k == -1)      var[idx] = side->n.x;
+ 8071:    else if (varCode == (int)VarCode::ny && k == -1)      var[idx] = side->n.y;
+ 8072:    else if (varCode == (int)VarCode::u && k >= 0)        var[idx] = side->u2[k].x;
+ 8073:    // else if (varCode == (int)VarCode::v && k >= 0)        var[idx] = side->u2[k].y;
+ 8074:    else if (varCode == (int)VarCode::U && k == -1)       var[idx] = side->U.x;
+ 8075:    // else if (varCode == (int)VarCode::V && k == -1)       var[idx] = side->U.y;   
+ 8076:    else if (varCode == (int)VarCode::depth && k == -1)   var[idx] = side->depth();
+ 8077:    else if (varCode == (int)VarCode::kb && k == -1)      var[idx] = (double)(side->kb);
+ 8078:    else if (varCode == (int)VarCode::n1 && k == -1)      var[idx] = side->n1->idx;
+ 8079:    else if (varCode == (int)VarCode::n2 && k == -1)      var[idx] = side->n2->idx;
+ 8080:    else if (varCode == (int)VarCode::eta && k == -1)     var[idx] = side->eta2();
+ 8081:    else if (varCode == (int)VarCode::btu && k >= 0)      var[idx] = side->btu[k].x;
+ 8082:    // else if (varCode == (int)VarCode::btv && k >= 0)      var[idx] = side->btu[k].y;
+ 8083:    else if (varCode == (int)VarCode::bcc && k >= 0)     var[idx] = side->bcc[k].x;
+ 8084:    // else if (varCode == (int)VarCode::bccy && k >= 0)     var[idx] = side->bcc[k].y;
+ 8085:    else if (varCode == (int)VarCode::ubc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].x:0.0;
+ 8086:    // else if (varCode == (int)VarCode::vbc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].y:0.0;
+ 8087:    else if (varCode == (int)VarCode::uth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).x:0.0;
+ 8088:    // else if (varCode == (int)VarCode::vth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
+ 8089:    else if (varCode == (int)VarCode::ifltype && k == -1) var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->ifltype:0.0;
+ 8090:    else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?(double)(side->sideBnd->segment->isLand):7.7;
+ 8091:    // else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd != nullptr ? (double)((unsigned long long)(side->sideBnd->segment) & 0xFFFFFFFF) : 7.7;
+ 8092:    else if (varCode == (int)VarCode::hhat && k == -1)    var[idx] = side->hhat;
+ 8093:    // else if (varCode == (int)VarCode::gradEta1x   && k == -1)    var[idx] = side->gradEta1.x;
+ 8094:    // else if (varCode == (int)VarCode::gradEta1y   && k == -1)    var[idx] = side->gradEta1.y;
+ 8095:    // else if (varCode == (int)VarCode::gradEta2x   && k == -1)    var[idx] = side->gradEta2.x;
+ 8096:    // else if (varCode == (int)VarCode::gradEta2y   && k == -1)    var[idx] = side->gradEta2.y;
+ 8097:    // else if (varCode == (int)VarCode::gradETPx   && k == -1)    var[idx] = side->gradETP.x;
+ 8098:    // else if (varCode == (int)VarCode::gradETPy   && k == -1)    var[idx] = side->gradETP.y;
+ 8099:    // else if (varCode == (int)VarCode::gradPrx   && k == -1)    var[idx] = side->gradPr.x;
+ 8100:    // else if (varCode == (int)VarCode::gradPry   && k == -1)    var[idx] = side->gradPr.y;
+ 8101:    else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
+ 8102: }
+ 8103: 
+ 8104: 
+ 8105: extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
+ 8106:    // Get the value of a variable from an side
+ 8107:    // varName is the name of the variable to get
+ 8108:    // var is the array to store the value
+ 8109:    // k is the vertical level index of the variable to get
+ 8110:    SIDE_BND(sideBnd);   
+ 8111: 
+ 8112:    int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-1;
+ 8113:    if (sideBnd->segment->isLand) idx = -7;
+ 8114: 
+ 8115:    if      (varCode == (int)VarCode::idx     && k == -1)   var[idx_side_bnd] = idx;
+ 8116:    else if (varCode == (int)VarCode::ifltype && k == -1)   var[idx_side_bnd] = (sideBnd->segment!=nullptr)?sideBnd->segment->ifltype:-1.1;
+ 8117: 
+ 8118: }

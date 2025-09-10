@@ -1081,6 +1081,8 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
             double lon, lat, dummyZ;
             int dummyIdx;
             for (int i = 0; i < nNodes; i++) {
+                progressBar("Reading longitude and latitude", i, nNodes, ansi::GREEN, 20);
+
                 std::getline(file_ll, line);
                 std::istringstream iss(line);
                 iss >> dummyIdx >> lon >> lat >> dummyZ;
@@ -1093,6 +1095,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
 
         }
 
+        print("");
         printFormatted(ansi::green("Read longitude and latitude"));
 
     }
@@ -1151,12 +1154,15 @@ py::array_t<double> readHGridData(const std::string& filename, int nNodes, int n
     double dataVal, dummyX, dummyY;
     int dummyIdx;
     for (int i = 0; i < nNodes; i++) {
+        progressBar("Reading horizontal grid", i, nNodes, ansi::GREEN, 20);
+
         std::getline(file, line);
         std::istringstream iss(line);
         iss >> dummyIdx >> dummyX >> dummyY >> dataVal;
 
         data[i] = dataVal;
     }
+    print("");
     printFormatted(ansi::green("Read longitude and latitude"));
 
 
