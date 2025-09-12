@@ -2826,7 +2826,7 @@ extern "C" {
       if constexpr(ihorcon == 1) {
          for (int k = side->kb; k < nvrt - 1; k++) {
             // Computes the Laplacian by using the simplified formula presented in the paper:
-            // SELFE: A semi-implicit Eulerian–Lagrangian finite-element model for cross-scale ocean circulation
+            // SELFE: A semi-implicit Eulerian-Lagrangian finite-element model for cross-scale ocean circulation
             // By Zhang and Baptista.
 
             // sum(nu*(u_i - u_c))/area, where u_i is the velocity at the i-th surrounding side and u_c is the velocity at the side under consideration.
