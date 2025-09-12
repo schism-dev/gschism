@@ -1267,7 +1267,7 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
    const int n2 = side.n2->idx;
    isLand = false;
    
-if (n1 == 10) printf("nland = %d, nope = %d, ilnd[0] = %d, ilnd[1*nland] = %d, ilnd[2*nland] = %d, ilnd[3*nland] = %d\n", nland, nope, ilnd[0], ilnd[1*nland], ilnd[2*nland], ilnd[3*nland]);
+
    // Check if the side is on a land boundary
    for (int i = 0; i < nland; i++) {
       for (int j = 0; j < nlnd[i] - 1; j++) {
@@ -1318,7 +1318,6 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    const int i = idx_node;
    Node &node(*pnode);
 
-   printf("i = %d, isbnd[i] = %d\n", i, isbnd[i]);
    node.idx = i;
 
    const int idxNodeStart = nodeNeighNodesStart[i];
@@ -1495,7 +1494,7 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
          const int idxSideBoundary = atomicAdd(sharedIdxSideBoundary, 1) + 1;
 
          side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
-printf("i = %d, isbs = %d, idxSideBoundary = %d, side.sideBnd = %p\n", i, isbs, idxSideBoundary, side.sideBnd);               
+
          if   (isLand) side.sideBnd->segment = &landBoundarySegment;
          else          side.sideBnd->segment = &(localSegmentMem[isbs]);
 
@@ -1611,8 +1610,6 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       
       elem.nodes[j] = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
       elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
-printf("WWW i = %d, j = %d, node = %p, side = %p\n", i, j, elem.nodes[j], elem.sides[j]);      
-
 
       // Find the neighboring element  
       if (elem.sides[j]->elems[0] == &elem) {
