@@ -677,6 +677,7 @@ if __name__ == "__main__":
 
     eta = np.zeros([numNodes, ntime], dtype=cp.float64)
     start_time = time.time()
+    time1 = time.time()
     for it in range(1, ntime + 1, 1):
     # for it in range(1, 25, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
@@ -686,6 +687,10 @@ if __name__ == "__main__":
 
         writeOutput(it, namelist.core, namelist.opt)
         # print(f'done solver; etatot={np.abs(monitor.getNodeVar("eta")).sum():.2f}; average |eta|={np.abs(monitor.getNodeVar("eta")).mean():.2f}')
+
+        time2 = time.time()
+        print(f"Time per step: {time2 - time1:.3f} s")
+        time1 = time2
         pass
 
     end_time = time.time()
