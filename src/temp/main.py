@@ -685,7 +685,7 @@ if __name__ == "__main__":
 
         schism_step(it, namelist, bctides, sflux, eta)
 
-        writeOutput(it, namelist.core, namelist.opt)
+        # writeOutput(it, namelist.core, namelist.opt)
         # print(f'done solver; etatot={np.abs(monitor.getNodeVar("eta")).sum():.2f}; average |eta|={np.abs(monitor.getNodeVar("eta")).mean():.2f}')
 
         time2 = time.time()
