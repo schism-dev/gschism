@@ -7,7 +7,7 @@ from matplotlib.collections import LineCollection
 import matplotlib
 from python.schism_consts import varInfoDict
 
-matplotlib.use('TkAgg') 
+# matplotlib.use('TkAgg') 
 
 
 

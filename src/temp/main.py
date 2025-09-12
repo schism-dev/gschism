@@ -33,7 +33,7 @@ import numpy as np
 import timeit
 
 import matplotlib
-matplotlib.use('TkAgg') 
+# matplotlib.use('TkAgg') 
 from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
 
