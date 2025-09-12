@@ -678,12 +678,12 @@ if __name__ == "__main__":
     eta = np.zeros([numNodes, ntime], dtype=cp.float64)
     start_time = time.time()
     time1 = time.time()
-    for it in range(1, ntime + 1, 1):
-    # for it in range(1, 25, 1):
+    # for it in range(1, ntime + 1, 1):
+    for it in range(1, 225, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
-        # schism_step_wrapped(it, namelist, bctides, sflux, eta)
+        schism_step_wrapped(it, namelist, bctides, sflux, eta)
 
-        schism_step(it, namelist, bctides, sflux, eta)
+        # schism_step(it, namelist, bctides, sflux, eta)
 
         writeOutput(it, namelist.core, namelist.opt)
         # print(f'done solver; etatot={np.abs(monitor.getNodeVar("eta")).sum():.2f}; average |eta|={np.abs(monitor.getNodeVar("eta")).mean():.2f}')
