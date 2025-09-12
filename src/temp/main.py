@@ -12,7 +12,8 @@ from iop.writeOutput import writeOutput, initializeOutput
 # For profiling
 from line_profiler import LineProfiler
 
-
+VISTA = True
+WINDOWS = False
 
 # Enable verbose output
 os.environ['DISTUTILS_DEBUG'] = '1'
@@ -92,7 +93,7 @@ def compile_and_import(module_name, cpp_file):
         vcpkg_root = os.path.expanduser("~/apps/vcpkg")
 
 
-        if True:
+        if VISTA:
             METIS_PREFIX = os.environ.get("TACC_METIS_DIR")
             METIS_INC = os.path.join(METIS_PREFIX, "include")
             METIS_LIB = os.path.join(METIS_PREFIX, "lib")
