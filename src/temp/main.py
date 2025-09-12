@@ -154,7 +154,10 @@ def compile_and_import(module_name, cpp_file):
         class BuildExt(build_ext):
             def build_extensions(self):
                 for ext in self.extensions:
-                    ext.extra_compile_args = ["/std:c++17", "/Zi", "/Od", "/EHsc"]
+                    if WINDOWS:
+                        ext.extra_compile_args = ["/std:c++17", "/Zi", "/Od", "/EHsc"]
+                    else:
+                        ext.extra_compile_args = ["-std=c++17", "-O3", "-fPIC"]
                     #  ext.extra_compile_args = ["-std=c++17", "-g", "-O0", "-fno-omit-frame-pointer", "-march=native", "-DDEBUG"]
                 super().build_extensions()
 
