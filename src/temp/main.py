@@ -60,6 +60,7 @@ in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
 # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN01c'
+in_dir = r'/home1/10922/jmglez/tests/RUN02a'
 
 
 # import src.io.readSflux as readSflux
