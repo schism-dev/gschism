@@ -62,6 +62,9 @@ in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
 in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN01c'
 in_dir = r'/home1/10922/jmglez/tests/RUN02a'
 
+# out_dir = r'c:\Users\jmgonzalez\src\temp'
+out_dir = r'/home1/10922/jmglez/tests/RUN02a/gpuoutput'
+
 
 # import src.io.readSflux as readSflux
 from iop.readSflux import SFlux
@@ -665,7 +668,7 @@ if __name__ == "__main__":
 
     ntime, nrec = schism_init(namelist.core, namelist.opt)
 
-    initializeOutput(r'c:\Users\jmgonzalez\src\temp', numNodes, numElements, numSides, nvrt, nodesSize, elemsSize, sidesSize)
+    initializeOutput(out_dir, numNodes, numElements, numSides, nvrt, nodesSize, elemsSize, sidesSize)
 
 
     profiler = LineProfiler() 
