@@ -2568,11 +2568,11 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
    return grad;
 }
 
-__inline__ __device__ double  Side::grav3(void)   const { return 0.5*(n1->grav2 + n2->grav2); }
-__inline__ __device__ int     Side::iadv(void)    const { return min(n1->iadv, n2->iadv); }   
-__inline__ __device__ double  Side::eta2(void)    const { return 0.5*(n1->eta2 + n2->eta2); }
-__inline__ __device__ double  Side::eta1(void)    const { return 0.5*(n1->eta1 + n2->eta1); }
-__inline__ __device__ double  Side::depth(void)   const { return 0.5*(n1->depth + n2->depth); } 
+__inline__ __device__ double  Side::grav3(void)   const { return 0.5*(n1->grav2  + n2->grav2); }
+__inline__ __device__ int     Side::iadv(void)    const { return min(n1->iadv,     n2->iadv); }   
+__inline__ __device__ double  Side::eta2(void)    const { return 0.5*(n1->eta2   + n2->eta2); }
+__inline__ __device__ double  Side::eta1(void)    const { return 0.5*(n1->eta1   + n2->eta1); }
+__inline__ __device__ double  Side::depth(void)   const { return 0.5*(n1->depth  + n2->depth); } 
 __inline__ __device__ double  Side::dfv(int k)    const { return 0.5*(n1->dfv[k] + n2->dfv[k]); }
 
 __inline__ __device__ double  Side::veg_h(void)   const { return 0.5*(n1->veg_h  + n2->veg_h); }
@@ -2964,8 +2964,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    NODE(pnode);  
    const int i = idx_node;
    Node &node(*pnode);
-   printf("isbnd = %p\n", isbnd);
-   printf("isbnd[i] = %d\n", isbnd[i]);
+
+   printf("i = %d, isbnd[i] = %d\n", i, isbnd[i]);
    node.idx = i;
 
    const int idxNodeStart = nodeNeighNodesStart[i];
@@ -2981,7 +2981,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.numElements = idxElemEnd - idxElemStart;
    node.elements = nodeNeighElems + idxElemStart;
 
-   
+
    for (int idx = idxNodeStart; idx < idxNodeEnd; idx++) {
       const int idxNodeGlobal = nodeNeighNodesIndices[idx];
       const int partNode = localNodePart[idxNodeGlobal]; 
@@ -3072,7 +3072,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
       
    }
-
+   
    // XXXX GAUSSIAN HILL VELOCITIES
 #ifdef GAUSSIAN_HILL_VELOCITIES
       if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
@@ -3142,6 +3142,7 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
          const int idxSideBoundary = atomicAdd(sharedIdxSideBoundary, 1) + 1;
 
          side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
+printf("i = %d, isbs = %d, idxSideBoundary = %d, side.sideBnd = %p\n", i, isbs, idxSideBoundary, side.sideBnd);               
          if   (isLand) side.sideBnd->segment = &landBoundarySegment;
          else          side.sideBnd->segment = &(localSegmentMem[isbs]);
 
@@ -3206,7 +3207,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
 #endif
    // Compute the z level at the center of the side
    for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);
-
+   
    // Compute the length of the side
    const Vector2 vLen = side.n2->p - side.n1->p;
    side.len = sqrt(dot(vLen, vLen));
@@ -3257,6 +3258,7 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       
       elem.nodes[j] = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
       elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
+printf("WWW i = %d, j = %d, node = %p, side = %p\n", i, j, elem.nodes[j], elem.sides[j]);      
 
 
       // Find the neighboring element  
@@ -3275,14 +3277,10 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
    Vector2 center = {0.0, 0.0};
    elem.depth = 0.0;
    for (int j = 0; j < i34[i]; j++) {
-cudaPointerAttributes attr;
-cudaError_t err = cudaPointerGetAttributes(&attr, elem.nodes[j]);      
+
 // printf("WWW i = %d, node = %p, elem.i34 = %d\n", i, elem.nodes[j], elem.i34);    
-if (err != cudaSuccess) {
-   printf("elem.nodes[%d] points to invalid memory: %s\n", j, cudaGetErrorString(err));
-   return;
-}
-return;     
+
+
       center += elem.nodes[j]->p/i34[i];
       elem.depth  += elem.nodes[j]->depth/i34[i];
    }
@@ -5272,7 +5270,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz = 1e-2; //0.5*(side->dfv(k) + side->dfv(k + 1)); XXXXX
+            const double dfz = 0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX
  
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
@@ -5796,9 +5794,10 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
       // A side is wet if and only if at least one of its elements is wet.
       const bool isWet = !side->elems[0]->isDry || (side->isInternal() && !side->elems[1]->isDry);
-
+ 
       const Node *n1 = side->n1;
       const Node *n2 = side->n2;
+     
       const int kb1 = n1->kb;
       const int kb2 = n2->kb;
 

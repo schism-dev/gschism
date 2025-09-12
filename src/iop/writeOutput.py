@@ -33,7 +33,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
     sizeSide = sideSize
 
 
-def writeOutput(it, core):
+def writeOutput(it, core, opt):
     # Write the output files
     global dataC, dataU, dataV, dataZ, fileNum, sizeNode
 
@@ -56,7 +56,7 @@ def writeOutput(it, core):
         fileNum += 1
 
         ifile=(it-1)/ihfskip+1
-        dataC, dataU, dataV = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers)
+        dataC, dataU, dataV = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
 
 
     if dataC is None:
@@ -204,7 +204,7 @@ def closeOutputFiles():
     pass
 
 
-def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers):
+def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     """
     Create the NetCDF file "header", meaning the appropriate dimensions, variables, and attributes.
     The data variable is stored in the global variable data.
@@ -272,8 +272,11 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers):
         # Time variable
         time_var = data.createVariable('time', 'f8', ('time',))
         time_var.i23d = cp.int32(0)
-        time_var.base_date = " 2017 12  1       0.00       0.00"
-        time_var.units = "seconds since 2017-12-01T00:00:00+00"
+
+        
+        # Format the base_date string
+        time_var.base_date = f" {opt.start_year:4d} {opt.start_month:2d} {opt.start_day:2d} {opt.start_hour:8.2f} {opt.utc_start:8.2f}"
+        time_var.units = f"seconds since {opt.start_year:04d}-{opt.start_month:02d}-{opt.start_day:02d}T{opt.start_hour:02.0f}:00:00+00"
         time_var.standard_name = "time"
         time_var.axis = "T"
     

@@ -416,13 +416,15 @@ if __name__ == "__main__":
        
         # Count the number of boundary nodes in the partition
         # idxBndNodes = cp.unique(cp.concatenate([ilnd.flatten(), iond.flatten()]))
-        idxBndNodes = cp.unique(iond.flatten())
+        # XXXXX The whole computation of the number of boundary nodes and sides is wrong. 
+        idxBndNodes = cp.append(cp.unique(iond.flatten()), cp.unique(ilnd.flatten()))
         idxBndNodes = idxBndNodes[idxBndNodes >= 0]
         numPartBoundaryNodes.append((partNodes[idxBndNodes] == ipart).sum().get())
         print(f"Partition {ipart} has {numPartBoundaryNodes} boundary nodes")
        
         # Count the number of boundary sides in the partition
-        numPartBoundarySides.append((partSides[cp.unique(ilnd)] == ipart).sum().get())
+        numPartBoundarySides.append((partSides[idxBndNodes] == ipart).sum().get())
+        # numPartBoundarySides.append((partSides[cp.unique(ilnd)] == ipart).sum().get())
         print(f"Partition {ipart} has {numPartBoundarySides} boundary sides")
 
 
@@ -442,9 +444,9 @@ if __name__ == "__main__":
             elnode_part = cp.array(elnode[:, partElements == ipart])
 
             # Reserves GPU memory for the structs
-            nodesMem = cp.zeros(max(numPartNodes).item()   *nodesSize, dtype=cp.int8)
+            nodesMem = cp.zeros(max(numPartNodes   ).item()*nodesSize, dtype=cp.int8)
             elemsMem = cp.zeros(max(numPartElements).item()*elemsSize, dtype=cp.int8)
-            sidesMem = cp.zeros(max(numPartSides).item()   *sidesSize, dtype=cp.int8)
+            sidesMem = cp.zeros(max(numPartSides   ).item()*sidesSize, dtype=cp.int8)
 
             # Memory for boundary nodes objects in each partition (We store in each device the BoundaryNodes objects 
             # corresponding to the nodes in the partition)
@@ -645,7 +647,7 @@ if __name__ == "__main__":
 
         schism_step(it, namelist, bctides, sflux, eta)
 
-        writeOutput(it, namelist.core)
+        writeOutput(it, namelist.core, namelist.opt)
         # print(f'done solver; etatot={np.abs(monitor.getNodeVar("eta")).sum():.2f}; average |eta|={np.abs(monitor.getNodeVar("eta")).mean():.2f}')
         pass
 
