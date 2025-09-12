@@ -91,22 +91,47 @@ def compile_and_import(module_name, cpp_file):
         # Get vcpkg root directory
         vcpkg_root = os.path.expanduser("~/apps/vcpkg")
 
-        # Define the extension
-        ext_modules = [
-            Extension(
-                module_name,
-                sources=[cpp_file],
-                include_dirs=[
-                    pybind11.get_include(),
-                    os.path.join(vcpkg_root, "installed/x64-windows/include"),
-                    "src/include"
-                ],
-                library_dirs=[os.path.join(vcpkg_root, "installed/x64-windows/lib")],
-                libraries=["metis", "GKlib"],
-                language="c++",
-                extra_compile_args=["/std:c++17", "/Zi", "/Od", "/EHsc"],
-            )
-        ]
+
+        if True:
+            METIS_PREFIX = os.environ.get("TACC_METIS_DIR")
+            METIS_INC = os.path.join(METIS_PREFIX, "include")
+            METIS_LIB = os.path.join(METIS_PREFIX, "lib")
+
+            ext_modules = [
+                Extension(
+                    module_name,
+                    sources=[cpp_file],
+                    include_dirs=[
+                        pybind11.get_include(),
+                        pybind11.get_include(user=True),
+                        "src/include",
+                        METIS_INC,
+                    ],
+                    library_dirs=[METIS_LIB],
+                    libraries=["metis"],                  # <-- drop "GKlib"
+                    language="c++",
+                    extra_compile_args=["-std=c++17", "-O3", "-fPIC"],  # <-- GCC/Clang flags
+                    extra_link_args=[f"-Wl,-rpath,{METIS_LIB}"],        # ensure libmetis is found at runtime
+                )
+            ] 
+        if WINDOWS:
+
+            # Define the extension
+            ext_modules = [
+                Extension(
+                    module_name,
+                    sources=[cpp_file],
+                    include_dirs=[
+                        pybind11.get_include(),
+                        os.path.join(vcpkg_root, "installed/x64-windows/include"),
+                        "src/include"
+                    ],
+                    library_dirs=[os.path.join(vcpkg_root, "installed/x64-windows/lib")],
+                    libraries=["metis", "GKlib"],
+                    language="c++",
+                    extra_compile_args=["/std:c++17", "/Zi", "/Od", "/EHsc"],
+                )
+            ]
 
         # ext_modules = [
         #     Extension(
