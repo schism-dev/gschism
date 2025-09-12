@@ -111,8 +111,9 @@ def compile_and_import(module_name, cpp_file):
                     library_dirs=[METIS_LIB],
                     libraries=["metis"],                  # <-- drop "GKlib"
                     language="c++",
+                    define_macros=[("IDXTYPEWIDTH", "32"), ("REALTYPEWIDTH", "64")],
                     extra_compile_args=["-std=c++17", "-O3", "-fPIC"],  # <-- GCC/Clang flags
-                    extra_link_args=[f"-Wl,-rpath,{METIS_LIB}"],        # ensure libmetis is found at runtime
+                    extra_link_args=[f"-Wl,-rpath,{METIS_LIB}", f"-Wl,-rpath,{METIS_LIB64}"],        # ensure libmetis is found at runtime
                 )
             ] 
         if WINDOWS:
@@ -156,8 +157,10 @@ def compile_and_import(module_name, cpp_file):
                 for ext in self.extensions:
                     if WINDOWS:
                         ext.extra_compile_args = ["/std:c++17", "/Zi", "/Od", "/EHsc"]
-                    else:
+                    elif VISTA:
                         ext.extra_compile_args = ["-std=c++17", "-O3", "-fPIC"]
+                    else:
+                        raise Exception("Unsupported platform")
                     #  ext.extra_compile_args = ["-std=c++17", "-g", "-O0", "-fno-omit-frame-pointer", "-march=native", "-DDEBUG"]
                 super().build_extensions()
 
