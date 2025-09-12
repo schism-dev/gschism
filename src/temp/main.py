@@ -95,8 +95,9 @@ def compile_and_import(module_name, cpp_file):
 
         if VISTA:
             METIS_PREFIX = os.environ.get("TACC_METIS_DIR")
-            METIS_INC = os.path.join(METIS_PREFIX, "include")
-            METIS_LIB = os.path.join(METIS_PREFIX, "lib")
+            METIS_INC    = os.path.join(METIS_PREFIX, "include")
+            METIS_LIB    = os.path.join(METIS_PREFIX, "lib")
+            METIS_LIB64  = os.path.join(METIS_PREFIX, "lib64")
 
             ext_modules = [
                 Extension(
