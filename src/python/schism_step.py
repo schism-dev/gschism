@@ -15,6 +15,7 @@ indices= cp.zeros(NN, dtype=cp.int32)
 indptr = cp.zeros(N + 1, dtype=cp.int32)
 b      = cp.zeros(N, dtype=cp.float64)
 diag   = cp.zeros(N, dtype=cp.float64)
+buf    = cp.empty_like(b)  # reuse this workspace
 import time
 
 
@@ -39,16 +40,16 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
     # A.sum_duplicates()
 
     # d = cp.where(d != 0, d, 1.0)
-    # M = LinearOperator(A.shape, matvec=lambda x: x * diag, rmatvec=lambda x: x * diag, dtype=A.dtype)
+    M = LinearOperator(A.shape, matvec=lambda x: x * diag, rmatvec=lambda x: x * diag, dtype=A.dtype)
 
-    inv_diag = diag.astype(A.dtype, copy=False)
-buf = cp.empty_like(b)  # reuse this workspace
+    # inv_diag = diag.astype(A.dtype, copy=False)
 
-    def M_mv(x):
-        cp.multiply(x, inv_diag, out=buf)  # in-place into buf; no new allocs
-        return buf
 
-    M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_mv, dtype=A.dtype)
+    # def M_mv(x):
+    #     cp.multiply(x, inv_diag, out=buf)  # in-place into buf; no new allocs
+    #     return buf
+
+    # M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_mv, dtype=A.dtype)
     # its = 0
     # def cb(_xk):
     #     # called once per iteration

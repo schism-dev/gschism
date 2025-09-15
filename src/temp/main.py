@@ -12,7 +12,7 @@ from iop.writeOutput import writeOutput, initializeOutput
 # For profiling
 from line_profiler import LineProfiler
 
-VISTA = True
+VISTA = False
 WINDOWS = not VISTA
 
 # Enable verbose output
