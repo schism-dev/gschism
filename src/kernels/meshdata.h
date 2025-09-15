@@ -1263,6 +1263,8 @@ struct Mesh {
    int nbp;  // Local number of boundary nodes
    int nbs;  // Local number of boundary sides
 
+   int nEntries;  // Total number of matrix elements
+
    const int max_np; // Maximum number of horizontal nodes per partition (shared by all partitions)
    const int max_ne; // Maximum number of elements per partition (shared by all partitions)
    const int max_ns; // Maximum number of sides per partition (shared by all partitions)
@@ -1542,6 +1544,10 @@ extern "C" {
    __global__ void updateSearchDirection(void);
    
    __global__ void computeHorGradientAtSide(void);  
+
+
+   __global__ void setupCGSolver(double* data, int* indices, int* indptr, double* b);
+   __global__ void setupCGSolver2(double* diag, double* data, int* indices, int* indptr, double* b);
 
 }
 

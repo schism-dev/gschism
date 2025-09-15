@@ -21,9 +21,9 @@ constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
 constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
-constexpr int ncor = 0;               // Option to include Coriolis force
+constexpr int ncor = 1;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 45*deg2rad; // Reference latitude for Coriolis force
+constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
 
 
 constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
@@ -39,11 +39,11 @@ constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometri
 constexpr double veg_lai = 1; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 0;            // Number of tidal potential components
-constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
+constexpr int ntip = 8;            // Number of tidal potential components
+constexpr double tip_dp = 50;   // cut-off depth for applying tidal potential
 
 // Boundary forcing frequencies
-constexpr int nbfr = 1;            // Number of boundary forcing frequencies
+constexpr int nbfr = 8;            // Number of boundary forcing frequencies
 
 // Boundary condition types
 constexpr int nettype = 0;      // Total number of type I elevation boundaries
@@ -61,9 +61,9 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 17; // Number of vertical levels
-constexpr int nzlev   = 7; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 11; // Number of sigma levels (in contrast to z levels)
+constexpr int nvrt    = 2; // Number of vertical levels
+constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;
@@ -71,16 +71,16 @@ constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
-constexpr int nland = 1; // Number of land boundary segments
-constexpr int mnlnd = 31; // Maximum number of nodes per land boundary segment
+constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
+constexpr int nland = 43; // Number of land boundary segments
+constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
 
-constexpr double thetai = 0.6;
+constexpr double thetai = 1;
 
-constexpr double rmaxvel = 10; // Maximum velocity for the x-component
+constexpr double rmaxvel = 4; // Maximum velocity for the x-component
 constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
@@ -91,9 +91,9 @@ constexpr double velmin_btrack = 0.0001; //XXXX
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 300;  // Time step  XXX 
+constexpr double dt = 120;  // Time step  XXX 
 
-constexpr double h0 = 0.01;  // Minimum water depth [m]
+constexpr double h0 = 0.0001;  // Minimum water depth [m]
 
 enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, ssign=9, btu=10, bcc=11, uth=12, ubc=13, island=14, ifltype=15, elbc=16, isdry=17, eta=18, area=19, qel=20, depth=21, radius=22, len=23, lonlat=24, kb=25, n1=26, n2=27, idx=28, htot=29, gradPr=30, gradEta1=31, gradEta2=32, gradETP=33, FaceIndices=34}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
@@ -1363,6 +1363,8 @@ struct Mesh {
    int nbp;  // Local number of boundary nodes
    int nbs;  // Local number of boundary sides
 
+   int nEntries;  // Total number of matrix elements
+
    const int max_np; // Maximum number of horizontal nodes per partition (shared by all partitions)
    const int max_ne; // Maximum number of elements per partition (shared by all partitions)
    const int max_ns; // Maximum number of sides per partition (shared by all partitions)
@@ -1642,6 +1644,10 @@ extern "C" {
    __global__ void updateSearchDirection(void);
    
    __global__ void computeHorGradientAtSide(void);  
+
+
+   __global__ void setupCGSolver(double* data, int* indices, int* indptr, double* b);
+   __global__ void setupCGSolver2(double* diag, double* data, int* indices, int* indptr, double* b);
 
 }
 
@@ -2914,7 +2920,7 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
    const int n2 = side.n2->idx;
    isLand = false;
    
-if (n1 == 10) printf("nland = %d, nope = %d, ilnd[0] = %d, ilnd[1*nland] = %d, ilnd[2*nland] = %d, ilnd[3*nland] = %d\n", nland, nope, ilnd[0], ilnd[1*nland], ilnd[2*nland], ilnd[3*nland]);
+
    // Check if the side is on a land boundary
    for (int i = 0; i < nland; i++) {
       for (int j = 0; j < nlnd[i] - 1; j++) {
@@ -2965,7 +2971,6 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    const int i = idx_node;
    Node &node(*pnode);
 
-   printf("i = %d, isbnd[i] = %d\n", i, isbnd[i]);
    node.idx = i;
 
    const int idxNodeStart = nodeNeighNodesStart[i];
@@ -3142,7 +3147,7 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
          const int idxSideBoundary = atomicAdd(sharedIdxSideBoundary, 1) + 1;
 
          side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
-printf("i = %d, isbs = %d, idxSideBoundary = %d, side.sideBnd = %p\n", i, isbs, idxSideBoundary, side.sideBnd);               
+
          if   (isLand) side.sideBnd->segment = &landBoundarySegment;
          else          side.sideBnd->segment = &(localSegmentMem[isbs]);
 
@@ -3258,8 +3263,6 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       
       elem.nodes[j] = (Node *)&(nodes[localNodePart[idxNode]][localNodeIndices[idxNode]]);
       elem.sides[j] = (Side *)&(sides[localSidePart[idxSide]][localSideIndices[idxSide]]);
-printf("WWW i = %d, j = %d, node = %p, side = %p\n", i, j, elem.nodes[j], elem.sides[j]);      
-
 
       // Find the neighboring element  
       if (elem.sides[j]->elems[0] == &elem) {
@@ -3399,6 +3402,7 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
    nbs = *sharedIdxSideBoundary + 1;
    nbp = *sharedIdxNodeBoundary + 1;
 
+   nEntries = (nodeNeighNodesStart[nbp] - nodeNeighNodesStart[0]) + nbp;
 
 }
 
@@ -3699,6 +3703,75 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 }
 
 
+extern "C" {
+   __global__ void setupCGSolver(double* data, int* indices, int* indptr, double* b) {
+      int off = 0;
+      for (int i = 0; i < mesh->np; i++) {
+
+         const Node *node = mesh->localNodeData + i;
+         indptr[i] = off;
+
+         // Diagonal first
+         data[off]    = node->coeffDiag;
+         indices[off] = i;
+         ++off;
+         // printf("i = %d, off = %d, node->nodes[i] = %p\n", i, off, node->nodes[i]);
+         // Off-diagonals
+         for (int k = 0; k < node->numNodes; ++k) {
+            const Node* nb = node->nodes[k];
+            // printf("i = %d, k = %d, nb = %p\n", i, k, nb);
+            // Map pointer -> column index by pointer arithmetic
+            int j = nb->idx;
+            // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else …)
+            data[off]    = node->coeffMatrix[k];
+            indices[off] = j;
+            ++off;
+            // printf("i = %d, j = %d, off = %d, data[off] = %f\n", i, j, off, data[off]);
+         }
+
+         // RHS
+         b[i] = node->qel;
+      }
+
+      indptr[mesh->np] = off;
+   }
+   
+}
+
+extern "C" {
+   __global__ void setupCGSolver2(double* diag, double* data, int* indices, int* indptr, double* b) {
+      NODE(node);
+      const int idx = node->idx;
+      // Computes the index in the nzz array
+
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+      indptr[idx] = nzzIdx;
+      data[nzzIdx]    = node->coeffDiag;
+      indices[nzzIdx] = idx;
+
+      for (int k = 0; k < node->numNodes; ++k) {
+         const Node* nb = node->nodes[k];
+
+         int j = nb->idx;
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else …)
+         data[nzzIdx + k + 1]    = node->coeffMatrix[k];
+         indices[nzzIdx + k + 1] = j;
+      }
+
+      diag[idx] = 1.0/node->coeffDiag;
+      b[idx] = node->qel;
+   }
+}
+
+extern "C" {
+   __global__ void solverCopyResult(double* x) {
+      NODE(node);
+      const int idx = node->idx;
+
+      node->mX = x[idx];
+   }
+}
 
 extern "C" {
    __global__ void rollUpElevation(void) {
@@ -4473,7 +4546,7 @@ extern "C" {
       if constexpr(ihorcon == 1) {
          for (int k = side->kb; k < nvrt - 1; k++) {
             // Computes the Laplacian by using the simplified formula presented in the paper:
-            // SELFE: A semi-implicit Eulerian–Lagrangian finite-element model for cross-scale ocean circulation
+            // SELFE: A semi-implicit Eulerian-Lagrangian finite-element model for cross-scale ocean circulation
             // By Zhang and Baptista.
 
             // sum(nu*(u_i - u_c))/area, where u_i is the velocity at the i-th surrounding side and u_c is the velocity at the side under consideration.

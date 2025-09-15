@@ -12,8 +12,8 @@ from iop.writeOutput import writeOutput, initializeOutput
 # For profiling
 from line_profiler import LineProfiler
 
-VISTA = True
-WINDOWS = False
+VISTA = False
+WINDOWS = not VISTA
 
 # Enable verbose output
 os.environ['DISTUTILS_DEBUG'] = '1'
@@ -54,16 +54,23 @@ import python.cuda_functions as cufunc
 
 
 
-# in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
-# in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
-in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
-in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
-# in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
-in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN01c'
-in_dir = r'/home1/10922/jmglez/tests/RUN02a'
+# # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
+# # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
+# in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
+# in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
+# # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
 
-# out_dir = r'c:\Users\jmgonzalez\src\temp'
-out_dir = r'/home1/10922/jmglez/tests/RUN02a/gpuoutput'
+
+if WINDOWS:
+    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
+    out_dir = r'c:\Users\jmgonzalez\src\temp'
+elif VISTA:
+    in_dir = r'/home1/10922/jmglez/tests/RUN02a'
+    out_dir = r'/home1/10922/jmglez/tests/RUN02a/gpuoutput'
+else:
+    raise Exception("Unsupported platform")
+
+
 
 
 # import src.io.readSflux as readSflux
@@ -220,7 +227,7 @@ if __name__ == "__main__":
         nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
             module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions, namelist.opt.ncor)
     
-
+    totMatrixElements = nodeNeighNodes[0].size + nodeCoords.shape[1]  # The total number of matrix elements is the number of node neighbors plus the number of nodes.
     nope, mnond  = iond.shape
     nland, mnlnd = ilnd.shape
     bctides = read_bctides(in_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
@@ -685,7 +692,7 @@ if __name__ == "__main__":
 
         schism_step(it, namelist, bctides, sflux, eta)
 
-        # writeOutput(it, namelist.core, namelist.opt)
+        writeOutput(it, namelist.core, namelist.opt)
         # print(f'done solver; etatot={np.abs(monitor.getNodeVar("eta")).sum():.2f}; average |eta|={np.abs(monitor.getNodeVar("eta")).mean():.2f}')
 
         time2 = time.time()

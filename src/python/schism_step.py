@@ -4,7 +4,18 @@ import iop.writeOutput as writeOutput
 import cupy as cp
 import numpy as np
 import debug.monitor as monitor
+from cupyx.scipy.sparse.linalg import cg, LinearOperator
+from cupyx.scipy.sparse import csr_matrix
 # from cupy import cudaMemcpyFromSymbol
+
+N = 1457889
+NN = 10141117
+data   = cp.zeros(NN, dtype=cp.float64)
+indices= cp.zeros(NN, dtype=cp.int32)
+indptr = cp.zeros(N + 1, dtype=cp.int32)
+b      = cp.zeros(N, dtype=cp.float64)
+diag   = cp.zeros(N, dtype=cp.float64)
+import time
 
 
 def solveWaveEquation(maxIter=1000, tol=1e-12): 
@@ -14,6 +25,43 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
 
     NOTATION: rMr and similar variable names stand for the dot product (r^T)Mr.
     """
+    global N, NN, data, indices, indptr, b, diag
+
+    time1 = time.time()
+    cufunc.setupCGSolver2(diag, data, indices, indptr, b)
+
+
+    # cufunc.setupCGSolver(data, indices, indptr, b)
+    indptr[N] = NN
+
+    A = csr_matrix((data, indices, indptr), shape=(N, N))
+
+    # A.sum_duplicates()
+
+    # d = cp.where(d != 0, d, 1.0)
+    # M = LinearOperator(A.shape, matvec=lambda x: x * diag, rmatvec=lambda x: x * diag, dtype=A.dtype)
+
+    inv_diag = diag.astype(A.dtype, copy=False)
+buf = cp.empty_like(b)  # reuse this workspace
+
+    def M_mv(x):
+        cp.multiply(x, inv_diag, out=buf)  # in-place into buf; no new allocs
+        return buf
+
+    M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_mv, dtype=A.dtype)
+    # its = 0
+    # def cb(_xk):
+    #     # called once per iteration
+    #     nonlocal its
+    #     its += 1
+    x, info = cg(A, b, M=M, tol=1e-12, maxiter=10_000)
+
+    cufunc.solverCopyResult(x)
+    time2 = time.time()
+    print(f"Time to setup and solve: {time2 - time1:.3f} s")
+    return
+
+    time3 = time.time()
     iterCount = 0
     rMr0      = None
 
@@ -67,7 +115,8 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
 
         iterCount += 1
 
-        
+    time4 = time.time()
+    print(f"Time to solve: {time4 - time3:.3f} s")
 
     return iterCount
 
