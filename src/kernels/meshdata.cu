@@ -2069,7 +2069,7 @@ extern "C" {
             // printf("i = %d, k = %d, nb = %p\n", i, k, nb);
             // Map pointer -> column index by pointer arithmetic
             int j = nb->idx;
-            // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else …)
+            // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
             data[off]    = node->coeffMatrix[k];
             indices[off] = j;
             ++off;
@@ -2101,7 +2101,7 @@ extern "C" {
          const Node* nb = node->nodes[k];
 
          int j = nb->idx;
-         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else …)
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
          data[nzzIdx + k + 1]    = node->coeffMatrix[k];
          indices[nzzIdx + k + 1] = j;
       }
