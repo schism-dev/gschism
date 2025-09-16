@@ -18,6 +18,7 @@ diag   = cp.zeros(N, dtype=cp.float64)
 data3  = cp.zeros(NN, dtype=cp.float32)
 indices3= cp.zeros(NN, dtype=cp.int32)
 indptr3 = cp.zeros(N + 1, dtype=cp.int32)
+x03     = cp.zeros(N, dtype=cp.float32)
 b3      = cp.zeros(N, dtype=cp.float32)
 diag3   = cp.zeros(N, dtype=cp.float32)
 import time
@@ -57,17 +58,18 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
     #     return buf_rmv
 
     # M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_rmv, dtype=A.dtype)
-    its = 0
+    its = 1
     def cb(_xk):
         # called once per iteration
         nonlocal its
         its += 1
     start = time.time()
-    x3, info = cg(A3, b3, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
+    x3, info = cg(A3, b3, x0=x03, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
+    x03[:] = x3[:]
     x, info = cg(A, b, M=M, x0=x3.astype(A.dtype), tol=tol, maxiter=maxIter, callback=cb)
     # x, info = cg(A, b, M=M,  tol=tol, maxiter=maxIter, callback=cb)
     end = time.time()
-    print(f"GMRES solve time: {end - start:.3f} s, iterations: {its}, time per iteration: {(end - start)/its:.3f} s")
+    print(f"GMRES solve time: {end - start:.3f} s, iterations: {its}, time per iteration: {(end - start)/its:.7f} s")
 
     cufunc.solverCopyResult(x)
     time2 = time.time()

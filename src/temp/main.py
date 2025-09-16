@@ -9,6 +9,9 @@ import debug.monitor as monitor
 import time
 from iop.writeOutput import writeOutput, initializeOutput
 
+pool = cp.cuda.MemoryPool()
+cp.cuda.set_allocator(pool.malloc)
+
 # For profiling
 from line_profiler import LineProfiler
 
