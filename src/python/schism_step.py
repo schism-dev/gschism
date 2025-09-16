@@ -18,7 +18,9 @@ diag   = cp.zeros(N, dtype=cp.float64)
 data3  = cp.zeros(NN, dtype=cp.float32)
 indices3= cp.zeros(NN, dtype=cp.int32)
 indptr3 = cp.zeros(N + 1, dtype=cp.int32)
-x03     = cp.zeros(N, dtype=cp.float32)
+x00     = cp.zeros(N, dtype=cp.float32)
+x01     = cp.zeros(N, dtype=cp.float32)
+x02     = cp.zeros(N, dtype=cp.float32)
 b3      = cp.zeros(N, dtype=cp.float32)
 diag3   = cp.zeros(N, dtype=cp.float32)
 import time
@@ -64,8 +66,10 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
         nonlocal its
         its += 1
     start = time.time()
-    x3, info = cg(A3, b3, x0=x03, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
-    x03[:] = x3[:]
+    x3, info = cg(A3, b3, x0 = 3*x00 - 3*x01 + x02, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
+    x02[:] = x01[:]
+    x01[:] = x00[:]
+    x00[:] = x3[:]
     x, info = cg(A, b, M=M, x0=x3.astype(A.dtype), tol=tol, maxiter=maxIter, callback=cb)
     # x, info = cg(A, b, M=M,  tol=tol, maxiter=maxIter, callback=cb)
     end = time.time()
