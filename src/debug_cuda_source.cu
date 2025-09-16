@@ -477,6 +477,7 @@ struct CubicSpline {
    double *ypp = nullptr;
 };
 
+
 struct Element {
 
    // Geometry information
@@ -563,20 +564,16 @@ struct Element {
 
       // For testing purposes, forgets k and performs a full search.
       for (k = kb; k < nvrt - 1; k++) {
-         if (idx==46) printf("((()))))) kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", k, k, z[k], k + 1, z[k + 1]);            
          if (z1 >= z[k] && z1 < z[k + 1]) return k;
       }
       return nvrt - 2;
 
 
       // if z is already betweeen z[k] and z[k+1], return k
-      if (idx==46) for (int kkk=0; kkk<nvrt; kkk++) printf("##>>>>  z[%d] = %.16f\n", kkk, z[kkk]);             
-if (idx==46) printf("##>>>>#### kk = %d, z1 = %.16f, z[%d] = %.16f, z[%d] = %.16f\n", k, z1, k, z[k], k + 1, z[k + 1]);       
       if (z1 >= z[k] && z1 < z[k + 1]) return k;
       else if (z1 <  z[k]) { 
          // Search for increasing levels
          for (int kk = k; kk < nvrt - 1; kk++) {
-if (idx==46) printf("##>>#### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, z[kk], kk + 1, z[kk + 1]);            
             if (z1 >= z[kk] && z1 < z[kk + 1]) return kk;
          }
          return nvrt - 1;
@@ -584,7 +581,6 @@ if (idx==46) printf("##>>#### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, 
       else {
          // Search for decreasing levels
          for (int kk = k; kk >= kb; kk--) {
-if (idx==46) printf("###>>### kk = %d, z[%d] = %.16f, z[%d] = %.16f\n", kk, kk, z[kk], kk + 1, z[kk + 1]);             
             if (z1 >= z[kk] && z1 < z[kk + 1]) return kk;
          }
          return 0;
@@ -934,6 +930,7 @@ struct BoundarySegment {
 
    
 };
+
 
 struct SideBoundary {
    Side *side; // Pointer to the side that this boundary segment belongs to
@@ -1648,6 +1645,7 @@ extern "C" {
 
    __global__ void setupCGSolver(double* data, int* indices, int* indptr, double* b);
    __global__ void setupCGSolver2(double* diag, double* data, int* indices, int* indptr, double* b);
+   __global__ void setupCGSolver3(float* diag, float* data, int* indices, int* indptr, float* b);
 
 }
 
@@ -3722,7 +3720,7 @@ extern "C" {
             // printf("i = %d, k = %d, nb = %p\n", i, k, nb);
             // Map pointer -> column index by pointer arithmetic
             int j = nb->idx;
-            // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else …)
+            // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
             data[off]    = node->coeffMatrix[k];
             indices[off] = j;
             ++off;
@@ -3754,13 +3752,40 @@ extern "C" {
          const Node* nb = node->nodes[k];
 
          int j = nb->idx;
-         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else …)
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
          data[nzzIdx + k + 1]    = node->coeffMatrix[k];
          indices[nzzIdx + k + 1] = j;
       }
 
       diag[idx] = 1.0/node->coeffDiag;
       b[idx] = node->qel;
+   }
+}
+
+
+extern "C" {
+   __global__ void setupCGSolver3(float* diag, float* data, int* indices, int* indptr, float* b) {
+      NODE(node);
+      const int idx = node->idx;
+      // Computes the index in the nzz array
+
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+      indptr[idx] = nzzIdx;
+      data[nzzIdx]    = (float)node->coeffDiag;
+      indices[nzzIdx] = idx;
+
+      for (int k = 0; k < node->numNodes; ++k) {
+         const Node* nb = node->nodes[k];
+
+         int j = nb->idx;
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
+         data[nzzIdx + k + 1]    = (float)node->coeffMatrix[k];
+         indices[nzzIdx + k + 1] = j;
+      }
+
+      diag[idx] = (float)(1.0/node->coeffDiag);
+      b[idx] = (float)node->qel;
    }
 }
 

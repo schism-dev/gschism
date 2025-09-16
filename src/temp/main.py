@@ -686,7 +686,7 @@ if __name__ == "__main__":
     start_time = time.time()
     time1 = time.time()
     for it in range(1, ntime + 1, 1):
-    # for it in range(1, 25, 1):
+    # for it in range(1, 55, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
         # schism_step_wrapped(it, namelist, bctides, sflux, eta)
 

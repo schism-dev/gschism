@@ -69,6 +69,7 @@ getNodeVarAddr = None
 
 setupCGSolver = None
 setupCGSolver2 = None
+setupCGSolver3 = None
 solverCopyResult = None
 test = None
 
@@ -119,7 +120,7 @@ def initializeCudaFunctions(sizes):
     global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
-    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test, setupCGSolver, setupCGSolver2, solverCopyResult
+    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test, setupCGSolver, setupCGSolver2, setupCGSolver3, solverCopyResult
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix
@@ -194,6 +195,7 @@ def initializeCudaFunctions(sizes):
         test = mod.get_function('test', sizes, kernel_type='global')
         setupCGSolver = mod.get_function('setupCGSolver', sizes, kernel_type='global')
         setupCGSolver2 = mod.get_function('setupCGSolver2', sizes, kernel_type='nodes')
+        setupCGSolver3 = mod.get_function('setupCGSolver3', sizes, kernel_type='nodes')
         solverCopyResult = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
     except Exception as e:
         print(f"Error getting CUDA functions: {e}")

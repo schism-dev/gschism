@@ -4,7 +4,7 @@ import iop.writeOutput as writeOutput
 import cupy as cp
 import numpy as np
 import debug.monitor as monitor
-from cupyx.scipy.sparse.linalg import cg, LinearOperator
+from cupyx.scipy.sparse.linalg import cg, gmres, minres, LinearOperator
 from cupyx.scipy.sparse import csr_matrix
 # from cupy import cudaMemcpyFromSymbol
 
@@ -15,7 +15,11 @@ indices= cp.zeros(NN, dtype=cp.int32)
 indptr = cp.zeros(N + 1, dtype=cp.int32)
 b      = cp.zeros(N, dtype=cp.float64)
 diag   = cp.zeros(N, dtype=cp.float64)
-buf    = cp.empty_like(b)  # reuse this workspace
+data3  = cp.zeros(NN, dtype=cp.float32)
+indices3= cp.zeros(NN, dtype=cp.int32)
+indptr3 = cp.zeros(N + 1, dtype=cp.int32)
+b3      = cp.zeros(N, dtype=cp.float32)
+diag3   = cp.zeros(N, dtype=cp.float32)
 import time
 
 
@@ -26,36 +30,44 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
 
     NOTATION: rMr and similar variable names stand for the dot product (r^T)Mr.
     """
-    global N, NN, data, indices, indptr, b, diag
+    global N, NN, data, indices, indptr, b, diag, data3, indices3, indptr3, b3, diag3
 
     time1 = time.time()
     cufunc.setupCGSolver2(diag, data, indices, indptr, b)
+    cufunc.setupCGSolver3(diag3, data3, indices3, indptr3, b3)
 
 
     # cufunc.setupCGSolver(data, indices, indptr, b)
     indptr[N] = NN
 
     A = csr_matrix((data, indices, indptr), shape=(N, N))
+    A3 = csr_matrix((data3, indices3, indptr), shape=(N, N))
 
     # A.sum_duplicates()
 
     # d = cp.where(d != 0, d, 1.0)
     M = LinearOperator(A.shape, matvec=lambda x: x * diag, rmatvec=lambda x: x * diag, dtype=A.dtype)
-
-    # inv_diag = diag.astype(A.dtype, copy=False)
-
-
+    M3 = LinearOperator(A3.shape, matvec=lambda x: x * diag3, rmatvec=lambda x: x * diag3, dtype=A3.dtype)
     # def M_mv(x):
-    #     cp.multiply(x, inv_diag, out=buf)  # in-place into buf; no new allocs
-    #     return buf
+    #     cp.multiply(x, diag, out=buf_mv)   # y = D^{-1} x
+    #     return buf_mv
 
-    # M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_mv, dtype=A.dtype)
-    # its = 0
-    # def cb(_xk):
-    #     # called once per iteration
-    #     nonlocal its
-    #     its += 1
-    x, info = cg(A, b, M=M, tol=1e-12, maxiter=10_000)
+    # def M_rmv(x):
+    #     cp.multiply(x, diag, out=buf_rmv)  # y = (D^{-1})^T x == D^{-1} x (diagonal)
+    #     return buf_rmv
+
+    # M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_rmv, dtype=A.dtype)
+    its = 0
+    def cb(_xk):
+        # called once per iteration
+        nonlocal its
+        its += 1
+    start = time.time()
+    x3, info = cg(A3, b3, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
+    x, info = cg(A, b, M=M, x0=x3.astype(A.dtype), tol=tol, maxiter=maxIter, callback=cb)
+    # x, info = cg(A, b, M=M,  tol=tol, maxiter=maxIter, callback=cb)
+    end = time.time()
+    print(f"GMRES solve time: {end - start:.3f} s, iterations: {its}, time per iteration: {(end - start)/its:.3f} s")
 
     cufunc.solverCopyResult(x)
     time2 = time.time()

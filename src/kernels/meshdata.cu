@@ -2111,6 +2111,33 @@ extern "C" {
    }
 }
 
+
+extern "C" {
+   __global__ void setupCGSolver3(float* diag, float* data, int* indices, int* indptr, float* b) {
+      NODE(node);
+      const int idx = node->idx;
+      // Computes the index in the nzz array
+
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+      indptr[idx] = nzzIdx;
+      data[nzzIdx]    = (float)node->coeffDiag;
+      indices[nzzIdx] = idx;
+
+      for (int k = 0; k < node->numNodes; ++k) {
+         const Node* nb = node->nodes[k];
+
+         int j = nb->idx;
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
+         data[nzzIdx + k + 1]    = (float)node->coeffMatrix[k];
+         indices[nzzIdx + k + 1] = j;
+      }
+
+      diag[idx] = (float)(1.0/node->coeffDiag);
+      b[idx] = (float)node->qel;
+   }
+}
+
 extern "C" {
    __global__ void solverCopyResult(double* x) {
       NODE(node);
