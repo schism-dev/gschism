@@ -2007,7 +2007,7 @@ if (node1->numElements > 8) printf("111 idx = %d, node1->numElements = %d\n", no
 
    } // for all elements connected to the node
    
-
+return;
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2,6 are not needed if essential b.c. are enforced by elminating rows and columns
    NodeBoundary *nodeBnd = node1->nodeBnd;
