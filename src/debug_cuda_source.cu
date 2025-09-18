@@ -26,7 +26,8 @@ constexpr double coricoef = 0;    // Coriolis force coefficient
 constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
 
 
-constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
+constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
+constexpr double hmin_man = 1;  // Minimum water depth for Manning's friction
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
 
@@ -1239,8 +1240,14 @@ struct Node {
    double veg_alpha3D[nvrt];
 
    // Bottom drag parameters
-   double Cd;       // Bottom drag coefficient
-   double rough;    // Bottom roughness length
+   double Cd;       // Bottom drag coefficient   
+
+   // These three are mutually exclusive
+   union {
+      double rmanning; // Bottom Manning's coefficient
+      double rough;    // Bottom roughness length
+      double drag;     // Bottom drag coefficient
+   };
    Vector2 tau_bot; // Bottom stress vector
 
    double bdef1; // Bottom deformation at previous timestep
@@ -1321,6 +1328,8 @@ struct Node {
    __device__ double compZCoord(int k) const;
 
    __device__ void updateKb(void);
+
+   __device__ __forceinline__ void computeBottomDragCd(void);
 
 
 
@@ -1467,7 +1476,7 @@ struct Mesh {
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *drag, double *roughness);
+                  double *drag, double *roughness, double *rmanning);
 
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
@@ -2585,7 +2594,7 @@ __inline__ __device__ double  Side::veg_alpha_vert_mean(void) const { return 0.5
 __inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D[k] + n2->veg_alpha3D[k]); }
 
 
-__inline__ __device__ double  Side::Cd(void)      const { if (!isDry) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
+__inline__ __device__ double  Side::Cd(void)     const { if (!isDry) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
 
 __inline__ __device__ Vector2 Side::tau(void)    const { return 0.5*(n1->tau + n2->tau); }
 
@@ -2792,7 +2801,7 @@ __device__ void Node::updateKb(void) {
          while (L <= R) {
             int M = (R + L) / 2;
 
-// printf("L = %d, R = %d, M = %d, depth = %f, ztot[L] = %f, ztot[R] = %f, ztot[M] = %f\n", L, R, M, depth, mesh->ztot[L], mesh->ztot[R], mesh->ztot[M]);
+
             assert((-depth >= mesh->ztot[L] && -depth < mesh->ztot[R]) && "ZCOOR: invalid depth\n");
             
             if (-depth >= mesh->ztot[L] && -depth < mesh->ztot[M]) {
@@ -2842,6 +2851,7 @@ __device__ __inline__ void Node::updateZCoordData(void) {
 
 }
 
+
 __device__ double Node::compZCoord(int k) const {
    // Computes the z coordinate at level k.
    // Depending on the vertical coordinate system, the z coordinate is computed differently.
@@ -2852,8 +2862,7 @@ __device__ double Node::compZCoord(int k) const {
    // NOTE: Assumes that updateZCoordData() has been called before this function.
 
    if (isDry2()) return 0.0;
-// if (htot2() <= h0) printf("idx = %d, htot2() = %f, h0 = %f\n", idx, htot2(), h0); XXX
-// if (htot2() <= h0) return 0.0; // XXX
+
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
    if constexpr(ivcor == 2) {
@@ -2877,7 +2886,7 @@ __device__ double Node::compZCoord(int k) const {
          const int ksig = k - izlev;
 
          if (hmod2 <= h_c) {
-// printf("mesh->sigma[ksig] * (hmod2 + eta2) + eta2 = %e\n", mesh->sigma[ksig] * (hmod2 + eta2) + eta2);            
+
             return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
          } 
          else if (eta2 <= - h_c - (depth - h_c) * theta_f/sinh_theta_f) {
@@ -2885,7 +2894,6 @@ __device__ double Node::compZCoord(int k) const {
             assert(false && "ZCOOR: invalid h_c\n");
          } 
          else {
-// printf("eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig] = %e\n", eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig]);
             return eta2*(1.0 + mesh->sigma[ksig]) + 
                          h_c * mesh->sigma[ksig] + 
                          (hmod2 - h_c) * mesh->cs[ksig];
@@ -2903,6 +2911,62 @@ __device__ double Node::compZCoord(int k) const {
    
    assert(false && "ZCOOR: invalid level or coordinate system\n");
    return 0.0;
+}
+
+
+__device__ __forceinline__ void Node::computeBottomDragCd(void) {
+   // Computes the bottom drag Cd based on the selected nchi
+
+   if constexpr(nchi == 0) {
+      // This line is repeated over and over again every time step, but it is very short, so it is not worth optimizing.
+      Cd = drag;  // Read from drag file
+
+   } else if constexpr(nchi == 1) {
+      // 
+
+      bool ltmp = false; // for WBL iteration
+
+      assert(false && "computeBottomDragVegetation: nchi == 1 not fully implemented. see below");
+      // Cdmax=-1 !max. Cd at node for this process (info only)
+      // Drag at nodes
+/////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
+// !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
+           
+      assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
+      if (rough == 0.0) {
+         Cd = 0.0;
+
+      } else { //roughness >0 
+         
+         const double bthick_ori = z[kb + 1] - z[kb];  // thickness of bottom bnd layer
+         const double bthick = max(dzb_min, bthick_ori);
+
+         assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
+
+         double tmp = 1.0/(2.5*log(bthick/rough));
+         Cd = tmp*tmp;
+
+      } // if rough
+
+
+      // RECOVER THIS: XXX
+      // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
+      // Output warning for WBL if iteration didn't converge
+
+
+   } else if constexpr(nchi == -1) {
+   // Manning 
+      Cd = 0.0;
+
+      if (isDry) return;
+
+      const double htot = max(hmin_man, htot2()); 
+      Cd = grav2*rmanning*rmanning/pow(htot, 0.333);
+
+   } else {
+      assert(false && "computeBottomDragVegetation:selected nchi not implemented.");
+      
+   } // if nchi
 }
 
 
@@ -2951,7 +3015,7 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
          }
       }
    }
-// printf("side.idx = %d, n1 = %d, n2 = %d\n", side.idx, n1, n2);             
+
    return -1;
 }
 
@@ -2963,7 +3027,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart,
-                                    double *drag, double *roughness) {
+                                    double *drag, double *roughness, double *rmanning) {
 
    NODE(pnode);  
    const int i = idx_node;
@@ -3023,8 +3087,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    node.numSides = 0;
 
-   node.Cd = drag[i];
-   node.rough = roughness[i];
+   // drag, rough, and manning are actually stored in the same memory location. This is just sugar to make the code more readable without using unnecessary memory.
+   if      constexpr(nchi ==  0) node.drag     = drag[i];
+   else if constexpr(nchi ==  1) node.rough    = roughness[i];
+   else if constexpr(nchi == -1) node.rmanning = rmanning[i];
+   else assert(false && "populateNodes: selected nchi not implemented.");
    
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
 
@@ -3788,6 +3855,65 @@ extern "C" {
       b[idx] = (float)node->qel;
    }
 }
+
+#ifdef popo
+extern "C" {
+   __global__ void setupCGSolver4(double* diag_d, double* data_d, double* b_d, 
+                                  float*  diag_f, float*  data_f, float*  b_f, 
+                                  int* indices, int* indptr) {
+
+      NODE(node);
+      const int idx = node->idx;
+      // Computes the index in the nzz array
+
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+      indptr[idx] = nzzIdx;
+      data[nzzIdx]    = node->coeffDiag;
+      indices[nzzIdx] = idx;
+
+      for (int k = 0; k < node->numNodes; ++k) {
+         const Node* nb = node->nodes[k];
+
+         int j = nb->idx;
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
+         data[nzzIdx + k + 1]    = node->coeffMatrix[k];
+         indices[nzzIdx + k + 1] = j;
+      }
+
+      diag[idx] = 1.0/node->coeffDiag;
+      b[idx] = node->qel;
+   }
+}
+
+
+extern "C" {
+   __global__ void setupCGSolver3(float* diag, float* data, int* indices, int* indptr, float* b) {
+      NODE(node);
+      const int idx = node->idx;
+      // Computes the index in the nzz array
+
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+      indptr[idx] = nzzIdx;
+      data[nzzIdx]    = (float)node->coeffDiag;
+      indices[nzzIdx] = idx;
+
+      for (int k = 0; k < node->numNodes; ++k) {
+         const Node* nb = node->nodes[k];
+
+         int j = nb->idx;
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
+         data[nzzIdx + k + 1]    = (float)node->coeffMatrix[k];
+         indices[nzzIdx + k + 1] = j;
+      }
+
+      diag[idx] = (float)(1.0/node->coeffDiag);
+      b[idx] = (float)node->qel;
+   }
+}
+#endif
+
 
 extern "C" {
    __global__ void solverCopyResult(double* x) {
@@ -4691,8 +4817,6 @@ extern "C" {
 
       const int    kb      = node->kb;
       const double htot    = node->htot2(); 
-      const double rough   = node->rough;
-
       
       if (node->isDry) {
          // Default values for dry nodes
@@ -4703,44 +4827,9 @@ extern "C" {
        
       }
 
-      // Compute bottom drag Cd
-      //--------------------------------
-
-      // nchi = {-1, 0, 1} is the type of bottom drag.
-      if constexpr(nchi == 1) {
-
-         bool ltmp = false; // for WBL iteration
-
-         // Cdmax=-1 !max. Cd at node for this process (info only)
-         // Drag at nodes
-   /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
-   // !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
-        
-         const double rough = node->rough;
-        
-         assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
-         if (node->rough == 0.0) {
-            node->Cd = 0.0;
-
-         } else { //roughness >0 
-          
-            const double bthick_ori = node->z[kb + 1] - node->z[kb];  // thickness of bottom bnd layer
-            const double bthick = max(dzb_min, bthick_ori);
-
-            assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
-
-            double tmp = 1.0/(2.5*log(bthick/rough));
-            node->Cd = tmp*tmp;
-
-         } // if rough
-
-
-         // RECOVER THIS: XXX
-         // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
-         // Output warning for WBL if iteration didn't converge
-
-
-      } // nchi==1
+      // Computes bottom drag Cd based on the selected nchi
+      node->computeBottomDragCd();
+      
 
 
       //   Bottom stress in m^2/s^2
@@ -7613,7 +7702,7 @@ extern "C"
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
                        drag, roughness,
-                       emo, efa, umo, ufa, vmo, vfa);
+                       emo, efa, umo, ufa, vmo, vfa);  // XXXXX Remember to refactor this, removing the parameters that are not used.
   }
 
 extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
@@ -7622,7 +7711,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
-   double *drag, double *roughness) {
+   double *drag, double *roughness, double *rmanning) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
@@ -7630,7 +7719,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness);
+                       drag, roughness, rmanning);
 }  
 
 extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,

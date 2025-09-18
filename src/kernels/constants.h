@@ -25,7 +25,8 @@ constexpr double coricoef = 0;    // Coriolis force coefficient
 constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
 
 
-constexpr int nchi = 0;  // Option to compute drag coefficients chi and chi2
+constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
+constexpr double hmin_man = 1;  // Minimum water depth for Manning's friction
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
 

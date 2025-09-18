@@ -1274,7 +1274,7 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
            
       assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
       if (rough == 0.0) {
-         node->Cd = 0.0;
+         Cd = 0.0;
 
       } else { //roughness >0 
          
@@ -1428,9 +1428,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.numSides = 0;
 
    // drag, rough, and manning are actually stored in the same memory location. This is just sugar to make the code more readable without using unnecessary memory.
-   if      constexpr(nchi ==  0) node.drag    = drag[i];
-   else if constexpr(nchi ==  1) node.rough   = roughness[i];
-   else if constexpr(nchi == -1) node.manning = manning[i];
+   if      constexpr(nchi ==  0) node.drag     = drag[i];
+   else if constexpr(nchi ==  1) node.rough    = roughness[i];
+   else if constexpr(nchi == -1) node.rmanning = rmanning[i];
    else assert(false && "populateNodes: selected nchi not implemented.");
    
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
@@ -2196,7 +2196,7 @@ extern "C" {
    }
 }
 
-
+#ifdef popo
 extern "C" {
    __global__ void setupCGSolver4(double* diag_d, double* data_d, double* b_d, 
                                   float*  diag_f, float*  data_f, float*  b_f, 
@@ -2252,6 +2252,7 @@ extern "C" {
       b[idx] = (float)node->qel;
    }
 }
+#endif
 
 
 extern "C" {
