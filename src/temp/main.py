@@ -268,17 +268,23 @@ if __name__ == "__main__":
   
     # Read in bottom friction coefficients 
     nchi = namelist.opt.nchi
-    drag      = np.zeros(nodeCoords.shape[1])
-    roughness = np.zeros(nodeCoords.shape[1])
+    drag      = np.zeros(1)
+    roughness = np.zeros(1)
+    manning   = np.zeros(1)
     if nchi == 0: # read in drag coefficients for 3D model
+        drag    = np.zeros(nodeCoords.shape[1])
         drag[:] = module.readHGridData(os.path.join(in_dir, 'drag.gr3'), nodeCoords.shape[1], elnode.shape[1])
 
     elif nchi == 1:
+        roughness    = np.zeros(nodeCoords.shape[1])
         roughness[:] = module.readHGridData(os.path.join(in_dir, 'rough.gr3'), nodeCoords.shape[1], elnode.shape[1])
         raise Exception("nchi = 1 not tested")
+    elif nchi == -1:
+        manning   = np.zeros(nodeCoords.shape[1])
+        manning[:] = module.readHGridData(os.path.join(in_dir, 'manning.gr3'), nodeCoords.shape[1], elnode.shape[1])
 
     else:
-        raise Exception(f"nchi != {0,1} not implemented")
+        raise Exception(f"nchi = {nchi} is not a valid option")
 
         
     # Generate the constants.h file that will be compiled with the CUDA kernels

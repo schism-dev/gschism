@@ -1139,8 +1139,14 @@ struct Node {
    double veg_alpha3D[nvrt];
 
    // Bottom drag parameters
-   double Cd;       // Bottom drag coefficient
-   double rough;    // Bottom roughness length
+   double Cd;       // Bottom drag coefficient   
+   
+   // These three are mutually exclusive
+   union {
+      double manning;  // Bottom Manning's n
+      double rough;    // Bottom roughness length
+      double drag;     // Bottom drag coefficient
+   };
    Vector2 tau_bot; // Bottom stress vector
 
    double bdef1; // Bottom deformation at previous timestep

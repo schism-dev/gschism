@@ -934,7 +934,7 @@ __inline__ __device__ double  Side::veg_alpha_vert_mean(void) const { return 0.5
 __inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->veg_alpha3D[k] + n2->veg_alpha3D[k]); }
 
 
-__inline__ __device__ double  Side::Cd(void)      const { if (!isDry) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
+__inline__ __device__ double  Side::Cd(void)     const { if (!isDry) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
 
 __inline__ __device__ Vector2 Side::tau(void)    const { return 0.5*(n1->tau + n2->tau); }
 
@@ -1372,8 +1372,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    node.numSides = 0;
 
-   node.Cd = drag[i];
-   node.rough = roughness[i];
+   // drag, rough, and manning are actually stored in the same memory location. This is just sugar to make the code more readable without using unnecessary memory.
+   if      constexpr(nchi ==  0) node.drag      = drag[i];
+   else if constexpr(nchi ==  1) node.rough   = roughness[i];
+   else if constexpr(nchi == -1) node.manning = manning[i];
+   else assert(false && "populateNodes: selected nchi not implemented.");
    
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
 
@@ -2143,7 +2146,7 @@ extern "C" {
    __global__ void setupCGSolver4(double* diag_d, double* data_d, double* b_d, 
                                   float*  diag_f, float*  data_f, float*  b_f, 
                                   int* indices, int* indptr) {
-                                    
+
       NODE(node);
       const int idx = node->idx;
       // Computes the index in the nzz array
@@ -3115,9 +3118,11 @@ extern "C" {
 
       // nchi = {-1, 0, 1} is the type of bottom drag.
       if constexpr(nchi == 1) {
+         // 
 
          bool ltmp = false; // for WBL iteration
 
+         assert(false && "computeBottomDragVegetation: nchi == 1 not fully implemented. see below");
          // Cdmax=-1 !max. Cd at node for this process (info only)
          // Drag at nodes
    /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
@@ -3147,7 +3152,17 @@ extern "C" {
          // Output warning for WBL if iteration didn't converge
 
 
-      } // nchi==1
+      } 
+      else if constexpr(nchi == -1) {
+      // Manning 
+      
+         // 
+
+      else {
+         assert(false && "computeBottomDragVegetation:selected nchi not implemented.");
+      }
+         
+      } // if nchi
 
 
       //   Bottom stress in m^2/s^2
@@ -6020,7 +6035,7 @@ extern "C"
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
                        drag, roughness,
-                       emo, efa, umo, ufa, vmo, vfa);
+                       emo, efa, umo, ufa, vmo, vfa);  // XXXXX Remember to refactor this, removing the parameters that are not used.
   }
 
 extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
