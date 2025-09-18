@@ -329,6 +329,7 @@ if __name__ == "__main__":
 
     drag                 = cp.array(drag,              dtype=cp.float64, order='F')
     roughness            = cp.array(roughness,         dtype=cp.float64, order='F')
+    rmanning             = cp.array(rmanning,          dtype=cp.float64, order='F')
 
 
     if False:   
