@@ -1821,7 +1821,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
    NODE(node1);
 
-if (node1->numElements > 7) printf("111 idx = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
+if (node1->numElements > 8) printf("111 idx = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
 
    node1->clearMatrixRow();
    node1->qel = 0.0;
