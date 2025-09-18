@@ -2138,6 +2138,64 @@ extern "C" {
    }
 }
 
+
+extern "C" {
+   __global__ void setupCGSolver4(double* diag_d, double* data_d, double* b_d, 
+                                  float*  diag_f, float*  data_f, float*  b_f, 
+                                  int* indices, int* indptr) {
+                                    
+      NODE(node);
+      const int idx = node->idx;
+      // Computes the index in the nzz array
+
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+      indptr[idx] = nzzIdx;
+      data[nzzIdx]    = node->coeffDiag;
+      indices[nzzIdx] = idx;
+
+      for (int k = 0; k < node->numNodes; ++k) {
+         const Node* nb = node->nodes[k];
+
+         int j = nb->idx;
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
+         data[nzzIdx + k + 1]    = node->coeffMatrix[k];
+         indices[nzzIdx + k + 1] = j;
+      }
+
+      diag[idx] = 1.0/node->coeffDiag;
+      b[idx] = node->qel;
+   }
+}
+
+
+extern "C" {
+   __global__ void setupCGSolver3(float* diag, float* data, int* indices, int* indptr, float* b) {
+      NODE(node);
+      const int idx = node->idx;
+      // Computes the index in the nzz array
+
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+      indptr[idx] = nzzIdx;
+      data[nzzIdx]    = (float)node->coeffDiag;
+      indices[nzzIdx] = idx;
+
+      for (int k = 0; k < node->numNodes; ++k) {
+         const Node* nb = node->nodes[k];
+
+         int j = nb->idx;
+         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
+         data[nzzIdx + k + 1]    = (float)node->coeffMatrix[k];
+         indices[nzzIdx + k + 1] = j;
+      }
+
+      diag[idx] = (float)(1.0/node->coeffDiag);
+      b[idx] = (float)node->qel;
+   }
+}
+
+
 extern "C" {
    __global__ void solverCopyResult(double* x) {
       NODE(node);

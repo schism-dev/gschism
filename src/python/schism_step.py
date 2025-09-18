@@ -6,6 +6,7 @@ import numpy as np
 import debug.monitor as monitor
 from cupyx.scipy.sparse.linalg import cg, gmres, minres, LinearOperator
 from cupyx.scipy.sparse import csr_matrix
+from python.pcgsolver import PCGSolver
 # from cupy import cudaMemcpyFromSymbol
 
 N = 1457889
@@ -35,21 +36,36 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
     """
     global N, NN, data, indices, indptr, b, diag, data3, indices3, indptr3, b3, diag3
 
+
+
+    
+
     time1 = time.time()
     cufunc.setupCGSolver2(diag, data, indices, indptr, b)
     cufunc.setupCGSolver3(diag3, data3, indices3, indptr3, b3)
 
-
-    # cufunc.setupCGSolver(data, indices, indptr, b)
     indptr[N] = NN
 
+    its = 1
+    def cb(_xk):
+        # called once per iteration
+        nonlocal its
+        its += 1
     A = csr_matrix((data, indices, indptr), shape=(N, N))
+    # pcg = PCGFixed(A, diag)
+    # x_out = cp.zeros(N, dtype=cp.float64)
+    # pcg.solve(b, x_out, x0 = x00, rtol=1e-6, maxiter=maxIter)
+
+
+    # cufunc.setupCGSolver(data, indices, indptr, b)
+
     A3 = csr_matrix((data3, indices3, indptr), shape=(N, N))
+    # A.sort_indices()
 
     # A.sum_duplicates()
 
     # d = cp.where(d != 0, d, 1.0)
-    M = LinearOperator(A.shape, matvec=lambda x: x * diag, rmatvec=lambda x: x * diag, dtype=A.dtype)
+    M  = LinearOperator(A.shape,  matvec=lambda x: x * diag,  rmatvec=lambda x: x * diag, dtype=A.dtype)
     M3 = LinearOperator(A3.shape, matvec=lambda x: x * diag3, rmatvec=lambda x: x * diag3, dtype=A3.dtype)
     # def M_mv(x):
     #     cp.multiply(x, diag, out=buf_mv)   # y = D^{-1} x
@@ -60,18 +76,147 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
     #     return buf_rmv
 
     # M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_rmv, dtype=A.dtype)
+  
+    start = time.time()
+    # x3, info = cg(A3, b3, x0 = 3*x00 - 3*x01 + x02, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
+    x3, info = cg(A3, b3, x0 = 2*x00 - x01, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
+    x02[:] = x01[:]
+    x01[:] = x00[:]
+    x00[:] = x3[:]
+    # x, info = cg2(A, b, diag=diag, x0=x3.astype(A.dtype), rtol=tol, maxiter=maxIter)
+    solver = PCGSolver(A)
+    solver.diag[:] = diag
+    # x, info = cg(A, b, M=M, x0=x3.astype(A.dtype), tol=tol, maxiter=maxIter)
+    x, info = solver.solve(b, x0=x3.astype(A.dtype), rtol=tol, maxiter=maxIter)
+
+    its += info
+    end = time.time()
+    print(f"GMRES solve time: {end - start:.3f} s, iterations: {its}, time per iteration: {(end - start)/its:.7f} s")
+
+    cufunc.solverCopyResult(x)
+    time2 = time.time()
+    print(f"Time to setup and solve: {time2 - time1:.3f} s")
+    return
+
+    time3 = time.time()
+    iterCount = 0
+    rMr0      = None
+
+    # Checks that there's only one GPU device, otherwise it will fail
+    if cp.cuda.runtime.getDeviceCount() > 1:
+        raise ValueError("This function is not YET parallelized for multiple GPUs. Reductions need to be extended to all devices.")
+
+
+    scalars = cp.zeros(3, dtype=cp.float64) # rMr_old, rMr_new, pAp
+    cufunc.initializeScalars(scalars)
+
+
+    # Compute initial preconditioned residual Mr
+    cufunc.initializePreconditionedResidual()
+    cp.cuda.Device().synchronize()
+
+    rMr_new = scalars[1].item()
+    if (rMr_new <= 1e-30):
+        # If the initial residual is already small enough, return 0
+        return 0
+    
+    rMr_0 = rMr_new
+
+    while iterCount < maxIter:
+        # compute Ap, rMr, pAp, α on GPU
+        scalars[2] = 0.0 # pAp
+        cp.cuda.Device().synchronize()
+        cufunc.computeMatrixProductAndDotProducts()
+
+        # Sync to make sure pAp reduction is finished
+        cp.cuda.Device().synchronize()
+
+        # update x,r,z and accumulate rr_new on GPU
+        scalars[0] = scalars[1] # rMr_old = rMr_new
+        scalars[1] = 0.0 # rMr_new
+        cufunc.updateSolutionAndDotProducts()
+
+        # Sync to make sure rr reduction is finished
+        cp.cuda.Device().synchronize()
+
+        # fetch rr_new and rr_old = <r, r> from the device
+        rMr_new = scalars[1].item()
+        rMr_old = scalars[0].item()
+
+        if rMr_new <= tol*tol * rMr_0:
+            break
+        if (np.isnan(rMr_new)):
+            raise ValueError("rMr_new is NaN")
+        # update p ← z + beta*p on GPU
+        cufunc.updateSearchDirection()
+
+        iterCount += 1
+
+    time4 = time.time()
+    print(f"Time to solve: {time4 - time3:.3f} s")
+
+    return iterCount
+
+
+def solveWaveEquation2(maxIter=1000, tol=1e-12): 
+    """
+    Solve wave equation using Conjugate Gradient method.
+    Assumes all arrays are already stored in Node as doubles.
+
+    NOTATION: rMr and similar variable names stand for the dot product (r^T)Mr.
+    """
+    global N, NN, data, indices, indptr, b, diag, data3, indices3, indptr3, b3, diag3
+
+    time1 = time.time()
+    cufunc.setupCGSolver2(diag, data, indices, indptr, b)
+    cufunc.setupCGSolver3(diag3, data3, indices3, indptr3, b3)
+
+    indptr[N] = NN
+
     its = 1
     def cb(_xk):
         # called once per iteration
         nonlocal its
         its += 1
+    A = csr_matrix((data, indices, indptr), shape=(N, N))
+    # pcg = PCGFixed(A, diag)
+    # x_out = cp.zeros(N, dtype=cp.float64)
+    # pcg.solve(b, x_out, x0 = x00, rtol=1e-6, maxiter=maxIter)
+
+
+    # cufunc.setupCGSolver(data, indices, indptr, b)
+
+    A3 = csr_matrix((data3, indices3, indptr), shape=(N, N))
+    # A.sort_indices()
+
+    # A.sum_duplicates()
+
+    # d = cp.where(d != 0, d, 1.0)
+    M  = LinearOperator(A.shape,  matvec=lambda x: x * diag,  rmatvec=lambda x: x * diag, dtype=A.dtype)
+    M3 = LinearOperator(A3.shape, matvec=lambda x: x * diag3, rmatvec=lambda x: x * diag3, dtype=A3.dtype)
+    # def M_mv(x):
+    #     cp.multiply(x, diag, out=buf_mv)   # y = D^{-1} x
+    #     return buf_mv
+
+    # def M_rmv(x):
+    #     cp.multiply(x, diag, out=buf_rmv)  # y = (D^{-1})^T x == D^{-1} x (diagonal)
+    #     return buf_rmv
+
+    # M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_rmv, dtype=A.dtype)
+  
     start = time.time()
-    x3, info = cg(A3, b3, x0 = 3*x00 - 3*x01 + x02, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
+    # x3, info = cg(A3, b3, x0 = 3*x00 - 3*x01 + x02, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
+    x3, info = cg(A3, b3, x0 = 2*x00 - x01, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
     x02[:] = x01[:]
     x01[:] = x00[:]
     x00[:] = x3[:]
-    x, info = cg(A, b, M=M, x0=x3.astype(A.dtype), tol=tol, maxiter=maxIter, callback=cb)
-    # x, info = cg(A, b, M=M,  tol=tol, maxiter=maxIter, callback=cb)
+    # x, info = cg2(A, b, diag=diag, x0=x3.astype(A.dtype), rtol=tol, maxiter=maxIter)
+    solver = PCGSolver(A)
+    solver.diag[:] = diag
+    # x, info = cg(A, b, M=M, x0=x3.astype(A.dtype), tol=tol, maxiter=maxIter)
+    x, info = solver.solve(b, x0=x3.astype(A.dtype), rtol=tol, maxiter=maxIter)
+
+    its += info
     end = time.time()
     print(f"GMRES solve time: {end - start:.3f} s, iterations: {its}, time per iteration: {(end - start)/its:.7f} s")
 

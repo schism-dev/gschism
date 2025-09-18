@@ -68,8 +68,8 @@ if WINDOWS:
     in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
     out_dir = r'c:\Users\jmgonzalez\src\temp'
 elif VISTA:
-    in_dir = r'/home1/10922/jmglez/tests/RUN02a'
-    out_dir = r'/home1/10922/jmglez/tests/RUN02a/gpuoutput'
+    in_dir = r'/home1/10922/jmglez/tests/RUN01b'
+    out_dir = r'/home1/10922/jmglez/tests/RUN01b/gpuoutput'
 else:
     raise Exception("Unsupported platform")
 
@@ -464,6 +464,7 @@ if __name__ == "__main__":
         # Count the number of boundary nodes in the partition
         # idxBndNodes = cp.unique(cp.concatenate([ilnd.flatten(), iond.flatten()]))
         # XXXXX The whole computation of the number of boundary nodes and sides is wrong. 
+        print("REMEMBER TO FIX THIS*****")
         idxBndNodes = cp.append(cp.unique(iond.flatten()), cp.unique(ilnd.flatten()))
         idxBndNodes = idxBndNodes[idxBndNodes >= 0]
         numPartBoundaryNodes.append((partNodes[idxBndNodes] == ipart).sum().get())
