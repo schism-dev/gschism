@@ -1821,14 +1821,15 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
    NODE(node1);
 
-printf("1111 node1->numElements = %d\n", node1->numElements);
+if (node1->numElements > 6) printf("111 node1->numElements = %d\n", node1->numElements);
+
    node1->clearMatrixRow();
    node1->qel = 0.0;
 
    // THIS IS FOR STRUCTURES XXX
    // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
 
-printf("2222\n");  
+   
    for (int j=0; j<node1->numElements; j++) {
       // For each element connected to the node...
 
@@ -2006,7 +2007,7 @@ printf("2222\n");
 
    } // for all elements connected to the node
    
-printf("3333\n");
+
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2,6 are not needed if essential b.c. are enforced by elminating rows and columns
    NodeBoundary *nodeBnd = node1->nodeBnd;
@@ -2104,7 +2105,7 @@ printf("3333\n");
 
    } // if isbnd
 
-printf("4444\n");
+
 }
 
 
