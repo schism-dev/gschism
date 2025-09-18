@@ -1140,10 +1140,10 @@ struct Node {
 
    // Bottom drag parameters
    double Cd;       // Bottom drag coefficient   
-   
+
    // These three are mutually exclusive
    union {
-      double manning;  // Bottom Manning's n
+      double rmanning; // Bottom Manning's coefficient
       double rough;    // Bottom roughness length
       double drag;     // Bottom drag coefficient
    };
@@ -1227,6 +1227,8 @@ struct Node {
    __device__ double compZCoord(int k) const;
 
    __device__ void updateKb(void);
+
+   __device__ __forceinline__ void computeBottomDragCd(void);
 
 
 
@@ -1373,7 +1375,7 @@ struct Mesh {
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *drag, double *roughness);
+                  double *drag, double *roughness, double *rmanning);
 
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,

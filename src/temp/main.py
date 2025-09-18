@@ -270,7 +270,7 @@ if __name__ == "__main__":
     nchi = namelist.opt.nchi
     drag      = np.zeros(1)
     roughness = np.zeros(1)
-    manning   = np.zeros(1)
+    rmanning  = np.zeros(1)
     if nchi == 0: # read in drag coefficients for 3D model
         drag    = np.zeros(nodeCoords.shape[1])
         drag[:] = module.readHGridData(os.path.join(in_dir, 'drag.gr3'), nodeCoords.shape[1], elnode.shape[1])
@@ -279,9 +279,10 @@ if __name__ == "__main__":
         roughness    = np.zeros(nodeCoords.shape[1])
         roughness[:] = module.readHGridData(os.path.join(in_dir, 'rough.gr3'), nodeCoords.shape[1], elnode.shape[1])
         raise Exception("nchi = 1 not tested")
+
     elif nchi == -1:
-        manning   = np.zeros(nodeCoords.shape[1])
-        manning[:] = module.readHGridData(os.path.join(in_dir, 'manning.gr3'), nodeCoords.shape[1], elnode.shape[1])
+        rmanning   = np.zeros(nodeCoords.shape[1])
+        rmanning[:] = module.readHGridData(os.path.join(in_dir, 'manning.gr3'), nodeCoords.shape[1], elnode.shape[1])
 
     else:
         raise Exception(f"nchi = {nchi} is not a valid option")
@@ -633,7 +634,7 @@ if __name__ == "__main__":
                        nodeNeighElemsStart, nodeNeighElems,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness)
+                       drag, roughness, rmanning)
 
             cufunc.populateSides(i34Part, sharedIdxSideBoundary,
                        nodeCoordsPart, nodeCoords_llPart, use_ll,

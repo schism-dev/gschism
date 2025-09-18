@@ -44,6 +44,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__IHHAT__': (namelist.opt.ihhat, 'namelist.opt'),
         '__IHYDRAULICS__': (namelist.opt.ihydraulics, 'namelist.opt'),
         '__NCHI__': (namelist.opt.nchi, 'namelist.opt'),
+        '__HMIN_MAN__': (namelist.opt.hmin_man, 'namelist.opt'),
         '__NRAMP_ELEV__': (namelist.opt.nramp_elev, 'namelist.opt'),
         '__ILOADTIDE__': (namelist.opt.iloadtide, 'namelist.opt'),
         '__LOADTIDE_COEF__': (namelist.opt.loadtide_coef, 'namelist.opt'),

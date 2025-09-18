@@ -1141,7 +1141,7 @@ __device__ void Node::updateKb(void) {
          while (L <= R) {
             int M = (R + L) / 2;
 
-// printf("L = %d, R = %d, M = %d, depth = %f, ztot[L] = %f, ztot[R] = %f, ztot[M] = %f\n", L, R, M, depth, mesh->ztot[L], mesh->ztot[R], mesh->ztot[M]);
+
             assert((-depth >= mesh->ztot[L] && -depth < mesh->ztot[R]) && "ZCOOR: invalid depth\n");
             
             if (-depth >= mesh->ztot[L] && -depth < mesh->ztot[M]) {
@@ -1191,6 +1191,7 @@ __device__ __inline__ void Node::updateZCoordData(void) {
 
 }
 
+
 __device__ double Node::compZCoord(int k) const {
    // Computes the z coordinate at level k.
    // Depending on the vertical coordinate system, the z coordinate is computed differently.
@@ -1201,8 +1202,7 @@ __device__ double Node::compZCoord(int k) const {
    // NOTE: Assumes that updateZCoordData() has been called before this function.
 
    if (isDry2()) return 0.0;
-// if (htot2() <= h0) printf("idx = %d, htot2() = %f, h0 = %f\n", idx, htot2(), h0); XXX
-// if (htot2() <= h0) return 0.0; // XXX
+
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
    if constexpr(ivcor == 2) {
@@ -1226,7 +1226,7 @@ __device__ double Node::compZCoord(int k) const {
          const int ksig = k - izlev;
 
          if (hmod2 <= h_c) {
-// printf("mesh->sigma[ksig] * (hmod2 + eta2) + eta2 = %e\n", mesh->sigma[ksig] * (hmod2 + eta2) + eta2);            
+
             return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
          } 
          else if (eta2 <= - h_c - (depth - h_c) * theta_f/sinh_theta_f) {
@@ -1234,7 +1234,6 @@ __device__ double Node::compZCoord(int k) const {
             assert(false && "ZCOOR: invalid h_c\n");
          } 
          else {
-// printf("eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig] = %e\n", eta2*(1.0 + mesh->sigma[ksig]) + h_c * mesh->sigma[ksig] + (hmod2 - h_c) * mesh->cs[ksig]);
             return eta2*(1.0 + mesh->sigma[ksig]) + 
                          h_c * mesh->sigma[ksig] + 
                          (hmod2 - h_c) * mesh->cs[ksig];
@@ -1252,6 +1251,62 @@ __device__ double Node::compZCoord(int k) const {
    
    assert(false && "ZCOOR: invalid level or coordinate system\n");
    return 0.0;
+}
+
+
+__device__ __forceinline__ void Node::computeBottomDragCd(void) {
+   // Computes the bottom drag Cd based on the selected nchi
+
+   if constexpr(nchi == 0) {
+      // This line is repeated over and over again every time step, but it is very short, so it is not worth optimizing.
+      Cd = drag;  // Read from drag file
+
+   } else if constexpr(nchi == 1) {
+      // 
+
+      bool ltmp = false; // for WBL iteration
+
+      assert(false && "computeBottomDragVegetation: nchi == 1 not fully implemented. see below");
+      // Cdmax=-1 !max. Cd at node for this process (info only)
+      // Drag at nodes
+/////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
+// !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
+           
+      assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
+      if (rough == 0.0) {
+         node->Cd = 0.0;
+
+      } else { //roughness >0 
+         
+         const double bthick_ori = z[kb + 1] - z[kb];  // thickness of bottom bnd layer
+         const double bthick = max(dzb_min, bthick_ori);
+
+         assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
+
+         double tmp = 1.0/(2.5*log(bthick/rough));
+         Cd = tmp*tmp;
+
+      } // if rough
+
+
+      // RECOVER THIS: XXX
+      // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
+      // Output warning for WBL if iteration didn't converge
+
+
+   } else if constexpr(nchi == -1) {
+   // Manning 
+      Cd = 0.0;
+
+      if (isDry) return;
+
+      const double htot = max(hmin_man, htot2()); 
+      Cd = grav2*rmanning*rmanning/pow(htot, 0.333);
+
+   } else {
+      assert(false && "computeBottomDragVegetation:selected nchi not implemented.");
+      
+   } // if nchi
 }
 
 
@@ -1300,7 +1355,7 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
          }
       }
    }
-// printf("side.idx = %d, n1 = %d, n2 = %d\n", side.idx, n1, n2);             
+
    return -1;
 }
 
@@ -1312,7 +1367,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart,
-                                    double *drag, double *roughness) {
+                                    double *drag, double *roughness, double *rmanning) {
 
    NODE(pnode);  
    const int i = idx_node;
@@ -1373,7 +1428,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.numSides = 0;
 
    // drag, rough, and manning are actually stored in the same memory location. This is just sugar to make the code more readable without using unnecessary memory.
-   if      constexpr(nchi ==  0) node.drag      = drag[i];
+   if      constexpr(nchi ==  0) node.drag    = drag[i];
    else if constexpr(nchi ==  1) node.rough   = roughness[i];
    else if constexpr(nchi == -1) node.manning = manning[i];
    else assert(false && "populateNodes: selected nchi not implemented.");
@@ -3101,8 +3156,6 @@ extern "C" {
 
       const int    kb      = node->kb;
       const double htot    = node->htot2(); 
-      const double rough   = node->rough;
-
       
       if (node->isDry) {
          // Default values for dry nodes
@@ -3113,56 +3166,9 @@ extern "C" {
        
       }
 
-      // Compute bottom drag Cd
-      //--------------------------------
-
-      // nchi = {-1, 0, 1} is the type of bottom drag.
-      if constexpr(nchi == 1) {
-         // 
-
-         bool ltmp = false; // for WBL iteration
-
-         assert(false && "computeBottomDragVegetation: nchi == 1 not fully implemented. see below");
-         // Cdmax=-1 !max. Cd at node for this process (info only)
-         // Drag at nodes
-   /////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
-   // !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
-        
-         const double rough = node->rough;
-        
-         assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
-         if (node->rough == 0.0) {
-            node->Cd = 0.0;
-
-         } else { //roughness >0 
-          
-            const double bthick_ori = node->z[kb + 1] - node->z[kb];  // thickness of bottom bnd layer
-            const double bthick = max(dzb_min, bthick_ori);
-
-            assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
-
-            double tmp = 1.0/(2.5*log(bthick/rough));
-            node->Cd = tmp*tmp;
-
-         } // if rough
-
-
-         // RECOVER THIS: XXX
-         // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
-         // Output warning for WBL if iteration didn't converge
-
-
-      } 
-      else if constexpr(nchi == -1) {
-      // Manning 
+      // Computes bottom drag Cd based on the selected nchi
+      node->computeBottomDragCd();
       
-         // 
-
-      else {
-         assert(false && "computeBottomDragVegetation:selected nchi not implemented.");
-      }
-         
-      } // if nchi
 
 
       //   Bottom stress in m^2/s^2
@@ -6044,7 +6050,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
-   double *drag, double *roughness) {
+   double *drag, double *roughness, double *rmanning) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
@@ -6052,7 +6058,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness);
+                       drag, roughness, rmanning);
 }  
 
 extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,
