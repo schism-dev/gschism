@@ -1825,7 +1825,7 @@ if (node1->numElements > 8) printf("111 idx = %d, node1->numElements = %d\n", no
 
    node1->clearMatrixRow();
    node1->qel = 0.0;
-
+return;
    // THIS IS FOR STRUCTURES XXX
    // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
 
@@ -1835,7 +1835,7 @@ if (node1->numElements > 8) printf("111 idx = %d, node1->numElements = %d\n", no
 
       Element *elem = node1->elements[j];
 
-return;
+
       // Compute the average gravity
       const double grav3 = elem->mean(&Node::grav2);
 
