@@ -694,18 +694,17 @@ if __name__ == "__main__":
     schism_step_wrapped = profiler(schism_step)
     profiler.add_function(solveWaveEquation)
 
-    eta = np.zeros([numNodes, ntime], dtype=cp.float64)
+
     start_time = time.time()
     time1 = time.time()
     for it in range(1, ntime + 1, 1):
     # for it in range(1, 55, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
-        # schism_step_wrapped(it, namelist, bctides, sflux, eta)
+        # schism_step_wrapped(it, namelist, bctides, sflux)
 
-        schism_step(it, namelist, bctides, sflux, eta)
+        schism_step(it, namelist, bctides, sflux)
 
         writeOutput(it, namelist.core, namelist.opt)
-        # print(f'done solver; etatot={np.abs(monitor.getNodeVar("eta")).sum():.2f}; average |eta|={np.abs(monitor.getNodeVar("eta")).mean():.2f}')
 
         time2 = time.time()
         print(f"Time per step: {time2 - time1:.3f} s")

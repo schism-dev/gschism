@@ -379,7 +379,7 @@ def checkU():
     if maxVar > 0.4:
         print(f"Max difference: {maxVar} at node {max_idx}, level {max_level}")
 
-def schism_step(it: int, namelist, bctides, sflux, eta):
+def schism_step(it: int, namelist, bctides, sflux):
 
     core = namelist.core
     opt  = namelist.opt
