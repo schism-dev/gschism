@@ -1822,7 +1822,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    
    // node1->clearMatrixRow();
    node1->qel = 0.0;
-
+return;
    // THIS IS FOR STRUCTURES XXX
    // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
 
