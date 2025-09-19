@@ -1816,7 +1816,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Setup coefficient matrix, sparsem, for the shallow water wave equation
    // No elevation essential b.c. are imposed yet but other b.c. is imposed
 
-   printf("333 idx_node2 = %d, idx_node3 = %ld\n", idx_node2, idx_node3);
+
    NODE(node1);
 
    node1->clearMatrixRow();
