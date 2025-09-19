@@ -1819,10 +1819,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
    NODE(node1);
 
-   node1->coeffDiag = 0.0;
-
-   for (int i = 0; i < node1->numNodes; i++) node1->coeffMatrix[i] = 0.0;
-   // node1->clearMatrixRow();
+   
+   node1->clearMatrixRow();
    node1->qel = 0.0;
 
    // THIS IS FOR STRUCTURES XXX

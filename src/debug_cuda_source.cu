@@ -1,7 +1,7 @@
 // BEGIN INCLUDE: constants.h
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 
-constexpr int BLOCK_SIZE = 256;
+constexpr int BLOCK_SIZE = 128;
 
 constexpr int N_TRACERS = 2;
 
@@ -1295,7 +1295,7 @@ struct Node {
    __inline__ __device__ bool isBnd(void) const { return nodeBnd != nullptr; } // True if the node is a boundary node
    // __inline__ __device__ int numElements(void) const { return isNbd() ? numElements - 1 : numElements; } // Number of elements that are connected to this node
 
-   __device__ void clearMatrixRow(void) {
+   __device__ __forceinline__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
       coeffDiag = 0.0;
 
@@ -3480,6 +3480,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
    NODE(node1);
 
+   
    node1->clearMatrixRow();
    node1->qel = 0.0;
 
