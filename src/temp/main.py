@@ -16,7 +16,7 @@ from iop.writeOutput import writeOutput, initializeOutput
 # For profiling
 from line_profiler import LineProfiler
 
-VISTA = True
+VISTA = False
 WINDOWS = not VISTA
 
 # Enable verbose output
@@ -562,6 +562,9 @@ if __name__ == "__main__":
             partNodeNeighNodesMem += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
             partNodeNeighElemsMem += [cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)]
             partCoeffMatrixMem    += [cp.zeros(partNodeNeighElemsCount.sum().item(), dtype=cp.float64)]
+    print(f"SIZE OF partCoeffMatrixMem = {partCoeffMatrixMem[0].size}")
+
+    
     # Create arrays that convert from global indices to (partition,localIdx)
     # These arrays will be released after building the mesh
     with cp.cuda.Device(0):

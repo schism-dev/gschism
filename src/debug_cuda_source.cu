@@ -1,7 +1,7 @@
 // BEGIN INCLUDE: constants.h
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 
-constexpr int BLOCK_SIZE = 128;
+constexpr int BLOCK_SIZE = 256;
 
 constexpr int N_TRACERS = 2;
 
@@ -1297,6 +1297,8 @@ struct Node {
 
    __device__ __forceinline__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
+
+
       coeffDiag = 0.0;
 
       for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
@@ -3483,7 +3485,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    
    node1->clearMatrixRow();
    node1->qel = 0.0;
-
+return;
    // THIS IS FOR STRUCTURES XXX
    // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
 
