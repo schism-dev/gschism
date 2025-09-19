@@ -1196,6 +1196,16 @@ struct Node {
 
    __device__ __forceinline__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
+
+// Simple bounds check without printf
+if (numNodes < 0 || numNodes > 11) {
+return;  // Skip if invalid
+}
+
+// Check if coeffMatrix is within reasonable bounds
+if (coeffMatrix == nullptr) {
+return;
+}      
       coeffDiag = 0.0;
 
       for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;

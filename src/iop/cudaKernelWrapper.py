@@ -1,7 +1,7 @@
 import cupy as cp
 from functools import partial
 
-THREADS_PER_BLOCK = 128  # XXXXXXX
+THREADS_PER_BLOCK = 256  # XXXXXXX
 
 class CudaKernelWrapper:
     def __init__(self, kernel_func, sizes, kernel_type='global', n_gpus=None):
