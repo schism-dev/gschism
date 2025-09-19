@@ -1298,6 +1298,7 @@ struct Node {
    __device__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
       coeffDiag = 0.0;
+
       for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
 
    }
@@ -1652,9 +1653,6 @@ extern "C" {
    __global__ void computeHorGradientAtSide(void);  
 
 
-   __global__ void setupCGSolver(double* data, int* indices, int* indptr, double* b);
-   __global__ void setupCGSolver2(double* diag, double* data, int* indices, int* indptr, double* b);
-   __global__ void setupCGSolver3(float* diag, float* data, int* indices, int* indptr, float* b);
    __global__ void setupCGSolvers(double* diag_d, double* data_d, double* b_d, 
                                   float*  diag_f, float*  data_f, float*  b_f, 
                                   int* indices, int* indptr);
@@ -3478,13 +3476,9 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Setup coefficient matrix, sparsem, for the shallow water wave equation
    // No elevation essential b.c. are imposed yet but other b.c. is imposed
-   // 
-   // This kernel is called for all nodes.
 
 
    NODE(node1);
-
-// if (node1->numElements > 8) printf("111 idx = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
 
    node1->clearMatrixRow();
    node1->qel = 0.0;
@@ -3773,94 +3767,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 }
 
 
-extern "C" {
-   __global__ void setupCGSolver(double* data, int* indices, int* indptr, double* b) {
-      int off = 0;
-      for (int i = 0; i < mesh->np; i++) {
-
-         const Node *node = mesh->localNodeData + i;
-         indptr[i] = off;
-
-         // Diagonal first
-         data[off]    = node->coeffDiag;
-         indices[off] = i;
-         ++off;
-         // printf("i = %d, off = %d, node->nodes[i] = %p\n", i, off, node->nodes[i]);
-         // Off-diagonals
-         for (int k = 0; k < node->numNodes; ++k) {
-            const Node* nb = node->nodes[k];
-            // printf("i = %d, k = %d, nb = %p\n", i, k, nb);
-            // Map pointer -> column index by pointer arithmetic
-            int j = nb->idx;
-            // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
-            data[off]    = node->coeffMatrix[k];
-            indices[off] = j;
-            ++off;
-            // printf("i = %d, j = %d, off = %d, data[off] = %f\n", i, j, off, data[off]);
-         }
-
-         // RHS
-         b[i] = node->qel;
-      }
-
-      indptr[mesh->np] = off;
-   }
-   
-}
-
-extern "C" {
-   __global__ void setupCGSolver2(double* diag, double* data, int* indices, int* indptr, double* b) {
-      NODE(node);
-      const int idx = node->idx;
-      // Computes the index in the nzz array
-
-      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
-
-      indptr[idx] = nzzIdx;
-      data[nzzIdx]    = node->coeffDiag;
-      indices[nzzIdx] = idx;
-
-      for (int k = 0; k < node->numNodes; ++k) {
-         const Node* nb = node->nodes[k];
-
-         int j = nb->idx;
-         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
-         data[nzzIdx + k + 1]    = node->coeffMatrix[k];
-         indices[nzzIdx + k + 1] = j;
-      }
-
-      diag[idx] = 1.0/node->coeffDiag;
-      b[idx] = node->qel;
-   }
-}
-
-
-extern "C" {
-   __global__ void setupCGSolver3(float* diag, float* data, int* indices, int* indptr, float* b) {
-      NODE(node);
-      const int idx = node->idx;
-      // Computes the index in the nzz array
-
-      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
-
-      indptr[idx] = nzzIdx;
-      data[nzzIdx]    = (float)node->coeffDiag;
-      indices[nzzIdx] = idx;
-
-      for (int k = 0; k < node->numNodes; ++k) {
-         const Node* nb = node->nodes[k];
-
-         int j = nb->idx;
-         // (optionally: if (j == i) data[diag_off] += nd.coeffMatrix[k]; else ...)
-         data[nzzIdx + k + 1]    = (float)node->coeffMatrix[k];
-         indices[nzzIdx + k + 1] = j;
-      }
-
-      diag[idx] = (float)(1.0/node->coeffDiag);
-      b[idx] = (float)node->qel;
-   }
-}
-
 
 extern "C" {
    __global__ void setupCGSolvers(double* diag_d, double* data_d, double* b_d, 
@@ -3906,7 +3812,7 @@ extern "C" {
 
 extern "C" {
    __global__ void solverCopyResult(double* x) {
-      // Copies a solution vector to the solu
+      // Copies a solution vector to the member variable mX. XXXX It might be possible to remove all the unnecessary references to mX, mR, mP, mAp, etc.
       NODE(node);
       const int idx = node->idx;
 

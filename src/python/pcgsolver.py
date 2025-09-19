@@ -18,32 +18,31 @@ from cupyx.scipy.sparse import csr_matrix
 from line_profiler import LineProfiler
 
 class PCGSolver:
-    def __init__(self):
+    def __init__(self, N, NNZ):
         """Pre-allocate everything for maximum performance."""
 
-        N = 1457889
-        NN = 10141117
 
         # # Create independent profiler for solver
         # self.solver_profiler = LineProfiler()
         # self.solveprof = self.solver_profiler(self.solve2)
         # self.solver_profiler.add_function(self.solve) 
-
-        self.data     = cp.zeros(NN, dtype=cp.float64)
-        self.data_f   = cp.zeros(NN, dtype=cp.float32)
+        self.n = N
+        
+        self.data     = cp.zeros(NNZ, dtype=cp.float64)
+        self.data_f   = cp.zeros(NNZ, dtype=cp.float32)
         self.b        = cp.zeros(N,  dtype=cp.float64)
         self.b_f      = cp.zeros(N,  dtype=cp.float32)
         self.diag     = cp.zeros(N,  dtype=cp.float64)
         self.diag_f   = cp.zeros(N,  dtype=cp.float32)
 
-        self.indices= cp.zeros(NN,    dtype=cp.int32)
+        self.indices= cp.zeros(NNZ,    dtype=cp.int32)
         self.indptr = cp.zeros(N + 1, dtype=cp.int32)
-        self.indptr[N] = NN
+        self.indptr[N] = NNZ
 
         self.A   = csr_matrix((self.data  , self.indices, self.indptr), shape=(N, N))
         self.A_f = csr_matrix((self.data_f, self.indices, self.indptr), shape=(N, N))
 
-        self.n = N
+
 
         
         # Pre-allocate all work vectors (no allocations in solve loop)

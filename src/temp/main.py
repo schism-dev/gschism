@@ -7,6 +7,7 @@ import sys
 import cupy as cp
 import debug.monitor as monitor
 import time
+from python.pcgsolver import PCGSolver
 from iop.writeOutput import writeOutput, initializeOutput
 
 # pool = cp.cuda.MemoryPool()
@@ -230,7 +231,13 @@ if __name__ == "__main__":
         nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
             module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions, namelist.opt.ncor)
     
-    totMatrixElements = nodeNeighNodes[0].size + nodeCoords.shape[1]  # The total number of matrix elements is the number of node neighbors plus the number of nodes.
+    sizeMatrix = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.
+    totMatrixElements = nodeNeighNodes[0].size + sizeMatrix   # The total number of matrix elements is the number of node neighbors plus the number of nodes.
+
+    # Create the solver
+    solver = PCGSolver(sizeMatrix, totMatrixElements)
+    
+    print(f"Matrix size = {sizeMatrix}, total number of non-zero matrix elements = {totMatrixElements}")
     nope, mnond  = iond.shape
     nland, mnlnd = ilnd.shape
     bctides = read_bctides(in_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
@@ -703,7 +710,7 @@ if __name__ == "__main__":
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
         # schism_step_wrapped(it, namelist, bctides, sflux)
 
-        schism_step(it, namelist, bctides, sflux)
+        schism_step(it, namelist, bctides, sflux, solver)
 
         writeOutput(it, namelist.core, namelist.opt)
 

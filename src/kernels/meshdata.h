@@ -1197,7 +1197,7 @@ struct Node {
    __device__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
       coeffDiag = 0.0;
-      printf("444 clearMatrixRow: coeffMatrix = %p\n", coeffMatrix);
+
       for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
 
    }
@@ -1552,9 +1552,6 @@ extern "C" {
    __global__ void computeHorGradientAtSide(void);  
 
 
-   __global__ void setupCGSolver(double* data, int* indices, int* indptr, double* b);
-   __global__ void setupCGSolver2(double* diag, double* data, int* indices, int* indptr, double* b);
-   __global__ void setupCGSolver3(float* diag, float* data, int* indices, int* indptr, float* b);
    __global__ void setupCGSolvers(double* diag_d, double* data_d, double* b_d, 
                                   float*  diag_f, float*  data_f, float*  b_f, 
                                   int* indices, int* indptr);
