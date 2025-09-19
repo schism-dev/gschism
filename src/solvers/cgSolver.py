@@ -2,6 +2,7 @@ import numpy as np
 import pycuda.driver as cuda
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
+from cupyx.scipy.sparse import csr_matrix
 
 class CGSolver:
     def __init__(self, mesh, block_size=256):

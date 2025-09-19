@@ -5,25 +5,13 @@ import cupy as cp
 import numpy as np
 import debug.monitor as monitor
 from cupyx.scipy.sparse.linalg import cg, gmres, minres, LinearOperator
-from cupyx.scipy.sparse import csr_matrix
+
 from python.pcgsolver import PCGSolver
 # from cupy import cudaMemcpyFromSymbol
 
-N = 1457889
-NN = 10141117
-data   = cp.zeros(NN, dtype=cp.float64)
-indices= cp.zeros(NN, dtype=cp.int32)
-indptr = cp.zeros(N + 1, dtype=cp.int32)
-b      = cp.zeros(N, dtype=cp.float64)
-diag   = cp.zeros(N, dtype=cp.float64)
-data3  = cp.zeros(NN, dtype=cp.float32)
-indices3= cp.zeros(NN, dtype=cp.int32)
-indptr3 = cp.zeros(N + 1, dtype=cp.int32)
-x00     = cp.zeros(N, dtype=cp.float32)
-x01     = cp.zeros(N, dtype=cp.float32)
-x02     = cp.zeros(N, dtype=cp.float32)
-b3      = cp.zeros(N, dtype=cp.float32)
-diag3   = cp.zeros(N, dtype=cp.float32)
+solver = None
+
+
 import time
 
 
@@ -34,68 +22,20 @@ def solveWaveEquation(maxIter=1000, tol=1e-12):
 
     NOTATION: rMr and similar variable names stand for the dot product (r^T)Mr.
     """
-    global N, NN, data, indices, indptr, b, diag, data3, indices3, indptr3, b3, diag3
+    global N, NN
 
-
-
-    
+    global solver
 
     time1 = time.time()
-    cufunc.setupCGSolver2(diag, data, indices, indptr, b)
-    cufunc.setupCGSolver3(diag3, data3, indices3, indptr3, b3)
-
-    indptr[N] = NN
-
-    its = 1
-    def cb(_xk):
-        # called once per iteration
-        nonlocal its
-        its += 1
-    A = csr_matrix((data, indices, indptr), shape=(N, N))
-    # pcg = PCGFixed(A, diag)
-    # x_out = cp.zeros(N, dtype=cp.float64)
-    # pcg.solve(b, x_out, x0 = x00, rtol=1e-6, maxiter=maxIter)
-
-
-    # cufunc.setupCGSolver(data, indices, indptr, b)
-
-    A3 = csr_matrix((data3, indices3, indptr), shape=(N, N))
-    # A.sort_indices()
-
-    # A.sum_duplicates()
-
-    # d = cp.where(d != 0, d, 1.0)
-    M  = LinearOperator(A.shape,  matvec=lambda x: x * diag,  rmatvec=lambda x: x * diag, dtype=A.dtype)
-    M3 = LinearOperator(A3.shape, matvec=lambda x: x * diag3, rmatvec=lambda x: x * diag3, dtype=A3.dtype)
-    # def M_mv(x):
-    #     cp.multiply(x, diag, out=buf_mv)   # y = D^{-1} x
-    #     return buf_mv
-
-    # def M_rmv(x):
-    #     cp.multiply(x, diag, out=buf_rmv)  # y = (D^{-1})^T x == D^{-1} x (diagonal)
-    #     return buf_rmv
-
-    # M = LinearOperator(A.shape, matvec=M_mv, rmatvec=M_rmv, dtype=A.dtype)
   
-    start = time.time()
-    # x3, info = cg(A3, b3, x0 = 3*x00 - 3*x01 + x02, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
-    x3, info = cg(A3, b3, x0 = 2*x00 - x01, M=M3, tol=1e-6, maxiter=maxIter, callback=cb)
-    x02[:] = x01[:]
-    x01[:] = x00[:]
-    x00[:] = x3[:]
-    # x, info = cg2(A, b, diag=diag, x0=x3.astype(A.dtype), rtol=tol, maxiter=maxIter)
-    solver = PCGSolver(A)
-    solver.diag[:] = diag
-    # x, info = cg(A, b, M=M, x0=x3.astype(A.dtype), tol=tol, maxiter=maxIter)
-    x, info = solver.solve(b, x0=x3.astype(A.dtype), rtol=tol, maxiter=maxIter)
+    if solver is None:
+        solver = PCGSolver()
+        
 
-    its += info
-    end = time.time()
-    print(f"GMRES solve time: {end - start:.3f} s, iterations: {its}, time per iteration: {(end - start)/its:.7f} s")
+    its = solver.solve(rtol=tol, maxiter=maxIter)
 
-    cufunc.solverCopyResult(x)
     time2 = time.time()
-    print(f"Time to setup and solve: {time2 - time1:.3f} s")
+    print(f"Time to setup and solve: {time2 - time1:.3f} , iterations: {its}")
     return
 
     time3 = time.time()
@@ -343,46 +283,14 @@ def computeMeteorologicalForcing(time, sflux):
 #       enddo !i=1,npa
 # !$OMP end do      
 
-def checkU():
-    #  REMOVE THIS!!!!!!
-    import numpy as np
-    # cp.cuda.Device().synchronize()
-    maxVar = 0.0
-    max_idx = 0
-    max_level = 0
-    var1 = monitor.getSideVar("u", 0)
-    for i in range(1, 2):
-        var2 = monitor.getSideVar("u", i)
-        diff = np.abs(var1 - var2)
-        max_diff = np.max(diff)
-        if max_diff > maxVar:
-            maxVar = max_diff
-            max_level = i
-            max_idx = np.argmax(diff)
-        var1 = var2.copy()
-    if maxVar > 0.4:
-        print(f"Max difference: {maxVar} at node {max_idx}, level {max_level}")
 
-    maxVar = 0.0
-    max_idx = 0
-    max_level = 0
-    var1 = monitor.getNodeVar("u", 0)
-    for i in range(1, 2):
-        var2 = monitor.getNodeVar("u", i)
-        diff = np.abs(var1 - var2)
-        max_diff = np.max(diff)
-        if max_diff > maxVar:
-            maxVar = max_diff
-            max_level = i
-            max_idx = np.argmax(diff)
-        var1 = var2.copy()
-    if maxVar > 0.4:
-        print(f"Max difference: {maxVar} at node {max_idx}, level {max_level}")
 
 def schism_step(it: int, namelist, bctides, sflux):
 
     core = namelist.core
     opt  = namelist.opt
+
+    
 
     # SAL option: scale gravity
     cufunc.scaleGravity(opt.loadtide_coef)
@@ -518,13 +426,12 @@ def schism_step(it: int, namelist, bctides, sflux):
     # Precompute elevation gradient, atmo. pressure and earth tidal potential 
     cufunc.computeHorGradientAtSide()  # lines -7296
 
-    # checkU()
+
     cufunc.solveMomentumEquations(time)
-    # checkU()
     
 
     cufunc.applyMomentumBC()
-    # checkU()
+
 
     # Transport    lines 7388-8111
 
@@ -558,6 +465,7 @@ def schism_step(it: int, namelist, bctides, sflux):
     cufunc.computeNodalHorizontalVelocities2()
     # cufunc.resetVelocityOpenBndNodes()
     # cufunc.setVelocityOpenBndNodes()
+
 
 
     # var = monitor.getElementVar("z", 0)
