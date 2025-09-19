@@ -1820,7 +1820,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
    const int idx_node2 = threadIdx.x + blockIdx.x * blockDim.x;
    const long int idx_node3 = threadIdx.x + blockIdx.x * blockDim.x;
-   Node *node = &(mesh->localNodeData[idx_node2);
+   Node *node = &(mesh->localNodeData[idx_node2]);
    printf("333 idx_node2 = %d, idx_node3 = %ld\n", idx_node2, idx_node3);
    NODE(node1);
 
