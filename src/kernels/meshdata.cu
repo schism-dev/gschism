@@ -1820,7 +1820,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    NODE(node1);
 
    
-   // node1->clearMatrixRow();
+   node1->clearMatrixRow();
    node1->qel = 0.0;
 return;
    // THIS IS FOR STRUCTURES XXX
