@@ -1199,7 +1199,7 @@ struct Node {
 
 // Check bounds: ensure coeffMatrix is within allocated memory
 const size_t max_elements = 62903880;
-const size_t offset = coeffMatrix - coeffMatrixMem;
+const size_t offset = coeffMatrix - mesh->coeffMatrixMem;
 
 if (offset < 0 || offset >= max_elements) {
    return;  // Out of bounds, skip
