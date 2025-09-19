@@ -1197,18 +1197,7 @@ struct Node {
    __device__ __forceinline__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
 
-// Check bounds: ensure coeffMatrix is within allocated memory
-const size_t max_elements = 62903880;
-const size_t offset = coeffMatrix - mesh->coeffMatrixMem;
 
-if (offset < 0 || offset >= max_elements) {
-   return;  // Out of bounds, skip
-}
-
-// Check if we have enough space for numNodes elements
-if (offset + numNodes > max_elements) {
-   return;  // Not enough space, skip
-}
       coeffDiag = 0.0;
 
       for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
