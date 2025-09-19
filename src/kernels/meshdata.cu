@@ -1815,23 +1815,13 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Setup coefficient matrix, sparsem, for the shallow water wave equation
    // No elevation essential b.c. are imposed yet but other b.c. is imposed
-   // 
-   // This kernel is called for all nodes.
 
-   const int idx_node2 = threadIdx.x + blockIdx.x * blockDim.x;
-   const long int idx_node3 = threadIdx.x + blockIdx.x * blockDim.x;
-   Node *node = &(mesh->localNodeData[idx_node2]);
    printf("333 idx_node2 = %d, idx_node3 = %ld\n", idx_node2, idx_node3);
    NODE(node1);
 
-   if (node1 - mesh->localNodeData < 0) printf("111 idx = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
-   if (node1 - mesh->localNodeData > mesh->np) printf("222 idx = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
-
-   return;
-
    node1->clearMatrixRow();
    node1->qel = 0.0;
-
+return;
    // THIS IS FOR STRUCTURES XXX
    // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
 
