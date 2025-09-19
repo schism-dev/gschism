@@ -1208,7 +1208,7 @@ return;
 }      
       coeffDiag = 0.0;
 
-      for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
+      for (int i = 0; i < numNodes; i++) coeffMatrix[0] = 0.0;
 
    }
 
