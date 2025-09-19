@@ -1825,6 +1825,8 @@ const size_t max_elements = 62903880;
 const size_t offset = node1->coeffMatrix - mesh->coeffMatrixMem;
 
 if (offset < 0 || offset >= max_elements) {
+
+   IT IS ENTERING HERE, BUT IT SHOULDNT
    printf("Offset is out of bounds: %llu, max_elements = %llu\n", 
       (unsigned long long)offset, (unsigned long long)max_elements);
    return;  // Out of bounds, skip
@@ -1839,7 +1841,7 @@ if (offset + node1->numNodes > max_elements) {
 
    node1->clearMatrixRow();
    node1->qel = 0.0;
-return;
+
    // THIS IS FOR STRUCTURES XXX
    // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
 
