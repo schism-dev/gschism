@@ -1818,7 +1818,9 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // 
    // This kernel is called for all nodes.
 
-
+   const int idx_node2 = threadIdx.x + blockIdx.x * blockDim.x;
+   const long int idx_node3 = threadIdx.x + blockIdx.x * blockDim.x;
+   printf("333 idx_node2 = %d, idx_node3 = %ld\n", idx_node2, idx_node3);
    NODE(node1);
 
    if (node1 - mesh->localNodeData < 0) printf("111 idx = %d, node1->numElements = %d\n", node1->idx, node1->numElements);
