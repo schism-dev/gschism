@@ -1197,7 +1197,7 @@ struct Node {
    __device__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
       coeffDiag = 0.0;
-if (numNodes <= 0 || numNodes > 1) printf("111 numNodes = %d\n", numNodes);
+if (numNodes <= 0 || numNodes > 11) printf("111 numNodes = %d\n", numNodes);
       for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
 
    }
