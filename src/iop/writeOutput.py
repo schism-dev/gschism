@@ -1,5 +1,7 @@
 import os
 import cupy as cp
+import threading
+import queue
 
 import netCDF4 as nc
 import debug.monitor as monitor 
@@ -33,15 +35,23 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
     sizeSide = sideSize
 
 
-def writeOutput(it, core, opt):
-    # Write the output files
-    global dataC, dataU, dataV, dataZ, fileNum, sizeNode
+output_thread = None
+output_queue = queue.Queue()
+output_lock = threading.Lock()
 
+def writeOutput(it, core, opt):
+    """Modified writeOutput with threading support."""
+    global dataC, dataU, dataV, dataZ, fileNum, sizeNode, output_thread, output_queue, output_lock
+    
+    # Check if previous call is still working
+    with output_lock:
+        if output_thread is not None and output_thread.is_alive():
+            output_thread.join()  # Wait until it finishes
+    
     ihfskip = core.ihfskip
     nspool  = core.nspool
     dt      = core.dt
     timesPerFile = ihfskip // nspool
-
 
     if (it % nspool) != 0:
         return
@@ -54,148 +64,193 @@ def writeOutput(it, core, opt):
             dataZ.close()
 
         fileNum += 1
-
         ifile=(it-1)/ihfskip+1
         dataC, dataU, dataV = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
-
 
     if dataC is None:
         return
 
     idxTime = ((it // nspool) - 1) % timesPerFile
 
-    # Horizontal geometric variables are only written once per file
+    # Get all memory into CPU (this is the expensive part)
+    output_data = {}
+    
+    # Horizontal geometric variables (only written once per file)
     if idxTime == 0:
-        view = monitor.getNodeVar("x")  # x is a 2D vector
-        xy_cpu = view.get()
-        SCHISM_hgrid_node_x_var = dataC.variables['SCHISM_hgrid_node_x']
-        SCHISM_hgrid_node_x_var[:] = xy_cpu[0, :]
+        view = monitor.getNodeVar("x")
+        output_data['xy_cpu'] = view.get()
         
-        SCHISM_hgrid_node_y_var = dataC.variables['SCHISM_hgrid_node_y']
-        SCHISM_hgrid_node_y_var[:] = xy_cpu[1, :]
-        del xy_cpu
-
-        view = monitor.getSideVar("x")  # x is a 2D vector
-        xy_cpu = view.get()
-        SCHISM_hgrid_edge_x_var = dataC.variables['SCHISM_hgrid_edge_x']
-        SCHISM_hgrid_edge_x_var[:] = xy_cpu[0, :]
+        view = monitor.getSideVar("x")
+        output_data['xy_side_cpu'] = view.get()
         
-        SCHISM_hgrid_edge_y_var = dataC.variables['SCHISM_hgrid_edge_y']
-        SCHISM_hgrid_edge_y_var[:] = xy_cpu[1, :]
-        del xy_cpu        
-
-        view = monitor.getElementVar("x")  # x is a 2D vector
-        xy_cpu = view.get()
-        SCHISM_hgrid_face_x_var = dataC.variables['SCHISM_hgrid_face_x']
-        SCHISM_hgrid_face_x_var[:] = xy_cpu[0, :]
+        view = monitor.getElementVar("x")
+        output_data['xy_elem_cpu'] = view.get()
         
-        SCHISM_hgrid_face_y_var = dataC.variables['SCHISM_hgrid_face_y']
-        SCHISM_hgrid_face_y_var[:] = xy_cpu[1, :]
-        del xy_cpu
-
         view = monitor.getElementVar("FaceIndices")
         mask = (view[:,:] != 0)
-        faceIndices_cpu = view.astype(cp.int64).get()
-        firstPointer = view[mask].min().get()
-        mask = mask.get()
-        # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
-        faceIndices_cpu[mask] = (faceIndices_cpu[mask] - firstPointer)//sizeNode + 1
-        faceIndices_cpu[~mask] = -1
-        nSCHISM_hgrid_face_nodes_var = dataC.variables['SCHISM_hgrid_face_nodes']
-        nSCHISM_hgrid_face_nodes_var[:] = faceIndices_cpu.T
-        del faceIndices_cpu, mask
-
-        view = monitor.getSideVar("n1")
-        n1_cpu = view.get()
-        firstPointer = view.min().get()
-        # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
-        n1_cpu[:] = (n1_cpu - firstPointer)//sizeNode + 1
-
-        view = monitor.getSideVar("n2")
-        n2_cpu = view.get()
-        firstPointer = view.min().get()
-        # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
-        n2_cpu[:] = (n2_cpu - firstPointer)//sizeNode + 1        
-
-        nSCHISM_hgrid_edge_nodes_var = dataC.variables['SCHISM_hgrid_edge_nodes']
-        nSCHISM_hgrid_edge_nodes_var[:, 0] = n1_cpu
-        nSCHISM_hgrid_edge_nodes_var[:, 1] = n2_cpu
-        del n1_cpu, n2_cpu
-
-
-        view = monitor.getNodeVar("depth")
-        depth_cpu = view.get()
-        depth_var = dataC.variables['depth']
-        depth_var[:] = depth_cpu
-        del depth_cpu
-
-        min_depth_var = dataC.variables['minimum_depth']
-        min_depth_var[:] = 0.0001
-
+        output_data['faceIndices_cpu'] = view.astype(cp.int64).get()
+        output_data['firstPointer_face'] = view[mask].min().get()
+        output_data['mask'] = mask.get()
         
+        view = monitor.getSideVar("n1")
+        output_data['n1_cpu'] = view.get()
+        output_data['firstPointer_n1'] = view.min().get()
+        
+        view = monitor.getSideVar("n2")
+        output_data['n2_cpu'] = view.get()
+        output_data['firstPointer_n2'] = view.min().get()
+        
+        view = monitor.getNodeVar("depth")
+        output_data['depth_cpu'] = view.get()
 
-
-    # For each variable, get the data from GPU (using monitor) and store it in the NetCDF file.
-    # Explicitly delete the data from CPU after storing it in the NetCDF file.
+    # Time-dependent variables
     view = monitor.getNodeVar("eta")
-    eta_cpu = view.get()
-    elevation_var = dataC.variables['elevation']
-    elevation_var[idxTime, :] = eta_cpu
-    del eta_cpu
-
+    output_data['eta_cpu'] = view.get()
+    
     view = monitor.getNodeVar("isdry")
-    isdry_cpu = view.astype(cp.int32).get()
-    dryFlagNode_var = dataC.variables['dryFlagNode']
-    dryFlagNode_var[idxTime, :] = isdry_cpu
-    del isdry_cpu
-
+    output_data['isdry_node_cpu'] = view.astype(cp.int32).get()
+    
     view = monitor.getSideVar("isdry")
-    isdry_cpu = view.astype(cp.int32).get()
-    dryFlagSide_var = dataC.variables['dryFlagSide']
-    dryFlagSide_var[idxTime, :] = isdry_cpu
-    del isdry_cpu    
-
+    output_data['isdry_side_cpu'] = view.astype(cp.int32).get()
+    
     view = monitor.getElementVar("isdry")
-    isdry_cpu = view.astype(cp.int32).get()
-    dryFlagElement_var = dataC.variables['dryFlagElement']
-    dryFlagElement_var[idxTime, :] = isdry_cpu
-    del isdry_cpu    
-
+    output_data['isdry_elem_cpu'] = view.astype(cp.int32).get()
+    
     view = monitor.getNodeVar("u")
-    u_cpu = view[0,:,:].get()
-    v_cpu = view[1,:,:].get()
-    horizontalVelX_var = dataU.variables['horizontalVelX']
-    horizontalVelX_var[idxTime, :, :] = u_cpu.T
-
-    horizontalVelY_var = dataV.variables['horizontalVelY']
-    horizontalVelY_var[idxTime, :, :] = v_cpu.T
-    del u_cpu, v_cpu
-
+    output_data['u_cpu'] = view[0,:,:].get()
+    output_data['v_cpu'] = view[1,:,:].get()
+    
     view = monitor.getNodeVar("z")
-    z_cpu = view.get()
-    zCoordinates_var = dataZ.variables['zCoordinates']
-    zCoordinates_var[idxTime, :, :] = z_cpu.T
-    del z_cpu
-   
+    output_data['z_cpu'] = view.get()
+    
+    # Add metadata
+    output_data['it'] = it
+    output_data['core'] = core
+    output_data['opt'] = opt
+    output_data['idxTime'] = idxTime
+    output_data['dt'] = dt
+    output_data['timesPerFile'] = timesPerFile
 
-    time_var = dataC.variables['time']
-    time_var[idxTime] = it*dt
+    # Launch thread for writing (GPU can continue now)
+    with output_lock:
+        output_thread = threading.Thread(target=_writeOutputThread, args=(output_data,))
+        output_thread.start()
 
-    time_var = dataU.variables['time']
-    time_var[idxTime] = it*dt
+def _writeOutputThread(output_data):
+    """Background thread for actual file writing."""
+    global dataC, dataU, dataV, dataZ, sizeNode
+    
+    try:
+        it = output_data['it']
+        core = output_data['core']
+        opt = output_data['opt']
+        idxTime = output_data['idxTime']
+        dt = output_data['dt']
+        timesPerFile = output_data['timesPerFile']
+        
+        # Horizontal geometric variables (only written once per file)
+        if idxTime == 0:
+            xy_cpu = output_data['xy_cpu']
+            SCHISM_hgrid_node_x_var = dataC.variables['SCHISM_hgrid_node_x']
+            SCHISM_hgrid_node_x_var[:] = xy_cpu[0, :]
+            SCHISM_hgrid_node_y_var = dataC.variables['SCHISM_hgrid_node_y']
+            SCHISM_hgrid_node_y_var[:] = xy_cpu[1, :]
+            del xy_cpu
 
-    time_var = dataV.variables['time']
-    time_var[idxTime] = it*dt
+            xy_side_cpu = output_data['xy_side_cpu']
+            SCHISM_hgrid_edge_x_var = dataC.variables['SCHISM_hgrid_edge_x']
+            SCHISM_hgrid_edge_x_var[:] = xy_side_cpu[0, :]
+            SCHISM_hgrid_edge_y_var = dataC.variables['SCHISM_hgrid_edge_y']
+            SCHISM_hgrid_edge_y_var[:] = xy_side_cpu[1, :]
+            del xy_side_cpu
 
-    time_var = dataZ.variables['time']
-    time_var[idxTime] = it*dt
+            xy_elem_cpu = output_data['xy_elem_cpu']
+            SCHISM_hgrid_face_x_var = dataC.variables['SCHISM_hgrid_face_x']
+            SCHISM_hgrid_face_x_var[:] = xy_elem_cpu[0, :]
+            SCHISM_hgrid_face_y_var = dataC.variables['SCHISM_hgrid_face_y']
+            SCHISM_hgrid_face_y_var[:] = xy_elem_cpu[1, :]
+            del xy_elem_cpu
 
+            faceIndices_cpu = output_data['faceIndices_cpu']
+            firstPointer = output_data['firstPointer_face']
+            mask = output_data['mask']
+            faceIndices_cpu[mask] = (faceIndices_cpu[mask] - firstPointer)//sizeNode + 1
+            faceIndices_cpu[~mask] = -1
+            nSCHISM_hgrid_face_nodes_var = dataC.variables['SCHISM_hgrid_face_nodes']
+            nSCHISM_hgrid_face_nodes_var[:] = faceIndices_cpu.T
+            del faceIndices_cpu, mask
 
-    # if it >100:
-    #     data.close()
-    #     exit()
+            n1_cpu = output_data['n1_cpu']
+            firstPointer = output_data['firstPointer_n1']
+            n1_cpu[:] = (n1_cpu - firstPointer)//sizeNode + 1
 
+            n2_cpu = output_data['n2_cpu']
+            firstPointer = output_data['firstPointer_n2']
+            n2_cpu[:] = (n2_cpu - firstPointer)//sizeNode + 1
 
+            nSCHISM_hgrid_edge_nodes_var = dataC.variables['SCHISM_hgrid_edge_nodes']
+            nSCHISM_hgrid_edge_nodes_var[:, 0] = n1_cpu
+            nSCHISM_hgrid_edge_nodes_var[:, 1] = n2_cpu
+            del n1_cpu, n2_cpu
+
+            depth_cpu = output_data['depth_cpu']
+            depth_var = dataC.variables['depth']
+            depth_var[:] = depth_cpu
+            del depth_cpu
+
+            min_depth_var = dataC.variables['minimum_depth']
+            min_depth_var[:] = 0.0001
+
+        # Time-dependent variables
+        eta_cpu = output_data['eta_cpu']
+        elevation_var = dataC.variables['elevation']
+        elevation_var[idxTime, :] = eta_cpu
+        del eta_cpu
+
+        isdry_node_cpu = output_data['isdry_node_cpu']
+        dryFlagNode_var = dataC.variables['dryFlagNode']
+        dryFlagNode_var[idxTime, :] = isdry_node_cpu
+        del isdry_node_cpu
+
+        isdry_side_cpu = output_data['isdry_side_cpu']
+        dryFlagSide_var = dataC.variables['dryFlagSide']
+        dryFlagSide_var[idxTime, :] = isdry_side_cpu
+        del isdry_side_cpu
+
+        isdry_elem_cpu = output_data['isdry_elem_cpu']
+        dryFlagElement_var = dataC.variables['dryFlagElement']
+        dryFlagElement_var[idxTime, :] = isdry_elem_cpu
+        del isdry_elem_cpu
+
+        u_cpu = output_data['u_cpu']
+        v_cpu = output_data['v_cpu']
+        horizontalVelX_var = dataU.variables['horizontalVelX']
+        horizontalVelX_var[idxTime, :, :] = u_cpu.T
+        horizontalVelY_var = dataV.variables['horizontalVelY']
+        horizontalVelY_var[idxTime, :, :] = v_cpu.T
+        del u_cpu, v_cpu
+
+        z_cpu = output_data['z_cpu']
+        zCoordinates_var = dataZ.variables['zCoordinates']
+        zCoordinates_var[idxTime, :, :] = z_cpu.T
+        del z_cpu
+
+        # Time variables
+        time_var = dataC.variables['time']
+        time_var[idxTime] = it*dt
+        time_var = dataU.variables['time']
+        time_var[idxTime] = it*dt
+        time_var = dataV.variables['time']
+        time_var[idxTime] = it*dt
+        time_var = dataZ.variables['time']
+        time_var[idxTime] = it*dt
+
+    finally:
+        # Clean up all CPU memory at the end
+        for key, value in output_data.items():
+            if hasattr(value, 'shape'):  # Check if it's an array
+                del value
+        output_data.clear()
 
 
 
