@@ -69,8 +69,8 @@ if WINDOWS:
     in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
     out_dir = r'c:\Users\jmgonzalez\src\temp'
 elif VISTA:
-    in_dir = r'/home1/10922/jmglez/tests/RUN01b'
-    out_dir = r'/home1/10922/jmglez/tests/RUN01b/gpuoutput'
+    in_dir = r'/work/10922/jmglez/vista/tests/RUN01b'
+    out_dir = r'/work/10922/jmglez/vista/tests/RUN01b/gpuoutput'
     # in_dir = r'/home1/10922/jmglez/tests/RUN02a'
     # out_dir = r'/home1/10922/jmglez/tests/RUN02a/gpuoutput'
 else:
