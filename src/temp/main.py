@@ -563,6 +563,11 @@ if __name__ == "__main__":
             partNodeNeighElemsMem += [cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)]
             partCoeffMatrixMem    += [cp.zeros(partNodeNeighElemsCount.sum().item(), dtype=cp.float64)]
     print(f"SIZE OF partCoeffMatrixMem = {partCoeffMatrixMem[0].size}") # XXXXXX REMOVE
+    print(f"zeros in partNodeNeighNodesCount = {(partNodeNeighNodesCount == 0).sum().get()}")
+    print(f"max in partNodeNeighNodesCount = {partNodeNeighNodesCount.max().get()}")
+    print(f"min in partNodeNeighNodesCount = {partNodeNeighNodesCount.min().get()}")
+ 
+
 
     
     # Create arrays that convert from global indices to (partition,localIdx)
