@@ -3482,10 +3482,28 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
    NODE(node1);
 
-   
+ 
+// Check bounds: ensure coeffMatrix is within allocated memory XXXX REMOVE
+const size_t max_elements = 62903880;
+const size_t offset = node1->coeffMatrix - mesh->coeffMatrixMem;
+
+if (offset < 0 || offset >= max_elements) {
+
+   printf("Offset is out of bounds: %llu, max_elements = %llu\n", 
+      (unsigned long long)offset, (unsigned long long)max_elements);
+   return;  // Out of bounds, skip
+}
+
+// Check if we have enough space for numNodes elements
+if (offset + node1->numNodes > max_elements) {
+   printf("Not enough space for numNodes elements: %llu, max_elements = %llu\n", 
+      (unsigned long long)(offset + node1->numNodes), (unsigned long long)max_elements);
+   return;  // Not enough space, skip
+}
+
    node1->clearMatrixRow();
    node1->qel = 0.0;
-return;
+
    // THIS IS FOR STRUCTURES XXX
    // if ((ihydraulics!=0 && nhtblocks>0) && isblock_el(ie)>0) cycle //active block
 
