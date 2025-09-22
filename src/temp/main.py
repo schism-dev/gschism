@@ -554,14 +554,14 @@ if __name__ == "__main__":
             partNodeNeighNodesSize = maskNodesPart.sum().item()
             partNodeNeighElemsSize = maskElemsPart.sum().item()
 
-            # compute the local size of the node and element neighbor arrays
+            # compute the local size of the node and element neighbor arrays  XXXX is the [maskNodesPart] below correct?
             partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
             partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
 
             pointerSize = cp.dtype(cp.uintp).itemsize 
             partNodeNeighNodesMem += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
             partNodeNeighElemsMem += [cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)]
-            partCoeffMatrixMem    += [cp.zeros(partNodeNeighElemsCount.sum().item(), dtype=cp.float64)]
+            partCoeffMatrixMem    += [cp.zeros(partNodeNeighNodesCount.sum().item(), dtype=cp.float64)]
     print(f"SIZE OF partCoeffMatrixMem = {partCoeffMatrixMem[0].size}") # XXXXXX REMOVE
     print(f"zeros in partNodeNeighNodesCount = {(partNodeNeighNodesCount == 0).sum().get()}")
     print(f"max in partNodeNeighNodesCount = {partNodeNeighNodesCount.max().get()}")

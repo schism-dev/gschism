@@ -3484,7 +3484,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
  
 // Check bounds: ensure coeffMatrix is within allocated memory XXXX REMOVE
-const size_t max_elements = 62903880;
+const size_t max_elements = 63011136;
 const size_t offset = node1->coeffMatrix - mesh->coeffMatrixMem;
 
 if (offset < 0 || offset >= max_elements) {

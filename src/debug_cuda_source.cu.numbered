@@ -3484,7 +3484,7 @@
  3484: 
  3485:  
  3486: // Check bounds: ensure coeffMatrix is within allocated memory XXXX REMOVE
- 3487: const size_t max_elements = 62903880;
+ 3487: const size_t max_elements = 63011136;
  3488: const size_t offset = node1->coeffMatrix - mesh->coeffMatrixMem;
  3489: 
  3490: if (offset < 0 || offset >= max_elements) {
