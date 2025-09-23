@@ -46,7 +46,9 @@ def writeOutput(it, core, opt):
     # Check if previous call is still working
     with output_lock:
         if output_thread is not None and output_thread.is_alive():
+            print("[a] Waiting for output thread to finish")
             output_thread.join()  # Wait until it finishes
+            print("[a] Output thread finished")
     
     ihfskip = core.ihfskip
     nspool  = core.nspool
@@ -252,11 +254,6 @@ def _writeOutputThread(output_data):
                 del value
         output_data.clear()
 
-
-
-def closeOutputFiles():
-    # Close the output files
-    pass
 
 
 def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
