@@ -337,7 +337,8 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
         time_var.axis = "T"
     
 
-    paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
+    # paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
+    paramsCompression = {'zlib': False}
 
     # Minimum depth
     min_depth_var = dataC.createVariable('minimum_depth', 'f8', ('one',))
