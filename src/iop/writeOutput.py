@@ -138,6 +138,7 @@ def writeOutput(it, core, opt):
         output_thread = threading.Thread(target=_writeOutputThread, args=(output_data,))
         output_thread.start()
 
+
 def _writeOutputThread(output_data):
     """Background thread for actual file writing."""
     global dataC, dataU, dataV, dataZ, sizeNode
@@ -250,9 +251,12 @@ def _writeOutputThread(output_data):
     finally:
         # Clean up all CPU memory at the end
         for key, value in output_data.items():
+            print(key, value.shape)
             if hasattr(value, 'shape'):  # Check if it's an array
                 del value
+        print("[aaa]")
         output_data.clear()
+        print("[bbb]")
 
 
 
