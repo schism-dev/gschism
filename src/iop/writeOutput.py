@@ -338,6 +338,13 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
         var.shuffle = cp.int32(0)     # shuffle disabled
         var.fletcher32 = cp.int32(0)  # checksum disabled
 
+            # Method 2: Try HDF5 compression (if available)
+        try:
+            var.compression = 'gzip'
+            var.compression_opts = complevel
+        except:
+            pass
+
 
     # Minimum depth
     min_depth_var = dataC.createVariable('minimum_depth', 'f8', ('one',))
