@@ -251,8 +251,8 @@ def _writeOutputThread(output_data):
     finally:
         # Clean up all CPU memory at the end
         for key, value in output_data.items():
-            print(key, value.shape)
             try:
+                print(key, value.shape)
                 if hasattr(value, 'shape'):  # Check if it's an array
                     del value
             except Exception as e:
@@ -340,7 +340,8 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
         time_var.axis = "T"
     
 
-    paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
+    # paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
+    paramsCompression = {'zlib': False}
 
     # Minimum depth
     min_depth_var = dataC.createVariable('minimum_depth', 'f8', ('one',))
