@@ -334,9 +334,9 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     
 
     def setCompression(var):
-        var.complevel = 4   # deflate level 4
-        var.shuffle = 0     # shuffle disabled
-        var.fletcher32 = 0  # checksum disabled
+        var.complevel = cp.int32(4)   # deflate level 4
+        var.shuffle = cp.int32(0)     # shuffle disabled
+        var.fletcher32 = cp.int32(0)  # checksum disabled
 
     # Minimum depth
     min_depth_var = dataC.createVariable('minimum_depth', 'f8', ('one',))
