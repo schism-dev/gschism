@@ -341,7 +341,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
             # Method 2: Try HDF5 compression (if available)
         try:
             var.compression = 'gzip'
-            var.compression_opts = complevel
+            var.compression_opts = var.complevel
         except:
             pass
 
