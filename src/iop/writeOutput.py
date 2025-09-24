@@ -252,8 +252,11 @@ def _writeOutputThread(output_data):
         # Clean up all CPU memory at the end
         for key, value in output_data.items():
             print(key, value.shape)
-            if hasattr(value, 'shape'):  # Check if it's an array
-                del value
+            try:
+                if hasattr(value, 'shape'):  # Check if it's an array
+                    del value
+            except Exception as e:
+                print("Error deleting value with message: ", e)
         print("[aaa]")
         output_data.clear()
         print("[bbb]")
@@ -337,8 +340,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
         time_var.axis = "T"
     
 
-    # paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
-    paramsCompression = {'zlib': False}
+    paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
 
     # Minimum depth
     min_depth_var = dataC.createVariable('minimum_depth', 'f8', ('one',))
@@ -356,7 +358,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     schism_grid_var.face_node_connectivity = "SCHISM_hgrid_face_nodes"
     
     # Node coordinates
-    node_x_var = dataC.createVariable('SCHISM_hgrid_node_x', 'f8', ('nSCHISM_hgrid_node',), chunksizes=(min(nNodes, 16384),), **paramsCompression)
+    node_x_var = dataC.createVariable('SCHISM_hgrid_node_x', 'f8', ('nSCHISM_hgrid_node',), chunksizes=(nNodes,), **paramsCompression)
     node_x_var.axis = "X"
     node_x_var.location = "node"
     node_x_var.mesh = "SCHISM_hgrid"
@@ -364,7 +366,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     node_x_var.standard_name = "projection_x_coordinate"
     
     
-    node_y_var = dataC.createVariable('SCHISM_hgrid_node_y', 'f8', ('nSCHISM_hgrid_node',), chunksizes=(min(nNodes, 16384),), **paramsCompression)
+    node_y_var = dataC.createVariable('SCHISM_hgrid_node_y', 'f8', ('nSCHISM_hgrid_node',), chunksizes=(nNodes,), **paramsCompression)
     node_y_var.axis = "Y"
     node_y_var.location = "node"
     node_y_var.mesh = "SCHISM_hgrid"
@@ -372,7 +374,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     node_y_var.standard_name = "projection_y_coordinate"
     
     # Depth and bottom index
-    depth_var = dataC.createVariable('depth', 'f4', ('nSCHISM_hgrid_node',), chunksizes=(min(nNodes, 16384),), **paramsCompression)
+    depth_var = dataC.createVariable('depth', 'f4', ('nSCHISM_hgrid_node',), chunksizes=(nNodes,), **paramsCompression)
     depth_var.units = "m"
     depth_var.axis = "Z"
     depth_var.positive = "down"
@@ -382,7 +384,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     depth_var.mesh = "SCHISM_hgrid"
 
 
-    bottom_idx_var = dataC.createVariable('bottom_index_node', 'i4', ('nSCHISM_hgrid_node',), chunksizes=(min(nNodes, 16384),), **paramsCompression)
+    bottom_idx_var = dataC.createVariable('bottom_index_node', 'i4', ('nSCHISM_hgrid_node',), chunksizes=(nNodes,), **paramsCompression)
     bottom_idx_var.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     bottom_idx_var.location = "node"
     bottom_idx_var.grid_mapping = "crs"
@@ -390,7 +392,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
 
 
     # Face coordinates
-    face_x_var = dataC.createVariable('SCHISM_hgrid_face_x', 'f8', ('nSCHISM_hgrid_face',), chunksizes=(min(nElements, 16384),), **paramsCompression)
+    face_x_var = dataC.createVariable('SCHISM_hgrid_face_x', 'f8', ('nSCHISM_hgrid_face',), chunksizes=(nNodes,), **paramsCompression)
     face_x_var.axis = "X"
     face_x_var.location = "face"
     face_x_var.mesh = "SCHISM_hgrid"
@@ -398,7 +400,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     face_x_var.standard_name = "projection_x_coordinate"
     
     
-    face_y_var = dataC.createVariable('SCHISM_hgrid_face_y', 'f8', ('nSCHISM_hgrid_face',), chunksizes=(min(nElements, 16384),), **paramsCompression)
+    face_y_var = dataC.createVariable('SCHISM_hgrid_face_y', 'f8', ('nSCHISM_hgrid_face',), chunksizes=(nElements,), **paramsCompression)
     face_y_var.axis = "Y"
     face_y_var.location = "face"
     face_y_var.mesh = "SCHISM_hgrid"
@@ -407,7 +409,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     
 
     # Edge coordinates
-    edge_x_var = dataC.createVariable('SCHISM_hgrid_edge_x', 'f8', ('nSCHISM_hgrid_edge',), chunksizes=(min(nSides, 16384),), **paramsCompression)
+    edge_x_var = dataC.createVariable('SCHISM_hgrid_edge_x', 'f8', ('nSCHISM_hgrid_edge',), chunksizes=(nSides,), **paramsCompression)
     edge_x_var.axis = "X"
     edge_x_var.location = "edge"
     edge_x_var.mesh = "SCHISM_hgrid"
@@ -415,7 +417,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     edge_x_var.standard_name = "projection_x_coordinate"
     
     
-    edge_y_var = dataC.createVariable('SCHISM_hgrid_edge_y', 'f8', ('nSCHISM_hgrid_edge',), chunksizes=(min(nSides, 16384),), **paramsCompression)
+    edge_y_var = dataC.createVariable('SCHISM_hgrid_edge_y', 'f8', ('nSCHISM_hgrid_edge',), chunksizes=(nSides,), **paramsCompression)
     edge_y_var.axis = "Y"
     edge_y_var.location = "edge"
     edge_y_var.mesh = "SCHISM_hgrid"
@@ -435,7 +437,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     
 
     # Time-dependent variables
-    dry_flag_node_var = dataC.createVariable('dryFlagNode', 'f4', ('time', 'nSCHISM_hgrid_node'), chunksizes=(1,min(nNodes, 16384)), **paramsCompression)
+    dry_flag_node_var = dataC.createVariable('dryFlagNode', 'f4', ('time', 'nSCHISM_hgrid_node'), chunksizes=(1,nNodes), **paramsCompression)
     dry_flag_node_var.i23d = cp.int32(1)
     dry_flag_node_var.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     dry_flag_node_var.location = "node"
@@ -443,7 +445,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     dry_flag_node_var.mesh = "SCHISM_hgrid"
     
 
-    elevation_var = dataC.createVariable('elevation', 'f4', ('time', 'nSCHISM_hgrid_node'), chunksizes=(1,min(nNodes, 16384)), **paramsCompression)
+    elevation_var = dataC.createVariable('elevation', 'f4', ('time', 'nSCHISM_hgrid_node'), chunksizes=(1,nNodes), **paramsCompression)
     elevation_var.i23d = cp.int32(1)
     elevation_var.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     elevation_var.location = "node"
@@ -451,7 +453,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     elevation_var.mesh = "SCHISM_hgrid"
     
 
-    wind_speed_x_var = dataC.createVariable('windSpeedX', 'f4', ('time', 'nSCHISM_hgrid_node'), chunksizes=(1,min(nNodes, 16384)), **paramsCompression)
+    wind_speed_x_var = dataC.createVariable('windSpeedX', 'f4', ('time', 'nSCHISM_hgrid_node'), chunksizes=(1,nNodes), **paramsCompression)
     wind_speed_x_var.i23d = cp.int32(1)
     wind_speed_x_var.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     wind_speed_x_var.location = "node"
@@ -459,7 +461,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     wind_speed_x_var.mesh = "SCHISM_hgrid"
     
 
-    wind_speed_y_var = dataC.createVariable('windSpeedY', 'f4', ('time', 'nSCHISM_hgrid_node'), chunksizes=(1,min(nNodes, 16384)), **paramsCompression)
+    wind_speed_y_var = dataC.createVariable('windSpeedY', 'f4', ('time', 'nSCHISM_hgrid_node'), chunksizes=(1,nNodes), **paramsCompression)
     wind_speed_y_var.i23d = cp.int32(1)
     wind_speed_y_var.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     wind_speed_y_var.location = "node"
@@ -467,7 +469,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     wind_speed_y_var.mesh = "SCHISM_hgrid"
     
 
-    dry_flag_element_var = dataC.createVariable('dryFlagElement', 'f4', ('time', 'nSCHISM_hgrid_face'), chunksizes=(1,min(nElements, 16384)), **paramsCompression)
+    dry_flag_element_var = dataC.createVariable('dryFlagElement', 'f4', ('time', 'nSCHISM_hgrid_face'), chunksizes=(1,nElements), **paramsCompression)
     dry_flag_element_var.i23d = cp.int32(4)
     dry_flag_element_var.coordinates = "SCHISM_hgrid_face_x SCHISM_hgrid_face_y"
     dry_flag_element_var.location = "face"
@@ -475,7 +477,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     dry_flag_element_var.mesh = "SCHISM_hgrid"
     
 
-    dry_flag_side_var = dataC.createVariable('dryFlagSide', 'f4', ('time', 'nSCHISM_hgrid_edge'), chunksizes=(1,min(nSides, 16384)), **paramsCompression)
+    dry_flag_side_var = dataC.createVariable('dryFlagSide', 'f4', ('time', 'nSCHISM_hgrid_edge'), chunksizes=(1,nSides), **paramsCompression)
     dry_flag_side_var.i23d = cp.int32(7)
     dry_flag_side_var.coordinates = "SCHISM_hgrid_edge_x SCHISM_hgrid_edge_y"
     dry_flag_side_var.location = "edge"
@@ -484,7 +486,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     
 
 
-    horizontalVelX = dataU.createVariable('horizontalVelX', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,min(nNodes, 16384),nLayers), **paramsCompression)
+    horizontalVelX = dataU.createVariable('horizontalVelX', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     horizontalVelX.i23d = cp.int32(2)
     horizontalVelX.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     horizontalVelX.location = "node"
@@ -492,7 +494,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     horizontalVelX.mesh = "SCHISM_hgrid" 
     
 
-    horizontalVelY = dataV.createVariable('horizontalVelY', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,min(nNodes, 16384),nLayers), **paramsCompression)
+    horizontalVelY = dataV.createVariable('horizontalVelY', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     horizontalVelY.i23d = cp.int32(2)
     horizontalVelY.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     horizontalVelY.location = "node"
@@ -502,7 +504,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
 
 
     # Add zCoordinates variable to dataZ file
-    zCoordinates = dataZ.createVariable('zCoordinates', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,min(nNodes, 16384),nLayers), **paramsCompression)
+    zCoordinates = dataZ.createVariable('zCoordinates', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     zCoordinates.i23d = cp.int32(2)
     zCoordinates.missing_value = 9.96921e+36
     zCoordinates.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
