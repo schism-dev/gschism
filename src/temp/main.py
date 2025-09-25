@@ -8,7 +8,7 @@ import cupy as cp
 import debug.monitor as monitor
 import time
 from python.pcgsolver import PCGSolver
-from iop.writeOutput import writeOutput, initializeOutput
+from iop.writeOutput import writeOutput, initializeOutput, stopWriter
 
 # pool = cp.cuda.MemoryPool()
 # cp.cuda.set_allocator(pool.malloc)
@@ -728,6 +728,8 @@ if __name__ == "__main__":
         print(f"Time per step: {time2 - time1:.3f} s")
         time1 = time2
         pass
+
+    stopWriter()
 
     end_time = time.time()
     total_time = end_time - start_time
