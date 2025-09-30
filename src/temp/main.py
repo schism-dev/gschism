@@ -16,7 +16,7 @@ from iop.writeOutput import writeOutput, initializeOutput, stopWriter
 # For profiling
 from line_profiler import LineProfiler
 
-VISTA = True
+VISTA = False
 WINDOWS = not VISTA
 
 # Enable verbose output
@@ -66,11 +66,12 @@ import python.cuda_functions as cufunc
 
 
 if WINDOWS:
-    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
-    out_dir = r'c:\Users\jmgonzalez\src\temp'
+    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b'
+    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
+    # out_dir = r'c:\Users\jmgonzalez\src\temp'
 elif VISTA:
-    in_dir = r'/work/10922/jmglez/vista/tests/RUN01b'
-    out_dir = r'/work/10922/jmglez/vista/tests/RUN01b/gpuoutput'
+    in_dir = r'/scratch/10922/jmglez/vista/tests/RUN01b'
+    out_dir = r'/scratch/10922/jmglez/vista/tests/RUN01b/gpuoutput'
     # in_dir = r'/home1/10922/jmglez/tests/RUN02a'
     # out_dir = r'/home1/10922/jmglez/tests/RUN02a/gpuoutput'
 else:
@@ -287,7 +288,6 @@ if __name__ == "__main__":
     elif nchi == 1:
         roughness    = np.zeros(nodeCoords.shape[1])
         roughness[:] = module.readHGridData(os.path.join(in_dir, 'rough.gr3'), nodeCoords.shape[1], elnode.shape[1])
-        raise Exception("nchi = 1 not tested")
 
     elif nchi == -1:
         rmanning   = np.zeros(nodeCoords.shape[1])

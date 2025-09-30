@@ -1284,12 +1284,11 @@ readVGrid(const std::string& filename, int nNodes) {
         std::vector<double> cs(nvrt);
         std::vector<double> dcs(nvrt);
         std::vector<double> ztot(nvrt);
-printf("SSAASS nz = %d, nvrt = %d\n", nz, nvrt);    
+ 
         // Read the z levels
         for (int k = 0; k < nz - 1 ; k++) {
             int level_number;
             file >> level_number >> ztot[k];
-printf("SSSS level_number = %d, ztot[%d] = %f\n", level_number, k, ztot[k]);
 
             
             if (level_number != k + 1) {  // Convert to 0-based indexing
@@ -1318,14 +1317,14 @@ printf("SSSS dummy = %s\n", dummy.c_str());
         sigma[nsiglev - 1] = 0.0; //surface
         
         std::getline(file, dummy);  // Skip "S levels" comment
-        std::getline(file, dummy);  // XXXXXX WHY SOMETIMES WE NEED TO SKIP THIS LINE?
-printf("dummy = %s\n", dummy.c_str());        
+        // std::getline(file, dummy);  // XXXXXX WHY SOMETIMES WE NEED TO SKIP THIS LINE?
+
 
         // Read sigma level parameters
         file >> h_c >> theta_b >> theta_f >> dummy;
 
         std::getline(file, dummy); 
-printf("h_c = %f, theta_b = %f, theta_f = %f, h_s = %f, dummy = %s\n", h_c, theta_b, theta_f, h_s, dummy.c_str());        
+
         if (h_c<5.0 || h_c>=h_s) {
             throw std::runtime_error("h_c needs to be larger to avoid 2nd type abnormality: " + std::to_string(h_c));
         }

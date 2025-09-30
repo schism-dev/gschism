@@ -21,18 +21,31 @@ dataV = None
 dataZ = None
 fileNum = 0
 
+sharedData = {}
 
 # The writer_thread is used to write the output to the file while the main thread is still running
 writer_thread = None
-writer_queue = queue.Queue()
+queueC = queue.Queue()
+queueU = queue.Queue()
+queueV = queue.Queue()
+queueZ = queue.Queue()
 writer_stop_event = threading.Event()
 
+threadWriteOutputC = None
+threadWriteOutputU = None
+threadWriteOutputV = None
+threadWriteOutputZ = None
+
+# paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
+paramsCompression = {'zlib': False}
 
 
 def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeSize, elemSize, sideSize):
     
     global path, nNodes, nElements, nSides, nLayers, sizeNode, sizeElem, sizeSide
-    global writer_thread, writer_queue, writer_stop_event
+    global writer_stop_event
+    global threadWriteOutputC, threadWriteOutputU, threadWriteOutputV, threadWriteOutputZ
+    global queueC, queueU, queueV, queueZ
     
     path = basePath
     nNodes = numNodes
@@ -42,20 +55,63 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
     sizeNode = nodeSize
     sizeElem = elemSize
     sizeSide = sideSize
+
+    getSharedData()
     
-    # Initialize the writing thread
-    writer_thread = threading.Thread(target=_writerWorker, daemon=True)
-    writer_thread.start()
+    # Initialize the writing threads
+    threadWriteOutputC = threading.Thread(target=_threadWriteOutputC, daemon=True)
+    threadWriteOutputU = threading.Thread(target=_threadWriteOutputU, daemon=True)
+    threadWriteOutputV = threading.Thread(target=_threadWriteOutputV, daemon=True)
+    threadWriteOutputZ = threading.Thread(target=_threadWriteOutputZ, daemon=True)
+    threadWriteOutputC.start()
+    threadWriteOutputU.start()
+    threadWriteOutputV.start()
+    threadWriteOutputZ.start()
     print("Writer thread started")
+
+
+def getSharedData():
+    global sharedData
+
+    view = monitor.getNodeVar("x")
+    sharedData['xy_cpu'] = view.get()
+    
+    view = monitor.getSideVar("x")
+    sharedData['xy_side_cpu'] = view.get()
+    
+    view = monitor.getElementVar("x")
+    sharedData['xy_elem_cpu'] = view.get()
+    
+    view = monitor.getElementVar("FaceIndices")
+    mask = (view[:,:] != 0)
+    sharedData['faceIndices_cpu'] = view.astype(cp.int64).get()
+    sharedData['firstPointer_face'] = view[mask].min().get()
+    sharedData['mask'] = mask.get()
+    
+    view = monitor.getSideVar("n1")
+    sharedData['n1_cpu'] = view.get()
+    sharedData['firstPointer_n1'] = view.min().get()
+    
+    view = monitor.getSideVar("n2")
+    sharedData['n2_cpu'] = view.get()
+    sharedData['firstPointer_n2'] = view.min().get()
+    
+    view = monitor.getNodeVar("depth")
+    sharedData['depth_cpu'] = view.get()
+
+    view = monitor.getNodeVar("kb")
+    sharedData['bottom_idx_cpu'] = view.get()
+    sharedData['firstPointer_bottom_idx'] = view.min().get()
+
+
 
 
 
 def writeOutput(it, core, opt):
     """Modified writeOutput with threading support."""
-    global dataC, dataU, dataV, dataZ, fileNum, sizeNode, output_thread, output_queue, output_lock
+    global dataC, dataU, dataV, dataZ, fileNum, sizeNode, output_thread, output_queue, output_lock, sharedData
     
 
-    
     ihfskip = core.ihfskip
     nspool  = core.nspool
     dt      = core.dt
@@ -73,15 +129,22 @@ def writeOutput(it, core, opt):
 
         fileNum += 1
         ifile=(it-1)/ihfskip+1
-        dataC, dataU, dataV = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataC = createNetCDFFileC(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataU = createNetCDFFileU(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataV = createNetCDFFileV(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataZ = createNetCDFFileZ(fileNum, nNodes, nElements, nSides, nLayers, opt)
 
     if dataC is None:
         return
 
 
-    # Wait for queue to empty with timeout (prevents hanging)
+    # Wait for queues to empty with timeout (prevents hanging)
     try:
-        writer_queue.join()  # Wait for all items to be processed
+        # Wait for all items to be processed
+        queueC.join()  
+        queueU.join() 
+        queueV.join() 
+        queueZ.join() 
     except KeyboardInterrupt:
         print("Warning: Queue join interrupted")
 
@@ -90,122 +153,118 @@ def writeOutput(it, core, opt):
     # -------------------------
 
     idxTime = ((it // nspool) - 1) % timesPerFile
+    idxFile = ((it // nspool) - 1)/timesPerFile
 
     # Get all memory into CPU (this is the expensive part)
-    output_data = {}
+    cpuDataC = {}
+    cpuDataU = {}
+    cpuDataV = {}
+    cpuDataZ = {}
     
-    # Horizontal geometric variables (only written once per file)
-    if idxTime == 0:
-        view = monitor.getNodeVar("x")
-        output_data['xy_cpu'] = view.get()
-        
-        view = monitor.getSideVar("x")
-        output_data['xy_side_cpu'] = view.get()
-        
-        view = monitor.getElementVar("x")
-        output_data['xy_elem_cpu'] = view.get()
-        
-        view = monitor.getElementVar("FaceIndices")
-        mask = (view[:,:] != 0)
-        output_data['faceIndices_cpu'] = view.astype(cp.int64).get()
-        output_data['firstPointer_face'] = view[mask].min().get()
-        output_data['mask'] = mask.get()
-        
-        view = monitor.getSideVar("n1")
-        output_data['n1_cpu'] = view.get()
-        output_data['firstPointer_n1'] = view.min().get()
-        
-        view = monitor.getSideVar("n2")
-        output_data['n2_cpu'] = view.get()
-        output_data['firstPointer_n2'] = view.min().get()
-        
-        view = monitor.getNodeVar("depth")
-        output_data['depth_cpu'] = view.get()
 
     # Time-dependent variables
     view = monitor.getNodeVar("eta")
-    output_data['eta_cpu'] = view.get()
+    cpuDataC['eta_cpu'] = view.get()
     
     view = monitor.getNodeVar("isdry")
-    output_data['isdry_node_cpu'] = view.astype(cp.int32).get()
+    cpuDataC['isdry_node_cpu'] = view.astype(cp.int32).get()
     
     view = monitor.getSideVar("isdry")
-    output_data['isdry_side_cpu'] = view.astype(cp.int32).get()
+    cpuDataC['isdry_side_cpu'] = view.astype(cp.int32).get()
     
     view = monitor.getElementVar("isdry")
-    output_data['isdry_elem_cpu'] = view.astype(cp.int32).get()
+    cpuDataC['isdry_elem_cpu'] = view.astype(cp.int32).get()
     
     view = monitor.getNodeVar("u")
-    output_data['u_cpu'] = view[0,:,:].get()
-    output_data['v_cpu'] = view[1,:,:].get()
+    cpuDataU['u_cpu'] = view[0,:,:].get()
+    cpuDataV['v_cpu'] = view[1,:,:].get()
     
     view = monitor.getNodeVar("z")
-    output_data['z_cpu'] = view.get()
+    cpuDataZ['z_cpu'] = view.get()
     
-    # Add metadata
-    output_data['it'] = it
-    output_data['core'] = core
-    output_data['opt'] = opt
-    output_data['idxTime'] = idxTime
-    output_data['dt'] = dt
-    output_data['timesPerFile'] = timesPerFile
+    # Metadata
+    sharedData['it'] = it
+    sharedData['core'] = core
+    sharedData['opt'] = opt
+    sharedData['idxTime'] = idxTime
+    sharedData['idxFile'] = idxFile
+    sharedData['dt'] = dt
+    sharedData['timesPerFile'] = timesPerFile
 
     # Add data to queue for writer thread
-    writer_queue.put(output_data)
+    queueC.put(cpuDataC)
+    queueU.put(cpuDataU)
+    queueV.put(cpuDataV)
+    queueZ.put(cpuDataZ)
 
 
-def _writeOutputThread(output_data):
-    """Background thread that continuously polls queue for data to write."""
-    global dataC, dataU, dataV, dataZ, sizeNode
+def _threadWriteOutputC():
+    """Background thread that continuously polls queueC for data to write."""
+    global dataC, sizeNode, sharedData
     
     try:
         while not writer_stop_event.is_set():
             try:
-                it = output_data['it']
-                core = output_data['core']
-                opt = output_data['opt']
-                idxTime = output_data['idxTime']
-                dt = output_data['dt']
-                timesPerFile = output_data['timesPerFile']
+                queueData = queueC.get()
+
+                if 'createNetCDFFile' in queueData.keys():
+                    fileNum, nNodes, nElements, nSides, nLayers, opt = queueData['createNetCDFFile']
+                    dataC = createNetCDFFileC(fileNum, nNodes, nElements, nSides, nLayers, opt)
+                    continue
+
+                if 'closeNetCDFFile' in queueData.keys():
+                    dataC.close()
+                    continue
+
+                # If it gets here, queueData contains cpuDataC
+                cpuDataC = queueData
+
+                it           = sharedData['it']
+                core         = sharedData['core']
+                opt          = sharedData['opt']
+                idxTime      = sharedData['idxTime']
+                idxFile      = sharedData['idxFile']
+                dt           = sharedData['dt']
+                timesPerFile = sharedData['timesPerFile']
                 
                 # Horizontal geometric variables (only written once per file)
-                if idxTime == 0:
-                    xy_cpu = output_data['xy_cpu']
+                if idxTime == 0 and idxFile == 0:
+                    xy_cpu = sharedData['xy_cpu']
                     SCHISM_hgrid_node_x_var = dataC.variables['SCHISM_hgrid_node_x']
                     SCHISM_hgrid_node_x_var[:] = xy_cpu[0, :]
                     SCHISM_hgrid_node_y_var = dataC.variables['SCHISM_hgrid_node_y']
                     SCHISM_hgrid_node_y_var[:] = xy_cpu[1, :]
                     del xy_cpu
 
-                    xy_side_cpu = output_data['xy_side_cpu']
+                    xy_side_cpu = sharedData['xy_side_cpu']
                     SCHISM_hgrid_edge_x_var = dataC.variables['SCHISM_hgrid_edge_x']
                     SCHISM_hgrid_edge_x_var[:] = xy_side_cpu[0, :]
                     SCHISM_hgrid_edge_y_var = dataC.variables['SCHISM_hgrid_edge_y']
                     SCHISM_hgrid_edge_y_var[:] = xy_side_cpu[1, :]
                     del xy_side_cpu
 
-                    xy_elem_cpu = output_data['xy_elem_cpu']
+                    xy_elem_cpu = sharedData['xy_elem_cpu']
                     SCHISM_hgrid_face_x_var = dataC.variables['SCHISM_hgrid_face_x']
                     SCHISM_hgrid_face_x_var[:] = xy_elem_cpu[0, :]
                     SCHISM_hgrid_face_y_var = dataC.variables['SCHISM_hgrid_face_y']
                     SCHISM_hgrid_face_y_var[:] = xy_elem_cpu[1, :]
                     del xy_elem_cpu
 
-                    faceIndices_cpu = output_data['faceIndices_cpu']
-                    firstPointer = output_data['firstPointer_face']
-                    mask = output_data['mask']
+                    faceIndices_cpu = sharedData['faceIndices_cpu']
+                    firstPointer = sharedData['firstPointer_face']
+                    mask = sharedData['mask']
                     faceIndices_cpu[mask] = (faceIndices_cpu[mask] - firstPointer)//sizeNode + 1
                     faceIndices_cpu[~mask] = -1
                     nSCHISM_hgrid_face_nodes_var = dataC.variables['SCHISM_hgrid_face_nodes']
                     nSCHISM_hgrid_face_nodes_var[:] = faceIndices_cpu.T
                     del faceIndices_cpu, mask
 
-                    n1_cpu = output_data['n1_cpu']
-                    firstPointer = output_data['firstPointer_n1']
+                    n1_cpu = sharedData['n1_cpu']
+                    firstPointer = sharedData['firstPointer_n1']
                     n1_cpu[:] = (n1_cpu - firstPointer)//sizeNode + 1
 
-                    n2_cpu = output_data['n2_cpu']
-                    firstPointer = output_data['firstPointer_n2']
+                    n2_cpu = sharedData['n2_cpu']
+                    firstPointer = sharedData['firstPointer_n2']
                     n2_cpu[:] = (n2_cpu - firstPointer)//sizeNode + 1
 
                     nSCHISM_hgrid_edge_nodes_var = dataC.variables['SCHISM_hgrid_edge_nodes']
@@ -213,165 +272,322 @@ def _writeOutputThread(output_data):
                     nSCHISM_hgrid_edge_nodes_var[:, 1] = n2_cpu
                     del n1_cpu, n2_cpu
 
-                    depth_cpu = output_data['depth_cpu']
+                    depth_cpu = sharedData['depth_cpu']
                     depth_var = dataC.variables['depth']
                     depth_var[:] = depth_cpu
                     del depth_cpu
+
+                    bottom_idx_cpu = sharedData['bottom_idx_cpu']
+                    bottom_idx_var = dataC.variables['bottom_index_node']
+                    bottom_idx_var[:] = bottom_idx_cpu
+                    del bottom_idx_cpu
 
                     min_depth_var = dataC.variables['minimum_depth']
                     min_depth_var[:] = 0.0001
 
                 # Time-dependent variables
-                eta_cpu = output_data['eta_cpu']
+                eta_cpu = cpuDataC['eta_cpu']
                 elevation_var = dataC.variables['elevation']
                 elevation_var[idxTime, :] = eta_cpu
                 del eta_cpu
 
-                isdry_node_cpu = output_data['isdry_node_cpu']
+                isdry_node_cpu = cpuDataC['isdry_node_cpu']
                 dryFlagNode_var = dataC.variables['dryFlagNode']
                 dryFlagNode_var[idxTime, :] = isdry_node_cpu
                 del isdry_node_cpu
 
-                isdry_side_cpu = output_data['isdry_side_cpu']
+                isdry_side_cpu = cpuDataC['isdry_side_cpu']
                 dryFlagSide_var = dataC.variables['dryFlagSide']
                 dryFlagSide_var[idxTime, :] = isdry_side_cpu
                 del isdry_side_cpu
 
-                isdry_elem_cpu = output_data['isdry_elem_cpu']
+                isdry_elem_cpu = cpuDataC['isdry_elem_cpu']
                 dryFlagElement_var = dataC.variables['dryFlagElement']
                 dryFlagElement_var[idxTime, :] = isdry_elem_cpu
                 del isdry_elem_cpu
 
-                u_cpu = output_data['u_cpu']
-                v_cpu = output_data['v_cpu']
-                horizontalVelX_var = dataU.variables['horizontalVelX']
-                horizontalVelX_var[idxTime, :, :] = u_cpu.T
-                horizontalVelY_var = dataV.variables['horizontalVelY']
-                horizontalVelY_var[idxTime, :, :] = v_cpu.T
-                del u_cpu, v_cpu
-
-                z_cpu = output_data['z_cpu']
-                zCoordinates_var = dataZ.variables['zCoordinates']
-                zCoordinates_var[idxTime, :, :] = z_cpu.T
-                del z_cpu
+                
 
                 # Time variables
                 time_var = dataC.variables['time']
                 time_var[idxTime] = it*dt
-                time_var = dataU.variables['time']
-                time_var[idxTime] = it*dt
-                time_var = dataV.variables['time']
-                time_var[idxTime] = it*dt
-                time_var = dataZ.variables['time']
-                time_var[idxTime] = it*dt
+
 
                 # Clean up memory
-                output_data.clear()
+                cpuDataC.clear()
                 
                 # Mark task as done
-                writer_queue.task_done()
+                queueC.task_done()
                 
             except queue.Empty:
                 # Timeout - continue polling
                 continue
             except Exception as e:
                 print(f"Error in writer thread: {e}")
-                writer_queue.task_done()  # Still mark as done to avoid hanging
+                cpuDataC.clear()
+                queueC.task_done()  # Still mark as done to avoid hanging
                 continue
 
     finally:
         print('Unexpected error in writer thread')
         try:
-            output_data.clear()
-            writer_stop_event.set()
-            writer_queue.join()
+            cpuDataC.clear()
+            queueC.task_done()  # Still mark as done to avoid hanging
+
+        except:
+            pass
+
+
+
+def _threadWriteOutputU():
+    """Background thread that continuously polls queueU for data to write."""
+    global dataU
+    
+    try:
+        while not writer_stop_event.is_set():
+            try:
+                queueData = queueU.get()
+
+                if 'createNetCDFFile' in queueData.keys():
+                    fileNum, nNodes, nElements, nSides, nLayers, opt = queueData['createNetCDFFile']
+                    dataU = createNetCDFFileU(fileNum, nNodes, nElements, nSides, nLayers, opt)
+                    continue
+
+                if 'closeNetCDFFile' in queueData.keys():
+                    dataU.close()
+                    continue
+
+                # If it gets here, queueData contains cpuDataC
+                cpuDataU = queueData
+
+                it           = sharedData['it']
+                idxTime      = sharedData['idxTime']
+                dt           = sharedData['dt']
+                
+                u_cpu = cpuDataU['u_cpu']
+                horizontalVelX_var = dataU.variables['horizontalVelX']
+                horizontalVelX_var[idxTime, :, :] = u_cpu.T
+                del u_cpu
+
+                # Time variables
+                time_var = dataU.variables['time']
+                time_var[idxTime] = it*dt
+
+                # Clean up memory
+                cpuDataU.clear()
+                
+                # Mark task as done
+                queueU.task_done()
+                
+            except queue.Empty:
+                # Timeout - continue polling
+                continue
+            except Exception as e:
+                print(f"Error in writer thread: {e}")
+                queueU.task_done()  # Still mark as done to avoid hanging
+                continue
+
+    finally:
+        print('Unexpected error in writer thread')
+        try:
+            cpuDataU.clear()
+            queueU.task_done()  # Still mark as done to avoid hanging
 
 
         except:
             pass
 
 
-def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
+
+
+def _threadWriteOutputV():
+    """Background thread that continuously polls queueV for data to write."""
+    global dataV, sharedData
+    
+    try:
+        while not writer_stop_event.is_set():
+            try:
+                queueData = queueV.get()
+
+                if 'createNetCDFFile' in queueData.keys():
+                    fileNum, nNodes, nElements, nSides, nLayers, opt = queueData['createNetCDFFile']
+                    dataV = createNetCDFFileV(fileNum, nNodes, nElements, nSides, nLayers, opt)
+                    continue
+
+                if 'closeNetCDFFile' in queueData.keys():
+                    dataV.close()
+                    continue
+
+                # If it gets here, queueData contains cpuDataC
+                cpuDataV = queueData
+
+                it           = sharedData['it']
+                idxTime      = sharedData['idxTime']
+                dt           = sharedData['dt']
+ 
+                v_cpu = cpuDataV['v_cpu']
+                horizontalVelY_var = dataV.variables['horizontalVelY']
+                horizontalVelY_var[idxTime, :, :] = v_cpu.T
+                del v_cpu
+
+                # Time variable
+                time_var = dataV.variables['time']
+                time_var[idxTime] = it*dt
+  
+                # Clean up memory
+                cpuDataV.clear()
+                
+                # Mark task as done
+                queueV.task_done()
+                
+            except queue.Empty:
+                # Timeout - continue polling
+                continue
+            except Exception as e:
+                print(f"Error in writer thread: {e}")
+                queueV.task_done()  # Still mark as done to avoid hanging
+                continue
+
+    finally:
+        print('Unexpected error in writer thread')
+        try:
+            cpuDataV.clear()
+            writer_stop_event.set()
+            queueV.join()
+
+
+        except:
+            pass
+
+
+def _threadWriteOutputZ():
+    """Background thread that continuously polls queueZ for data to write."""
+    global dataZ, sharedData
+    
+    try:
+        while not writer_stop_event.is_set():
+            try:
+                queueData = queueZ.get()
+
+                if 'createNetCDFFile' in queueData.keys():
+                    fileNum, nNodes, nElements, nSides, nLayers, opt = queueData['createNetCDFFile']
+                    dataZ = createNetCDFFileZ(fileNum, nNodes, nElements, nSides, nLayers, opt)
+                    continue
+
+                if 'closeNetCDFFile' in queueData.keys():
+                    dataZ.close()
+                    continue
+
+                # If it gets here, queueData contains cpuDataC
+                cpuDataZ = queueData
+
+                it           = sharedData['it']
+                idxTime      = sharedData['idxTime']
+                dt           = sharedData['dt']
+ 
+                z_cpu = cpuDataZ['z_cpu']
+                zCoordinates_var = dataZ.variables['zCoordinates']
+                zCoordinates_var[idxTime, :, :] = z_cpu.T
+                del z_cpu
+
+                # Time variable
+                time_var = dataZ.variables['time']
+                time_var[idxTime] = it*dt
+
+                # Clean up memory
+                outputDataZ.clear()
+                
+                # Mark task as done
+                queueZ.task_done()
+                
+            except queue.Empty:
+                # Timeout - continue polling
+                continue
+            except Exception as e:
+                print(f"Error in writer thread: {e}")
+                queueZ.task_done()  # Still mark as done to avoid hanging
+                continue
+
+    finally:
+        print('Unexpected error in writer thread')
+        try:
+            outputDataZ.clear()
+            queueZ.task_done()  # Still mark as done to avoid hanging
+
+
+        except:
+            pass
+
+
+        
+def addDimensions(data, opt, nNodes, nElements, nSides, nLayers):
+
+    data.createDimension('nSCHISM_hgrid_node',          nNodes)
+    data.createDimension('nSCHISM_hgrid_face',          nElements)
+    data.createDimension('nSCHISM_hgrid_edge',          nSides)
+    data.createDimension('nMaxSCHISM_hgrid_face_nodes', 4)
+    data.createDimension('nSCHISM_vgrid_layers',        nLayers)
+    data.createDimension('one',                         1)
+    data.createDimension('two',                         2)
+    data.createDimension('time',                        None)
+
+    # Add global attributes
+    data.title = "GSCHISM Output File"
+    data.institution = "VIMS"
+    data.source = "GSCHISM Model"
+    data.history = "Created by GSCHISM"
+    data.references = "SCHISM documentation"
+    data.comment = "Output from GSCHISM simulation"
+
+    # Add coordinate system attributes
+    data.Conventions = "CF-1.6"
+    data.coordinate_system = "Cartesian"
+    
+    # # Add time attributes
+    # data.time_coverage_start = "2023-01-01T00:00:00Z"
+    # data.time_coverage_end = "2023-01-02T00:00:00Z"
+
+    # Create variables
+    # Time variable
+    time_var = data.createVariable('time', 'f8', ('time',))
+    time_var.i23d = cp.int32(0)
+
+    
+    # Format the base_date string
+    time_var.base_date = f" {opt.start_year:4d} {opt.start_month:2d} {opt.start_day:2d} {opt.start_hour:8.2f} {opt.utc_start:8.2f}"
+    time_var.units = f"seconds since {opt.start_year:04d}-{opt.start_month:02d}-{opt.start_day:02d}T{opt.start_hour:02.0f}:00:00{opt.utc_start:+03.0f}"
+    time_var.standard_name = "time"
+    time_var.axis = "T"
+
+
+
+def createNetCDFFileC(fileNum, nNodes, nElements, nSides, nLayers, opt):
     """
     Create the NetCDF file "header", meaning the appropriate dimensions, variables, and attributes.
     The data variable is stored in the global variable data.
     """
 
-    global dataC, dataU, dataV, dataZ
+    global dataC
     
     filename = 'out2d_%i.nc' % fileNum
-    filenameU = 'horizontalVelX_%i.nc' % fileNum
-    filenameV = 'horizontalVelY_%i.nc' % fileNum
-    filenameZ = 'zCoordinates_%i.nc' % fileNum
 
     # Remove the file if it exists before creating the NetCDF file
     filepath = os.path.join(path, filename)
     if os.path.exists(filepath):
         os.remove(filepath)
 
-    filepathU = os.path.join(path, filenameU)
-    if os.path.exists(filepathU):
-        os.remove(filepathU)
+    # Create the NetCDF directory if it doesn't exist
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-    filepathV = os.path.join(path, filenameV)
-    if os.path.exists(filepathV):
-        os.remove(filepathV)
-
-    filepathZ = os.path.join(path, filenameZ)
-    if os.path.exists(filepathZ):
-        os.remove(filepathZ)
-
-    # Create the NetCDF files
+    # Create the NetCDF file
     dataC = nc.Dataset(filepath,  "w", format="NETCDF4")
-    dataU = nc.Dataset(filepathU, "w", format="NETCDF4")
-    dataV = nc.Dataset(filepathV, "w", format="NETCDF4")
-    dataZ = nc.Dataset(filepathZ, "w", format="NETCDF4")
-    
+   
     
     # Add dimensions to the file
-    for data in [dataC, dataU, dataV, dataZ]:
-        data.createDimension('nSCHISM_hgrid_node',          nNodes)
-        data.createDimension('nSCHISM_hgrid_face',          nElements)
-        data.createDimension('nSCHISM_hgrid_edge',          nSides)
-        data.createDimension('nMaxSCHISM_hgrid_face_nodes', 4)
-        data.createDimension('nSCHISM_vgrid_layers',        nLayers)
-        data.createDimension('one',                         1)
-        data.createDimension('two',                         2)
-        data.createDimension('time',                        None)
-
-        # Add global attributes
-        data.title = "GSCHISM Output File"
-        data.institution = "VIMS"
-        data.source = "GSCHISM Model"
-        data.history = "Created by GSCHISM"
-        data.references = "SCHISM documentation"
-        data.comment = "Output from GSCHISM simulation"
-
-        # Add coordinate system attributes
-        data.Conventions = "CF-1.6"
-        data.coordinate_system = "Cartesian"
-        
-        # # Add time attributes
-        # data.time_coverage_start = "2023-01-01T00:00:00Z"
-        # data.time_coverage_end = "2023-01-02T00:00:00Z"
-
-        # Create variables
-        # Time variable
-        time_var = data.createVariable('time', 'f8', ('time',))
-        time_var.i23d = cp.int32(0)
-
-        
-        # Format the base_date string
-        time_var.base_date = f" {opt.start_year:4d} {opt.start_month:2d} {opt.start_day:2d} {opt.start_hour:8.2f} {opt.utc_start:8.2f}"
-        time_var.units = f"seconds since {opt.start_year:04d}-{opt.start_month:02d}-{opt.start_day:02d}T{opt.start_hour:02.0f}:00:00+00"
-        time_var.standard_name = "time"
-        time_var.axis = "T"
+    addDimensions(dataC, opt, nNodes, nElements, nSides, nLayers)
     
 
-    # paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
-    paramsCompression = {'zlib': False}
-
-    # Minimum depth
+    # Minimum depth  
     min_depth_var = dataC.createVariable('minimum_depth', 'f8', ('one',))
     min_depth_var.units = "m"
     
@@ -514,7 +730,31 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     dry_flag_side_var.mesh = "SCHISM_hgrid"
     
 
+    
+    return dataC
 
+
+def createNetCDFFileU(fileNum, nNodes, nElements, nSides, nLayers, opt):
+    """
+    Create the NetCDF file "header", meaning the appropriate dimensions, variables, and attributes.
+    The data variable is stored in the global variable data.
+    """
+
+    global dataU
+
+    filenameU = 'horizontalVelX_%i.nc' % fileNum
+
+    # Remove the file if it exists before creating the NetCDF file
+    filepathU = os.path.join(path, filenameU)
+    if os.path.exists(filepathU):
+        os.remove(filepathU)
+
+    # Create the NetCDF files
+    dataU = nc.Dataset(filepathU, "w", format="NETCDF4")
+
+    addDimensions(dataU, opt, nNodes, nElements, nSides, nLayers)
+
+ 
     horizontalVelX = dataU.createVariable('horizontalVelX', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     horizontalVelX.i23d = cp.int32(2)
     horizontalVelX.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
@@ -522,7 +762,31 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     horizontalVelX.grid_mapping = "crs"
     horizontalVelX.mesh = "SCHISM_hgrid" 
     
+    
+    return dataU
 
+    
+def createNetCDFFileV(fileNum, nNodes, nElements, nSides, nLayers, opt):
+    """
+    Create the NetCDF file "header", meaning the appropriate dimensions, variables, and attributes.
+    The data variable is stored in the global variable data.
+    """
+
+    global dataV
+    
+    filenameV = 'horizontalVelY_%i.nc' % fileNum
+
+    # Remove the file if it exists before creating the NetCDF file
+    filepathV = os.path.join(path, filenameV)
+    if os.path.exists(filepathV):
+        os.remove(filepathV)
+
+    # Create the NetCDF files
+    dataV = nc.Dataset(filepathV, "w", format="NETCDF4")
+    
+    addDimensions(dataV, opt, nNodes, nElements, nSides, nLayers)
+    
+    
     horizontalVelY = dataV.createVariable('horizontalVelY', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     horizontalVelY.i23d = cp.int32(2)
     horizontalVelY.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
@@ -530,8 +794,30 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     horizontalVelY.grid_mapping = "crs"
     horizontalVelY.mesh = "SCHISM_hgrid"    
     
+    
+    return dataV
 
 
+def createNetCDFFileZ(fileNum, nNodes, nElements, nSides, nLayers, opt):
+    """
+    Create the NetCDF file "header", meaning the appropriate dimensions, variables, and attributes.
+    The data variable is stored in the global variable data.
+    """
+
+    global dataZ
+    
+    filenameZ = 'zCoordinates_%i.nc' % fileNum
+
+    # Remove the file if it exists before creating the NetCDF file
+    filepathZ = os.path.join(path, filenameZ)
+    if os.path.exists(filepathZ):
+        os.remove(filepathZ)
+
+    # Create the NetCDF files
+    dataZ = nc.Dataset(filepathZ, "w", format="NETCDF4")
+    
+    addDimensions(dataZ, opt, nNodes, nElements, nSides, nLayers)
+    
     # Add zCoordinates variable to dataZ file
     zCoordinates = dataZ.createVariable('zCoordinates', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     zCoordinates.i23d = cp.int32(2)
@@ -542,12 +828,14 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     zCoordinates.mesh = "SCHISM_hgrid"
     
     
-    return dataC, dataU, dataV
+    return dataZ
 
-    
 
 def stopWriter():
     writer_stop_event.set()  # Signal stop
-    writer_thread.join()     # Wait for thread to finish
+    threadWriteOutputC.join()     # Wait for thread to finish
+    threadWriteOutputU.join()     # Wait for thread to finish
+    threadWriteOutputV.join()     # Wait for thread to finish
+    threadWriteOutputZ.join()     # Wait for thread to finish
 
 

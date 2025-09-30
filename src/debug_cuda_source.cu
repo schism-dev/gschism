@@ -21,12 +21,12 @@ constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
 constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
-constexpr int ncor = 1;               // Option to include Coriolis force
+constexpr int ncor = 0;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
+constexpr double sfea0 = 45*deg2rad; // Reference latitude for Coriolis force
 
 
-constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
+constexpr int nchi = 1;             // Option to compute drag coefficients chi and chi2
 constexpr double hmin_man = 1;  // Minimum water depth for Manning's friction
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
@@ -40,11 +40,11 @@ constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometri
 constexpr double veg_lai = 1; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 8;            // Number of tidal potential components
-constexpr double tip_dp = 50;   // cut-off depth for applying tidal potential
+constexpr int ntip = 0;            // Number of tidal potential components
+constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
 
 // Boundary forcing frequencies
-constexpr int nbfr = 8;            // Number of boundary forcing frequencies
+constexpr int nbfr = 1;            // Number of boundary forcing frequencies
 
 // Boundary condition types
 constexpr int nettype = 0;      // Total number of type I elevation boundaries
@@ -62,9 +62,9 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 2; // Number of vertical levels
+constexpr int nvrt    = 11; // Number of vertical levels
 constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
+constexpr int nsiglev = 11; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;
@@ -72,16 +72,16 @@ constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 43; // Number of land boundary segments
-constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
+constexpr int mnond = 16; // Maximum number of nodes per open boundary segment
+constexpr int nland = 1; // Number of land boundary segments
+constexpr int mnlnd = 88; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
 
 constexpr double thetai = 1;
 
-constexpr double rmaxvel = 4; // Maximum velocity for the x-component
+constexpr double rmaxvel = 10; // Maximum velocity for the x-component
 constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
@@ -92,9 +92,9 @@ constexpr double velmin_btrack = 0.0001; //XXXX
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 120;  // Time step  XXX 
+constexpr double dt = 150;  // Time step  XXX 
 
-constexpr double h0 = 0.0001;  // Minimum water depth [m]
+constexpr double h0 = 0.01;  // Minimum water depth [m]
 
 enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, ssign=9, btu=10, bcc=11, uth=12, ubc=13, island=14, ifltype=15, elbc=16, isdry=17, eta=18, area=19, qel=20, depth=21, radius=22, len=23, lonlat=24, kb=25, n1=26, n2=27, idx=28, htot=29, gradPr=30, gradEta1=31, gradEta2=32, gradETP=33, FaceIndices=34}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
@@ -1601,14 +1601,17 @@ extern "C" {
       // Compute the different time ramps used in the code 
       // This function is performed by just one thread
 
+      rampbc = 1.0;
       if constexpr(ibc == 0) {
          if (drampbc > 0.0) {
             rampbc = tanh(2.0*time/86400.0/drampbc);
          } else {
             rampbc = 1.0;
          }
+      }
 
-         if (nws != 0 && drampwind > 0.0) {
+      if (nws != 0) {
+         if (drampwind > 0.0) {
             rampwind = tanh(2.0*time/86400.0/drampwind);
          } else {
             rampwind = 1.0;
@@ -1633,6 +1636,7 @@ extern "C" {
       } else {
          ramp = 1.0;
       }
+
 
    }
       
@@ -2839,7 +2843,7 @@ __device__ __inline__ void Node::updateZCoordData(void) {
 
       } else {
          kb = -1;
-         for (int i = 0; i < nzlev; i++) {
+         for (int i = 0; i < nzlev - 1; i++) {
             // XXX Use binary search
             if (-depth >= mesh->ztot[i] && -depth < mesh->ztot[i+1]) {
                kb = i;
@@ -2929,12 +2933,6 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
 
       bool ltmp = false; // for WBL iteration
 
-      assert(false && "computeBottomDragVegetation: nchi == 1 not fully implemented. see below");
-      // Cdmax=-1 !max. Cd at node for this process (info only)
-      // Drag at nodes
-/////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
-// !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
-           
       assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
       if (rough == 0.0) {
          Cd = 0.0;
@@ -2946,15 +2944,16 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
 
          assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
 
-         double tmp = 1.0/(2.5*log(bthick/rough));
+         const double tmp = 1.0/(2.5*log(bthick/rough));
          Cd = tmp*tmp;
+        
 
       } // if rough
 
 
-      // RECOVER THIS: XXX
+      // Ask Joseph XXXXX
       // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
-      // Output warning for WBL if iteration didn't converge
+      // Output warning for WBL if iteration didnt converge
 
 
    } else if constexpr(nchi == -1) {
@@ -3073,8 +3072,6 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       nodeNeighElems[idx] = elem_ptr;
    }      
 
-// printf("NODE i = %d, node = %p, node.numNodes = %d\n", node.idx, &node, node.numNodes);      
-
    node.wind_angle = wind_rotate_angle[i];
 
 
@@ -3097,11 +3094,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else assert(false && "populateNodes: selected nchi not implemented.");
    
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
+   for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
 
    
    // Links the node to the boundary information
    if (isbnd[i] >= 0) {
-
      
       // Get the index of the node boundary
       const int idxNodeBoundary = atomicAdd(sharedIdxNodeBoundary, 1) + 1;
@@ -3124,14 +3121,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
          node.nodeBnd->segment->carea = nan("1");
 
       }
-//          else {  XXXXXX
-//             node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
-// printf("EEEEEPP isbnd[i] = %d, node.nodeBnd->segment = %p\n", isbnd[i], node.nodeBnd->segment);            
-//          }
-      
-
-   }
-   else {
+   } else {
 
       node.nodeBnd = nullptr; // For internal nodes
 
@@ -3139,10 +3129,6 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
          node.nodeBnd = &landBoundaryNode;
          node.nodeBnd->segment = &landBoundarySegment;
       }
-      // node.nodeBnd->node = &node;
-      // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
-      // // node.nodeBnd = nullptr;
-      // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
       
    }
    
@@ -3349,9 +3335,6 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
    elem.depth = 0.0;
    for (int j = 0; j < i34[i]; j++) {
 
-// printf("WWW i = %d, node = %p, elem.i34 = %d\n", i, elem.nodes[j], elem.i34);    
-
-
       center += elem.nodes[j]->p/i34[i];
       elem.depth  += elem.nodes[j]->depth/i34[i];
    }
@@ -3437,7 +3420,7 @@ found: // Jumped here when the node was found
 
    for (int jfr = 0; jfr < nbfr; jfr++) {
 
-      const int idx2 = iseg*mnond*nbfr + i + jfr*mnond; //XXXXX
+      const int idx2 = iseg*mnond*nbfr + i + jfr*mnond; //XXXXX CHECK
       nodeBnd->efa[jfr] = efa[idx2];
       nodeBnd->emo[jfr] = emo[idx2];
       nodeBnd->umo[jfr] = {umo[idx2], vmo[idx2]};
@@ -3483,23 +3466,23 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    NODE(node1);
 
  
-// Check bounds: ensure coeffMatrix is within allocated memory XXXX REMOVE
-const size_t max_elements = 63011136;
-const size_t offset = node1->coeffMatrix - mesh->coeffMatrixMem;
+// // Check bounds: ensure coeffMatrix is within allocated memory XXXX REMOVE
+// const size_t max_elements = 63011136;
+// const size_t offset = node1->coeffMatrix - mesh->coeffMatrixMem;
 
-if (offset < 0 || offset >= max_elements) {
+// if (offset < 0 || offset >= max_elements) {
 
-   printf("Offset is out of bounds: %llu, max_elements = %llu\n", 
-      (unsigned long long)offset, (unsigned long long)max_elements);
-   return;  // Out of bounds, skip
-}
+//    printf("Offset is out of bounds: %llu, max_elements = %llu\n", 
+//       (unsigned long long)offset, (unsigned long long)max_elements);
+//    return;  // Out of bounds, skip
+// }
 
-// Check if we have enough space for numNodes elements
-if (offset + node1->numNodes > max_elements) {
-   printf("Not enough space for numNodes elements: %llu, max_elements = %llu\n", 
-      (unsigned long long)(offset + node1->numNodes), (unsigned long long)max_elements);
-   return;  // Not enough space, skip
-}
+// // Check if we have enough space for numNodes elements
+// if (offset + node1->numNodes > max_elements) {
+//    printf("Not enough space for numNodes elements: %llu, max_elements = %llu\n", 
+//       (unsigned long long)(offset + node1->numNodes), (unsigned long long)max_elements);
+//    return;  // Not enough space, skip
+// }
 
    node1->clearMatrixRow();
    node1->qel = 0.0;
@@ -3763,7 +3746,6 @@ if (offset + node1->numNodes > max_elements) {
 
                } // if Flather or Discharge
 
-// printf("node1 = %p, thetai = %f, dt = %f, ri3 = %f\n", node1, thetai, dt, ri3);
                node1->qel -= thetai*dt*ri3;
 
 
@@ -3827,11 +3809,9 @@ extern "C" {
 
 
    }
-}
 
 
 
-extern "C" {
    __global__ void solverCopyResult(double* x) {
       // Copies a solution vector to the member variable mX. XXXX It might be possible to remove all the unnecessary references to mX, mR, mP, mAp, etc.
       NODE(node);
@@ -3839,9 +3819,8 @@ extern "C" {
 
       node->mX = x[idx];
    }
-}
 
-extern "C" {
+
    __global__ void rollUpElevation(void) {
 
       NODE(node);
@@ -4303,6 +4282,7 @@ extern "C" {
 
          const double ncyc = int(tfreq[j]*time/(2.0*pi));
          const double arg = tfreq[j]*time - ncyc*2.0*pi + jspc[j]*node->lon + tear[j];
+printf("RAAAAMP  ramp = %f, arg = %f\n", ramp, arg);         
          node->ETP += 0.69*ramp*tamp[j]*tnf[j]*node->fun_lat[jspc[j]]*cos(arg);
 
          if constexpr(iloadtide==1) { // loading tide
@@ -5374,7 +5354,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz = 0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX
+            const double dfz =  0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX
  
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
@@ -5516,6 +5496,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
                   assert(false && "Not implemented: itur == 5");
                   // rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
                }
+               // else assert(false && "itur # Not implemented");
 
             } else { // k == nvrt - 1 SURFACE
                Vector2 tau2 = {0.0, 0.0};
@@ -5545,6 +5526,8 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
                   // Does it make sense to have dz_0 multiplying and dividing? XXXX
                   // rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0;
                }
+               // else assert(false && "itur # Not implemented");
+
 
             } // if k>kbs + 1
 
@@ -5561,9 +5544,9 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
 
-         for (int k = kb + 1; k < nvrt; k++) {  // YYYYYYYYY can be kb 
+         for (int k = kb ; k < nvrt; k++) {  // YYYYYYYYY can be kb 
             const int kin = k - kb - 1;
-
+   
             // Velocity is always clamped to maximum values
             side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
          } // k

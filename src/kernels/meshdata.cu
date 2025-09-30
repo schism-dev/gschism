@@ -1176,7 +1176,7 @@ __device__ __inline__ void Node::updateZCoordData(void) {
 
       } else {
          kb = -1;
-         for (int i = 0; i < nzlev; i++) {
+         for (int i = 0; i < nzlev - 1; i++) {
             // XXX Use binary search
             if (-depth >= mesh->ztot[i] && -depth < mesh->ztot[i+1]) {
                kb = i;
@@ -1266,12 +1266,6 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
 
       bool ltmp = false; // for WBL iteration
 
-      assert(false && "computeBottomDragVegetation: nchi == 1 not fully implemented. see below");
-      // Cdmax=-1 !max. Cd at node for this process (info only)
-      // Drag at nodes
-/////////////////!$OMP   do reduction(max: iwbl_itmax) reduction(.or.: ltmp)   XXXXXXXXXXXX
-// !        z0b_save(:) = 0.d0 ! Initialization of mixing length at bottom (z0b, T. Guerin) 
-           
       assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
       if (rough == 0.0) {
          Cd = 0.0;
@@ -1283,15 +1277,16 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
 
          assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
 
-         double tmp = 1.0/(2.5*log(bthick/rough));
+         const double tmp = 1.0/(2.5*log(bthick/rough));
          Cd = tmp*tmp;
+        
 
       } // if rough
 
 
-      // RECOVER THIS: XXX
+      // Ask Joseph XXXXX
       // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
-      // Output warning for WBL if iteration didn't converge
+      // Output warning for WBL if iteration didnt converge
 
 
    } else if constexpr(nchi == -1) {
@@ -1410,8 +1405,6 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       nodeNeighElems[idx] = elem_ptr;
    }      
 
-// printf("NODE i = %d, node = %p, node.numNodes = %d\n", node.idx, &node, node.numNodes);      
-
    node.wind_angle = wind_rotate_angle[i];
 
 
@@ -1434,11 +1427,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else assert(false && "populateNodes: selected nchi not implemented.");
    
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
+   for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
 
    
    // Links the node to the boundary information
    if (isbnd[i] >= 0) {
-
      
       // Get the index of the node boundary
       const int idxNodeBoundary = atomicAdd(sharedIdxNodeBoundary, 1) + 1;
@@ -1461,14 +1454,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
          node.nodeBnd->segment->carea = nan("1");
 
       }
-//          else {  XXXXXX
-//             node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
-// printf("EEEEEPP isbnd[i] = %d, node.nodeBnd->segment = %p\n", isbnd[i], node.nodeBnd->segment);            
-//          }
-      
-
-   }
-   else {
+   } else {
 
       node.nodeBnd = nullptr; // For internal nodes
 
@@ -1476,10 +1462,6 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
          node.nodeBnd = &landBoundaryNode;
          node.nodeBnd->segment = &landBoundarySegment;
       }
-      // node.nodeBnd->node = &node;
-      // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
-      // // node.nodeBnd = nullptr;
-      // node.nodeBnd->segment = (BoundarySegment *)(isbnd[i]); // Hack, isbnd[i] will be -1 or -2 in this case
       
    }
    
@@ -1686,9 +1668,6 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
    elem.depth = 0.0;
    for (int j = 0; j < i34[i]; j++) {
 
-// printf("WWW i = %d, node = %p, elem.i34 = %d\n", i, elem.nodes[j], elem.i34);    
-
-
       center += elem.nodes[j]->p/i34[i];
       elem.depth  += elem.nodes[j]->depth/i34[i];
    }
@@ -1774,7 +1753,7 @@ found: // Jumped here when the node was found
 
    for (int jfr = 0; jfr < nbfr; jfr++) {
 
-      const int idx2 = iseg*mnond*nbfr + i + jfr*mnond; //XXXXX
+      const int idx2 = iseg*mnond*nbfr + i + jfr*mnond; //XXXXX CHECK
       nodeBnd->efa[jfr] = efa[idx2];
       nodeBnd->emo[jfr] = emo[idx2];
       nodeBnd->umo[jfr] = {umo[idx2], vmo[idx2]};
@@ -1820,23 +1799,23 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    NODE(node1);
 
  
-// Check bounds: ensure coeffMatrix is within allocated memory XXXX REMOVE
-const size_t max_elements = 63011136;
-const size_t offset = node1->coeffMatrix - mesh->coeffMatrixMem;
+// // Check bounds: ensure coeffMatrix is within allocated memory XXXX REMOVE
+// const size_t max_elements = 63011136;
+// const size_t offset = node1->coeffMatrix - mesh->coeffMatrixMem;
 
-if (offset < 0 || offset >= max_elements) {
+// if (offset < 0 || offset >= max_elements) {
 
-   printf("Offset is out of bounds: %llu, max_elements = %llu\n", 
-      (unsigned long long)offset, (unsigned long long)max_elements);
-   return;  // Out of bounds, skip
-}
+//    printf("Offset is out of bounds: %llu, max_elements = %llu\n", 
+//       (unsigned long long)offset, (unsigned long long)max_elements);
+//    return;  // Out of bounds, skip
+// }
 
-// Check if we have enough space for numNodes elements
-if (offset + node1->numNodes > max_elements) {
-   printf("Not enough space for numNodes elements: %llu, max_elements = %llu\n", 
-      (unsigned long long)(offset + node1->numNodes), (unsigned long long)max_elements);
-   return;  // Not enough space, skip
-}
+// // Check if we have enough space for numNodes elements
+// if (offset + node1->numNodes > max_elements) {
+//    printf("Not enough space for numNodes elements: %llu, max_elements = %llu\n", 
+//       (unsigned long long)(offset + node1->numNodes), (unsigned long long)max_elements);
+//    return;  // Not enough space, skip
+// }
 
    node1->clearMatrixRow();
    node1->qel = 0.0;
@@ -2100,7 +2079,6 @@ if (offset + node1->numNodes > max_elements) {
 
                } // if Flather or Discharge
 
-// printf("node1 = %p, thetai = %f, dt = %f, ri3 = %f\n", node1, thetai, dt, ri3);
                node1->qel -= thetai*dt*ri3;
 
 
@@ -2164,11 +2142,9 @@ extern "C" {
 
 
    }
-}
 
 
 
-extern "C" {
    __global__ void solverCopyResult(double* x) {
       // Copies a solution vector to the member variable mX. XXXX It might be possible to remove all the unnecessary references to mX, mR, mP, mAp, etc.
       NODE(node);
@@ -2176,9 +2152,8 @@ extern "C" {
 
       node->mX = x[idx];
    }
-}
 
-extern "C" {
+
    __global__ void rollUpElevation(void) {
 
       NODE(node);
@@ -2640,6 +2615,7 @@ extern "C" {
 
          const double ncyc = int(tfreq[j]*time/(2.0*pi));
          const double arg = tfreq[j]*time - ncyc*2.0*pi + jspc[j]*node->lon + tear[j];
+printf("RAAAAMP  ramp = %f, arg = %f\n", ramp, arg);         
          node->ETP += 0.69*ramp*tamp[j]*tnf[j]*node->fun_lat[jspc[j]]*cos(arg);
 
          if constexpr(iloadtide==1) { // loading tide
@@ -3711,7 +3687,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz = 0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX
+            const double dfz =  0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX
  
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
@@ -3853,6 +3829,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
                   assert(false && "Not implemented: itur == 5");
                   // rrhs[kin] += 0.5*dt*dz_1*(side->TDz[k+1] - side->TDz[k])/dz_1
                }
+               // else assert(false && "itur # Not implemented");
 
             } else { // k == nvrt - 1 SURFACE
                Vector2 tau2 = {0.0, 0.0};
@@ -3882,6 +3859,8 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
                   // Does it make sense to have dz_0 multiplying and dividing? XXXX
                   // rrhs[kin] += 0.5*dt*dz_0*(side->TDz[k] - side->TDz[k-1])/dz_0;
                }
+               // else assert(false && "itur # Not implemented");
+
 
             } // if k>kbs + 1
 
@@ -3900,7 +3879,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
          for (int k = kb + 1; k < nvrt; k++) {  // YYYYYYYYY can be kb 
             const int kin = k - kb - 1;
-
+   
             // Velocity is always clamped to maximum values
             side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
          } // k

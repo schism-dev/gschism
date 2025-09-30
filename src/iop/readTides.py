@@ -108,7 +108,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
             for i in range(tide.nbfr):
                 line = f.readline()  # Skip tag
                 line = f.readline()
-                amig, ff, face = read_values(line, [float64]*3)
+                amig, ff, face = read_values(line, [float64]*3) 
                 tide.amig[i] = amig
                 tide.ff[i] = ff
                 tide.face[i] = face * cp.pi / 180.0

@@ -1500,14 +1500,17 @@ extern "C" {
       // Compute the different time ramps used in the code 
       // This function is performed by just one thread
 
+      rampbc = 1.0;
       if constexpr(ibc == 0) {
          if (drampbc > 0.0) {
             rampbc = tanh(2.0*time/86400.0/drampbc);
          } else {
             rampbc = 1.0;
          }
+      }
 
-         if (nws != 0 && drampwind > 0.0) {
+      if (nws != 0) {
+         if (drampwind > 0.0) {
             rampwind = tanh(2.0*time/86400.0/drampwind);
          } else {
             rampwind = 1.0;
@@ -1532,6 +1535,7 @@ extern "C" {
       } else {
          ramp = 1.0;
       }
+
 
    }
       
