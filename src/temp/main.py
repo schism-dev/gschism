@@ -723,6 +723,8 @@ if __name__ == "__main__":
         schism_step(it, namelist, bctides, sflux, solver)
 
         writeOutput(it, namelist.core, namelist.opt)
+        # if it % 100 == 0:
+        #     monitor.plotSideVar("u", 0)
 
         time2 = time.time()
         print(f"Time per step: {time2 - time1:.3f} s")

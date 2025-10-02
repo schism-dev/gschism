@@ -2945,7 +2945,7 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
          assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
 
          const double tmp = 1.0/(2.5*log(bthick/rough));
-         Cd = tmp*tmp;
+         Cd = tmp*tmp; //KKKK XXXXX
         
 
       } // if rough
@@ -3113,7 +3113,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
          node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
          
-         node.nodeBnd->segment->ifltype = (isbnd[i]==0)?3:0;
+         node.nodeBnd->segment->ifltype = 0; //(isbnd[i]==0)?3:0; XXXXX KKKKK
          node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
 
          // Initialize the length and area of the segment to nan to indicate that they are not yet computed
@@ -4502,6 +4502,7 @@ printf("RAAAAMP  ramp = %f, arg = %f\n", ramp, arg);
             const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
             const double argy = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.y;
             r_u1_bar += ramp*ff[jfr]*Vector2{umo.x*cos(argx), umo.y*cos(argy)};
+// printf("r_u1_bar = %f, %f, ramp = %f, ff = %f, umo = %f, %f, ufa = %f, %f\n", r_u1_bar.x, r_u1_bar.y, ramp, ff[jfr], umo.x, umo.y, ufa.x, ufa.y);         
          }
 
 
@@ -5354,7 +5355,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz =  0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX
+            const double dfz =  0.01; //0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX KKKKK
  
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
@@ -5544,7 +5545,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
 
-         for (int k = kb ; k < nvrt; k++) {  // YYYYYYYYY can be kb 
+         for (int k = kb + 1; k < nvrt; k++) {  // YYYYYYYYY can be kb 
             const int kin = k - kb - 1;
    
             // Velocity is always clamped to maximum values
@@ -5645,6 +5646,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
             }
             else { // not Flather or 3D radiation
+printf("ifltype = %d\n", ifltype);
                side->u2[k] = ubc[k];
 
             } // if (segment->ifltype...
@@ -5782,25 +5784,25 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
       elem->isDry = elem->isDry2(); // Element is dry if any of its nodes are dry (based on eta2, not on isDry)
 
+      Node *n1 = elem->nodes[0];
+      Node *n2 = elem->nodes[1];
+      Node *n3 = elem->nodes[2];  
+      Node *n4 = elem->nodes[3]; // nullptr for triangles      
+
       // All the nodes of a wet element are wet.
       if (!elem->isDry) {
-         elem->nodes[0]->isDry = false;
-         elem->nodes[1]->isDry = false;
-         elem->nodes[2]->isDry = false;
-         if (elem->isQuad()) elem->nodes[3]->isDry = false;
+         n1->isDry = false;
+         n2->isDry = false;
+         n3->isDry = false;
+         if (elem->isQuad()) n4->isDry = false;
 
       }
-
 
       elem->kb = 0;
 
       if (elem->isDry) return;
 
-      // Wet
-      const Node *n1 = elem->nodes[0];
-      const Node *n2 = elem->nodes[1];
-      const Node *n3 = elem->nodes[2];  
-      const Node *n4 = elem->nodes[3]; // nullptr for triangles
+
 
    //    if(elem->isDry2()) { // XXXX
    //        write(errmsg,*)'level0: Element-node inconsistency (0):',ielg(i),idry_e2(i), &
@@ -5837,8 +5839,9 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
       NODE(node);
       // Compute velocity, S, T for re-wetted nodes (q2 and xl are fine)
 
-      if (it == iths) return;
+      // if (it == iths) return;   KKKKK
 
+      
 
       if(!node->isDry && node->tmp.b) { // rewetted
          for (int k=0; k < nvrt; k++) {
@@ -5975,6 +5978,8 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
       NODE(node);
 
       for (int k = node->kb; k < nvrt; k++) node->w2[k] = node->w2[k] / node->tmp.d;  // node->tmp.d contains the total area of the elements sharing the node
+
+      node->tmp.i = 0; // Reset the temporary integer value. It will be used to compute the number of elements sharing the node.
    }
 
 
@@ -5984,12 +5989,13 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
       ELEM(elem);
 
+      if (elem->isDry) return;
+
       const int kb = elem->kb;
       const bool isTri = elem->isTri();
 
       if constexpr(indvel <= 0) {
-         // Assuming discontinoius hvel.
-
+         // Assuming discontinous hvel.
 
          if (isTri) { // For triangles
          // Interpolates the side velocities at the nodes. A magnitude defined at the sides and interpolated (extrapolated) at one node can be
@@ -5999,20 +6005,22 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
                // For every node of the triangle...
                Node *node = elem->nodes[j];
 
-               const Side *s1 = elem->sides[j];
+               if (node->isDry) continue;
+
+               const Side *s1 = elem->sides[j];  // Side opposite to node j.
                const Side *s2 = elem->sides[(j + 1) % 3];
                const Side *s3 = elem->sides[(j + 2) % 3];
 
-               const int numElements = node->numElements;
-               const double inv_numElements = 1.0/numElements;
+
+               atomicAdd(&(node->tmp.i), 1);
 
                for (int k = kb; k < nvrt; k++)  {
-                  Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k]; // u interpolated at the node   
+                  Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k]; // u interpolated at node j.   XXXX Function for clamping velocities. const vector2 u
                   u.x = clamp(u.x, -rmaxvelx, rmaxvelx);
                   u.y = clamp(u.y, -rmaxvely, rmaxvely);
                   // node->utmp[k] = node->utmp[k] + (1.0/numElements) * u; 
-                  atomicAdd(&(node->utmp[k].x), inv_numElements * u.x);
-                  atomicAdd(&(node->utmp[k].y), inv_numElements * u.y);
+                  atomicAdd(&(node->utmp[k].x), u.x);
+                  atomicAdd(&(node->utmp[k].y), u.y);
 
                }
 
@@ -6024,6 +6032,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
          }
 
       }
+      else assert(false && "computeNodalHorizontalVelocities1: not implemented for indvel > 0");
       
    }
 
@@ -6031,42 +6040,23 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
    __global__ void computeNodalHorizontalVelocities2(void) {
       NODE(node);
 
-      for (int k = 0; k < nvrt; k++) {
-         node->u2[k] = node->utmp[k];
-         node->w2[k] = node->w2[k];
+      const int nodeCount = node->tmp.i;
+
+      if (nodeCount == 0) 
+      {
+         for (int k = 0;  k < nvrt;   k++) node->u2[k] = {0.0, 0.0};
+         return;
       }
+
+      const int kb = node->kb;
+
+      for (int k = 0;  k < kb;   k++) node->u2[k] = {0.0, 0.0};
+      for (int k = kb; k < nvrt; k++) node->u2[k] = node->utmp[k]*(1.0/nodeCount);
+      
       
    }   
 
-   __global__ void computeNodalHorizontalVelocitiesOLD(void) {
-   // XXXX I'm not sure where I got this function from. 
-   // Compute node's horizonal velocities from side velocities at WHOLE levels.
-   // It goes for each side and adds to the nodes the velocity divided by the number of sides.
-   // It does it for all nodes, including boundary nodes. Afterwards, the open boundary nodes are set to a different value.
-   // It uses the utmp array as a temporary array to store the velocities.
-
-      assert(indvel == 0 && "computeNodalVelocities only works with indvel = 0. IMPLEMENT THIS FOR INDVEL <= 0");
-
-      SIDE(side);
-
-      const int kb = side->kb;
-
-      Node *n1 = side->n1;
-      Node *n2 = side->n2;
-
-      for (int k = kb; k < nvrt; k++) {
-
-         // Cast the u2 vector into a Vector2 
-         Vector2& n1_u2 = *reinterpret_cast<Vector2*>(&(n1->utmp[k]));
-         Vector2& n2_u2 = *reinterpret_cast<Vector2*>(&(n2->utmp[k]));
-
-         n1_u2 = side->u2[k]/n1->numSides;
-         n2_u2 = side->u2[k]/n2->numSides;
-
-      }
-
-
-   }
+ 
 
    __global__ void resetVelocityOpenBndNodes(void) {
    // Set velocity to zero for open boundary nodes where the velocity is imposed.

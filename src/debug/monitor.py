@@ -141,7 +141,7 @@ def getSideVar(varName, k = -1):
         elif varType == 'Vector2':
             if is3D:
                 shape = (2, nvrt, numSides)
-                strides = (8, 8*nvrt, sizeSide)  # 8 bytes for double, then 8*nvrt for next level, then stride for next element
+                strides = (8, 16, sizeSide)  # 8 bytes for double, then 8*nvrt for next level, then stride for next element
             else:
                 shape = (2, numSides)
                 strides = (8, sizeSide)
@@ -167,6 +167,9 @@ def getSideVar(varName, k = -1):
             
         view = cp.ndarray(shape=shape, dtype=dtype, strides=strides, order='F',
                           memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(addr.item() + offset.item(), 0, owner=None), 0)) 
+
+        if k != -1:
+            view = view[:, k, :]
 
         return view
 
@@ -371,20 +374,25 @@ def plotSideVar(varname, level=-1):
     ax.clear()
 
     # Get node coordinates for plotting
-    x = getNodeVar("x")
-    y = getNodeVar("y")
+    x = getNodeVar("x")[0,:].get()
+    y = getNodeVar("x")[1,:].get()
     
     # Plot all nodes
-    plt.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
+    ax.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
 
     # Get side data
-    n1 = getSideVar("n1").astype(int)
-    n2 = getSideVar("n2").astype(int)
-    sx = getSideVar("x")
-    sy = getSideVar("y")
+    n1 = getSideVar("n1").astype(int).get()
+    n2 = getSideVar("n2").astype(int).get()
+    sx = getSideVar("x")[0,:].get()
+    sy = getSideVar("x")[1,:].get()
+
+    n1 = (n1 - n1.min())//1584 # XXXXX fix
+    n2 = (n2 - n2.min())//1584
     
     # Get the variable to plot
-    var = getSideVar(varname, level)
+    var = getSideVar(varname, level).get()
+    if var.ndim == 2:
+        var = np.sqrt(var[0,:]**2 + var[1,:]**2)
     
     # Build the segments array for LineCollection
     segments = np.stack([np.column_stack([x[n1], y[n1]]), np.column_stack([x[n2], y[n2]])], axis=1)
@@ -398,14 +406,15 @@ def plotSideVar(varname, level=-1):
     plt.colorbar(lc, label=varname)
 
     # Plot side centers with variable values
-    scatter = plt.scatter(sx, sy, c=var, cmap='viridis', s=5, edgecolors='none')
+    scatter = ax.scatter(sx, sy, c=var, cmap='viridis', s=5, edgecolors='none')
 
     ax.autoscale()
     plt.title(f'Side Variable: {varname}')
     plt.show(block=True)
-    # plt.pause(0.0)
+    plt.pause(0.0)
     
     return True
+
 
 def plotNodeVar(varname, level=-1):
     global fig, ax
