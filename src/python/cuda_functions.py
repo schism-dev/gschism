@@ -44,6 +44,7 @@ ul0UpdateZCoords = None
 ul0ComputeDryElementsAndNodes = None
 ul0UpdateRewettedNodes = None
 ul0UpdateSides = None
+ul0UpdateSides2 = None
 zeroNodalVelocities = None
 computeNodalVerticalVelocities1 = None
 computeNodalVerticalVelocities2 = None
@@ -122,7 +123,7 @@ def initializeCudaFunctions(sizes):
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix
-    global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides
+    global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides, ul0UpdateSides2
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
     global getElementVar, getNodeVar, getSideVar, getSideBndVar
@@ -170,6 +171,7 @@ def initializeCudaFunctions(sizes):
         ul0ComputeDryElementsAndNodes       = mod.get_function('ul0ComputeDryElementsAndNodes',       sizes, kernel_type='elements')
         ul0UpdateRewettedNodes              = mod.get_function('ul0UpdateRewettedNodes',              sizes, kernel_type='nodes')
         ul0UpdateSides                      = mod.get_function('ul0UpdateSides',                      sizes, kernel_type='sides')
+        ul0UpdateSides2                     = mod.get_function('ul0UpdateSides2',                     sizes, kernel_type='sides')
         zeroNodalVelocities                 = mod.get_function('zeroNodalVelocities',                 sizes, kernel_type='nodes')
         computeNodalVerticalVelocities1     = mod.get_function('computeNodalVerticalVelocities1',     sizes, kernel_type='elements')
         computeNodalVerticalVelocities2     = mod.get_function('computeNodalVerticalVelocities2',     sizes, kernel_type='nodes')

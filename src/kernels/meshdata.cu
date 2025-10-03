@@ -1267,7 +1267,7 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
       bool ltmp = false; // for WBL iteration
 
       assert(rough >= 0.0 && "computeBottomDragVegetation: rough < 0");
-      if (rough == 0.0) {
+      if (isDry || (rough == 0.0)) {
          Cd = 0.0;
 
       } else { //roughness >0 
@@ -1277,9 +1277,7 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
 
          assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
 
-         const double tmp = 1.0/(2.5*log(bthick/rough));
-         Cd = tmp*tmp; //KKKK XXXXX
-        
+         Cd = 1.0/pow<2>((2.5*log(bthick/rough)));       
 
       } // if rough
 
@@ -4050,7 +4048,7 @@ printf("ifltype = %d\n", ifltype);
                }
             }
 
-
+            // Reusing bcc as a temporary array to store the suru values.
             side->bcc[k] = side->u2[k] + side->shapiro*(0.25*suru - side->u2[k]); // sframe2 if ics=2
 
          }
@@ -4061,6 +4059,9 @@ printf("ifltype = %d\n", ifltype);
       // Second step of the Shapiro filter. Assigns to u2 the values stored in bcc.
 
       SIDE(side);
+TESTING THIS. NOTICE THAT THIS CODE STILL CHANGES u2, so it is not doing what it should.
+const double htot = side->htot2();
+if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; side->w2[k] = 0.0;}/// KKKK XXXXXX      
 
       if (side->isDry || !(side->isInternal())) return;
 
@@ -4077,6 +4078,7 @@ printf("ifltype = %d\n", ifltype);
          for (int k = kb + 1; k < nvrt; k++) side->u2[k] = side->bcc[k];
          
       }
+
 
    }
 
@@ -4168,12 +4170,14 @@ printf("ifltype = %d\n", ifltype);
    }
 
    __global__ void ul0UpdateRewettedNodes(int it, int iths)
+   // Obtains values of velocity, S, T for newly wet nodes. It uses the average of the previously wet surrounding nodes.
+   // node->tmp.b is true if the node was previously wet.
+   // This function avoids race conditions by only modifying nodes that just became wet and only using the values of the previously wet surrounding nodes.
    {
       NODE(node);
       // Compute velocity, S, T for re-wetted nodes (q2 and xl are fine)
 
-      // if (it == iths) return;   KKKKK
-
+      if (it == iths) return;  
       
 
       if(!node->isDry && node->tmp.b) { // rewetted
@@ -4186,16 +4190,18 @@ printf("ifltype = %d\n", ifltype);
             int icount=0;
             for (int j = 0; j < node->numNodes; j++) {
 
+               const Node *nbrNode = node->nodes[j];
 
-               // Wet nbrs not affected by this part and so each sub-domain should use same values
-               if (!node->isDry) { // all indices extended
+               // Wet neighbors not affected by this part and so each sub-domain should use same values
+               if (!nbrNode->tmp.b) { // Previously wet surrounding nodes
+
                   icount++;
 
                   // Assume small element size in wet/dry zone so pframes are close to each other
-                  utmp += node->uvw2(k); IS THIS CORRECT?
+                  utmp += nbrNode->uvw2(k);
                   
-                  ttmp += node->tracers[k].tracer[0]; 
-                  stmp += node->tracers[k].tracer[1]; 
+                  ttmp += nbrNode->tracers[k].tracer[0]; 
+                  stmp += nbrNode->tracers[k].tracer[1]; 
                }
             }
 
@@ -4210,8 +4216,12 @@ printf("ifltype = %d\n", ifltype);
       }
    }
 
+  
+   
+
 
    __global__ void ul0UpdateSides(int it, int iths) {
+   // Obtains values of velocity for newly wet sides. It uses the average of the previously wet surrounding nodes.
 
       SIDE(side);
 
@@ -4244,13 +4254,13 @@ printf("ifltype = %d\n", ifltype);
 
             // Compute velocity for re-wetted sides 
             if ((it != iths) && (side->isDry && isWet)) {
-            AGAIN IS THIS CORRECT?
+
                Vector2 utmp={0.0, 0.0};
 
                int icount=0;
 
                // For all the sides on the two elements that share this side
-               for (int j=0; j < 2; j++) {
+               for (int j = 0; j < 2; j++) {
                   const Element *elem = side->elems[j];
                   if (elem == nullptr) continue;
 
@@ -4259,12 +4269,14 @@ printf("ifltype = %d\n", ifltype);
                      if (nSide->isDry) continue;
 
                      icount++;
-                     utmp += nSide->u2[k];                     
+                     utmp += nSide->u2[k];  
+                     //  XXXXXX DO THE SAME FOR TRACERS????                   
                   }
                }
                   
-               assert(icount > 0 && "No wet sides around this side");
+               // assert(icount > 0 && "No wet sides around this side");  XXXXX RECOVER??? 
                if (icount > 0)  side->u2[k] = utmp/icount;
+               else             side->u2[k] = {0.0, 0.0};
                   
             } // if ((it != iths) && (side->isDry && isWet))
 
@@ -4272,7 +4284,20 @@ printf("ifltype = %d\n", ifltype);
 
       } // if isWet
    
-      side->isDry = !isWet;
+
+
+   }
+
+   __global__ void ul0UpdateSides2(void) {
+      // Obtains values of velocity for newly wet sides. It uses the average of the previously wet surrounding nodes.
+   
+         SIDE(side);
+   
+         // A side is wet if and only if at least one of its elements is wet.
+         const bool isWet = !side->elems[0]->isDry || (side->isInternal() && !side->elems[1]->isDry);
+
+         // Update the side's dryness
+         side->isDry = !isWet;
 
    }
 

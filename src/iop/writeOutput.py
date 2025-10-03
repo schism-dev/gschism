@@ -18,6 +18,7 @@ sizeSide = None
 dataC = None
 dataU = None
 dataV = None
+dataW = None
 dataZ = None
 fileNum = 0
 
@@ -28,12 +29,14 @@ writer_thread = None
 queueC = queue.Queue()
 queueU = queue.Queue()
 queueV = queue.Queue()
+queueW = queue.Queue()
 queueZ = queue.Queue()
 writer_stop_event = threading.Event()
 
 threadWriteOutputC = None
 threadWriteOutputU = None
 threadWriteOutputV = None
+threadWriteOutputW = None
 threadWriteOutputZ = None
 
 # paramsCompression = {'zlib':True,  'complevel': 1, 'shuffle': True}
@@ -44,7 +47,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
     
     global path, nNodes, nElements, nSides, nLayers, sizeNode, sizeElem, sizeSide
     global writer_stop_event
-    global threadWriteOutputC, threadWriteOutputU, threadWriteOutputV, threadWriteOutputZ
+    global threadWriteOutputC, threadWriteOutputU, threadWriteOutputV, threadWriteOutputZ, threadWriteOutputW
     global queueC, queueU, queueV, queueZ
     
     path = basePath
@@ -62,10 +65,12 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
     threadWriteOutputC = threading.Thread(target=_threadWriteOutputC, daemon=True)
     threadWriteOutputU = threading.Thread(target=_threadWriteOutputU, daemon=True)
     threadWriteOutputV = threading.Thread(target=_threadWriteOutputV, daemon=True)
+    threadWriteOutputW = threading.Thread(target=_threadWriteOutputW, daemon=True)
     threadWriteOutputZ = threading.Thread(target=_threadWriteOutputZ, daemon=True)
     threadWriteOutputC.start()
     threadWriteOutputU.start()
     threadWriteOutputV.start()
+    threadWriteOutputW.start()
     threadWriteOutputZ.start()
     print("Writer thread started")
 
@@ -109,7 +114,7 @@ def getSharedData():
 
 def writeOutput(it, core, opt):
     """Modified writeOutput with threading support."""
-    global dataC, dataU, dataV, dataZ, fileNum, sizeNode, output_thread, output_queue, output_lock, sharedData
+    global dataC, dataU, dataV, dataZ, dataW, fileNum, sizeNode, output_thread, output_queue, output_lock, sharedData
     
 
     ihfskip = core.ihfskip
@@ -126,6 +131,7 @@ def writeOutput(it, core, opt):
             dataU.close()
             dataV.close()
             dataZ.close()
+            dataW.close()
 
         fileNum += 1
         ifile=(it-1)/ihfskip+1
@@ -133,6 +139,7 @@ def writeOutput(it, core, opt):
         dataU = createNetCDFFileU(fileNum, nNodes, nElements, nSides, nLayers, opt)
         dataV = createNetCDFFileV(fileNum, nNodes, nElements, nSides, nLayers, opt)
         dataZ = createNetCDFFileZ(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataW = createNetCDFFileW(fileNum, nNodes, nElements, nSides, nLayers, opt)
 
     if dataC is None:
         return
@@ -145,6 +152,7 @@ def writeOutput(it, core, opt):
         queueU.join() 
         queueV.join() 
         queueZ.join() 
+        queueW.join() 
     except KeyboardInterrupt:
         print("Warning: Queue join interrupted")
 
@@ -160,7 +168,7 @@ def writeOutput(it, core, opt):
     cpuDataU = {}
     cpuDataV = {}
     cpuDataZ = {}
-    
+    cpuDataW = {}
 
     # Time-dependent variables
     view = monitor.getNodeVar("eta")
@@ -179,6 +187,9 @@ def writeOutput(it, core, opt):
     cpuDataU['u_cpu'] = view[0,:,:].get()
     cpuDataV['v_cpu'] = view[1,:,:].get()
     
+    view = monitor.getNodeVar("w")
+    cpuDataW['w_cpu'] = view.get()
+    
     view = monitor.getNodeVar("z")
     cpuDataZ['z_cpu'] = view.get()
     
@@ -196,6 +207,7 @@ def writeOutput(it, core, opt):
     queueU.put(cpuDataU)
     queueV.put(cpuDataV)
     queueZ.put(cpuDataZ)
+    queueW.put(cpuDataW)
 
 
 def _threadWriteOutputC():
@@ -399,7 +411,6 @@ def _threadWriteOutputU():
 
 
 
-
 def _threadWriteOutputV():
     """Background thread that continuously polls queueV for data to write."""
     global dataV, sharedData
@@ -458,6 +469,7 @@ def _threadWriteOutputV():
 
         except:
             pass
+
 
 
 def _threadWriteOutputZ():
@@ -519,7 +531,68 @@ def _threadWriteOutputZ():
             pass
 
 
-        
+
+def _threadWriteOutputW():
+    """Background thread that continuously polls queueW for data to write."""
+    global dataW, sharedData
+    
+    try:
+        while not writer_stop_event.is_set():
+            try:
+                queueData = queueW.get()
+
+                if 'createNetCDFFile' in queueData.keys():
+                    fileNum, nNodes, nElements, nSides, nLayers, opt = queueData['createNetCDFFile']
+                    dataW = createNetCDFFileW(fileNum, nNodes, nElements, nSides, nLayers, opt)
+                    continue
+
+                if 'closeNetCDFFile' in queueData.keys():
+                    dataW.close()
+                    continue
+
+                # If it gets here, queueData contains cpuDataC
+                cpuDataW = queueData
+
+                it           = sharedData['it']
+                idxTime      = sharedData['idxTime']
+                dt           = sharedData['dt']
+ 
+                w_cpu = cpuDataW['w_cpu']
+                verticalVel_var = dataW.variables['verticalVelocity']
+                verticalVel_var[idxTime, :, :] = w_cpu.T
+                del w_cpu
+
+                # Time variable
+                time_var = dataW.variables['time']
+                time_var[idxTime] = it*dt
+
+                # Clean up memory
+                cpuDataW.clear()
+                
+                # Mark task as done
+                queueW.task_done()
+                
+            except queue.Empty:
+                # Timeout - continue polling
+                continue
+            except Exception as e:
+                print(f"Error in writer thread: {e}")
+                cpuDataW.clear()
+                queueW.task_done()  # Still mark as done to avoid hanging
+                continue
+
+    finally:
+        print('Unexpected error in writer thread')
+        try:
+            cpuDataW.clear()
+            queueW.task_done()  # Still mark as done to avoid hanging
+
+
+        except:
+            pass
+
+
+
 def addDimensions(data, opt, nNodes, nElements, nSides, nLayers):
 
     data.createDimension('nSCHISM_hgrid_node',          nNodes)
@@ -558,7 +631,6 @@ def addDimensions(data, opt, nNodes, nElements, nSides, nLayers):
     time_var.units = f"seconds since {opt.start_year:04d}-{opt.start_month:02d}-{opt.start_day:02d}T{opt.start_hour:02.0f}:00:00{opt.utc_start:+03.0f}"
     time_var.standard_name = "time"
     time_var.axis = "T"
-
 
 
 def createNetCDFFileC(fileNum, nNodes, nElements, nSides, nLayers, opt):
@@ -831,11 +903,44 @@ def createNetCDFFileZ(fileNum, nNodes, nElements, nSides, nLayers, opt):
     return dataZ
 
 
+def createNetCDFFileW(fileNum, nNodes, nElements, nSides, nLayers, opt):
+    """
+    Create the NetCDF file "header", meaning the appropriate dimensions, variables, and attributes.
+    The data variable is stored in the global variable data.
+    """
+
+    global dataW
+    
+    filenameW = 'verticalVelocity_%i.nc' % fileNum
+
+    # Remove the file if it exists before creating the NetCDF file
+    filepathW = os.path.join(path, filenameW)
+    if os.path.exists(filepathW):
+        os.remove(filepathW)
+
+    # Create the NetCDF files
+    dataW = nc.Dataset(filepathW, "w", format="NETCDF4")
+    
+    addDimensions(dataW, opt, nNodes, nElements, nSides, nLayers)
+    
+    
+    verticalVel = dataW.createVariable('verticalVelocity', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
+    verticalVel.i23d = cp.int32(2)
+    verticalVel.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
+    verticalVel.location = "node"
+    verticalVel.grid_mapping = "crs"
+    verticalVel.mesh = "SCHISM_hgrid"    
+    
+    
+    return dataW
+
+
 def stopWriter():
     writer_stop_event.set()  # Signal stop
     threadWriteOutputC.join()     # Wait for thread to finish
     threadWriteOutputU.join()     # Wait for thread to finish
     threadWriteOutputV.join()     # Wait for thread to finish
     threadWriteOutputZ.join()     # Wait for thread to finish
+    threadWriteOutputW.join()     # Wait for thread to finish
 
 

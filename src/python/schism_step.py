@@ -263,9 +263,11 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     
     cufunc.ul0ComputeDryElementsAndNodes()
     
-    cufunc.ul0UpdateRewettedNodes(0, 0)
+    cufunc.ul0UpdateRewettedNodes(it, 0)  # iths XXXXXXX
     
-    cufunc.ul0UpdateSides(0, 0)
+    cufunc.ul0UpdateSides(it, 0)  # iths XXXXXXXX
+
+    cufunc.ul0UpdateSides2()  # iths XXXXXXXX
 
     # Adjust mass after level change
     # XXXXXXXXX IMPLEMENT THIS

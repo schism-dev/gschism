@@ -85,6 +85,8 @@ def schism_init(core, opt):
         cufunc.ul0UpdateRewettedNodes(0, 0)
         
         cufunc.ul0UpdateSides(0, 0)
+
+        cufunc.ul0UpdateSides2()
         
 
         
