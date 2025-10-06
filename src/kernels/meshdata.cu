@@ -1975,7 +1975,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          if (!elem->isDry) {
            const Vector2 gradEta = elem->grad2(&Node::eta2);
 
-          node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
+           node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
 
          }
 
@@ -3263,7 +3263,7 @@ printf("RAAAAMP  ramp = %f, arg = %f\n", ramp, arg);
          } // if iveg
 
          // Enforce positivity for 3D model
-         if (ihhat == 1) side->hhat = max(0.0, side->hhat);
+         if constexpr(ihhat == 1) side->hhat = max(0.0, side->hhat);
       } // if 3D
 
    }
@@ -4059,9 +4059,6 @@ printf("ifltype = %d\n", ifltype);
       // Second step of the Shapiro filter. Assigns to u2 the values stored in bcc.
 
       SIDE(side);
-TESTING THIS. NOTICE THAT THIS CODE STILL CHANGES u2, so it is not doing what it should.
-const double htot = side->htot2();
-if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; side->w2[k] = 0.0;}/// KKKK XXXXXX      
 
       if (side->isDry || !(side->isInternal())) return;
 
@@ -4078,7 +4075,6 @@ if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; sid
          for (int k = kb + 1; k < nvrt; k++) side->u2[k] = side->bcc[k];
          
       }
-
 
    }
 
@@ -4124,12 +4120,13 @@ if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; sid
       Node *n3 = elem->nodes[2];  
       Node *n4 = elem->nodes[3]; // nullptr for triangles      
 
-      // All the nodes of a wet element are wet.
+      // All the nodes of a dry element are wet.
       if (!elem->isDry) {
          n1->isDry = false;
          n2->isDry = false;
          n3->isDry = false;
          if (elem->isQuad()) n4->isDry = false;
+
 
       }
 
@@ -4171,16 +4168,19 @@ if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; sid
 
    __global__ void ul0UpdateRewettedNodes(int it, int iths)
    // Obtains values of velocity, S, T for newly wet nodes. It uses the average of the previously wet surrounding nodes.
-   // node->tmp.b is true if the node was previously wet.
+   // node->tmp.b is true if the node was previously dry.
    // This function avoids race conditions by only modifying nodes that just became wet and only using the values of the previously wet surrounding nodes.
    {
       NODE(node);
       // Compute velocity, S, T for re-wetted nodes (q2 and xl are fine)
 
+      // Avoid this the first time step.
       if (it == iths) return;  
-      
 
-      if(!node->isDry && node->tmp.b) { // rewetted
+      
+      // assert(node->isDry == node->isDry2() && "These two must be identical at this point"); XXXXX 
+      if ((!node->isDry) && node->tmp.b) {  // rewetted, remember that tmp.b is true if the node was previously dry.
+
          for (int k=0; k < nvrt; k++) {
 
             Vector3 utmp={0.0, 0.0, 0.0};
@@ -4205,12 +4205,16 @@ if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; sid
                }
             }
 
-            if(icount > 0) {
+            if (icount > 0) {
                const double inv_icount = 1.0/icount;
                node->u2[k]     = {inv_icount*utmp.x, inv_icount*utmp.y};
                node->w2[k]     = inv_icount*utmp.z;
                node->tracers[k].tracer[0]   = inv_icount*ttmp;
                node->tracers[k].tracer[1]   = inv_icount*stmp;
+            }
+            else {
+               node->u2[k] = {0.0, 0.0};
+               node->w2[k] = 0.0;
             }
          }
       }
@@ -4402,10 +4406,12 @@ if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; sid
 
       if (nodeCount == 0) 
       {
-         for (int k = 0;  k < nvrt;   k++) node->u2[k] = {0.0, 0.0};
+         for (int k = 0; k < nvrt; k++) node->u2[k] = {0.0, 0.0};
          return;
       }
 
+      assert(!node->isDry && "computeNodalHorizontalVelocities2: node is dry");
+      
       const int kb = node->kb;
 
       for (int k = 0;  k < kb;   k++) node->u2[k] = {0.0, 0.0};
@@ -4478,6 +4484,8 @@ if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; sid
 
       ELEM(elem);
 
+      for (int l = 0; l < nvrt; l++) elem->w[l] = 0.0; 
+
       if (elem->isDry) return;
 
       const int kb = elem->kb;
@@ -4530,7 +4538,7 @@ if (htot  <= 0.03) for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0}; sid
 
          // Compute the total flux at the sides
          double sideFlux = 0.0;
-         Vector2 u2top = {0.0, 0.0};
+
          for (int j = 0; j < elem->i34; j++) {
             const Side *side = elem->sides[j];
 
