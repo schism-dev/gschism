@@ -1796,6 +1796,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
    NODE(node1);
 
+if (node1->idx % 10000 == 0) printf("Setting up coefficient matrix and RHS for node %d\n", node1->idx);   
+
  
 // // Check bounds: ensure coeffMatrix is within allocated memory XXXX REMOVE
 // const size_t max_elements = 63011136;
