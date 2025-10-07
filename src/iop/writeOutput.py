@@ -815,21 +815,22 @@ def createNetCDFFileU(fileNum, nNodes, nElements, nSides, nLayers, opt):
     global dataU
 
     filenameU = 'horizontalVelX_%i.nc' % fileNum
-    print(f"XXX Creating NetCDF file {filenameU}")
+    print(f"XXX Creating NetCDF file {filenameU}", flush=True)
+    
     # Remove the file if it exists before creating the NetCDF file
     filepathU = os.path.join(path, filenameU)
     if os.path.exists(filepathU):
         os.remove(filepathU)
 
-    print(f"XXX2 Creating NetCDF file {filepathU}")
+    print(f"XXX2 Creating NetCDF file {filepathU}", flush=True)
 
     # Create the NetCDF files
     dataU = nc.Dataset(filepathU, "w", format="NETCDF4")
 
-    print(f"XXX3 Creating NetCDF file {dataU}")
+    print(f"XXX3 Creating NetCDF file {dataU}", flush=True)
     addDimensions(dataU, opt, nNodes, nElements, nSides, nLayers)
 
-    print(f"XXX4 Creating NetCDF file {dataU}")
+    print(f"XXX4 Creating NetCDF file {dataU}", flush=True)
 
     horizontalVelX = dataU.createVariable('horizontalVelX', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     horizontalVelX.i23d = cp.int32(2)
@@ -838,7 +839,7 @@ def createNetCDFFileU(fileNum, nNodes, nElements, nSides, nLayers, opt):
     horizontalVelX.grid_mapping = "crs"
     horizontalVelX.mesh = "SCHISM_hgrid" 
     
-    print(f"XXX5 Creating NetCDF file {dataU}")
+    print(f"XXX5 Creating NetCDF file {dataU}", flush=True)
 
     return dataU
 
