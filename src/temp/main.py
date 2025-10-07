@@ -722,7 +722,7 @@ if __name__ == "__main__":
 
         schism_step(it, namelist, bctides, sflux, solver)
 
-        writeOutput(it, namelist.core, namelist.opt)
+        # writeOutput(it, namelist.core, namelist.opt)
         # if it % 100 == 0:
         #     monitor.plotSideVar("u", 0)
 
