@@ -899,7 +899,7 @@ def createNetCDFFileZ(fileNum, nNodes, nElements, nSides, nLayers, opt):
     # Add zCoordinates variable to dataZ file
     zCoordinates = dataZ.createVariable('zCoordinates', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     zCoordinates.i23d = cp.int32(2)
-    zCoordinates.missing_value = np.float32(9.96921e+36)
+    zCoordinates.missing_value = cp.float32(9.96921e+36)
     zCoordinates.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     zCoordinates.location = "node"
     zCoordinates.grid_mapping = "crs"
