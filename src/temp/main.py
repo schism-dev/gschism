@@ -16,6 +16,15 @@ from iop.writeOutput import writeOutput, initializeOutput, stopWriter
 # For profiling
 from line_profiler import LineProfiler
 
+
+# Sets environment variables to disable file locking 
+# Disable file locking (often helps with threading issues)
+os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
+
+# Limit OpenMP threads
+os.environ['OMP_NUM_THREADS'] = '1'
+
+
 VISTA = True
 WINDOWS = not VISTA
 
@@ -722,7 +731,7 @@ if __name__ == "__main__":
 
         schism_step(it, namelist, bctides, sflux, solver)
 
-        # writeOutput(it, namelist.core, namelist.opt)
+        writeOutput(it, namelist.core, namelist.opt)
         # if it % 100 == 0:
         #     monitor.plotSideVar("u", 0)
 
