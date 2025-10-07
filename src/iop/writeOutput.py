@@ -1,5 +1,6 @@
 import os
 import cupy as cp
+import numpy as np
 
 import netCDF4 as nc
 import debug.monitor as monitor 
@@ -45,7 +46,7 @@ def writeOutput(it, core, opt):
 
     if (it % nspool) != 0:
         return
-
+    print(f"it = {it}, nspool = {nspool}, ihfskip = {ihfskip}")
     if (it-nspool) % ihfskip == 0:
         if dataC is not None:
             dataC.close()
@@ -428,7 +429,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     # Add zCoordinates variable to dataZ file
     zCoordinates = dataZ.createVariable('zCoordinates', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'))
     zCoordinates.i23d = cp.int32(2)
-    zCoordinates.missing_value = 9.96921e+36
+    zCoordinates.missing_value = np.float32(9.96921e+36)
     zCoordinates.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     zCoordinates.location = "node"
     zCoordinates.grid_mapping = "crs"
