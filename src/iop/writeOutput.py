@@ -3,6 +3,13 @@ import cupy as cp
 import threading
 import queue
 
+# Sets environment variables to disable file locking 
+# Disable file locking (often helps with threading issues)
+os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
+
+# Limit OpenMP threads
+os.environ['OMP_NUM_THREADS'] = '1'
+
 import netCDF4 as nc
 import debug.monitor as monitor 
 
