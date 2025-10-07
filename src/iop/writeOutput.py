@@ -815,18 +815,22 @@ def createNetCDFFileU(fileNum, nNodes, nElements, nSides, nLayers, opt):
     global dataU
 
     filenameU = 'horizontalVelX_%i.nc' % fileNum
-
+    print(f"XXX Creating NetCDF file {filenameU}")
     # Remove the file if it exists before creating the NetCDF file
     filepathU = os.path.join(path, filenameU)
     if os.path.exists(filepathU):
         os.remove(filepathU)
 
+    print(f"XXX2 Creating NetCDF file {filepathU}")
+
     # Create the NetCDF files
     dataU = nc.Dataset(filepathU, "w", format="NETCDF4")
 
+    print(f"XXX3 Creating NetCDF file {dataU}")
     addDimensions(dataU, opt, nNodes, nElements, nSides, nLayers)
 
- 
+    print(f"XXX4 Creating NetCDF file {dataU}")
+
     horizontalVelX = dataU.createVariable('horizontalVelX', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     horizontalVelX.i23d = cp.int32(2)
     horizontalVelX.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
@@ -834,7 +838,8 @@ def createNetCDFFileU(fileNum, nNodes, nElements, nSides, nLayers, opt):
     horizontalVelX.grid_mapping = "crs"
     horizontalVelX.mesh = "SCHISM_hgrid" 
     
-    
+    print(f"XXX5 Creating NetCDF file {dataU}")
+
     return dataU
 
     
@@ -893,7 +898,7 @@ def createNetCDFFileZ(fileNum, nNodes, nElements, nSides, nLayers, opt):
     # Add zCoordinates variable to dataZ file
     zCoordinates = dataZ.createVariable('zCoordinates', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'), chunksizes=(1,nNodes,nLayers), **paramsCompression)
     zCoordinates.i23d = cp.int32(2)
-    zCoordinates.missing_value = 9.96921e+36
+    zCoordinates.missing_value = float(9.96921e+36)
     zCoordinates.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
     zCoordinates.location = "node"
     zCoordinates.grid_mapping = "crs"
