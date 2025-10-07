@@ -218,10 +218,10 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     #!...  No elevation essential b.c. are imposed yet but other b.c. is imposed
     cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-
 
-
+    print("[5.1]")
     cufunc.rollUpElevation()
 
-
+    print("[5.2]")
     cufunc.setEssentialBC()
 
 
