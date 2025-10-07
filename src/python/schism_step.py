@@ -213,7 +213,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Elem. average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimension: m^2/s
     cufunc.computeElemAverageGhat()                 # Lines 5533-5783
 
-    print("[5]", flush=True)
+    print("[5]")
     # setup coefficient matrix, sparsem, for the wave equation
     #!...  No elevation essential b.c. are imposed yet but other b.c. is imposed
     cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-

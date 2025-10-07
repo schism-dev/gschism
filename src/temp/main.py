@@ -8,7 +8,7 @@ import cupy as cp
 import debug.monitor as monitor
 import time
 from python.pcgsolver import PCGSolver
-from iop.writeOutput import writeOutput, initializeOutput, stopWriter
+from iop.writeOutput import writeOutput, initializeOutput
 
 # pool = cp.cuda.MemoryPool()
 # cp.cuda.set_allocator(pool.malloc)
@@ -17,20 +17,14 @@ from iop.writeOutput import writeOutput, initializeOutput, stopWriter
 from line_profiler import LineProfiler
 
 
-# Sets environment variables to disable file locking 
-# Disable file locking (often helps with threading issues)
-os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
-
-# Limit OpenMP threads
-os.environ['OMP_NUM_THREADS'] = '1'
-
-
 VISTA = True
 WINDOWS = not VISTA
+
 
 # Enable verbose output
 os.environ['DISTUTILS_DEBUG'] = '1'
 os.environ['VERBOSE'] = '1'
+
 
 # Print diagnostic information
 print("Python version:", sys.version)
@@ -740,7 +734,6 @@ if __name__ == "__main__":
         time1 = time2
         pass
 
-    stopWriter()
 
     end_time = time.time()
     total_time = end_time - start_time
