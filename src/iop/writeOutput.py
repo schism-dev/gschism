@@ -335,7 +335,7 @@ def _threadWriteOutputC():
                 # Timeout - continue polling
                 continue
             except Exception as e:
-                print(f"Error in writer thread: {e}")
+                print(f"Error in writer thread C: {e}")
                 cpuDataC.clear()
                 queueC.task_done()  # Still mark as done to avoid hanging
                 continue
@@ -395,7 +395,7 @@ def _threadWriteOutputU():
                 # Timeout - continue polling
                 continue
             except Exception as e:
-                print(f"Error in writer thread: {e}")
+                print(f"Error in writer thread U: {e}")
                 queueU.task_done()  # Still mark as done to avoid hanging
                 continue
 
@@ -455,7 +455,7 @@ def _threadWriteOutputV():
                 # Timeout - continue polling
                 continue
             except Exception as e:
-                print(f"Error in writer thread: {e}")
+                print(f"Error in writer thread V: {e}")
                 queueV.task_done()  # Still mark as done to avoid hanging
                 continue
 
@@ -516,7 +516,7 @@ def _threadWriteOutputZ():
                 # Timeout - continue polling
                 continue
             except Exception as e:
-                print(f"Error in writer thread: {e}")
+                print(f"Error in writer thread Z: {e}")
                 queueZ.task_done()  # Still mark as done to avoid hanging
                 continue
 
@@ -576,7 +576,7 @@ def _threadWriteOutputW():
                 # Timeout - continue polling
                 continue
             except Exception as e:
-                print(f"Error in writer thread: {e}")
+                print(f"Error in writer thread W: {e}")
                 cpuDataW.clear()
                 queueW.task_done()  # Still mark as done to avoid hanging
                 continue
