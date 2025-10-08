@@ -46,22 +46,23 @@ def writeOutput(it, core, opt):
 
     if (it % nspool) != 0:
         return
+
     print(f"it = {it}, nspool = {nspool}, ihfskip = {ihfskip}")
     if (it-nspool) % ihfskip == 0:
-        if dataC is not None:
-            dataC.close()
-            dataU.close()
-            dataV.close()
-            dataZ.close()
+
 
         fileNum += 1
 
         ifile=(it-1)/ihfskip+1
-        dataC, dataU, dataV = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataC, dataU, dataV, dataZ = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
+
+    else:
+        dataC = nc.Dataset(os.path.join(path, 'out2d_%i.nc' % fileNum), "a")
+        dataU = nc.Dataset(os.path.join(path, 'horizontalVelX_%i.nc' % fileNum), "a")
+        dataV = nc.Dataset(os.path.join(path, 'horizontalVelY_%i.nc' % fileNum), "a")
+        dataZ = nc.Dataset(os.path.join(path, 'zCoordinates_%i.nc' % fileNum), "a")
 
 
-    if dataC is None:
-        return
 
     idxTime = ((it // nspool) - 1) % timesPerFile
 
@@ -192,9 +193,10 @@ def writeOutput(it, core, opt):
     time_var[idxTime] = it*dt
 
 
-    # if it >100:
-    #     data.close()
-    #     exit()
+    dataC.close()
+    dataU.close()
+    dataV.close()
+    dataZ.close()
 
 
 
@@ -436,7 +438,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     zCoordinates.mesh = "SCHISM_hgrid"
 
     
-    return dataC, dataU, dataV
+    return dataC, dataU, dataV, dataZ
 
     
 

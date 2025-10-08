@@ -125,7 +125,8 @@ def writeOutput(it, core, opt):
     if (it % nspool) != 0:
         return
 
-    if (it-nspool) % ihfskip == 0:
+    # Create new netcdf files
+    if (it - nspool) % ihfskip == 0:
         if dataC is not None:
             dataC.close()
             dataU.close()
@@ -140,6 +141,7 @@ def writeOutput(it, core, opt):
         dataV = createNetCDFFileV(fileNum, nNodes, nElements, nSides, nLayers, opt)
         dataZ = createNetCDFFileZ(fileNum, nNodes, nElements, nSides, nLayers, opt)
         dataW = createNetCDFFileW(fileNum, nNodes, nElements, nSides, nLayers, opt)
+    
 
     if dataC is None:
         return
