@@ -89,6 +89,8 @@ constexpr double dtb_min = __DTB_MIN__; //XXXX
 constexpr double dtb_max = __DTB_MAX__; //XXXX
 constexpr double velmin_btrack = __VELMIN_BTRACK__; //XXXX
 
+constexpr double dfv0 = __DFV0__; 
+
 constexpr double dzb_min = __DZB_MIN__; // Min. bottom boundary layer thickness [m]
 
 constexpr double dt = __DT__;  // Time step  XXX 

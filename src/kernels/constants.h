@@ -89,6 +89,8 @@ constexpr double dtb_min = 10; //XXXX
 constexpr double dtb_max = 30; //XXXX
 constexpr double velmin_btrack = 0.0001; //XXXX
 
+constexpr double dfv0 = 0.01; //XXXX
+
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
 constexpr double dt = 150;  // Time step  XXX 

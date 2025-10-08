@@ -1426,6 +1426,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
    for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
+   for (int k = 0; k < nvrt; k++) node.dfv[k] = dfv0;   // XXXX 
 
    
    // Links the node to the boundary information
@@ -3667,7 +3668,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz =  1e-6; //0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX KKKKK
+            const double dfz =  0.5*(side->dfv(k - 1) + side->dfv(k)); // Vertical average.
  
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
