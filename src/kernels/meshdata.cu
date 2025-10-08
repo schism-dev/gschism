@@ -3667,7 +3667,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz =  0.01; //0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX KKKKK
+            const double dfz =  1e-6; //0.5*(side->dfv(k - 1) + side->dfv(k)); ///XXXXX KKKKK
  
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
