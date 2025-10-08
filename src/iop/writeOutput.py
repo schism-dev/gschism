@@ -5,6 +5,14 @@ import numpy as np
 import netCDF4 as nc
 import debug.monitor as monitor 
 
+import threading
+import queue
+
+# Add these global variables
+save_thread = None
+save_queue = queue.Queue()
+save_lock = threading.Lock()
+
 
 path = None
 nNodes = None
@@ -31,9 +39,26 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
     sizeSide = sideSize
 
 
+def _saveDataThread(data, numFile):
+    """Background thread for saving data to file."""
+    try:
+        filepath = os.path.join(path, f'res_{numFile}.npy')
+        np.save(filepath, data)
+        print(f"[Save] Data saved to {filepath}")
+        
+        # Clean up memory
+        del data
+        
+    except Exception as e:
+        print(f"[Save] Error saving data: {e}")
+    finally:
+        print("[Save] Save thread finished")
+
+
+
 def writeOutput(it, core, opt):
     # Write the output files
-    global sizeNode
+    global sizeNode, save_thread
 
     ihfskip = core.ihfskip
     nspool  = core.nspool
@@ -130,8 +155,19 @@ def writeOutput(it, core, opt):
 
     data['time'] = it*dt
 
-    # Save velocity components and time to res.npy with compression
-    np.savez_compressed(os.path.join(path, f'res_{numFile}.npz'), **data)
+    # Save velocity components and time to res.npy
+    # np.save(os.path.join(path, f'res_{numFile}.npy'), data)
+
+    with save_lock:
+        if save_thread is not None and save_thread.is_alive():
+            print("[Save] Waiting for previous save thread to finish")
+            save_thread.join()  # Wait until it finishes
+            print("[Save] Previous save thread finished")
+
+    # Launch new thread for saving
+    with save_lock:
+        save_thread = threading.Thread(target=_saveDataThread, args=(data, numFile))
+        save_thread.start()
 
 
 
