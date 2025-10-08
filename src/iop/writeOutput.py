@@ -130,8 +130,8 @@ def writeOutput(it, core, opt):
 
     data['time'] = it*dt
 
-    # Save velocity components and time to res.npy
-    np.save(os.path.join(path, f'res_{numFile}.npy'), data)
+    # Save velocity components and time to res.npy with compression
+    np.savez_compressed(os.path.join(path, f'res_{numFile}.npz'), **data)
 
 
 
