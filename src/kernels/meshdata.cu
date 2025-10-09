@@ -2595,7 +2595,7 @@ extern "C" {
 
          const double ncyc = int(tfreq[j]*time/(2.0*pi));
          const double arg = tfreq[j]*time - ncyc*2.0*pi + jspc[j]*node->lon + tear[j];
-printf("RAAAAMP  ramp = %f, arg = %f\n", ramp, arg);         
+   
          node->ETP += 0.69*ramp*tamp[j]*tnf[j]*node->fun_lat[jspc[j]]*cos(arg);
 
          if constexpr(iloadtide==1) { // loading tide
