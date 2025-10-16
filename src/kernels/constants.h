@@ -87,14 +87,15 @@ constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-compone
 constexpr double rho0 = 1000; // [kg/m^3]
 constexpr double dtb_min = 10; //XXXX
 constexpr double dtb_max = 30; //XXXX
-constexpr double velmin_btrack = 0.0001; //XXXX
+constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
+constexpr double btrack_nudge = 0.009013;   // Nudging factor for backtracking
 
-constexpr double dfv0 = 0.01; //XXXX
+constexpr double dfv0 = 0.01; 
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
 constexpr double dt = 150;  // Time step  XXX 
 
-constexpr double h0 = 0.01;  // Minimum water depth [m]
+constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
 enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, ssign=9, btu=10, bcc=11, uth=12, ubc=13, island=14, ifltype=15, elbc=16, isdry=17, eta=18, area=19, qel=20, depth=21, radius=22, len=23, lonlat=24, kb=25, n1=26, n2=27, idx=28, htot=29, gradPr=30, gradEta1=31, gradEta2=32, gradETP=33, FaceIndices=34}; // Var codes for getElementVar, getNodeVar...

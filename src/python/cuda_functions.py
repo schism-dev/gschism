@@ -41,7 +41,8 @@ computeHorGradientAtSide = None
 solveMomentumEquations = None
 applyMomentumBC = None
 ul0UpdateZCoords = None
-ul0ComputeDryElementsAndNodes = None
+ul0ComputeDryElements = None
+ul0ComputeDryNodes = None
 ul0UpdateRewettedNodes = None
 ul0UpdateSides = None
 ul0UpdateSides2 = None
@@ -119,11 +120,11 @@ def initializeCudaFunctions(sizes):
     global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
-    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test, setupCGSolvers, solverCopyResult
+    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test, setupCGSolvers, solverCopyResult, ul0ComputeDryElements, ul0ComputeDryNodes
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix
-    global ul0UpdateZCoords, ul0ComputeDryElementsAndNodes, ul0UpdateRewettedNodes, ul0UpdateSides, ul0UpdateSides2
+    global ul0UpdateZCoords, ul0ComputeDryElements, ul0ComputeDryNodes, ul0UpdateRewettedNodes, ul0UpdateSides, ul0UpdateSides2
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
     global getElementVar, getNodeVar, getSideVar, getSideBndVar
@@ -168,7 +169,8 @@ def initializeCudaFunctions(sizes):
         shapiroFilter1                      = mod.get_function('shapiroFilter1',                      sizes, kernel_type='sides')
         shapiroFilter2                      = mod.get_function('shapiroFilter2',                      sizes, kernel_type='sides')
         ul0UpdateZCoords                    = mod.get_function('ul0UpdateZCoords',                    sizes, kernel_type='nodes')
-        ul0ComputeDryElementsAndNodes       = mod.get_function('ul0ComputeDryElementsAndNodes',       sizes, kernel_type='elements')
+        ul0ComputeDryElements               = mod.get_function('ul0ComputeDryElements',               sizes, kernel_type='elements')
+        ul0ComputeDryNodes                  = mod.get_function('ul0ComputeDryNodes',                  sizes, kernel_type='nodes')
         ul0UpdateRewettedNodes              = mod.get_function('ul0UpdateRewettedNodes',              sizes, kernel_type='nodes')
         ul0UpdateSides                      = mod.get_function('ul0UpdateSides',                      sizes, kernel_type='sides')
         ul0UpdateSides2                     = mod.get_function('ul0UpdateSides2',                     sizes, kernel_type='sides')

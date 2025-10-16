@@ -87,7 +87,8 @@ constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-compone
 constexpr double rho0 = __RHO0__; // [kg/m^3]
 constexpr double dtb_min = __DTB_MIN__; //XXXX
 constexpr double dtb_max = __DTB_MAX__; //XXXX
-constexpr double velmin_btrack = __VELMIN_BTRACK__; //XXXX
+constexpr double velmin_btrack = __VELMIN_BTRACK__; // Minimum velocity for backtracking (m/s)
+constexpr double btrack_nudge = __BTRACK_NUDGE__;   // Nudging factor for backtracking
 
 constexpr double dfv0 = __DFV0__; 
 
@@ -95,6 +96,6 @@ constexpr double dzb_min = __DZB_MIN__; // Min. bottom boundary layer thickness 
 
 constexpr double dt = __DT__;  // Time step  XXX 
 
-constexpr double h0 = __H0__;  // Minimum water depth [m]
+constexpr double h0 = __H0__;  // Minimum water depth for wetting and drying [m]
 
 enum class VarCode {__VARCODES__}; // Var codes for getElementVar, getNodeVar...

@@ -381,11 +381,11 @@ struct CubicSpline {
 struct Element {
 
    // Geometry information
-   int idx;               // Index of the element
-   int i34;               // Number of sides for the element 
-   Side *sides[4];        // Sides of the element
-   Node *nodes[4];        // Nodes of the element
-   Element *nghbElems[4]; // Neighbors of the element
+   int idx;                   // Index of the element
+   int i34;                   // Number of sides for the element 
+   Side *sides[4];            // Sides of the element
+   Node *nodes[4];            // Nodes of the element
+   Element *nghbElems[4];     // Neighbors of the element
 
    int kb;                    // Bottom index of the element
    double area;               // Area of the element
@@ -394,10 +394,10 @@ struct Element {
 
    Frame frame;
 
-   Vector2 gradPhi[4];       // Derivatives of shape functions
-   Vector2 gradEta;          // Gradient of free surface elevation
-   Vector2 gradPr;           // Gradient of pressure    
-   Vector2 gradETP;          // Gradient of Earth Tidal Potential    XXXXX Really used?
+   Vector2 gradPhi[4];        // Derivatives of shape functions
+   Vector2 gradEta;           // Gradient of free surface elevation
+   Vector2 gradPr;            // Gradient of pressure    
+   Vector2 gradETP;           // Gradient of Earth Tidal Potential    XXXXX Really used?
 
    bool isDry;                // True if the element is dry
 
@@ -415,7 +415,6 @@ struct Element {
                               // For hydrostatic model, this is the same as we(); for non-hydrostatic model, this is only used in upwind transport
 
    Vector2 ghat1;             // Element averaged ghat (\breve{G} in notes)
-
    
 
    double vsource;            // Volumetric source/sink term [m^3/s]
@@ -426,6 +425,7 @@ struct Element {
    double rho_zz[nvrt];       // Second derivative of density at each prism center
    double rho_z[nvrt];        // First derivative of density at each prism center
    Vector2 gradRho[nvrt];     // Gradient of de-meaned density at each prism center
+   
 
    __inline__ __device__ double demeanedDensity(int k) const { return rho[k] - rho_mean[k]; }   
 
@@ -543,7 +543,7 @@ struct Element {
 
    __inline__ __device__ void nudgeToBarycenter(Point2 &p) const {
       // Nudges the point (x,y) to the barycenter of the element
-      p = (1-eps)*p + eps*center;
+      p = (1.0 - btrack_nudge)*p + btrack_nudge*center;
    }
 
    __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
@@ -996,8 +996,10 @@ struct Side {
       // If the dot product is positive, returns the element whose vector to the centroid is in the same direction as the target point
       // Otherwise, returns the other element (otherwise includes dot_prod1 == 0)
 
-      if (dot_prod1*dot_prod2 > 0.0) return elems[0];
-      else                           return elems[1];
+      const bool isDry0 = elems[0]==nullptr || elems[0]->isDry;
+      const bool isDry1 = elems[1]==nullptr || elems[1]->isDry;
+      if (dot_prod1*dot_prod2 > 0.0) return !isDry0 ? elems[0] : nullptr;
+      else                           return !isDry1 ? elems[1] : nullptr;
 
  
    }
@@ -1205,7 +1207,7 @@ struct Node {
    }
 
    __device__ void addToSparseMatrix(Node const *node, double value) {
-      // Add the value to the sparse matrix for this node
+   // Add the value to the sparse matrix for this node that corresponds to the file of node *this and the column of node *node
       
       if (node == this) {
          coeffDiag += value;
@@ -1432,6 +1434,7 @@ struct Mesh {
 
    __device__ void test(double x, double y, double z)
    {
+      // XXXXX REMOVE THIS FUNCTION
       printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
       for (int i = 0; i < ne; i++) {
          auto isInside = localElemData[i].containsPoint({x, y});

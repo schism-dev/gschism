@@ -127,6 +127,7 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
          }
          else {  // lat/lon
             assert(false && "Element normal vector: lat/lon not implemented for triangles");
+            return {0.0, 0.0, 0.0};
 
          } // if ics
       }
@@ -134,6 +135,7 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
          // For quads...
 
          assert(false && "Element normal vector: quads not yet implemented");
+         return {0.0, 0.0, 0.0};
 
 
       }
@@ -283,8 +285,16 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
       
       }
       else {  // parallel segments
+// printf("@@@@@@@ZZZ@@@@@@@@@ Parallel segments\n");
+t = 0.0;
+tIntersect = 0.0;
+side = side2;
+nextElement = this;
+return true; //XXXXXXXXXXXXX    KKKKKK
+
+
          assert(false && "Parallel segments");
-         // // In this case, we theck if they are colinear. if they are, we compute the intersection point as:
+         // // In this case, we check if they are colinear. if they are, we compute the intersection point as:
          // // tt2 += length(x1 - x2) * sign(dot(x1 - x2, x3 - x4)) in {0, 1}
 
          // // Check if the segments are colinear. It is enough to check if x1 is on the line of the side segment.
@@ -318,7 +328,7 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
 __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
                                              double &dt, Point3 &xt, double zint, Vector3 &u_int) {
 
-   printf("Tracking segment goes out of water at element %i, nextSide = %i, xt = %.17g, yt = %.17g, ux = %.17g, uy = %.17g\n", curElem->idx, nextSide->idx, xt.x, xt.y, u_int.x, u_int.y);
+   // printf("Tracking segment goes out of water at element %i, nextSide = %i, xt = %.17g, yt = %.17g, ux = %.17g, uy = %.17g\n", curElem->idx, nextSide->idx, xt.x, xt.y, u_int.x, u_int.y);
 
    // When this happens, we stop our algorithm that usually assumes that we move to the next element.
    // Instead, we nudge the intersection point to the barycenter of the element, and nextElement becomes
@@ -332,7 +342,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
 
    // Nudges the point to the barycenter of the element. 
    // This ensures that the point is inside the element and hence, we will find an intersection if the
-   // next segment intersects the element sides.  
+   // next segment intersects the element sides. 
    curElem->nudgeToBarycenter(intersection);
 
    // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
@@ -340,24 +350,27 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // NOTE: With the new code it will be easy to compute the tangential velocity at the intersection point.
    double vtan = dot(nextSide->t(), nextSide->u2[jlev]);
 
-   // If the side is an open boundary, the tangential velocity is zero.
+   // If the side is an open boundary, the tangential velocity is set to zero.
    if (nextSide->isBnd()) vtan = 0.0;
 
    // The new velocity components are computed from the tangential velocity and the tangent vector.
    const double us = vtan*nextSide->t().x;
    const double vs = vtan*nextSide->t().y;
-   const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);
+   const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);  //  XXXX Why not use the side's velocity?
 
    // Compute the new "tracked" time based on the remaining segment length and the original velocity.
    const double len2 = norm2(intersection - toPoint2(xt));
    const double vel2 = dot(u_int, u_int);        
-   if (vel2 > 0.0) dt = dt - sqrt(len2/vel2); 
+   if (vel2 > 0.0) dt = min(dt, sqrt(len2/vel2)); 
    else            dt = 0.0;
+// if (dt < 0.0) dt = 0.0; //XXXXXXXXXXXXX    KKKKKK
+// printf("@@@@@@@XXXX@@@@@@@@@ tt = %.17g, dt = %.17g, len = %.17g, vel = %.17g\n", tt, dt, sqrt(len2), sqrt(vel2));
 
    // The end of this tracking segment is now the intersection point.
    xt = {intersection.x, intersection.y, zint};
 
    u_int = {us, vs, ws};
+// printf("@@@@@@@XXXX@@@@@@@@@ idx = %d, us = %.17g, vs = %.17g, ws = %.17g, dt = %.17g\n", curElem->idx, us, vs, ws, dt);   
    
 }
 
@@ -406,12 +419,14 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    const Element *curElem = nextElem;
    if (containsPoint(toPoint2(xt), true)) {
 
+      // assert(!curElem->isDry && "Target point is inside a dry element");
       curElem->interpolateVelocities(xt, u_int);
 
 addDebugPlot(x0, xt);
       return true;
    }
 
+if (curElem->isDry) { u_int = {0.0, 0.0, 0.0}; return true;} //XXXXXXXXXXXXX    KKKKKK
    Side *side = nullptr;
 
    // 1. Initial checks
@@ -580,11 +595,14 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       shpCoords[3] = 0.0;
-      double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
+      const double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
+
+      // Check if the point is inside the element.
+      const bool res = tmpmin > -small;      
 
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
-      if (fixNegshpCoord && tmpmin<=0.0) {
+      if (res && fixNegshpCoord) {
 
          // NOTE: I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
          // keeping the sum of the shape coordinates equal to 1.
@@ -611,7 +629,7 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
       }
 
       // Check if the point is inside the element
-      return min(min(shpCoords[0], shpCoords[1]), shpCoords[2]) > -small;      
+      return res;      
    }
    else {
       Error("Not implemented yet");
@@ -969,10 +987,6 @@ __inline__ __device__ bool Side::btrack(
    double time_rm = dt; // Remaining time
 
 
-   // // Initialize outputs XXX
-   // for(int i = 0; i < 4 + N_TRACERS; i++) {
-   //    sclr[i] = 0.0;
-   // }
 
 
    // Initial velocities
@@ -988,16 +1002,17 @@ __inline__ __device__ bool Side::btrack(
       const Vector2 u2parallel = dot(toVector2(u_int), t())*t();
       // u_int = {u2parallel.x, u2parallel.y, u_int.z};
       curElem = otherElem(curElem);
+
+
+if (curElem == nullptr) { u_int = {0.0, 0.0, 0.0}; return true;}
+// assert(curElem!=nullptr && !curElem->isDry && "Starting element is dry or boundary side");
+// printf("@@@@@@@YYYY@@@@@@@@@ curElem = %p, isDry = %d\n", curElem, curElem->isDry);
       
    }
 
-// Nudges it towards the circumcenter
-// printf("0{{jlev = %d}} side->idx = %d, x0 = %.15e,%.15e,%.15e\n", jlev, idx, x0.x, x0.y, x0.z);
-Vector2 xcirc = {(curElem->nodes[0]->p.x + curElem->nodes[1]->p.x + curElem->nodes[2]->p.x)/3.0,
-                 (curElem->nodes[0]->p.y + curElem->nodes[1]->p.y + curElem->nodes[2]->p.y)/3.0};
-const double eps = 9.013e-3;                 
-x0.x = xcirc.x*eps + (1 - eps)*x0.x;
-x0.y = xcirc.y*eps + (1 - eps)*x0.y;
+   // Nudges it towards the barycenter
+   curElem->nudgeToBarycenter(toPoint2(x0)); // XXXX Necessary?
+
 
 
 
@@ -1029,6 +1044,7 @@ x0.y = xcirc.y*eps + (1 - eps)*x0.y;
       curElem = nextElem;
 
       iter++;
+if (iter>100) printf("@@@@@@@@@@@@@@@@ isdry = %d, idx = %d, n1->idx = %d, n2->idx = %d, iter = %d, x0 = %.17g, %.17g, %.17g, xt = %.17g, %.17g, %.17g\n", curElem->isDry, idx, n1->idx, n2->idx, iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
    }
 
@@ -1125,13 +1141,13 @@ __device__ void Node::updateKb(void) {
    if constexpr(ivcor == 1) return;
 
 
-   if (isDry2()) return;
+   // assert(!isDry && "ZCOOR: node is dry"); XXXX
 
    if constexpr(ivcor == 2) {  // SZ coordinates
       
       // Compute bottom level index
       if (depth <= mesh->h_s) {
-         kb = izlev;
+         kb = izlev;   
          
       } else {
          kb = -1;
@@ -1155,6 +1171,10 @@ __device__ void Node::updateKb(void) {
                break;
             }
          }
+
+         // Checks that the binary search was successful
+         assert(-depth >= mesh->ztot[kb] && -depth < mesh->ztot[kb + 1]);
+       
       }
    } 
 }
@@ -1163,31 +1183,22 @@ __device__ void Node::updateKb(void) {
 __device__ __inline__ void Node::updateZCoordData(void) {
 // XXX: To be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
-   if (isDry2()) {
-      kb = -1;
-      return;
-   }
+   // assert(!isDry2() && "updateZCoordData: node is dry");
+   // if (isDry2()) {
+   //    kb = -1;  // XXXXXXXX KKKKK
+   //    return;
+   // }
+
 
    if constexpr(ivcor == 2) {  // SZ coordinates
       
       // Compute bottom level index
-      if (depth <= mesh->h_s) {
-            kb = izlev;
-
-      } else {
-         kb = -1;
-         for (int i = 0; i < nzlev - 1; i++) {
-            // XXX Use binary search
-            if (-depth >= mesh->ztot[i] && -depth < mesh->ztot[i+1]) {
-               kb = i;
-               break;
-            }
-         }
-      }
+      if (!isDry) updateKb();  // Why is this call repeated? XXXXXXXX It is also called in ul0UpdateZCoords
    } 
    else if (ivcor == 1) {  // Localized sigma
       // Do nothing
    }
+
 
 }
 
@@ -1201,7 +1212,7 @@ __device__ double Node::compZCoord(int k) const {
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
 
-   if (isDry2()) return 0.0;
+   if (isDry2()) return -depth;  // XXXX I used to return 0.0
 
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
@@ -1272,29 +1283,19 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
 
       } else { //roughness >0 
          
-         const double bthick_ori = z[kb + 1] - z[kb];  // thickness of bottom bnd layer
-         const double bthick = max(dzb_min, bthick_ori);
+         const double bthick = max(dzb_min, z[kb + 1] - z[kb]); // thickness of bottom bnd layer 
 
-         assert(bthick > 0.0 && "computeBottomDragVegetation: bthick <= 0");
+         assert(bthick > rough && "computeBottomDragVegetation: bthick <= rough");
 
          Cd = 1.0/pow<2>((2.5*log(bthick/rough)));       
 
       } // if rough
 
-
-      // Ask Joseph XXXXX
-      // if (it == iths_main + 1) log("Cd min/max at 1st step= ", minval(Cdp), maxval(Cdp));
-      // Output warning for WBL if iteration didnt converge
-
-
    } else if constexpr(nchi == -1) {
    // Manning 
-      Cd = 0.0;
-
-      if (isDry) return;
-
+ 
       const double htot = max(hmin_man, htot2()); 
-      Cd = grav2*rmanning*rmanning/pow(htot, 0.333);
+      Cd = isDry ? 0.0 : grav2*rmanning*rmanning/pow(htot, 0.333);
 
    } else {
       assert(false && "computeBottomDragVegetation:selected nchi not implemented.");
@@ -1445,7 +1446,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
          node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
          
-         node.nodeBnd->segment->ifltype = 0; //(isbnd[i]==0)?3:0; XXXXX KKKKK
+         node.nodeBnd->segment->ifltype = 0 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
+// printf("(isbnd[i]==0)?3:0 = %d\n", (isbnd[i]==0)?3:0);         
          node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
 
          // Initialize the length and area of the segment to nan to indicate that they are not yet computed
@@ -1662,15 +1664,15 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
 
    elem.i34 = i34[i];
 
-   // Compute the centroid of the element and its depth
-   Vector2 center = {0.0, 0.0};
+   // Compute the barycenter of the element and its depth
+   elem.center = {0.0, 0.0};
    elem.depth = 0.0;
    for (int j = 0; j < i34[i]; j++) {
 
-      center += elem.nodes[j]->p/i34[i];
+      elem.center += elem.nodes[j]->p/i34[i];
       elem.depth  += elem.nodes[j]->depth/i34[i];
    }
-   elem.center = center;
+
 
    
    // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
@@ -2020,11 +2022,11 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
                   
                   // Computes the side flux of (uth, vth)
                   double Vn = 0.0;
-                  for (int k = side->kb; k<nvrt-1; k++) {
+                  for (int k = side->kb; k < nvrt - 1; k++) {
                      const double vn1 = dot(sideBnd->ubc[k  ], side->n); // outer normal
                      const double vn2 = dot(sideBnd->ubc[k+1], side->n);
 
-                     Vn += 0.5*(side->zc[k+1] - side->zc[k])*(vn1 + vn2);
+                     Vn += 0.5*(vn1 + vn2)*(side->zc[k+1] - side->zc[k]);
                   }
 
                   ri3 = 0.5*side->len*Vn;
@@ -3169,7 +3171,7 @@ extern "C" {
       // Compute the drag coefficients chi2 and chi (\tilde\chi in notes) // XXX change names, chi->chitilde, chi2->chi
       // Velocity magnitude at the bottom level
       // XXXX Check if we have added -dt*(bcc(1,k,n1)+bcc(1,k,n2))/2.d0-dt*swild2(k,1) to u2.
-      const double vmag1 = length(side->btu[kb + 1]); //BACKTRACKED VELOCITY
+      const double vmag1 = length(side->btu[kb + 1]); //Backtracked velocity at the bottom level
       side->chi2 = side->Cd()*vmag1;
       side->chi  = side->chi2;
       if constexpr(iveg != 0) {
@@ -3280,6 +3282,7 @@ extern "C" {
          if constexpr(ics == 1) {
             vec = side->n; // Normal vector to the side
          } else {
+            assert(false && "getRhoDiffAndVec: lat/lon not implemented");
             // IMPLEMENT THIS XXXXXX
             // !replace with xel, yel?
             //                   call project_pt('g2l',xnd(n1),ynd(n1),znd(n1),(/xctr(i),yctr(i),zctr(i)/), &
@@ -3298,6 +3301,7 @@ extern "C" {
             vec = e2->center - e1->center;
 
          } else { 
+            assert(false && "getRhoDiffAndVec: lat/lon not implemented");
             // IMPLEMENT THIS XXXXXX
             //                   call project_pt('g2l',xctr(ie),yctr(ie),zctr(ie),(/xctr(i),yctr(i),zctr(i)/), &
             //      &eframe(:,:,i),xctr2,yctr2,tmp)
@@ -3599,7 +3603,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
       if (side->isDry) 
       {
-         for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};         
+         for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};       // WHY {0,0}? Shouldn't be just the normal component?  The FORTRAN code uses {0,0}  in line ~6462   
 
          return;
       }
@@ -3668,7 +3672,8 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
             const int kin = k - (kb + 1);
 
             // Vertical viscosity at the face center
-            const double dfz =  0.5*(side->dfv(k - 1) + side->dfv(k)); // Vertical average.
+            const double dfz = 0.5*(side->dfv(k - 1) + side->dfv(k)); // Vertical average.
+
  
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
@@ -3826,6 +3831,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
                } // if ics
 
                rrhs[kin] += dt*tau2;
+          
 
             } // if k<nvrt
 
@@ -3858,11 +3864,11 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
          tridag_sch<2>(nvrt - kb - 1, alow, bdia, cupp, (double *)rrhs, (double *)soln, (double *)gam);
 
-         for (int k = kb + 1; k < nvrt; k++) {  // YYYYYYYYY can be kb 
+         for (int k = kb; k < nvrt; k++) {  // XXXXX YYYYYYYYY can be kb 
             const int kin = k - kb - 1;
    
             // Velocity is always clamped to maximum values
-            side->u2[k] = make_double2(clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely));
+            side->u2[k] = {clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely)};
          } // k
 
       } // if side->is2D()
@@ -3888,7 +3894,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
       } // if imm
 
       // The velocities below the bottom level are set to zero
-      for (int k = 0; k <= kb - 1; k++) side->u2[k] = {0.0, 0.0};
+      for (int k = 0; k < kb; k++) side->u2[k] = {0.0, 0.0};
 
 
    }
@@ -3909,6 +3915,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
       const int ifltype = segment->ifltype;
 
       const int kb = side->kb;
+
 
       if (!isLand && ifltype != 0) {
          const Vector2 *ubc = sideBnd->ubc;
@@ -3959,7 +3966,6 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
             }
             else { // not Flather or 3D radiation
-printf("ifltype = %d\n", ifltype);
                side->u2[k] = ubc[k];
 
             } // if (segment->ifltype...
@@ -4013,10 +4019,10 @@ printf("ifltype = %d\n", ifltype);
 
             for (int j = 0; j < 4; j++) { // 4 neighbors per side
 
-               const Side *nSide = side->neigh(j); // Every internal side has 4 neighbors
+               const Side *nSide = side->neigh(j); // Each internal side has 4 neighbors. They are the closest sides to each of the two elements that share this side
 
                int kin = k;
-               if (!(nSide->isDry)) kin = max(k, kb + 1);
+               if (!(nSide->isDry)) kin = max(k, nSide->kb + 1);
                
                if constexpr(ics==1) {
                   suru += nSide->u2[kin];
@@ -4041,6 +4047,7 @@ printf("ifltype = %d\n", ifltype);
       // Second step of the Shapiro filter. Assigns to u2 the values stored in bcc.
 
       SIDE(side);
+
 
       if (side->isDry || !(side->isInternal())) return;
 
@@ -4067,7 +4074,7 @@ printf("ifltype = %d\n", ifltype);
       NODE(node);      
 
 
-      if (node->isDry2()) { 
+      if (false) {//node->isDry) {  //XXXXXXXXXXXXXXXXX
 
          assert((ivcor != 2) || (node->depth < mesh->h_s) && "Deep depth dry");
 
@@ -4090,32 +4097,16 @@ printf("ifltype = %d\n", ifltype);
 
    }
 
-   __global__ void ul0ComputeDryElementsAndNodes(void)
-   // Updates isDry based on eta2 for the nodes. Also computes the element's kb and z.
+   __global__ void ul0ComputeDryElements(void)
+   // Updates isDry based on eta2 for the elements. Also computes kb and z.
    {
       ELEM(elem);
 
-      elem->isDry = elem->isDry2(); // Element is dry if any of its nodes are dry (based on eta2, not on isDry)
-
-      Node *n1 = elem->nodes[0];
-      Node *n2 = elem->nodes[1];
-      Node *n3 = elem->nodes[2];  
-      Node *n4 = elem->nodes[3]; // nullptr for triangles      
-
-      // All the nodes of a dry element are wet.
-      if (!elem->isDry) {
-         n1->isDry = false;
-         n2->isDry = false;
-         n3->isDry = false;
-         if (elem->isQuad()) n4->isDry = false;
-
-
-      }
+      elem->isDry = elem->isDry2(); // A element is dry if any of its nodes are dry (based on current eta2, not on isDry)
 
       elem->kb = 0;
 
       if (elem->isDry) return;
-
 
 
    //    if(elem->isDry2()) { // XXXX
@@ -4124,6 +4115,10 @@ printf("ifltype = %d\n", ifltype);
    //        call parallel_abort(errmsg)
    //    }
 
+      const Node *n1 = elem->nodes[0];
+      const Node *n2 = elem->nodes[1];
+      const Node *n3 = elem->nodes[2];  
+      const Node *n4 = elem->nodes[3]; // nullptr for triangles      
 
       // Computes element's kb as the minimum of the nodes' kb.
       const int kb1 = n1->kb;
@@ -4139,7 +4134,7 @@ printf("ifltype = %d\n", ifltype);
       for (int k = elem->kb; k < nvrt; k++) {
 
          // Compute the element z as the mean of the nodes z.
-         elem->z[k] = (n1->z[max(k, kb1)] + n2->z[max(k, kb2)] + n3->z[max(k, kb3)]);
+         elem->z[k] = n1->z[max(k, kb1)] + n2->z[max(k, kb2)] + n3->z[max(k, kb3)];
          if (elem->isQuad()) elem->z[k] += n4->z[max(k, kb4)];          
          elem->z[k] /= elem->i34;
 
@@ -4147,6 +4142,26 @@ printf("ifltype = %d\n", ifltype);
       }
                   
    }
+
+   __global__ void ul0ComputeDryNodes(void)
+   // Updates node's isDry based on the elements' isDry. 
+   {
+      NODE(node);
+
+      node->isDry = true;
+
+      // A node is wet if at least one of the elements sharing it is wet.
+      for (int j = 0; j < node->numElements; j++) {
+         const Element *elem = node->elements[j];
+         if (!elem->isDry) {
+            node->isDry = false;
+            break;
+         }
+      }
+
+       
+   }
+
 
    __global__ void ul0UpdateRewettedNodes(int it, int iths)
    // Obtains values of velocity, S, T for newly wet nodes. It uses the average of the previously wet surrounding nodes.
@@ -4159,9 +4174,10 @@ printf("ifltype = %d\n", ifltype);
       // Avoid this the first time step.
       if (it == iths) return;  
 
-      
+      const bool wasDry = node->tmp.b;
+
       // assert(node->isDry == node->isDry2() && "These two must be identical at this point"); XXXXX 
-      if ((!node->isDry) && node->tmp.b) {  // rewetted, remember that tmp.b is true if the node was previously dry.
+      if ((!node->isDry) && wasDry) {  // rewetted, remember that tmp.b is true if the node was previously dry.
 
          for (int k=0; k < nvrt; k++) {
 
@@ -4173,9 +4189,11 @@ printf("ifltype = %d\n", ifltype);
             for (int j = 0; j < node->numNodes; j++) {
 
                const Node *nbrNode = node->nodes[j];
+               
+               const bool wasNbrDry = nbrNode->tmp.b;
 
                // Wet neighbors not affected by this part and so each sub-domain should use same values
-               if (!nbrNode->tmp.b) { // Previously wet surrounding nodes
+               if (!wasNbrDry) { // Incluide only previously wet surrounding nodes
 
                   icount++;
 
@@ -4189,14 +4207,15 @@ printf("ifltype = %d\n", ifltype);
 
             if (icount > 0) {
                const double inv_icount = 1.0/icount;
-               node->u2[k]     = {inv_icount*utmp.x, inv_icount*utmp.y};
-               node->w2[k]     = inv_icount*utmp.z;
+               utmp = inv_icount*utmp;
+               node->u2[k]     = toVector2(utmp);
+               node->w2[k]     = utmp.z;
                node->tracers[k].tracer[0]   = inv_icount*ttmp;
                node->tracers[k].tracer[1]   = inv_icount*stmp;
-            }
-            else {
+            } else {
                node->u2[k] = {0.0, 0.0};
                node->w2[k] = 0.0;
+               // Initialize tracers to 0.0??? XXXXX
             }
          }
       }
@@ -4207,7 +4226,9 @@ printf("ifltype = %d\n", ifltype);
 
 
    __global__ void ul0UpdateSides(int it, int iths) {
-   // Obtains values of velocity for newly wet sides. It uses the average of the previously wet surrounding nodes.
+   // Obtains values of velocity for newly wet sides. It uses the average of the previously wet surrounding sides.
+   // Notice that, since we are only updating newly wetted side from sides that were previously wet, there is no race condition here.
+   // The dryness of the sides is updated in ul0UpdateSides2.
 
       SIDE(side);
 
@@ -4220,7 +4241,7 @@ printf("ifltype = %d\n", ifltype);
       const int kb1 = n1->kb;
       const int kb2 = n2->kb;
 
-      side->kb = 0; // dry
+      side->kb = 0; // default when dry
 
       if (isWet) {
 
@@ -4235,8 +4256,7 @@ printf("ifltype = %d\n", ifltype);
          for (int k = side->kb; k < nvrt; k++) {
             side->zc[k] = 0.5*(n1->z[max(k, kb1)] + n2->z[max(k, kb2)]);
 
-         
-            assert(((k < side->kb + 1) || (side->zc[k] - side->zc[k-1] > 0.0)) && "Weird side (3)");
+            assert(((k == side->kb ) || (side->zc[k] > side->zc[k-1])) && "Weird side (3)");
 
             // Compute velocity for re-wetted sides 
             if ((it != iths) && (side->isDry && isWet)) {
@@ -4268,8 +4288,8 @@ printf("ifltype = %d\n", ifltype);
 
          } // for k
 
-      } // if isWet
-   
+      } // if isWet 
+      
 
 
    }
@@ -4279,8 +4299,11 @@ printf("ifltype = %d\n", ifltype);
    
          SIDE(side);
    
+         const Element *e1 = side->elems[0];
+         const Element *e2 = side->elems[1];
+
          // A side is wet if and only if at least one of its elements is wet.
-         const bool isWet = !side->elems[0]->isDry || (side->isInternal() && !side->elems[1]->isDry);
+         const bool isWet = (!e1->isDry) || (side->isInternal() && (!e2->isDry));
 
          // Update the side's dryness
          side->isDry = !isWet;
@@ -4328,6 +4351,7 @@ printf("ifltype = %d\n", ifltype);
 
 
    __global__ void computeNodalHorizontalVelocities1(void) {
+
       assert(indvel == 0 && "computeNodalVelocities only works for indvel <= 0. IMPLEMENT THIS FOR INDVEL = 1");
       assert(ics == 1 && "computeNodalVelocities only works for ics = 1. IMPLEMENT THIS FOR other ics");
 
@@ -4552,614 +4576,6 @@ printf("ifltype = %d\n", ifltype);
 
 
 
-//    __device__ void updateLevels1(void) {
-//       // Routine to update level indices and wetting and drying.
-//       // Used when resolution is fine enough.
-//       // ONLY WORKS WITH PURE TRIs
-
-
-//       ELEM(elem);
-
-//       const int i34 = elem->i34;
-
-//       // Flag for comm timing
-//       const bool cwtime = (it != iths);
-
-//       // An element is wet if and only if depths at all nodes >h0 
-//       // A node is wet if and only if at least one surrounding element is wet
-//       // A side is wet if and only if at least one surrounding element is wet
-
-//       // Initialize element flags for first step
-
-//       if (it == iths) {
-//          elem->isDry = false;
-
-//          for (int j = 0; j < i34; j++) {
-//             // For all nodes in the element...
-
-//             const Node *node = elem->node(j);
-//             const double htot = node->htot();
-               
-//             // For an element to be dry, at least one node must be dry
-//             if (htot <= h0) elem->isDry = true;
-//             break;
-//          }
-//       }
-
-//       //  Wetting/drying algorithm
-//       const double isDry2 = elem->isDry; // starting from step n's indices
-
-//       if (it != iths) {
-
-//          // XXXX removed a fragment of code that that recomputed elem->isDry2, but didn't do anything different
-
-//          // istop: 1- ready for final extrap. stage; 2- ready for final
-//          // checks and exit loop15
-//          int istop = 0;
-//          int itr = 0;
-//          while (true) {
-//             itr = itr + 1;
-//             assert(itr <= 100 && "LEVELS1: Too many iterations in wet/dry");
-
-//             int icolor2 = 0; //interface sides
-
-          
-//             const Element *elem1 = side->elem[1];
-//             const Element *elem2 = side->elem[2];
-//             if (elem2 == nullptr && elem1->isDry2 + elem2->isDry2)) {
-//                side->icolor2 = 1;
-//             }
-          
-
-
-//             // Aug. shoreline sides (must be internal sides)
-//             int nsdf = 0;
-//             if (side->icolor2==1) {
-//                nsdf=nsdf+1
-//                isdf(nsdf)=i
-//             }
-          
-
-//          REDUCE 
-//          call mpi_allreduce(nsdf,nsdf_gb,1,itype,MPI_SUM,comm,ierr)
-//          if (nsdf_gb==0) return // all wet
-
-//          // Final extrapolation
-//          srwt_xchng(1) = (istop == 1)
-//          call mpi_allreduce(srwt_xchng,srwt_xchng_gb,1,MPI_LOGICAL,MPI_LAND,comm,ierr)
-//          if(srwt_xchng_gb(1)) then // all ranks ready
-//             if(myrank==0) write(16,*)'doing final extrapolation in levels1...'
-
-//             icolor=0 // frontier nodes for extrapolation
-//             inew=0 // for initializing and counting su2 sv2
-//             for (int i=0; i<nsdf; i++) {
-//                const int isd = isdf[i];
-
-//                if (isdel(1,isd)==0.or.isdel(2,isd)==0) then
-//                   write(errmsg,*) 'LEVELS1: bnd side (2):',isdel(:,isd),iplg(isidenode(1:2,isd))
-//                   call parallel_abort(errmsg)
-//                endif
-
-
-//                // Try to find a dry elem (to take care of some odd cases where
-//                // nodeA is interface btw sub-domains)
-//                for (int m = 0; m <= 1; m++) {
-                  
-//                   Element *elem = side->elem[m];
-//                   if (elem != nullptr) {
-//                      if (elem->isDry2) {
-
-//                         break;
-//                      }
-//                   }
-
-//                } //m
-
-//                if(elem == nullptr) return;
-
-//                Node *n1 = side->node[0];
-//                Node *n2 = side->node[1];
-
-//                // TRICK: finds the node of elem that is not n1 or n2. To do so, adds the pointer values of all the nodes (as ints)
-//                // and subtracts the pointer values of n1 and n2.
-//                Node *nodeA = (Node *)((int)elem->node[0] + (int)elem->node[1] + (int)elem->node[2] - (int)n1 - (int)n2);
-
-//                if(nodeA->icolor == 1) return;  //this node is done
-
-//                nodeA->icolor = 1; // this node will be done
-
-
-//                inun=0 // inundation flag
-//                for (int j=0; j<nodeA->nne; j++) {
-//                   Element *elem2 = nodeA->elem[j];
-//                   Side *side2 = nodeA->side[j];
-
-//                   // int id = nodeA->elem[j]->iself;
-//                   // int isd2 = nodeA->elem[j]->elside;
-//                   if(elem2->icolor2 == 1) {
-
-//                      double tmp = dot(side2->u2[isd2], side2->n);
-//                      double flux_t = -tmp*ssign(id,ie2) // inward normal
-//                      if(flux_t > 0.0) {
-
-//                      const double etm = max(side2->n1->eta2(), side2->n2->eta2());
-//                      if (etm + dp(nodeA) > h0) {}
-//                      WHY depth at node????
-//                         inun=1;
-//                         exit;
-//                      }
-//                   } // flux_t>0
-
-//                } //icolor2(isd2)==1
-               
-//             } //j
-
-//             if(inun==1) then
-//                eta2(nodeA) = max(eta2(nodeA),-dp(nodeA)+2._rkind*h0)
-
-//                 do j=1,nne(nodeA)
-//                   ie2=indel(j,nodeA)
-//                   id=iself(j,nodeA)
-//                   isd2=elside(id,ie2)
-//                   if(icolor2(isd2)==1) then
-//                     do l=1,3
-//                       nd=elnode(l,ie2)
-//                       if(eta2(nd)+dp(nd)<=h0) then 
-//                         write(errmsg,*)'LEVELS1: Failed to wet element:',ielg(ie2),iplg(nodeA)
-//                         call parallel_abort(errmsg)
-//                       endif
-//                     enddo !l=1,3
-//                     idry_e2(ie2)=0
-//                     do l=1,2 !sides sharing nodeA
-//                       id1=elside(nx(id,l),ie2)
-
-//                       swild2(1,1:nvrt)=su2(1:nvrt,isd2)
-//                       swild2(2,1:nvrt)=sv2(1:nvrt,isd2)
-
-//                       if(inew(id1)==0) then
-//                         su2(1:nvrt,id1)=swild2(1,1:nvrt)
-//                         sv2(1:nvrt,id1)=swild2(2,1:nvrt)
-//                         inew(id1)=1
-//                       else
-//                         su2(1:nvrt,id1)=su2(1:nvrt,id1)+swild2(1,1:nvrt)
-//                         sv2(1:nvrt,id1)=sv2(1:nvrt,id1)+swild2(2,1:nvrt)
-//                         inew(id1)=inew(id1)+1
-//                       endif
-//                     enddo !l=1,2
-//                   endif !icolor2(isd2)==1
-//                 enddo !j=1,nne(nodeA)
-//               endif !inun==1
-//             enddo !i=1,nsdf
-
-//             call exchange_e2di(idry_e2)
-//             call exchange_p2d(eta2)
-
-
-//             ltmp=.false. // flag for wetting occurring
-
-//             do i=1,ns
-//               ltmp=ltmp.or.inew(i)/=0
-//               if(inew(i)/=0) then
-
-//                 su2(1:nvrt,i)=su2(1:nvrt,i)/dble(inew(i))
-//                 sv2(1:nvrt,i)=sv2(1:nvrt,i)/dble(inew(i))
-//               endif
-//             enddo !i
-
-//             srwt_xchng(1)=ltmp
-
-//             istop=2
-
-//           endif // srwt_xchng_gb; final extrapolation
-
-//           if(istop/=2) then
-
-//             istop=1 // stop iteration and go to extrapolation stage; initialize first
-//             do i=1,nsdf // aug.
-//               isd=isdf(i)
-//               do j=1,2
-//                 nd=isidenode(j,isd)
-//                 if (eta2(nd)+dp(nd)<=h0) then
-
-
-//                   istop=0
-//                   do l=1,nne(nd)
-//                     ie=indel(l,nd)
-//                     if(ie>0) idry_e2(ie)=1
-//                   enddo !l
-//                 endif
-//               enddo !j=1,2 nodes
-//             enddo !i=1,nsdf
-//             call exchange_e2di(idry_e2)
-
-//           //  Wetting
-//             inew=0 !for initializing and counting su2 sv2
-//             srwt_xchng(1)=.false. !flag for wetting occurring
-//             do i=1,nsdf !aug. domain for updating vel. at interfacial sides (between 2 sub-domains)
-//               isd=isdf(i) !must be internal side
-//               if(isdel(1,isd)<0.or.isdel(2,isd)<0) cycle !neither element can have interfacial sides
-//               if(isdel(1,isd)==0.or.isdel(2,isd)==0) then
-//                 write(errmsg,*)'LEVELS1: bnd side:',isdel(:,isd),iplg(isidenode(1:2,isd))
-//                 call parallel_abort(errmsg)
-//               endif
-//               if(idry_e2(isdel(1,isd))+idry_e2(isdel(2,isd))/=1) cycle
-//               // 2 end nodes have total depths > h0
-
-//               if(idry_e2(isdel(1,isd))==1) then
-//                 ie=isdel(1,isd) !>0
-//               else
-//                 ie=isdel(2,isd) !>0
-//               endif
-//               n1=isidenode(1,isd)
-//               n2=isidenode(2,isd)
-//               nodeA=elnode(1,ie)+elnode(2,ie)+elnode(3,ie)-n1-n2   ! eli: is the 2,ie one right?
-//               l0=lindex(nodeA,ie)
-
-//               if(l0==0.or.nodeA==n1.or.nodeA==n2) then
-//                 write(errmsg,*)'Frontier node outside, or on the interface:', &
-//        &l0,iplg(nodeA),iplg(n1),iplg(n2),itr,it,iths !icolor(nodeA)
-
-//                 write(12,*)'LEVELS1: fatal error message'
-//                 do l=1,ns
-//                   if(icolor2(l)==1) then
-//                     write(12,*)l,iplg(isidenode(1:2,l))
-//                     write(12,*)l,ielg(isdel(1:2,l)),idry_e2(isdel(1:2,l)),idry_e(isdel(1:2,l))
-//                   endif
-//                 enddo //l
-//                 do l=1,nea
-//                   write(12,*)l,idry_e2(l),idry_e(l)
-//                 enddo //l
-//                 call parallel_abort(errmsg)
-//               endif // end fatal
-
-//               if(eta2(nodeA)+dp(nodeA)>h0) then !all 3 nodes have depths > h0
-//                // Check
-//                 do j=1,3
-//                   nd=elnode(j,ie)
-//                   if(eta2(nd)+dp(nd)<=h0) then
-//                     write(errmsg,*)'Failed to wet element (13):',ielg(ie),iplg(nd),iplg(nodeA)
-//                     call parallel_abort(errmsg)
-//                   endif
-//                 enddo !j
-
-
-//                 srwt_xchng(1)=.true.
-//                 istop=0
-//                 idry_e2(ie)=0
-
-//                 do j=1,2 !sides sharing nodeA
-//                   id1=elside(nx(l0,j),ie)
-//                   if(icolor2(id1)==0) then
-
-//                   swild2(1,1:nvrt)=su2(1:nvrt,isd)
-//                   swild2(2,1:nvrt)=sv2(1:nvrt,isd)
-
-//                   if(inew(id1)==0) then
-//                       !vel. only accurate in resident domain
-//                       su2(1:nvrt,id1)=swild2(1,1:nvrt) !su2(1:nvrt,isd)
-//                       sv2(1:nvrt,id1)=swild2(2,1:nvrt) !sv2(1:nvrt,isd)
-//                       inew(id1)=1
-//                   else
-//                       su2(1:nvrt,id1)=su2(1:nvrt,id1)+swild2(1,1:nvrt)
-//                       sv2(1:nvrt,id1)=sv2(1:nvrt,id1)+swild2(2,1:nvrt)
-//                       inew(id1)=inew(id1)+1
-//                     endif
-//                   endif // icolor2(id)==0
-//                 enddo // j=1,2
-//               endif // eta2(nodeA)+dp(nodeA)>h0
-//             enddo // i=1,nsdf; shoreline sides
-
-//             // Compute average vel. for rewetted sides
-//             do i=1,ns
-//               if(inew(i)/=0) then
-//                 su2(1:nvrt,i)=su2(1:nvrt,i)/real(inew(i),rkind)
-//                 sv2(1:nvrt,i)=sv2(1:nvrt,i)/real(inew(i),rkind)
-//               endif !inew(i)/=0
-//             enddo // i=1,ns
-
-//           endif //istop/=2
-
-
-//           ltmp = false; // for vel. exchange
-
-
-//           // Enforce wet/dry flag consistency between nodes and elements due to added wet elements
-
-//           idry2=1
-
-
-//           do i=1,np
-//             do j=1,nne(i)
-//               if(idry_e2(indel(j,i))==0) then
-//                 idry2(i)=0; exit
-//               endif
-//             enddo !j
-//           enddo !i
-
-//           do i=1,nea
-//             inew(i)=0 !use for temp. storage of new element wet/dry flags
-//             do j=1,3
-//               if(idry2(elnode(j,i))==1) inew(i)=1
-//             enddo !j
-//           enddo !i=1,nea
-
-
-//           do i=1,ns
-//             if(.not.(idry_e2(isdel(1,i))==1.and.(isdel(2,i)==0.or.isdel(2,i)>0.and.idry_e2(max(1,isdel(2,i)))==1))) cycle
-//             // Dry side that may need new vel.
-
-//             iwet=0 // flag
-//             do j=1,2
-//               ie=isdel(j,i)
-//               if(ie>0.and.idry_e2(max(1,ie))==1.and.inew(max(1,ie))==0) iwet=1
-//             enddo !j
-
-//             if(iwet==1) then !vel. as average
-//               sutmp=0._rkind; svtmp=0._rkind; icount=0
-//               do m=1,2 !2 elements
-//                 ie=isdel(m,i)
-//                 if(ie<=0) cycle
-
-//                 do jj=1,3 !3 sides
-//                   !Find wet side
-//                   isd2=elside(jj,ie)
-//                   if(isdel(1,isd2)>0.and.idry_e2(max(1,isdel(1,isd2)))==0.or. &
-//      &isdel(2,isd2)>0.and.idry_e2(max(1,isdel(2,isd2)))==0) then !at least one wet element
-//                     icount=icount+1
-
-
-//                     sutmp(1:nvrt)=sutmp(1:nvrt)+su2(1:nvrt,isd2)
-//                     svtmp(1:nvrt)=svtmp(1:nvrt)+sv2(1:nvrt,isd2)
-//                   endif
-//                 enddo !jj
-//               enddo !m=1,2; 2 elements
-
-//               ltmp=ltmp.or.icount/=0
-//               if(icount/=0) then
-// !                srwt_xchng(1)=.true.
-//                 su2(1:nvrt,i)=sutmp(1:nvrt)/real(icount,rkind)
-//                 sv2(1:nvrt,i)=svtmp(1:nvrt)/real(icount,rkind)
-//               endif
-//             endif !iwet
-//           enddo !i=1,ns
-
-
-//           idry_e2(1:nea)=inew(1:nea)
-//           srwt_xchng(1)=ltmp
-
-//           call mpi_allreduce(srwt_xchng,srwt_xchng_gb,1,MPI_LOGICAL,MPI_LOR,comm,ierr)
-//           if(srwt_xchng_gb(1)) then
-//             allocate(swild(2,nvrt,nsa),stat=istat)
-//             if(istat/=0) call parallel_abort('Levels1: fail to allocate (8)')
-
-//             swild(1,:,:)=su2(:,:)
-//             swild(2,:,:)=sv2(:,:)
-
-
-//             su2(:,:)=swild(1,:,:)
-//             sv2(:,:)=swild(2,:,:)
-//             deallocate(swild)
-          
-
-//          // Sync
-//          call parallel_barrier
-
-//          if(istop==2) exit loop15
-
-//       end do loop15
-
-
-//       endif !it/=iths
-
-
-
-//       do i=1,ne
-//         do j=1,i34(i)
-//           nd=elnode(j,i)
-//           if(eta2(nd)+dp(nd)<=h0) then
-//             idry_e2(i)=1
-//             exit
-//           endif
-//         enddo !j
-//       enddo !i
-
-
-//       // Wet/dry flags for nodes/sides
-//       idry2=1; 
-//       idry_s2=1
-//       do i=1,nea
-//         if(idry_e2(i)==0) then
-//           idry2(elnode(1:3,i))=0
-//         endif
-//       enddo !i
-
-//       do i=1,np
-//         do j=1,nne(i)
-//           if(idry_e2(indel(j,i))==0) then
-//             idry2(i)=0; exit
-//           endif
-//         enddo !j
-//       enddo !i
-
-
-
-//       do i=1,ns
-//         do j=1,2
-//           if(isdel(j,i)>0) then; if(idry_e2(isdel(j,i))==0) then
-//             idry_s2(i)=0; exit
-//           endif; endif
-//         enddo !j
-//       enddo !i
-
-
-
-//       // Reset vel. at dry sides
-
-//       do i=1,nsa
-//         if(idry_s2(i)==1) then
-//           su2(1:nvrt,i)=0._rkind
-//           sv2(1:nvrt,i)=0._rkind
-//         endif
-//       enddo !i
-
-
-//       // Limit elevation at dry nodes
-//       do i=1,npa
-//         if(idry2(i)==1) then
-//           !eta2(i)=min(0.d0,-dp(i))
-//           eta2(i)=min(eta2(i),-dp(i))
-//         endif
-//       enddo !i
-
-
-//       // z-coordinates for nodes
-
-//       do i=1,npa
-//         if(ivcor==2) then; if(eta2(i)<=h0-h_s) then
-//           write(errmsg,*)'Deep depth dry:',iplg(i)
-//           call parallel_abort(errmsg)
-//         endif; endif
-
-//         if (idry2(i)==1) then
-//           if(ivcor/=1) kbp(i)=0
-//         else !wet
-//           call zcoor(1,i,kbp(i),z(:,i))
-//         endif !wet ot dry
-//       enddo !i=1,npa
-
-//       // Compute element bottom index
-//       elem->kb = 0;
-
-
-//       do i=1,nea
-//         if(idry_e2(i)/=0) cycle
-
-// !       Wet
-//         n1=elnode(1,i); n2=elnode(2,i); n3=elnode(3,i)
-//         if(idry2(n1)/=0.or.idry2(n2)/=0.or.idry2(n3)/=0) then
-//           write(errmsg,*)'level1: Element-node inconsistency (0):',ielg(i),idry_e(i), &
-//      &iplg(elnode(1:3,i)),idry2(elnode(1:3,i))
-//           call parallel_abort(errmsg)
-//         endif
-//         kbe(i)=min(kbp(n1),kbp(n2),kbp(n3))
-//         do k=kbe(i),nvrt
-//           ze(k,i)=(z(max(k,kbp(n1)),n1)+z(max(k,kbp(n2)),n2)+z(max(k,kbp(n3)),n3))/3._rkind
-//           if(k>=kbe(i)+1) then; if(ze(k,i)-ze(k-1,i)<=0._rkind) then
-//             write(errmsg,*)'Weird element (1):',k,i,ze(k,i),ze(k-1,i)
-//             call parallel_abort(errmsg)
-//           endif; endif
-//         enddo !k
-//       enddo !i
-
-
-//       // Compute side bottom index. For wet side and its wet adjacent element,
-//       // kbs>=kbe
-//       do i=1,nsa
-//         kbs(i)=0 !dry
-//         if(idry_s2(i)==0) then !wet side with 2 wet nodes
-//           n1=isidenode(1,i)
-//           n2=isidenode(2,i)
-//           if(idry2(n1)/=0.or.idry2(n2)/=0) then
-//             write(errmsg,*)'Side-node inconsistency:',it,islg(i),'node:',iplg(n1),iplg(n2), &
-//      &eta2(n1),eta2(n2),idry2(n1),idry2(n2),';element:', &
-//      &(isdel(j,i),ielg(isdel(j,i)),idry_e2(isdel(j,i)),j=1,2)
-//             call parallel_abort(errmsg)
-//           endif
-//           if(dps(i)+(eta2(n1)+eta2(n2))/2._rkind<=h0) then
-//             write(errmsg,*)'Weird side (0):',islg(i),iplg(n1),iplg(n2),eta2(n1),eta2(n2)
-//             call parallel_abort(errmsg)
-//           endif
-//           kbs(i)=min(kbp(n1),kbp(n2))
-//           do k=kbs(i),nvrt
-//             zs(k,i)=(z(max(k,kbp(n1)),n1)+z(max(k,kbp(n2)),n2))/2
-//             if(k>=kbs(i)+1) then; if(zs(k,i)-zs(k-1,i)<=0._rkind) then
-//               write(errmsg,*)'Weird side (1):',k,iplg(n1),iplg(n2),z(max(k,kbp(n1)),n1), &
-//      &z(max(k,kbp(n2)),n2),z(max(k-1,kbp(n1)),n1),z(max(k-1,kbp(n2)),n2)
-//               call parallel_abort(errmsg)
-//             endif; endif
-//           enddo !k
-//         endif !wet side
-//       enddo !i=1,nsa
-
-
-//       // Compute vel., S,T for re-wetted nodes (q2 and xl are fine)
-//       if(it/=iths) then
-//         do i=1,np 
-//           if(idry(i)==1.and.idry2(i)==0) then
-//             do k=1,nvrt
-//               uu2(k,i)=0._rkind
-//               vv2(k,i)=0._rkind
-//               ttmp=0._rkind
-//               stmp=0._rkind
-//               icount=0
-//               do j=1,nnp(i)
-//                 nd=indnd(j,i) !must be inside the aug. domain
-// !               Wet nbrs not affected by this part and so each sub-domain should use same values
-//                 if(idry(nd)==0) then !all indices extended
-//                   icount=icount+1
-//                   uu2(k,i)=uu2(k,i)+uu2(k,nd)
-//                   vv2(k,i)=vv2(k,i)+vv2(k,nd)
-//                   ttmp=ttmp+tr_nd(1,k,nd) !tnd(k,nd)
-//                   stmp=stmp+tr_nd(2,k,nd) !snd(k,nd)
-//                 endif
-//               enddo !j
-//               if(icount==0) then
-//                 !Use last wet value
-//               else
-//                 uu2(k,i)=uu2(k,i)/real(icount,rkind)
-//                 vv2(k,i)=vv2(k,i)/real(icount,rkind)
-//                 tr_nd(1,k,i)=ttmp/real(icount,rkind)
-//                 tr_nd(2,k,i)=stmp/real(icount,rkind)
-//               endif
-//             enddo !k=1,nvrt
-//           endif !rewetted
-//         enddo !i=1,np
-
-//       endif !it/=iths
-
-
-//       // Check wet/dry in ghost zone
-//       prwt_xchng(1)=.false.
-//       if(it/=iths) then
-//         do i=np+1,npa !check ghosts wet/dry
-//           if(idry(i)==1.and.idry2(i)==0) then
-//             prwt_xchng(1)=.true. !ghost rewetted; need exchange
-//             exit
-//           endif
-
-
-//         enddo !i
-//       endif !it/=iths
-
- 
-
-//       // update ghost nodes
-//       if(prwt_xchng_gb(1)) then
-//           allocate(swild(4,nvrt,nsa),stat=istat)
-//           if(istat/=0) call parallel_abort('Levels0: fail to allocate swild')
-
-//           swild(1,:,1:npa)=uu2(:,:)
-//           swild(2,:,1:npa)=vv2(:,:)
-//           swild(3,:,1:npa)=tr_nd(1,:,:) !tnd(:,:)
-//           swild(4,:,1:npa)=tr_nd(2,:,:) !snd(:,:)
-
- 
-//           uu2(:,:)=swild(1,:,1:npa)
-//           vv2(:,:)=swild(2,:,1:npa)
-//           tr_nd(1,:,:)=swild(3,:,1:npa)
-//           tr_nd(2,:,:)=swild(4,:,1:npa)
-
-//         endif !prwt_xchng_gb
-//       endif !nproc>1
-
-//       close(10)
-
-//       // Update wet/dry flags
-//       idry=idry2
-//       idry_s=idry_s2
-//       idry_e=idry_e2
-
-
 
 // !===============================================================================
 // !===============================================================================
@@ -5362,6 +4778,7 @@ extern "C" {
             elem->ghat1 += cff1*Ustar - cff3*Ustar_alpha;
 
          } else {
+            assert(false && "computeElemAverageGhat: Not implemented");
             // XXX IMPLEMENT THIS
             // call project_hvec(xtmp,ytmp,sframe2(:,:,isd),eframe(:,:,i),tt1,ss1)
             // elem->ghat1[0] += cff1*vn1 - cff3*tt1;
@@ -5428,6 +4845,7 @@ extern "C" {
 
          // Add to ghat1
          if constexpr(ics==2) {
+            assert(false && "computeElemAverageGhat: Not implemented");
             // XXX IMPLEMENT THIS
             // call project_hvec(bigf1,bigf2,sframe2(:,:,isd),eframe(:,:,i),vn1,vn2)
             // bigf1=vn1; bigf2=vn2

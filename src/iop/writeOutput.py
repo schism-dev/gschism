@@ -179,6 +179,12 @@ def writeOutput(it, core, opt):
     zCoordinates_var = dataZ.variables['zCoordinates']
     zCoordinates_var[idxTime, :, :] = z_cpu.T
     del z_cpu
+
+    view = monitor.getNodeVar("w")
+    w_cpu = view.get()
+    verticalVel_var = dataW.variables['verticalVelocity']
+    verticalVel_var[idxTime, :, :] = w_cpu.T
+    del w_cpu
    
 
     time_var = dataC.variables['time']
@@ -188,6 +194,9 @@ def writeOutput(it, core, opt):
     time_var[idxTime] = it*dt
 
     time_var = dataV.variables['time']
+    time_var[idxTime] = it*dt
+
+    time_var = dataW.variables['time']
     time_var[idxTime] = it*dt
 
     time_var = dataZ.variables['time']

@@ -261,7 +261,16 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     cufunc.ul0UpdateZCoords()
     
-    cufunc.ul0ComputeDryElementsAndNodes()
+    cufunc.ul0ComputeDryElements()
+
+    cufunc.ul0ComputeDryNodes()
+
+    
+
+    # cufunc.ul0UpdateZCoords()
+
+    # cufunc.ul0ComputeDryNodes()
+    
     
     cufunc.ul0UpdateRewettedNodes(it, 0)  # iths XXXXXXX
     

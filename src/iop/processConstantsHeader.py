@@ -66,6 +66,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__DTB_MIN__': (namelist.opt.dtb_min, 'namelist.opt'),
         '__DTB_MAX__': (namelist.opt.dtb_max, 'namelist.opt'),
         '__VELMIN_BTRACK__': (namelist.opt.velmin_btrack, 'namelist.opt'),
+        '__BTRACK_NUDGE__': (namelist.opt.btrack_nudge, 'namelist.opt'),
         '__DZB_MIN__': (namelist.opt.dzb_min, 'namelist.opt'),
         '__H0__': (namelist.opt.h0, 'namelist.opt'),
         '__ITUR__': (namelist.opt.itur, 'namelist.opt'),

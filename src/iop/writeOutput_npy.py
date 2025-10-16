@@ -129,7 +129,7 @@ def writeOutput(it, core, opt):
         data['depth'] = view.get()
  
 
-        data['minimum_depth'] = 0.0001  #XXXXXXXXXXX
+        data['minimum_depth'] = 0.0001  #XXXXXXXXXXX Should be h0
 
 
     # For each variable, get the data from GPU (using monitor) and store it in the NetCDF file.

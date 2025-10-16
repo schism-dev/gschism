@@ -80,7 +80,9 @@ def schism_init(core, opt):
     
         cufunc.ul0UpdateZCoords()
         
-        cufunc.ul0ComputeDryElementsAndNodes()
+        cufunc.ul0ComputeDryElements()
+
+        cufunc.ul0ComputeDryNodes()
         
         cufunc.ul0UpdateRewettedNodes(0, 0)
         
