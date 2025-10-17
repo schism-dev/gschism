@@ -721,9 +721,9 @@ if __name__ == "__main__":
     for it in range(1, ntime + 1, 1):
     # for it in range(1, 55, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
-        schism_step_wrapped(it, namelist, bctides, sflux)
+        # schism_step_wrapped(it, namelist, bctides, sflux, solver)
 
-        # schism_step(it, namelist, bctides, sflux, solver)
+        schism_step(it, namelist, bctides, sflux, solver)
 
         writeOutput(it, namelist.core, namelist.opt)
         # if it % 100 == 0:

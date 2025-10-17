@@ -711,7 +711,8 @@ struct Element {
    }
 
    __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords) const { 
-      // Check if the point (xt,yt) is inside the element
+      // Check if the point (xt,yt) is inside the element.
+      // If fixCoords is true, and *the point is inside the element*, the point is nudged to be inside the element.
       double shpCoords[4];
 
       Vector2 tmp_xt = xt;
@@ -1730,7 +1731,7 @@ __device__ void unlock(int *mutex) {
 }
 
 __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF0000) {
-   return;
+// return;   
    // Lock the mutex
    lock(&debugPlotMutex);
  
@@ -1958,7 +1959,7 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
       
       }
       else {  // parallel segments
-// printf("@@@@@@@ZZZ@@@@@@@@@ Parallel segments\n");
+printf("@@@@@@@ZZZ@@@@@@@@@ Parallel segments\n");
 t = 0.0;
 tIntersect = 0.0;
 side = side2;
@@ -2095,7 +2096,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
       // assert(!curElem->isDry && "Target point is inside a dry element");
       curElem->interpolateVelocities(xt, u_int);
 
-addDebugPlot(x0, xt);
+addDebugPlot(x0, xt, 0xA00050);
       return true;
    }
 
@@ -2180,7 +2181,7 @@ addDebugPlot(x0, xt, 0x00A0FF);
  
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
-addDebugPlot(x0, xt);   
+addDebugPlot(x0, xt, 0xA0A0A0);   
    nextElem->interpolateVelocities(xt, u_int); 
 
    return true;
@@ -2257,11 +2258,9 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
       else // lat/lon
       {
          Error("Not implemented yet");
-#ifdef ICS2
-         globalToLocal(nodes[0]->x, nodes[0]->y, nodes[0]->z, x0, y0, z0);
-         globalToLocal(nodes[1]->x, nodes[1]->y, nodes[1]->z, x1, y1, z1);
-         globalToLocal(nodes[2]->x, nodes[2]->y, nodes[2]->z, x2, y2, z2);
-#endif
+         // globalToLocal(nodes[0]->x, nodes[0]->y, nodes[0]->z, x0, y0, z0);
+         // globalToLocal(nodes[1]->x, nodes[1]->y, nodes[1]->z, x1, y1, z1);
+         // globalToLocal(nodes[2]->x, nodes[2]->y, nodes[2]->z, x2, y2, z2);
       }
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
@@ -2271,11 +2270,12 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
       const double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
 
       // Check if the point is inside the element.
-      const bool res = tmpmin > -small;      
+      const bool res = tmpmin > -small;  
+     
 
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
-      if (res && fixNegshpCoord) {
+      if ((tmpmin < 0.0) && fixNegshpCoord) {
 
          // NOTE: I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
          // keeping the sum of the shape coordinates equal to 1.

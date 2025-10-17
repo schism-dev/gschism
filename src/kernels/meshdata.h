@@ -607,7 +607,8 @@ struct Element {
    }
 
    __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords) const { 
-      // Check if the point (xt,yt) is inside the element
+      // Check if the point (xt,yt) is inside the element.
+      // If fixCoords is true, and *the point is inside the element*, the point is nudged to be inside the element.
       double shpCoords[4];
 
       Vector2 tmp_xt = xt;

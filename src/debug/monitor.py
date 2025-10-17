@@ -7,7 +7,7 @@ from matplotlib.collections import LineCollection
 import matplotlib
 from python.schism_consts import varInfoDict
 
-# matplotlib.use('TkAgg') 
+matplotlib.use('TkAgg') 
 
 
 
@@ -180,6 +180,7 @@ def getSideVar(varName, k = -1):
     # return var.get()    
     raise ValueError(f"Variable {varName} is not mapped in memory")
 
+
 def getNodeVar(varName, k = -1):
     varInfo = varInfoDict[varName]
     varCode = list(varInfoDict.keys()).index(varName)
@@ -240,23 +241,7 @@ def getNodeVar(varName, k = -1):
 
 
 # XXXX REMOVE THESE FUNCTIONS and the corresponding ones in the kernels
-def getElementVarX(varname, k = -1, j = -1):
-    varInfo = varInfoDict[varname]
-    var = cp.zeros(numElements, dtype=cp.float64)
-    cufunc.getElementVar(varCode, var, k, j)
-    return var.get()
 
-def getNodeVarX(varname, k = -1):
-    varInfo = varInfoDict[varname]
-    var = cp.zeros(numNodes, dtype=cp.float64)
-    cufunc.getNodeVar(varCode, var, k)
-    return var.get()
-
-def getSideVarX(varname, k = -1):
-    varInfo = varInfoDict[varname]
-    var = cp.zeros(numSides, dtype=cp.float64)
-    cufunc.getSideVar(varCode, var, k)
-    return var.get()
 
 def getSideBndVar(varname, k = -1):
     varInfo = varInfoDict[varname]
@@ -286,20 +271,25 @@ def plotMesh():
     ax.clear()
 
     x = getNodeVar("x")
-    y = getNodeVar("y")
+    y = x[1, :].get()
+    x = x[0, :].get()
         
         # Plot all nodes
     plt.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
 
-    n1 = getSideVar("n1").astype(int)
-    n2 = getSideVar("n2").astype(int)
+    n1 = getSideVar("n1").astype(int).get()
+    n2 = getSideVar("n2").astype(int).get()
+    n1 = (n1 - n1.min())//1584
+    n2 = (n2 - n2.min())//1584
     sx = getSideVar("x")
-    sy = getSideVar("y")
-    ux = getSideVar("u", 0)
-    uy = getSideVar("v", 0)
-    eta = getNodeVar("eta")
-    x  = getNodeVar("x")
-    y  = getNodeVar("y")
+    sy = sx[1, :].get()
+    sx = sx[0, :].get()
+    u = getSideVar("u", 0)
+    ux = u[0, :].get()
+    uy = u[1, :].get()
+    eta = getNodeVar("eta").get()
+
+
 
     # Build the segments array for LineCollection
     segments = np.stack([np.column_stack([x[n1], y[n1]]), np.column_stack([x[n2], y[n2]])], axis=1)
@@ -358,8 +348,8 @@ def plotMesh():
 
 
     plt.show(block=False)
-    plt.pause(0.2)
-    # fig = None
+    plt.pause(0.0)
+    fig = None
 
     return res
 

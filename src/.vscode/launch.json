@@ -29,6 +29,20 @@
                 "PYTHONPATH": "${workspaceFolder}",
                 "PATH": "${env:PATH};C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin"
             }
+        },
+        {
+            "name": "Python: testTraj.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "C:/Users/jmgonzalez/src/temp/testTraj.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "python": "C:/Users/jmgonzalez/AppData/Local/miniconda3/envs/gschism/python.exe",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PATH": "${env:PATH};C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin"
+            }
         }
+
     ]
 }

@@ -295,10 +295,11 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     # var = monitor.getElementVar("z", 0)
     # syncrhonize 
-    # cp.cuda.Device().synchronize()
-    # res = monitor.plotMesh()
-    # if not res:
-    #     raise ValueError("Mesh is not valid")
+    cp.cuda.Device().synchronize()
+    if it % 400 == 0:
+        res = monitor.plotMesh()
+        if not res:
+            raise ValueError("Mesh is not valid")
 
     # var = monitor.getNodeVar("eta")
     # eta[:, it] = var
