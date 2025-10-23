@@ -11,7 +11,7 @@ matplotlib.use('TkAgg')
 
 
 
-debugPlot = cp.zeros([10000,5], dtype=cp.float64, order='F') 
+debugPlot = cp.zeros([10000,6], dtype=cp.float64, order='F') 
 debugPlotIdx = cp.zeros(1, dtype=cp.int32, order='F') 
 debugPlotIdx[0] = 0
 
@@ -270,12 +270,30 @@ def plotMesh():
     # Remove all existing plots
     ax.clear()
 
+    isNodeDry = getNodeVar("isdry").get() == 1.0
+    isSegDry = getSideVar("isdry").get()
     x = getNodeVar("x")
     y = x[1, :].get()
     x = x[0, :].get()
+    nu = getNodeVar("u").get()
+    nux = nu[0, 1, :]
+    nuy = nu[1, 1, :]
+
+
+
+    # Get element center coordinates and dry status
+    elem_x = getElementVar("x")
+    elem_y = elem_x[1, :].get()
+    elem_x = elem_x[0, :].get()
+    elem_isDry = getElementVar("isdry").get() == 1.0
+
+    # Plot element centers with different colors based on dry/wet status
+    elem_dry_mask = elem_isDry.astype(bool)
+    elem_wet_mask = ~elem_dry_mask
+        
         
         # Plot all nodes
-    plt.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
+    # plt.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
 
     n1 = getSideVar("n1").astype(int).get()
     n2 = getSideVar("n2").astype(int).get()
@@ -284,7 +302,7 @@ def plotMesh():
     sx = getSideVar("x")
     sy = sx[1, :].get()
     sx = sx[0, :].get()
-    u = getSideVar("u", 0)
+    u = getSideVar("U")
     ux = u[0, :].get()
     uy = u[1, :].get()
     eta = getNodeVar("eta").get()
@@ -295,17 +313,41 @@ def plotMesh():
     segments = np.stack([np.column_stack([x[n1], y[n1]]), np.column_stack([x[n2], y[n2]])], axis=1)
 
     # Plots eta at the element centers. Eta is shown as the radius of the circle.
-    plt.scatter(x, y, color='b', s=(eta*200 + 20))
+    # plt.scatter(x, y, color='b', s=(eta*200 + 20))
+    # Plot dry nodes in gray
+    if np.any(isNodeDry):
+        plt.plot(x[isNodeDry], y[isNodeDry], 'ro', alpha=0.93, markersize=2.3)
+        # plt.scatter(x[isNodeDry], y[isNodeDry], c='gray', s=3, alpha=0.8, label='Dry nodes')
+    
+    # Plot wet nodes in blue
+    if np.any(~isNodeDry):
+        plt.plot(x[~isNodeDry], y[~isNodeDry], 'bo', alpha=0.93, markersize=2.3)
+        # plt.scatter(x[~isNodeDry], y[~isNodeDry], c='blue', s=3, alpha=0.8, label='Wet nodes')    
+
+
+    # Plot dry element centers as gray 'x'
+    if np.any(elem_dry_mask):
+        plt.scatter(elem_x[elem_dry_mask], elem_y[elem_dry_mask], 
+                   c='darkgray', marker='x', s=20, alpha=0.8, label='Dry elements')
+    
+    # Plot wet element centers as red 'x'
+    if np.any(elem_wet_mask):
+        plt.scatter(elem_x[elem_wet_mask], elem_y[elem_wet_mask], 
+                   c='red', marker='x', s=20, alpha=0.8, label='Wet elements')        
+
+    # Create colors for segments based on dry/wet status
+    segment_colors = np.where(isSegDry, 'gray', 'r')  # gray for dry, red for wet
 
     # Create the LineCollection
-    lc = LineCollection(segments, colors='r', alpha=0.53, linewidths=0.5)
+    lc = LineCollection(segments, colors=segment_colors, alpha=0.53, linewidths=0.5)
     ax.add_collection(lc)
 
     # Use a fixed scale factor for consistent arrow length representation
     # Adjust this value to make arrows longer or shorter while maintaining 1 m/s = constant length
-    fixed_scale = 10.001  # Adjust this value as needed for your visualization
+    fixed_scale = 3.001  # Adjust this value as needed for your visualization
     
     plt.quiver(sx, sy, fixed_scale*ux, fixed_scale*uy, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
+    plt.quiver(x, y, fixed_scale*nux, fixed_scale*nuy, angles='xy', scale_units='inches', scale=1, color='r', width=0.003)
 
     # Plot the backtracked curves.
     segments_np = cp.asnumpy(debugPlot[:debugPlotIdx, :])  # shape: (N, 4)
@@ -323,18 +365,25 @@ def plotMesh():
     x2 = segments_np[:, 2]
     y2 = segments_np[:, 3]      
     color = segments_np[:, 4]
-
+    marker = segments_np[:, 5]
     # Find the segments of length larger than 100.0     
     length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     mask = length > 100.0
-    color[mask] = 0x0000FF
+    # color[mask] = 0x0000FF
     if mask.any():
         res = False
 
 
     # Plot start points (x1, y1) and end points (x2, y2)
-    plt.scatter(x1, y1, c=intToRGB(color), s=16)
-    plt.scatter(x2, y2, c=intToRGB(color), s=16)
+    unique_markers = np.unique(marker)
+    for m in unique_markers:
+        mask = marker == m
+        plt.scatter(x1[mask], y1[mask], c=intToRGB(color[mask]), 
+                    s=16, marker=chr(m.astype(int)))
+    for m in unique_markers:
+        mask = marker == m
+        plt.scatter(x2[mask], y2[mask], c=intToRGB(color[mask]), 
+                    s=16, marker=chr(m.astype(int)))
 
     # Create the LineCollection
     lc = LineCollection(segments, colors='g', linewidths=1.0, alpha=0.8)

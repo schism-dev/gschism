@@ -184,6 +184,12 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     try:
         monitor.debugPlotIdx[0] = 0        
         cufunc.backtrackAllNodes()              # Lines 4161-5029
+
+        cp.cuda.Device().synchronize()
+        if it >= 69:
+            res = monitor.plotMesh()
+            if not res:
+                raise ValueError("Mesh is not valid")
     except Exception as e:
         print(f"Error in backtrackAllNodes: {e}")
 
@@ -295,11 +301,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     # var = monitor.getElementVar("z", 0)
     # syncrhonize 
-    cp.cuda.Device().synchronize()
-    if it % 400 == 0:
-        res = monitor.plotMesh()
-        if not res:
-            raise ValueError("Mesh is not valid")
+
 
     # var = monitor.getNodeVar("eta")
     # eta[:, it] = var

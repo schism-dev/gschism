@@ -229,7 +229,6 @@ struct Polynomial<4> {
 
 // ------------------------------------------------------------------------------------------------
 
-
 __forceinline__ __device__ double signedArea(double x1, double x2, double x3, double y1, double y2, double y3) {
   // Compute signed area formed by pts 1,2,3 (positive counter-clockwise)
   return 0.5*((x1-x3)*(y2-y3) - (x2-x3)*(y1-y3));
@@ -592,8 +591,6 @@ struct Element {
       frame.update(ar1, ar2);        
     }
 
-   __device__ bool findNextIntersection(Point2 x2, Side *&side, Element *&nextElement, double &t, 
-                                        double& tIntersect);
    __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
 
@@ -780,7 +777,7 @@ struct Element {
    }
 
    __device__ void trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
-                                       double &dt, Point3 &xt, double zint, Vector3 &u_int);
+                                       Point3 &xt, double zint, Vector3 &u_int);
     
    __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
                                                  Element *&nextElem, int &jlev, double &dt,

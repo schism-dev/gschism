@@ -56,7 +56,7 @@ __device__ void unlock(int *mutex) {
     atomicExch(mutex, 0);
 }
 
-__device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF0000) {
+__device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF0000, char marker = 'o') {
 // return;   
    // Lock the mutex
    lock(&debugPlotMutex);
@@ -70,6 +70,7 @@ __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF00
       debugPlot[(*debugPlotIdx) + 2*10000] = x2.x;
       debugPlot[(*debugPlotIdx) + 3*10000] = x2.y;
       debugPlot[(*debugPlotIdx) + 4*10000] = (double)color;
+      debugPlot[(*debugPlotIdx) + 5*10000] = (double)marker;
       (*debugPlotIdx)++;
    }
 
@@ -79,8 +80,8 @@ __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF00
 
 }
 
-__device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xA0A0A0) {
-   addDebugPlot(toPoint3(x1, 0.0), toPoint3(x2, 0.0), color);
+__device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xA0A0A0, char marker = 'o') {
+   addDebugPlot(toPoint3(x1, 0.0), toPoint3(x2, 0.0), color, marker);
 }
 
 //===============================================================================
@@ -188,68 +189,12 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
    If true, (xIntersect,yIntersect) is the intersection.				
    Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
 **/
-__device__ bool Element::findNextIntersection(Point2 x2, Side *&side, Element *&nextElement,
-                                              double &t, double& tIntersect) {
-
-   double closest_intersect_t = 1e10;
-   bool found_intersection = false;
-
-   // (x1,y1)-(x2,y2) is the track line segment. Every step we move (x1,y1) to the next
-   // intersection point, at position t on "side". The final position is (x2,y2)=(xt,yt).
-   const Point2 x1 = side->point(t);
-   
-
-   Side *nextSide = nullptr;
-   for (int i = 0; i < i34; i++) {
-
-      // Element's i-th side 
-      Side *side2 = sides[i];
-
-      // Skip the side that contains the initial point
-      if (side2 == side) continue;
-
-      // (x3,y3)-(x4,y4) is the element side line
-      const Point2 x3 = side2->n1->p;
-      const Point2 x4 = side2->n2->p;
-
-      // delta is 0 if the two lines are parallel. In this case, they do not intersect.
-      const double delta = cross(x2 - x1, x3 - x4);
-
-      if (delta != 0.0) {
-
-         const double delta1 = cross(x3 - x1, x3 - x4);
-         const double delta2 = cross(x2 - x1, x3 - x1); 
-
-         // Solves the two linear equations for tt1 and tt2
-         const double tt1 = delta1/delta; // delta is not zero, so we can divide
-         const double tt2 = delta2/delta;
-
-         if (tt1 > 0.0 && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0) {
-            closest_intersect_t = min(closest_intersect_t, tt1);
-            nextSide = side2;
-
-            nextElement = nextSide->otherElem(this);
-            tIntersect = max(small, min(tt1, 1.0-small));
-            t = tt2;
-
-            found_intersection = true;
-         }
-      
-      }
-
-   }
-
-   // found_intersection should always be true, since we checked all the sides.  
-   side = nextSide;
-
-   return found_intersection;
-}
-
-
 
 
 __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement,
                                               double &t, double& tIntersect) {
+   assert( containsPoint(x1) && "Starting point is not inside the element");                                    
+   assert(!containsPoint(x2) && "Ending point is not outside the element");
 
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
@@ -274,7 +219,7 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
          const double tt2 = delta2/delta;
 
-         if (tt1 >= -small && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
+         if (tt1 >= -small2 && tt2 >= -small2 && tt2 <= 1.0 + small2 && tt1 <= 1.0 + small2) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
             nextElement = side->otherElem(this);
@@ -285,39 +230,71 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
       
       }
       else {  // parallel segments
-printf("@@@@@@@ZZZ@@@@@@@@@ Parallel segments\n");
-t = 0.0;
-tIntersect = 0.0;
-side = side2;
-nextElement = this;
-return true; //XXXXXXXXXXXXX    KKKKKK
+
+printf("XXXXXXX Parallel segments !!!!!!!!!!!!!!!!!!!!!!\n");
+         // In this case, we check if they are colinear. if they are, we compute the intersection point as:
+         // tt2 += length(x1 - x2) * sign(dot(x1 - x2, x3 - x4)) in {0, 1}
+
+         // Check if the segments are colinear. It is enough to check if x1 is on the line of the side segment.
+         const double dist = dot(x1 - x3, side2->n);
+         if (abs(dist) < small*length(x3 - x4)) {
+            const double2 unitarySide = normalize(x4 - x3);
+            const double len = dot(x2 - x1, unitarySide);
+            t = t + len;
+            t = max(0.0, min(t, 1.0));
+            printf("BEEEEEBB t = %.17e, dist = %.17e, len = %.17e, x1 = (%e,%e), x2 = (%e,%e), x3 = (%e,%e), x4 = (%e,%e)\n", t, dist, len, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y, x4.x, x4.y);
 
 
-         assert(false && "Parallel segments");
-         // // In this case, we check if they are colinear. if they are, we compute the intersection point as:
-         // // tt2 += length(x1 - x2) * sign(dot(x1 - x2, x3 - x4)) in {0, 1}
-
-         // // Check if the segments are colinear. It is enough to check if x1 is on the line of the side segment.
-
-         // const double dist = dot(x1 - x3, side2->n);
-         // if (abs(dist) < small*length(x3 - x4)) {
-         //    const double2 unitarySide = normalize(x4 - x3);
-         //    const double len = dot(x2 - x1, unitarySide);
-         //    t = t + len;
-         //    t = max(0.0, min(t, 1.0));
-         //    printf("BEEEEEBB t = %.17e, dist = %.17e, len = %.17e, x1 = (%e,%e), x2 = (%e,%e), x3 = (%e,%e), x4 = (%e,%e)\n", t, dist, len, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y, x4.x, x4.y);
-
-
-         //    // tIntersect = max(small, min(tt1, 1.0-small));
-         //    // t = tt2;
-         //    found_intersection = true;
-         // }
+            // tIntersect = max(small, min(tt1, 1.0-small));
+            // t = tt2;
+            found_intersection = true;
+         }
       }
 
 
    }
 
-      
+if (!found_intersection) 
+{
+   printf("AAAAAAA %i  %i\n", nextElement->containsPoint(x1), nextElement->containsPoint(x2));
+   printf("@@@()()@@@@YYYY@@@@@@@@@ No intersection found closest_intersect_t = %.17g, x1 = (%e,%e), x2 = (%e,%e)\n", closest_intersect_t, x1.x, x1.y, x2.x, x2.y);      
+   
+for (int i = 0; i < i34; i++) {
+
+   Side *side2 = sides[i];
+
+   // (x3,y3)-(x4,y4) is the element side line
+   const Point2 x3 = side2->n1->p;
+   const Point2 x4 = side2->n2->p;
+
+   // delta is 0 if the two lines are parallel. In this case, they do not intersect.
+   const double delta = cross(x2 - x1, x3 - x4);
+
+   if (abs(delta) > 0) {
+
+      const double delta1 = cross(x3 - x1, x3 - x4);
+      const double delta2 = cross(x2 - x1, x3 - x1); 
+
+      // Solves the two linear equations for tt1 and tt2
+      const double tt1 = delta1/delta; // delta is not zero, so we can divide
+      const double tt2 = delta2/delta;
+
+printf("CCCCCC i = %d, delta = %.17g, delta1 = %.17g, delta2 = %.17g, tt1 = %.17g, tt2 = %.17g\n", i, delta, delta1, delta2, tt1, tt2);      
+
+      if ((tt1 >= -small2) && (tt2 >= -small2) && (tt2 <= 1.0 + small2) && (tt1 <= 1.0 + small2)) {
+         closest_intersect_t = min(closest_intersect_t, tt1);
+         side = side2;
+         nextElement = side->otherElem(this);
+         t = tt2;
+         tIntersect = max(small, min(tt1, 1.0-small));
+         found_intersection = true;
+         printf("DDDDDD found_intersection = true, tt1 = %.17g, tt2 = %.17g\n", tt1, tt2);      
+      }
+   
+   }
+}
+
+}
    assert(found_intersection && "No intersection found");
 
    // found_intersection should always be true, since we checked all the sides.  
@@ -326,12 +303,12 @@ return true; //XXXXXXXXXXXXX    KKKKKK
 
 
 __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
-                                             double &dt, Point3 &xt, double zint, Vector3 &u_int) {
+                                             Point3 &xt, double zint, Vector3 &u_int) {
 
-   // printf("Tracking segment goes out of water at element %i, nextSide = %i, xt = %.17g, yt = %.17g, ux = %.17g, uy = %.17g\n", curElem->idx, nextSide->idx, xt.x, xt.y, u_int.x, u_int.y);
+// printf("Tracking segment goes out of water at element %i, nextSide = %i, xt = %.17g, yt = %.17g, ux = %.17g, uy = %.17g\n", curElem->idx, nextSide->idx, xt.x, xt.y, u_int.x, u_int.y);
 
    // When this happens, we stop our algorithm that usually assumes that we move to the next element.
-   // Instead, we nudge the intersection point to the barycenter of the element, and nextElement becomes
+   // Instead, we nudge the intersection point to the barycenter of the current element, and nextElement becomes
    // curElement.
 
    // Then it finds the tangential velocity at the element side (the side where the intersection was found),
@@ -344,6 +321,10 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // This ensures that the point is inside the element and hence, we will find an intersection if the
    // next segment intersects the element sides. 
    curElem->nudgeToBarycenter(intersection);
+
+// double shpCoords[4];
+// bool res = computeShapeCoords(intersection, shpCoords, false);
+// printf("JJJJJ shpCoords = %.17g, %.17g, %.17g\n", shpCoords[0], shpCoords[1], shpCoords[2], shpCoords[3]);
 
    // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
    // of the intersection point. We are approximating it by the velocity at the side center at jlev.
@@ -358,14 +339,11 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    const double vs = vtan*nextSide->t().y;
    const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);  //  XXXX Why not use the side's velocity?
 
+
    // Compute the new "tracked" time based on the remaining segment length and the original velocity.
    const double len2 = norm2(intersection - toPoint2(xt));
    const double vel2 = dot(u_int, u_int);        
-   if (vel2 > 0.0) dt = min(dt, sqrt(len2/vel2)); 
-   else            dt = 0.0;
-// if (dt < 0.0) dt = 0.0; //XXXXXXXXXXXXX    KKKKKK
-// printf("@@@@@@@XXXX@@@@@@@@@ tt = %.17g, dt = %.17g, len = %.17g, vel = %.17g\n", tt, dt, sqrt(len2), sqrt(vel2));
-
+   
    // The end of this tracking segment is now the intersection point.
    xt = {intersection.x, intersection.y, zint};
 
@@ -391,7 +369,6 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
  * 
  * The main ideas here are:
  * - The starting point is expected to be in the starting element.
- * - The end point is guaranteed to be inside an element.
  * - since the starting point is inside the element, there are only two cases: 
  *     (a) segment (x0,y0)-(xt,yt) intersects the element sides, or 
  *     (b) it does not and (xt,yt) is already in the starting element.
@@ -406,60 +383,75 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
  *   of getting stuck in a loop.
  * - Additionally, this function never finds intersections with the side segment where the last intersection
  *   was found.
+ * - Notice that curElement is the current element, while this is the element for which the first call to this function was made.
  */
 __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
                                                        Element *&nextElem, int &jlev, double &dt,
                                                        const Side *origSide) {
-
-
-
+                                                            
    // First thing is to check if the target point is inside the element. If it is, there is nothing
-   // else to do.
-   // If it is, nudges the point to be inside the element.
-   const Element *curElem = nextElem;
-   if (containsPoint(toPoint2(xt), true)) {
+   // else to do. This means that the full step occurred within the current element.
+   assert(!isDry && "Starting element is dry");
+   if (containsPoint(toPoint2(xt), true)) {  // The "true" means that, if the point is very close to the boundary, it is nudged to be definitely inside the element.
 
-      // assert(!curElem->isDry && "Target point is inside a dry element");
-      curElem->interpolateVelocities(xt, u_int);
+      assert(containsPoint(toPoint2(xt)) && "Target point is not inside the element");
+      assert(!isDry && "Target point is inside a dry element");
 
-addDebugPlot(x0, xt, 0x00FF00);
+      interpolateVelocities(xt, u_int);
+
+      nextElem = this;
+
+// if (jlev==10) addDebugPlot(x0, xt, 0x00FF00); // green
       return true;
    }
 
-if (curElem->isDry) { u_int = {0.0, 0.0, 0.0}; return true;} //XXXXXXXXXXXXX    KKKKKK
-   Side *side = nullptr;
+if (!containsPoint(toPoint2(x0)))   
+{
+   double shpCoords[4];
+   printf("XXXXXXXXXXXXXXXXXXXXXXXX Starting point is not inside the element x0 = %.17g, %.17g, %.17g\n", x0.x, x0.y, x0.z);
+   computeShapeCoords(toPoint2(x0), shpCoords, false);
+   printf("XXXXXXXXXXXXXXXXXXXXXXXX shpCoords = %.17g, %.17g, %.17g, %.17g\n", shpCoords[0], shpCoords[1], shpCoords[2], shpCoords[3]);
+   computeShapeCoords(toPoint2(xt), shpCoords, true);
+   printf("XXXXXXXXXXXXXXXXXXXXXXXX shpCoords = %.17g, %.17g, %.17g, %.17g\n", shpCoords[0], shpCoords[1], shpCoords[2], shpCoords[3]);
+   // if (jlev==0)addDebugPlot(x0, xt, 0xFFAF00, 'x');  // yellow
+   // if (jlev==10)addDebugPlot(x0, xt, 0xFFCF00, 'x');  // yellow
+   return true;
+}
+   assert(containsPoint(toPoint2(x0)) && "XXXX Starting point is not inside the element");
 
-   // 1. Initial checks
-   // Verify starting element is valid (wet)
-   assert(!curElem->isDry && "Starting element is dry");
 
-   // Checks if track has a zero length.
    const double len2 = (xt.x - x0.x)*(xt.x - x0.x) + (xt.y - x0.y)*(xt.y - x0.y);   
-   // assert(len2 > 0.0 && "Zero length track"); 
+   assert(len2 > 0.0 && "Zero length track"); 
    
-   const int MAX_ITERATIONS = 1000;
+   // const int MAX_ITERATIONS = 1000;
    
    double t;
    Side *nextSide = nullptr;
    double tIntersect = 1e10;
    double zint = x0.z;
 
-   // Horizontal tracking loop
+
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
-
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
+
+   dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
+   Point2 xtmp = nextSide->p_t(t); // moves the target point to the intersection point
+
+   if (nextElem != nullptr) nextElem->nudgeToBarycenter(xtmp);
+   
 
    assert(found_intersection && "No intersection found at %d");
 
    zint = (1 - tIntersect)*zint + tIntersect*xt.z;
+   xt = {xtmp.x, xtmp.y, zint};
 
    // if the tracking segment goes out of water (either dry or edge boundary)
    if (isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
 
-addDebugPlot(x0, xt, 0x00FFFF);  // L
-      trackGoesOutOfWater(nextSide, this, t, jlev, dt, xt, zint, u_int);
-addDebugPlot(x0, xt, 0x0000DF);      
+
+      trackGoesOutOfWater(nextSide, this, t, jlev, xt, zint, u_int);
+// if (jlev==10)addDebugPlot(x0, xt, 0x0000DF, '+');  // dark blue
 
       nextElem = this;
       // Returns "early", meaning that we stopped before we were able to reach the target point.
@@ -468,47 +460,20 @@ addDebugPlot(x0, xt, 0x0000DF);
    }
 
 
-   // Keeps searching for the next intersection until we find xt, yt inside nextElem.
-   int iterations = 0;
-   while (iterations < MAX_ITERATIONS) {
-      iterations++;
-      
-      Element *curElem = nextElem;
-
-      bool found_intersection = curElem->findNextIntersection(toPoint2(xt), nextSide, nextElem, t, tIntersect);
-addDebugPlot(x0, xt);
-      zint = (1 - tIntersect)*zint + tIntersect*xt.z;
-
-      // If we are already in the target element, we are done.
-      // Remember that, if we are here, the point (xt,yt) is inside curElem.
-      if (!found_intersection) break;
-
-
-
-      // if the tracking segment goes out of water (either dry or edge boundary).
-      if (curElem->isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
-addDebugPlot(x0, xt, 0x00A0FF);
-         trackGoesOutOfWater(nextSide, curElem, t, jlev, dt, xt, zint, u_int);
-addDebugPlot(x0, xt, 0x00A0FF);   
-         nextElem = curElem;
-
-         // Returns "early", meaning that we stopped before we were able to reach the target point.
-         // In this case, the caller (btrack) needs to take into account the remaining time.
-         return true;
-      }
-      
-      // Update position and element for next iteration
-      side = nextSide;
-
-   }
-
-   assert(iterations < MAX_ITERATIONS && "Iteration limit reached");  
-
- 
+if (!nextElem->containsPoint(toPoint2(xt))) 
+{
+   printf("XXXXXXXXXXXXXXXXXXXXXXXX Target point is not inside the next element jlev = %d, x0 = %.17g, %.17g, %.17g, xt = %.17g, %.17g, %.17g\n", jlev, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
+// if (jlev==10)addDebugPlot(x0, xt, 0xFFAF00, 'x');  // yellow
+   return true;
+}
+   assert(nextElem->containsPoint(toPoint2(xt)) && "Target point is not inside the next element");
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
-addDebugPlot(x0, xt, 0xFF0000);   
+
    nextElem->interpolateVelocities(xt, u_int); 
+// if (jlev==10)addDebugPlot(x0, xt, 0xFF0000, 'x');  // red  
+
+   assert(nextElem != this && "Next element is the same as the current element");
 
    return true;
 }
@@ -593,15 +558,13 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       shpCoords[3] = 0.0;
-      const double tmpmin  = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
 
-      // Check if the point is inside the element.
-      const bool res = tmpmin > -small;  
-     
+      const double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
+      const bool res = (tmpmin >= -small);     
 
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
-      if ((tmpmin < 0.0) && fixNegshpCoord) {
+      if ((tmpmin < 1.0e-4) && fixNegshpCoord) {
 
          // NOTE: I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
          // keeping the sum of the shape coordinates equal to 1.
@@ -647,6 +610,7 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
 #endif
    }
 
+   assert(false && "computeShapeCoords: should never reach this point");
    return false;  // Never reached
 
 }
@@ -775,6 +739,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
 
    // First step is to compute the shape coordinates of (xt,yt)
    computeShapeCoords(toVector2(xt), shpCoord, false);
+if ((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) < -small)) printf("XXXXXX shpCoord = %.17g, %.17g, %.17g, %.17g\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);   
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
    // Second step is to find the level that contains zt
@@ -981,7 +946,8 @@ __inline__ __device__ bool Side::btrack(
 
    // Start from side center
    Point3 x0 = {center.x, center.y, zc[jlev]};
-
+double dt0 = dt;
+Point3 x00 = x0;
  
    double time_rm = dt; // Remaining time
 
@@ -1003,10 +969,16 @@ __inline__ __device__ bool Side::btrack(
       curElem = otherElem(curElem);
 
 
-if (curElem == nullptr) { u_int = {0.0, 0.0, 0.0}; return true;}
+// if (curElem == nullptr) { u_int = {0.0, 0.0, 0.0}; return true;}
 // assert(curElem!=nullptr && !curElem->isDry && "Starting element is dry or boundary side");
 // printf("@@@@@@@YYYY@@@@@@@@@ curElem = %p, isDry = %d\n", curElem, curElem->isDry);
       
+   }
+
+   if (curElem == nullptr || curElem->isDry) { 
+      // This means that the starting side is shared by dry elements (or one dry and one boundary side).
+      u_int = {0.0, 0.0, 0.0}; 
+      return true;
    }
 
    // Nudges it towards the barycenter
@@ -1016,15 +988,23 @@ if (curElem == nullptr) { u_int = {0.0, 0.0, 0.0}; return true;}
 
 
    const int MAX_ITERATIONS = 1000; 
-   Element* nextElem = curElem;
+   Element* nextElem = nullptr;
    int iter = 0;
+assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
+   Point3 xt = {-1.0e25, -1.0e25, -1.0e25};
    while(true) {
 
       // Calculate timestep
       double dtb = min(dtbk, time_rm);
+if (dtb>0.0 && dtb < 1e-5) {
+printf("@@@@@@@@@@@@@@@4 dtbk = %.17g, time_rm = %.17g\n", dtbk, time_rm);
+assert(false && "dtb < 1e-5");
+}
 
       // Next point in the backtracking curve
-      Point3 xt = x0 - dtb*u_int;
+      xt = x0 - dtb*u_int;
+if (!curElem->containsPoint(toPoint2(x0))) printf("@@@@@@@@@ iter = %d, x0 = %.17g, %.17g, %.17g, xt = %.17g, %.17g, %.17g, dtbk = %.17g, dtb = %.17g, u_int = %.17g, %.17g, %.17g\n", iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, dtbk, dtb, u_int.x, u_int.y, u_int.z);      
+assert(curElem->containsPoint(toPoint2(x0)) && "YYY Starting point is not inside the element");
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, this);
       assert(found && "Backtracking failed in btrack");
 
@@ -1043,9 +1023,24 @@ if (curElem == nullptr) { u_int = {0.0, 0.0, 0.0}; return true;}
       curElem = nextElem;
 
       iter++;
-if (iter>100) printf("@@@@@@@@@@@@@@@@ isdry = %d, idx = %d, n1->idx = %d, n2->idx = %d, iter = %d, x0 = %.17g, %.17g, %.17g, xt = %.17g, %.17g, %.17g\n", curElem->isDry, idx, n1->idx, n2->idx, iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
+if (iter>100) {
+   // if (dtb>0.0 && dtb < 1e-5) {
+   //    printf("@@@@@@@@@@@@@@@4 dtbk = %.17g, time_rm = %.17g\n", dtbk, time_rm);
+   //    assert(false && "dtb < 1e-5");
+   //    }
+printf("@@@@@@@@@@@@@@@@ curElem->idx = %d, nextElem->idx = %d, isdry = %d, n1->idx = %d, n2->idx = %d, iter = %d\n", curElem->idx, nextElem->idx, curElem->isDry, n1->idx, n2->idx, iter);
+printf("@@@@@@@@@@@@@@@2 x0 = %.17g, %.17g, %.17g, xt = %.17g, %.17g, %.17g\n", x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
+printf("@@@@@@@@@@@@@@@3 dtbk = %.17g, dtb = %.17g, u_int = %.17g, %.17g, %.17g, time_rm = %.17g\n", dtbk, dtb, u_int.x, u_int.y, u_int.z, time_rm);
+}
+if (iter>900) return true;
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
    }
+
+   // Interpolate the velocities at the final point
+   curElem->interpolateVelocities(xt, u_int);
+
+   // if (jlev==9) addDebugPlot(x00, x00 + dt0*u_int, 0xFFCF00, 'x');  // yellow
+   if (jlev==1 ) addDebugPlot(x00, x00 + dt0*u_int, 0x00F0FF, '+');  // green
 
 
 }
@@ -1810,6 +1805,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
       Element *elem = node1->elements[j];
 
+// if (elem->isDry) continue;  /// XXXX KKKKKK NOT IN THE ORIGINAL CODE
+
 
       // Compute the average gravity
       const double grav3 = elem->mean(&Node::grav2);
@@ -1909,19 +1906,22 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
       // Since \nabla\phi_i is constant over the element, for the integral of U we can compute the mean value
       // of U over the element.
-      Vector2 Umean = {0.0, 0.0};
-      for (int m=0; m<elem->i34; m++) {      
+      Vector2 U = {0.0, 0.0};
+      for (int m=0; m < elem->i34; m++) {      
          const Side *side = elem->sides[m];
 
-         if constexpr(ics == 1) Umean += side->U; // XXXXX IS THIS JUST ONE VALUE OR TWO????
-         else                   Umean += side->frame.project_hvec(side->U, elem->frame);
+         if constexpr(ics == 1) U += side->U; // XXXXX IS THIS JUST ONE VALUE OR TWO????
+         else                   U += side->frame.project_hvec(side->U, elem->frame);
       }
-      Umean = Umean/elem->i34;
+      U = U/elem->i34;
+
 
       const Vector2 gradPhi_1 = elem->gradPhi[id1];
 
+
       // Integral of \nabla\phi_i \cdot \pmb{U}^n
-      const double I_4_1 = dot(gradPhi_1, Umean);
+      const double I_4_1 = dot(gradPhi_1, U);
+
 
       // Integral of \nabla\phi_i \cdot \pmb{E}
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
@@ -1931,7 +1931,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // Additional terms 
       double vnorm = 0.0;
       if constexpr(imm == 2)  { // Pre-compute vnorm on the element
-         Vector3 ubed;
+         Vector3 ubed = {0.0, 0.0, 0.0};
          // update_bdef(time, elem->center, elem->depth, ubed); XXX
 
          Vector3 gradP = {0.0, 0.0, 1.0};
@@ -1944,11 +1944,10 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
       if (elem->isTri()) {
          for (int l=0; l<3; l++) {
-            double fac;
 
             Node *node = elem->nodes[l];
 
-            fac = (node == node1) ? 2.0 : 1.0;
+            double fac = (node == node1) ? 2.0 : 1.0;
             if constexpr(imm==2) node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
             else                 node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
            
@@ -1985,7 +1984,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    
 
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
-   // I_2,6 are not needed if essential b.c. are enforced by elminating rows and columns
+   // I_2 and I_6 are not needed if essential b.c. are enforced by elminating rows and columns
    NodeBoundary *nodeBnd = node1->nodeBnd;
    if (nodeBnd != nullptr && nodeBnd != &(mesh->landBoundaryNode))  { 
       // If it is an open boundary node...
@@ -1996,8 +1995,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          // Gets each of the sides sharing the node. 
          SideBoundary *sideBnd = nodeBnd->sideBnd(l);
 
-         // if (sideBnd == nullptr) continue; // Skip if no boundary side
-         
+       
 
          // XXXX CAN WE DO THIS MORE NATURALLY IN A SideBnd Loop?
          if (sideBnd != nullptr) {
@@ -2162,13 +2160,17 @@ extern "C" {
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
 
-      if (side->isDry) return;
+  
 
+      // if (side->isDry) return;
+      
+// addDebugPlot(side->center, side->center, 0xFF001F, 'x');    
 
       // Checks that at least one element is not dry
       const Element *elem1 = side->elems[0];
       const Element *elem2 = side->elems[1];
 
+if (!((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)))) return;      
 
       assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
       
@@ -2214,6 +2216,7 @@ extern "C" {
             // No activity 
 
             side->btu[k] = side->u2[k];
+// addDebugPlot(side->center, side->center, 0x00000F, '+');            
             
          } else {  // do btrack
 
@@ -2258,6 +2261,11 @@ extern "C" {
             const int ndelt = clamp(int(suma/icount)*4, ndelt_min, ndelt_max); 
 
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
+
+            if (dtbk < 1e-5 || dt < 1e-5) {
+               printf("^^^^^^^dtbk = %.17f, dt = %.17f, ndelt = %i\n", dtbk, dt, ndelt);
+
+            }
          
 
             Vector3 u_int = {0.0, 0.0, 0.0};
@@ -2994,6 +3002,7 @@ extern "C" {
    __global__ void updateElevation(void) {
       NODE(node);
 
+
       node->eta2 = node->mX;
 
       node->updateZCoordData();
@@ -3003,7 +3012,6 @@ extern "C" {
    __global__ void computeVerticallyIntegratedVelocity(void) {
 
       SIDE(side);
-
 
       side->U = {0.0, 0.0}; 
          
@@ -3589,7 +3597,6 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
       side->gradETP  = side->grad2(&Node::ETP,  isWet3);
       side->gradPr   = side->grad2(&Node::pr,   isWet1);
 
-
    }
 
 
@@ -3602,7 +3609,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
       if (side->isDry) 
       {
-         for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};       // WHY {0,0}? Shouldn't be just the normal component?  The FORTRAN code uses {0,0}  in line ~6462   
+         for (int k=0; k<nvrt; k++) side->u2[k] = {0.0, 0.0};       // WHY {0,0}? Shouldn't be just the normal component?  The FORTRAN code also uses {0,0}  in line ~6462   
 
          return;
       }
@@ -4175,6 +4182,8 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
       const bool wasDry = node->tmp.b;
 
+if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX KKKKKK NOT IN THE ORIGINAL CODE
+
       // assert(node->isDry == node->isDry2() && "These two must be identical at this point"); XXXXX 
       if ((!node->isDry) && wasDry) {  // rewetted, remember that tmp.b is true if the node was previously dry.
 
@@ -4306,6 +4315,8 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
          // Update the side's dryness
          side->isDry = !isWet;
+
+if (side->isDry) {for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0};side->w2[k] = 0.0;}}  // XXXX KKKKKK Not in the original code
 
    }
 
@@ -4660,9 +4671,9 @@ extern "C" {
          if (nhtblocks > 0 && elem->isblock) return;
       }
 
-      if (elem->isDry) return;
 
-      // Wet elements.
+
+      
       // Warning: ghat1=elem average of \breve{G} must include all: Coriolis, atmo. pressure, 
       // tidal potential, horizontal diffusion, and baroclinic etc
       // Remember to update both fb and F 
@@ -4671,6 +4682,8 @@ extern "C" {
       elem->gradEta = {0.0, 0.0};  // \nabla \eta
       elem->gradPr  = {0.0, 0.0};  // \nabla pressure
       elem->gradETP = {0.0, 0.0};  // \nabla etp
+
+      if (elem->isDry) return;
 
       double av_cff1 = 0.0;  // av. for cff1
       double av_cff2 = 0.0;  // av. for cff2
@@ -4756,7 +4769,7 @@ extern "C" {
          if (side->is2D()) {  //2D; no need to compute U^{\star\alpha}
                Ustar += side->btu[nvrt - 1]*side->Dz(nvrt - 1);
          } else { //3D
-            for (int k = side->kb; k < nvrt; k++) {
+            for (int k = side->kb + 1; k < nvrt; k++) {
             
                Vector2 w2 = (side->btu[k] + side->btu[k-1])/2.0*side->Dz(k);
                Ustar += w2;
@@ -5791,6 +5804,14 @@ extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset,
          *offset = (int)((char*)&sides[0].u2[0].x - (char*)sides);
          *sizeType = sizeof(Vector2);
          break;   
+      case (int)VarCode::U:
+         *offset = (int)((char*)&sides[0].U.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::ghat:
+         *offset = (int)((char*)&sides[0].U.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;                        
       case (int)VarCode::n1:
          *offset = (int)((char*)&sides[0].n1 - (char*)sides);
          *sizeType = sizeof(Node);
