@@ -1601,6 +1601,8 @@ extern "C" {
 
    __global__ void returnMatrix(double *res);
 
+   __global__ void returnB(double *res);
+
    __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
       // Compute the different time ramps used in the code 
       // This function is performed by just one thread
@@ -7155,6 +7157,9 @@ __global__ void printMatrix(bool full) {
 }
 
 
+
+
+
 __global__ void returnMatrix(double *res) {
    // Debugging: returns the matrix as a CuPy array
 
@@ -7166,6 +7171,20 @@ __global__ void returnMatrix(double *res) {
          Node* nbNode = node->nodes[j];
          if (node->coeffMatrix[j] != 0.0) res[nbNode->idx*size + idx_node] =  node->coeffMatrix[j];
       }
+
+   }
+   
+}
+
+
+__global__ void returnB(double *res) {
+   // Debugging: returns the matrix as a CuPy array
+
+   const int size = mesh->np;
+   for (int idx_node = 0; idx_node < size; idx_node++) {
+      const Node *node = mesh->localNodeData + idx_node;
+
+      res[idx_node] = node->qel;
 
    }
    

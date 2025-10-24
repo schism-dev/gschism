@@ -1497,6 +1497,8 @@ extern "C" {
 
    __global__ void returnMatrix(double *res);
 
+   __global__ void returnB(double *res);
+
    __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
       // Compute the different time ramps used in the code 
       // This function is performed by just one thread
