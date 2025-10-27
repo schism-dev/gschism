@@ -4316,7 +4316,7 @@ if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX 
          // Update the side's dryness
          side->isDry = !isWet;
 
-if (side->isDry) {for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0};side->w2[k] = 0.0;}}  // XXXX KKKKKK Not in the original code
+// if (side->isDry) {for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0};side->w2[k] = 0.0;}}  // XXXX KKKKKK Not in the original code
 
    }
 

@@ -5989,7 +5989,7 @@
  5989:          // Update the side's dryness
  5990:          side->isDry = !isWet;
  5991: 
- 5992: if (side->isDry) {for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0};side->w2[k] = 0.0;}}  // XXXX KKKKKK Not in the original code
+ 5992: // if (side->isDry) {for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0};side->w2[k] = 0.0;}}  // XXXX KKKKKK Not in the original code
  5993: 
  5994:    }
  5995: 

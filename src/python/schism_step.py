@@ -186,10 +186,10 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
         cp.cuda.Device().synchronize()
-        if it >= 69:
-            res = monitor.plotMesh()
-            if not res:
-                raise ValueError("Mesh is not valid")
+        # if it >= 69:
+        #     res = monitor.plotMesh()
+        #     if not res:
+        #         raise ValueError("Mesh is not valid")
     except Exception as e:
         print(f"Error in backtrackAllNodes: {e}")
 
@@ -231,7 +231,26 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     cufunc.setEssentialBC()
 
 
-    # cufunc.printMatrix()    
+    # cufunc.printMatrix()   
+    if it >= 69:
+        N = 592
+        res = cp.zeros((N, N))
+        cufunc.returnMatrix(res)
+        # Create array snz with the nonzero, non-diagonal elements of res
+        # Extract the diagonal
+        diagonal = cp.diag(res)
+        # Create array with zeros on diagonal
+        res_no_diag = res.copy()
+        cp.fill_diagonal(res_no_diag, 0)
+
+        # Count non-zeros per row (excluding diagonal)
+        nnz_per_row = cp.sum(res_no_diag != 0, axis=1)
+
+        # Extract non-zero, non-diagonal elements
+        snz = res_no_diag[res_no_diag != 0]        
+        res = cp.zeros(N)
+        cufunc.returnB(res)
+        
 
     print("[6]", flush=True)
     #  Solve the wave equation
