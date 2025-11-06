@@ -349,6 +349,25 @@ def plotMesh():
     plt.quiver(sx, sy, fixed_scale*ux, fixed_scale*uy, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
     plt.quiver(x, y, fixed_scale*nux, fixed_scale*nuy, angles='xy', scale_units='inches', scale=1, color='r', width=0.003)
 
+    showLabels = True
+    
+    # Plot labels if requested
+    if showLabels:
+        # Get indices
+        for i in range(len(x)):
+            ax.text(x[i], y[i], f'N{i}', fontsize=6, color='black', 
+                   ha='center', va='bottom', bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+        
+        # Plot element indices
+        for i in range(len(elem_x)):
+            ax.text(elem_x[i], elem_y[i], f'E{i}', fontsize=6, color='darkred', 
+                   ha='center', va='top', bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.5))
+        
+        # Plot side indices (at side centers)
+        for i in range(len(sx)):
+            ax.text(sx[i], sy[i], f'S{i}', fontsize=5, color='darkblue', 
+                   ha='center', va='center', bbox=dict(boxstyle='round,pad=0.15', facecolor='cyan', alpha=0.4))
+
     # Plot the backtracked curves.
     segments_np = cp.asnumpy(debugPlot[:debugPlotIdx, :])  # shape: (N, 4)
 

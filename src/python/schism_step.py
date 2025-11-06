@@ -231,31 +231,37 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     cufunc.setEssentialBC()
 
 
-    # cufunc.printMatrix()   
-    if it >= 69:
-        N = 592
-        res = cp.zeros((N, N))
-        cufunc.returnMatrix(res)
-        # Create array snz with the nonzero, non-diagonal elements of res
-        # Extract the diagonal
-        diagonal = cp.diag(res)
-        # Create array with zeros on diagonal
-        res_no_diag = res.copy()
-        cp.fill_diagonal(res_no_diag, 0)
 
-        # Count non-zeros per row (excluding diagonal)
-        nnz_per_row = cp.sum(res_no_diag != 0, axis=1)
-
-        # Extract non-zero, non-diagonal elements
-        snz = res_no_diag[res_no_diag != 0]        
-        res = cp.zeros(N)
-        cufunc.returnB(res)
         
 
     print("[6]", flush=True)
     #  Solve the wave equation
     solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0)
     print("[7]", flush=True)
+
+    # cufunc.printMatrix()   
+    if it >= 71:
+        N = 592
+        A = cp.zeros((N, N))
+        cufunc.returnMatrix(A)
+        # Create array snz with the nonzero, non-diagonal elements of res
+        # Extract the diagonal
+        diagonal = cp.diag(A)
+        # Create array with zeros on diagonal
+        A_no_diag = A.copy()
+        cp.fill_diagonal(A_no_diag, 0)
+
+        # Count non-zeros per row (excluding diagonal)
+        nnz_per_row = cp.sum(A_no_diag != 0, axis=1)
+
+        # Extract non-zero, non-diagonal elements
+        snz = A_no_diag[A_no_diag != 0]      
+
+        X = cp.zeros(N)
+        cufunc.returnX(X)
+
+        B = cp.zeros(N)
+        cufunc.returnB(B)    
 
     cufunc.updateElevation()
 

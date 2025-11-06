@@ -780,7 +780,7 @@ struct Element {
                                        Point3 &xt, double zint, Vector3 &u_int);
     
    __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
-                                                 Element *&nextElem, int &jlev, double &dt,
+                                                 Element *&nextElem, int &jlev, double &dt, double time_rm,
                                                  const Side *origSide);
 
 };
@@ -1496,6 +1496,8 @@ extern "C" {
    __global__ void printMatrix(bool full = true);
 
    __global__ void returnMatrix(double *res);
+
+   __global__ void returnX(double *res);
 
    __global__ void returnB(double *res);
 

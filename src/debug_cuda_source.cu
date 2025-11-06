@@ -91,6 +91,8 @@ constexpr double dtb_max = 30; //XXXX
 constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
 constexpr double btrack_nudge = 0.009013;   // Nudging factor for backtracking
 
+constexpr int nadv = 1; // Advection flag
+
 constexpr double dfv0 = 0.01; 
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
@@ -99,7 +101,7 @@ constexpr double dt = 150;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
-enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, ssign=9, btu=10, bcc=11, uth=12, ubc=13, island=14, ifltype=15, elbc=16, isdry=17, eta=18, area=19, qel=20, depth=21, radius=22, len=23, lonlat=24, kb=25, n1=26, n2=27, idx=28, htot=29, gradPr=30, gradEta1=31, gradEta2=32, gradETP=33, FaceIndices=34}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -884,7 +886,7 @@ struct Element {
                                        Point3 &xt, double zint, Vector3 &u_int);
     
    __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
-                                                 Element *&nextElem, int &jlev, double &dt,
+                                                 Element *&nextElem, int &jlev, double &dt, double time_rm,
                                                  const Side *origSide);
 
 };
@@ -1601,6 +1603,8 @@ extern "C" {
 
    __global__ void returnMatrix(double *res);
 
+   __global__ void returnX(double *res);
+
    __global__ void returnB(double *res);
 
    __global__ void computeTimeRamps(double time, int nws, bool if_source, double drampbc, double drampwind, double drampwafo, double dramp_ss, double dramp) {
@@ -1978,8 +1982,6 @@ printf("CCCCCC i = %d, delta = %.17g, delta1 = %.17g, delta2 = %.17g, tt1 = %.17
 __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
                                              Point3 &xt, double zint, Vector3 &u_int) {
 
-// printf("Tracking segment goes out of water at element %i, nextSide = %i, xt = %.17g, yt = %.17g, ux = %.17g, uy = %.17g\n", curElem->idx, nextSide->idx, xt.x, xt.y, u_int.x, u_int.y);
-
    // When this happens, we stop our algorithm that usually assumes that we move to the next element.
    // Instead, we nudge the intersection point to the barycenter of the current element, and nextElement becomes
    // curElement.
@@ -1988,12 +1990,12 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // And uses this velocity instead to continue the tracking.
 
    // computes the intersection point in cartesian coordinates
-   Point2 intersection = nextSide->p_t(tt);
+   Point2 intersection = nextSide->p_t(tt);  // XXXX I don't think this is necessary. THE intersection is already computed in findNextIntersection.
 
    // Nudges the point to the barycenter of the element. 
    // This ensures that the point is inside the element and hence, we will find an intersection if the
    // next segment intersects the element sides. 
-   curElem->nudgeToBarycenter(intersection);
+   // TODO: curElem->nudgeToBarycenter(intersection);  REMEMBER!!! RECOVER??? XXX KKKKK
 
 // double shpCoords[4];
 // bool res = computeShapeCoords(intersection, shpCoords, false);
@@ -2012,13 +2014,12 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    const double vs = vtan*nextSide->t().y;
    const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);  //  XXXX Why not use the side's velocity?
 
-
-   // Compute the new "tracked" time based on the remaining segment length and the original velocity.
-   const double len2 = norm2(intersection - toPoint2(xt));
-   const double vel2 = dot(u_int, u_int);        
    
+if ( this->idx == 765 && jlev==1) printf("******************************1 tt = %.17g, xt = %.17g, %.17g, %.17g, curElem->idx = %d, this->idx = %d\n", tt, xt.x, xt.y, xt.z, curElem->idx, this->idx);      
    // The end of this tracking segment is now the intersection point.
    xt = {intersection.x, intersection.y, zint};
+
+if ( this->idx == 765 && jlev==1) printf("******************************2 tt = %.17g, xt = %.17g, %.17g, %.17g, curElem->idx = %d, this->idx = %d\n", tt, xt.x, xt.y, xt.z, curElem->idx, this->idx);      
 
    u_int = {us, vs, ws};
 // printf("@@@@@@@XXXX@@@@@@@@@ idx = %d, us = %.17g, vs = %.17g, ws = %.17g, dt = %.17g\n", curElem->idx, us, vs, ws, dt);   
@@ -2031,7 +2032,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
  * @param x0,y0,z0     Starting position coordinates
  * @param xt,yt,zt     Target position coordinates
  * @param dtb          Time step for tracking
- * @param uuint,vvint,wwint Initial velocity components
+ * @param u_int        Initial velocity components
  * @param nextElem     Starting/resulting element index
  * 
  * @return Status code of type trackExitCodes
@@ -2059,7 +2060,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
  * - Notice that curElement is the current element, while this is the element for which the first call to this function was made.
  */
 __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
-                                                       Element *&nextElem, int &jlev, double &dt,
+                                                       Element *&nextElem, int &jlev, double &dt, double time_rm,
                                                        const Side *origSide) {
                                                             
    // First thing is to check if the target point is inside the element. If it is, there is nothing
@@ -2093,39 +2094,41 @@ if (!containsPoint(toPoint2(x0)))
    assert(containsPoint(toPoint2(x0)) && "XXXX Starting point is not inside the element");
 
 
-   const double len2 = (xt.x - x0.x)*(xt.x - x0.x) + (xt.y - x0.y)*(xt.y - x0.y);   
-   assert(len2 > 0.0 && "Zero length track"); 
+   assert(norm2(toVector2(xt - x0)) > 0.0 && "Zero length track"); 
    
    // const int MAX_ITERATIONS = 1000;
    
    double t;
    Side *nextSide = nullptr;
    double tIntersect = 1e10;
-   double zint = x0.z;
 
 
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
+   assert(found_intersection && "No intersection found at %d");
 
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
    Point2 xtmp = nextSide->p_t(t); // moves the target point to the intersection point
 
-   if (nextElem != nullptr) nextElem->nudgeToBarycenter(xtmp);
+   // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
+   if (nextElem != nullptr && !nextElem->isDry) nextElem->nudgeToBarycenter(xtmp);
    
 
-   assert(found_intersection && "No intersection found at %d");
-
-   zint = (1 - tIntersect)*zint + tIntersect*xt.z;
+   const double zint = (1 - tIntersect)*x0.z + tIntersect*xt.z;
    xt = {xtmp.x, xtmp.y, zint};
 
    // if the tracking segment goes out of water (either dry or edge boundary)
    if (isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
 
-
+if (idx == 765 && jlev == 1) printf("$$$$$$$$$$@@@@@$$$@6 curElem->idx = %d, jlev = %d, nextElem->idx = %d, isDry = %d, t = %.17g, tIntersect = %.17g dt = %.17g, nextSide->idx = %d\n", idx, jlev, nextElem->idx, nextElem->isDry, t, tIntersect, dt, nextSide->idx);   
       trackGoesOutOfWater(nextSide, this, t, jlev, xt, zint, u_int);
 // if (jlev==10)addDebugPlot(x0, xt, 0x0000DF, '+');  // dark blue
 
+      // When this happens, the backtracking stops.
+      dt = time_rm;
+
+      // In this cases, the next element is again the current element.
       nextElem = this;
       // Returns "early", meaning that we stopped before we were able to reach the target point.
       // In this case, the caller (btrack) needs to take into account the remaining time.
@@ -2412,7 +2415,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
 
    // First step is to compute the shape coordinates of (xt,yt)
    computeShapeCoords(toVector2(xt), shpCoord, false);
-if ((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) < -small)) printf("XXXXXX shpCoord = %.17g, %.17g, %.17g, %.17g\n", shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);   
+
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
    // Second step is to find the level that contains zt
@@ -2422,7 +2425,7 @@ if ((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) < -small)) printf(
    int R = nvrt - 1;
 
    // Get the z coordinates at the nodes of the element at the levels L and R
-   double zLAtNodes[4], zRAtNodes[4];
+   double zLAtNodes[4], zRAtNodes[4], zMAtNodes[4];
    getNodalValues(L, &Node::compZCoord, zLAtNodes);
    getNodalValues(R, &Node::compZCoord, zRAtNodes);
 
@@ -2434,17 +2437,18 @@ if ((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) < -small)) printf(
    if (xt.z<=zL) {
       wght1 = 1.0;
       wght2 = 0.0;
+      xt.z = zL;
    }
    else if (xt.z>=zR) {
       wght1 = 0.0;
       wght2 = 1.0;
+      xt.z = zR;
    }
    else {
       // Perform a binary search to find the levels between L and R that contain xt.z
       while (R - L > 1) {
-         int M = (L + R) / 2;
+         int M = (L + R) / 2.0;
 
-         double zMAtNodes[4];
          getNodalValues(M, &Node::compZCoord, zMAtNodes);
          double zM = interpolate(shpCoord, zMAtNodes);
          if (zM < xt.z) 
@@ -2458,12 +2462,38 @@ if ((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) < -small)) printf(
             zR = zM;
          }
       }
-      assert(L == R-1);
+      assert(L == R - 1 && "Binary search failed to find the levels containing zt");
       // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
 
       wght2 = (xt.z - zL)/(zR - zL);
       wght1 = 1.0 - wght2;
+
    }
+
+// Debug print for specific point
+if (fabs(xt.x - 9394.376) <= 40.0 &&
+    fabs(xt.y - 3998.7960) <= 4.0 &&
+    fabs(xt.z - ( -0.20766)) <= 0.01) {
+   // double z2AtNodes[4], z3AtNodes[4], z10AtNodes[4];
+   // getNodalValues(2, &Node::compZCoord, z2AtNodes);
+   // getNodalValues(3, &Node::compZCoord, z3AtNodes);
+   // getNodalValues(10, &Node::compZCoord, z10AtNodes);
+   // double z2 = interpolate(shpCoord, z2AtNodes);
+   // double z3 = interpolate(shpCoord, z3AtNodes);
+   // double z10 = interpolate(shpCoord, z10AtNodes);
+   Vector2 u0atNodes[4], u1atNodes[4];
+   getNodalValues(0, &Node::u2, u0atNodes);
+   getNodalValues(1, &Node::u2, u1atNodes);
+   auto u0 = interpolate(L, shpCoord, &Node::uvw2);
+   auto u1 = interpolate(R, shpCoord, &Node::uvw2);
+   auto uint = wght1*interpolate(L, shpCoord, &Node::uvw2) + wght2*interpolate(R, shpCoord, &Node::uvw2);
+   printf("DEBUG: elem-idx = %d, L=%d, R=%d, wght1=%.17g, \nxt=(%.17g, %.17g, %.17g), zL=%.17g, zR=%.17g, u0 = %.17g, u1 = %.17g, \nzLAtNodes = %.17g, %.17g, %.17g\nzMAtNodes = %.17g, %.17g, %.17g\nzRAtNodes = %.17g, %.17g, %.17g, \nshpCoord = %.17g, %.17g, %.17g\nu0atNodes = %.17g, %.17g, %.17g\nu1atNodes = %.17g, %.17g, %.17g\nuint = %.17g, %.17g, %.17g\n", 
+         idx, L, R, wght1, xt.x, xt.y, xt.z, zL, zR,  u0.x, u1.x, zLAtNodes[0], zLAtNodes[1], zLAtNodes[2], zMAtNodes[0], zMAtNodes[1], zMAtNodes[2], zRAtNodes[0], zRAtNodes[1], zRAtNodes[2], shpCoord[0], shpCoord[1], shpCoord[2], 
+         u0atNodes[0].x, u0atNodes[1].x, u0atNodes[2].x, 
+         u1atNodes[0].x, u1atNodes[1].x, u1atNodes[2].x,
+
+         uint.x, uint.y, uint.z);
+}
 
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    u_int = wght1*interpolate(L, shpCoord, &Node::uvw2) + wght2*interpolate(R, shpCoord, &Node::uvw2);
@@ -2619,8 +2649,9 @@ __inline__ __device__ bool Side::btrack(
 
    // Start from side center
    Point3 x0 = {center.x, center.y, zc[jlev]};
-double dt0 = dt;
+double dt0 = dt; // XXXXX
 Point3 x00 = x0;
+const int oriJlev = jlev;
  
    double time_rm = dt; // Remaining time
 
@@ -2658,8 +2689,6 @@ Point3 x00 = x0;
    curElem->nudgeToBarycenter(toPoint2(x0)); // XXXX Necessary?
 
 
-
-
    const int MAX_ITERATIONS = 1000; 
    Element* nextElem = nullptr;
    int iter = 0;
@@ -2676,15 +2705,22 @@ assert(false && "dtb < 1e-5");
 
       // Next point in the backtracking curve
       xt = x0 - dtb*u_int;
+
+double shpCoords[4];
+curElem->computeShapeCoords(toPoint2(xt), shpCoords, false);      
+if (idx == 1149 && oriJlev == 1) printf("$$$$$$$$>>$$$$$@5 elem->idx = %d, dtb = %.17g, time_rm = %.17g  shpCoords = %.17g, %.17g, %.17g, u_int = %.17g, %.17g, %.17g, x0 = %.17g, %.17g, %.17g, xt = %.17g, %.17g, %.17g\n", curElem->idx, dtb, time_rm, shpCoords[0], shpCoords[1], shpCoords[2], u_int.x, u_int.y, u_int.z, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);      
+      
 if (!curElem->containsPoint(toPoint2(x0))) printf("@@@@@@@@@ iter = %d, x0 = %.17g, %.17g, %.17g, xt = %.17g, %.17g, %.17g, dtbk = %.17g, dtb = %.17g, u_int = %.17g, %.17g, %.17g\n", iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, dtbk, dtb, u_int.x, u_int.y, u_int.z);      
 assert(curElem->containsPoint(toPoint2(x0)) && "YYY Starting point is not inside the element");
-      bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, this);
+      bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, time_rm, this);
       assert(found && "Backtracking failed in btrack");
 
-      if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0
 
+if (idx == 1149 && oriJlev == 1) printf("$$$$$$$$##$$$$$@5 dtb = %.17g, time_rm = %.17g, idx = %d\n", dtb, time_rm, curElem->idx);
       time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
                       // then time_rm needs to be increased by the unused time.
+
+      if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0                      
 
       // If the velocity is too small, we stop the backtracking
       const double vmag = length(toVector2(u_int));
@@ -2712,8 +2748,11 @@ if (iter>900) return true;
    // Interpolate the velocities at the final point
    curElem->interpolateVelocities(xt, u_int);
 
+
+if (idx == 1149 && oriJlev == 1) printf("$$$$$$$$EEEE elem->idx = %d, u_int = %.17g, %.17g, %.17g\n", curElem->idx, u_int.x, u_int.y, u_int.z);   
+
    // if (jlev==9) addDebugPlot(x00, x00 + dt0*u_int, 0xFFCF00, 'x');  // yellow
-   if (jlev==1 ) addDebugPlot(x00, x00 + dt0*u_int, 0x00F0FF, '+');  // green
+   if (oriJlev==1 ) addDebugPlot(x00, x00 + dt0*u_int, 0x00F0FF, '+');  // green
 
 
 }
@@ -2904,8 +2943,8 @@ __device__ double Node::compZCoord(int k) const {
          const int ksig = k - izlev;
 
          if (hmod2 <= h_c) {
-
             return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
+
          } 
          else if (eta2 <= - h_c - (depth - h_c) * theta_f/sinh_theta_f) {
             printf("Please choose larger h_c: %f %f\n", eta2, h_c);
@@ -3566,9 +3605,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          node1->addToSparseMatrix(node3, I1_ik);
          node1->addToSparseMatrix(node4, I1_il);
   
-
-
-      
       } 
 
  
@@ -3598,7 +3634,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
       // Integral of \nabla\phi_i \cdot \pmb{E}
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
-     
+if (node1->idx == 441) printf("AAAAAA: node1->idx = %d, elem->idx = %d,elem->isDry = %d, I_4_1 = %.17g, I_4_2 = %.17g\n", node1->idx, elem->idx, elem->isDry, I_4_1, I_4_2);
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
 
       // Additional terms 
@@ -3843,9 +3879,9 @@ extern "C" {
       const Element *elem1 = side->elems[0];
       const Element *elem2 = side->elems[1];
 
-if (!((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)))) return;      
+// if (!((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)))) return;      
 
-      assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
+      // assert ((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isDry)) && "backtrackAllNodes: non dry side without two dry elements.");
       
       // XXXXXX
       // !swild_tmp to store global coord. of the starting side
@@ -3861,7 +3897,8 @@ if (!((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isD
       //  Caution! nnel must be initialized inside this loop as it is updated inside.
 
 
-         const int iadvf = side->iadv();  // Advection flag
+         const int iadvf = side->iadv();  // Advection flag   
+         assert(nadv == 1 && "Advection flag is only implemented for nadv = 1");
 
          Point3 xt;
          if constexpr(ics==1) {
@@ -3888,7 +3925,7 @@ if (!((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isD
          if (vmag <= velmin_btrack) {
             // No activity 
 
-            side->btu[k] = side->u2[k];
+            side->btu[k] = side->u2[k];  // I don't think this is necessary because it has already been set to this value XXXX
 // addDebugPlot(side->center, side->center, 0x00000F, '+');            
             
          } else {  // do btrack
@@ -3944,6 +3981,7 @@ if (!((elem1 != nullptr && !(elem1->isDry)) || (elem2 != nullptr && !(elem2->isD
             Vector3 u_int = {0.0, 0.0, 0.0};
 
             side->btrack(k, dt, dtbk, u_int);
+if (side->idx == 1149 && k == 1) printf("$$$$$$$$EEEE>>>> u_int = %.17g, %.17g, %.17g\n", u_int.x, u_int.y, u_int.z);            
             side->btu[k] = toVector2(u_int);
                
          } // if vmag (do backtrack)
@@ -4690,12 +4728,10 @@ extern "C" {
          
       if(side->isDry) return;
 
-      const Node *node1 = side->n1;
-      const Node *node2 = side->n2;
-
       // Vertically integrated velocity U (in ll if ics=2)
       for (int k = side->kb; k < nvrt - 1; k++) { 
-         side->U += side->Dz(k + 1)*0.5*(side->u2[k] + side->u2[k + 1]);  
+         const Vector2 uc = 0.5*(side->u2[k] + side->u2[k + 1]);
+         side->U += side->Dz(k + 1)*uc;  
       }
 
    }
@@ -5514,6 +5550,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
             } // if k<nvrt
 
+
             if (k > kb + 1) {
                rrhs[kin] += (dz_0/6.0)*(2.0*btu[k] + btu[k - 1] + 
                                        dt*(coriolis*rot90(2.0*u2[k] + u2[k - 1]) + 
@@ -5736,7 +5773,7 @@ printf("###### k1 = %d, side->idx = %d, zc[%d] = %.16f, z[%d] = %.16f, z[%d] = %
 
       if (side->is2D()) {
          side->u2[kb + 1] = side->bcc[kb + 1];
-         side->u2[kb    ] = side->u2 [nvrt - 1];
+         side->u2[kb    ] = side->u2 [nvrt - 1];  // XXXXX isn't side->u2 [nvrt - 1] == side->bcc[kb + 1]?
 
       } else {
          // 3D
@@ -7176,6 +7213,19 @@ __global__ void returnMatrix(double *res) {
    
 }
 
+__global__ void returnX(double *res) {
+   // Debugging: returns the matrix as a CuPy array
+
+   const int size = mesh->np;
+   for (int idx_node = 0; idx_node < size; idx_node++) {
+      const Node *node = mesh->localNodeData + idx_node;
+
+      res[idx_node] = node->mX;
+
+   }
+   
+}
+
 
 __global__ void returnB(double *res) {
    // Debugging: returns the matrix as a CuPy array
@@ -7494,14 +7544,26 @@ extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset,
          *offset = (int)((char*)&sides[0].u2[0].x - (char*)sides);
          *sizeType = sizeof(Vector2);
          break;   
+      case (int)VarCode::btu:
+         *offset = (int)((char*)&sides[0].btu[0].x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;          
       case (int)VarCode::U:
          *offset = (int)((char*)&sides[0].U.x - (char*)sides);
          *sizeType = sizeof(Vector2);
          break;
-      case (int)VarCode::ghat:
-         *offset = (int)((char*)&sides[0].U.x - (char*)sides);
+      // case (int)VarCode::ghat:
+      //    *offset = (int)((char*)&sides[0].ghat.x - (char*)sides);
+      //    *sizeType = sizeof(Vector2);
+      //    break;   
+      case (int)VarCode::hhat:
+         *offset = (int)((char*)&sides[0].hhat - (char*)sides);
          *sizeType = sizeof(Vector2);
-         break;                        
+         break;      
+      case (int)VarCode::chi:
+         *offset = (int)((char*)&sides[0].chi - (char*)sides);
+         *sizeType = sizeof(double);
+         break;
       case (int)VarCode::n1:
          *offset = (int)((char*)&sides[0].n1 - (char*)sides);
          *sizeType = sizeof(Node);
@@ -7646,7 +7708,7 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::eta && k == -1)     var[idx] = side->eta2();
    else if (varCode == (int)VarCode::btu && k >= 0)      var[idx] = side->btu[k].x;
    // else if (varCode == (int)VarCode::btv && k >= 0)      var[idx] = side->btu[k].y;
-   else if (varCode == (int)VarCode::bcc && k >= 0)     var[idx] = side->bcc[k].x;
+   else if (varCode == (int)VarCode::bcc && k >= 0)      var[idx] = side->bcc[k].x;
    // else if (varCode == (int)VarCode::bccy && k >= 0)     var[idx] = side->bcc[k].y;
    else if (varCode == (int)VarCode::ubc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].x:0.0;
    // else if (varCode == (int)VarCode::vbc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].y:0.0;
@@ -7656,6 +7718,7 @@ extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
    else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?(double)(side->sideBnd->segment->isLand):7.7;
    // else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd != nullptr ? (double)((unsigned long long)(side->sideBnd->segment) & 0xFFFFFFFF) : 7.7;
    else if (varCode == (int)VarCode::hhat && k == -1)    var[idx] = side->hhat;
+   else if (varCode == (int)VarCode::chi  && k == -1)    var[idx] = side->chi;
    // else if (varCode == (int)VarCode::gradEta1x   && k == -1)    var[idx] = side->gradEta1.x;
    // else if (varCode == (int)VarCode::gradEta1y   && k == -1)    var[idx] = side->gradEta1.y;
    // else if (varCode == (int)VarCode::gradEta2x   && k == -1)    var[idx] = side->gradEta2.x;

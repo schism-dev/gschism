@@ -15,6 +15,7 @@ varInfoDict =  {'x':       {'is3D': False, 'type': 'Vector2'},
                 'ny':      {'is3D': False, 'type': 'int'},
                 'hhat':    {'is3D': False, 'type': 'double'},
                 'ghat':    {'is3D': False, 'type': 'Vector2'},
+                'chi':     {'is3D': False, 'type': 'double'},
                 'ssign':   {'is3D': False, 'type': 'double'},
                 'btu':     {'is3D': True,  'type': 'Vector2'},
                 'bcc':     {'is3D': True,  'type': 'Vector2'},
@@ -42,6 +43,4 @@ varInfoDict =  {'x':       {'is3D': False, 'type': 'Vector2'},
                 'gradETP': {'is3D': False, 'type': 'Vector2'},
                 'FaceIndices': {'is3D': False, 'type': 'FaceIndices'},
                 }
-# varCodes = "x,y,z,u,v,w,U,V,nx,ny,hhat,ghatx,ghaty,ssign,btu,btv,bccx,bccy,uth,vth,ubc,vbc," + \
-#            "island,ifltype,elbc,isdry,eta,area,qel,depth,radius,xlon,ylat,kb,n1,n2," + \
-#            "htot,gradEta1x,gradEta1y,gradEta2x,gradEta2y,gradETPx,gradETPy,gradPrx,gradPry,idx"
+

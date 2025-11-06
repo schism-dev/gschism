@@ -90,6 +90,8 @@ constexpr double dtb_max = __DTB_MAX__; //XXXX
 constexpr double velmin_btrack = __VELMIN_BTRACK__; // Minimum velocity for backtracking (m/s)
 constexpr double btrack_nudge = __BTRACK_NUDGE__;   // Nudging factor for backtracking
 
+constexpr int nadv = __NADV__; // Advection flag
+
 constexpr double dfv0 = __DFV0__; 
 
 constexpr double dzb_min = __DZB_MIN__; // Min. bottom boundary layer thickness [m]

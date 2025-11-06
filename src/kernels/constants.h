@@ -90,6 +90,8 @@ constexpr double dtb_max = 30; //XXXX
 constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
 constexpr double btrack_nudge = 0.009013;   // Nudging factor for backtracking
 
+constexpr int nadv = 1; // Advection flag
+
 constexpr double dfv0 = 0.01; 
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
@@ -98,4 +100,4 @@ constexpr double dt = 150;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
-enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, ssign=9, btu=10, bcc=11, uth=12, ubc=13, island=14, ifltype=15, elbc=16, isdry=17, eta=18, area=19, qel=20, depth=21, radius=22, len=23, lonlat=24, kb=25, n1=26, n2=27, idx=28, htot=29, gradPr=30, gradEta1=31, gradEta2=32, gradETP=33, FaceIndices=34}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35}; // Var codes for getElementVar, getNodeVar...
