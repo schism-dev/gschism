@@ -240,28 +240,28 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     print("[7]", flush=True)
 
     # cufunc.printMatrix()   
-    if it >= 71:
-        N = 592
-        A = cp.zeros((N, N))
-        cufunc.returnMatrix(A)
-        # Create array snz with the nonzero, non-diagonal elements of res
-        # Extract the diagonal
-        diagonal = cp.diag(A)
-        # Create array with zeros on diagonal
-        A_no_diag = A.copy()
-        cp.fill_diagonal(A_no_diag, 0)
+    # if it >= 71:
+    #     N = 592
+    #     A = cp.zeros((N, N))
+    #     cufunc.returnMatrix(A)
+    #     # Create array snz with the nonzero, non-diagonal elements of res
+    #     # Extract the diagonal
+    #     diagonal = cp.diag(A)
+    #     # Create array with zeros on diagonal
+    #     A_no_diag = A.copy()
+    #     cp.fill_diagonal(A_no_diag, 0)
 
-        # Count non-zeros per row (excluding diagonal)
-        nnz_per_row = cp.sum(A_no_diag != 0, axis=1)
+    #     # Count non-zeros per row (excluding diagonal)
+    #     nnz_per_row = cp.sum(A_no_diag != 0, axis=1)
 
-        # Extract non-zero, non-diagonal elements
-        snz = A_no_diag[A_no_diag != 0]      
+    #     # Extract non-zero, non-diagonal elements
+    #     snz = A_no_diag[A_no_diag != 0]      
 
-        X = cp.zeros(N)
-        cufunc.returnX(X)
+    #     X = cp.zeros(N)
+    #     cufunc.returnX(X)
 
-        B = cp.zeros(N)
-        cufunc.returnB(B)    
+    #     B = cp.zeros(N)
+    #     cufunc.returnB(B)    
 
     cufunc.updateElevation()
 

@@ -2414,7 +2414,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    double shpCoord[4];
 
    // First step is to compute the shape coordinates of (xt,yt)
-   computeShapeCoords(toVector2(xt), shpCoord, false);
+   computeShapeCoords(toVector2(xt), shpCoord, true);
 
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
@@ -4871,6 +4871,8 @@ extern "C" {
       
       SIDE(side);
 
+      side->hhat = 0.0;
+
       if (side->isDry) return;
 
       const double htot = side->htot2();
@@ -4949,7 +4951,7 @@ extern "C" {
          side->hhat = htot*htot/fricH; 
 
       } else { // 3D
-         side->hhat = htot - side->chi*dt; // Friction modified depth, \hat{H} in notes
+         side->hhat = htot - side->chi*dt; // Friction modified depth, \hat{H} in notes  
 
          if constexpr(iveg != 0) {
             
