@@ -273,6 +273,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // And uses this velocity instead to continue the tracking.
 
    // computes the intersection point in cartesian coordinates
+printf("XXXXXXXXXXXXXXXXXXXXXXXX tt = %.17g\n", tt);                                                
    Point2 intersection = nextSide->p_t(tt);  // XXXX I don't think this is necessary. THE intersection is already computed in findNextIntersection.
 
    // Nudges the point to the barycenter of the element. 
@@ -374,6 +375,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    assert(found_intersection && "No intersection found at %d");
 
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
+printf("XXXXXXXXXXXXXXXXXXXXXXXX dt = %.17g\n", dt);                                                
    Point2 xtmp = nextSide->p_t(t); // moves the target point to the intersection point
 
    // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
