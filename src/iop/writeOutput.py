@@ -19,6 +19,7 @@ dataV = None
 dataW = None
 dataZ = None
 fileNum = 0
+outputTime = 0.0
 
 paramsCompression = {'zlib': False}
 
@@ -39,6 +40,8 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 def writeOutput(it, core, opt):
     # Write the output files
     global dataC, dataU, dataV, dataW, dataZ, fileNum, sizeNode
+
+    outputTime += time.perf_counter()   
 
     ihfskip = core.ihfskip
     nspool  = core.nspool
@@ -202,6 +205,7 @@ def writeOutput(it, core, opt):
     time_var = dataZ.variables['time']
     time_var[idxTime] = it*dt
 
+    outputTime -= time.perf_counter()
 
 
 
