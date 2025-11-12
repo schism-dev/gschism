@@ -3,6 +3,7 @@ import cupy as cp
 
 import netCDF4 as nc
 import debug.monitor as monitor 
+import time
 
 
 path = None
