@@ -39,7 +39,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 
 def writeOutput(it, core, opt):
     # Write the output files
-    global dataC, dataU, dataV, dataW, dataZ, fileNum, sizeNode
+    global dataC, dataU, dataV, dataW, dataZ, fileNum, sizeNode, outputTime
 
     outputTime += time.perf_counter()   
 
