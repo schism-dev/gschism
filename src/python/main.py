@@ -8,7 +8,7 @@ import cupy as cp
 import debug.monitor as monitor
 import time
 from python.pcgsolver import PCGSolver
-from iop.writeOutput import writeOutput, initializeOutput
+from iop.writeOutput import writeOutput, initializeOutput, outputTime
 
 # pool = cp.cuda.MemoryPool()
 # cp.cuda.set_allocator(pool.malloc)
@@ -734,11 +734,11 @@ if __name__ == "__main__":
         time1 = time2
         pass
 
-
+    print(f"Output time: {outputTime:.3f} s")
     end_time = time.time()
     total_time = end_time - start_time
     print(f"\nTotal execution time: {total_time:.3f} s")
-    print(f"Average time per step: {(total_time/ntime):.3f} s")
+    print(f"Average time per step: {(total_time/ntime):.5f} s")
 
     profiler.print_stats()    
     pass
