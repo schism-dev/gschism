@@ -15,6 +15,7 @@ sizeNode = None
 sizeElem = None
 sizeSide = None
 fileNum = 0
+outputTime = 0.0
 
 
 def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeSize, elemSize, sideSize):
@@ -32,7 +33,9 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 
 def writeOutput(it, core, opt):
     # Write the output files
-    global fileNum, sizeNode
+    global fileNum, sizeNode, outputTime
+
+    outputTime += time.perf_counter()   
 
     ihfskip = core.ihfskip
     nspool  = core.nspool
@@ -194,6 +197,8 @@ def writeOutput(it, core, opt):
     dataU.close()
     dataV.close()
     dataZ.close()
+
+    outputTime = time.perf_counter() - outputTime
 
 
 
