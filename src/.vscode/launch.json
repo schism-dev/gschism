@@ -8,7 +8,7 @@
             "name": "Python: main.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/temp/main.py",
+            "program": "${workspaceFolder}/python/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "python": "C:/Users/jmgonzalez/AppData/Local/miniconda3/envs/gschism/python.exe",

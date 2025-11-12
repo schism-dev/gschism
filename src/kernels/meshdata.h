@@ -79,6 +79,9 @@ __device__ __forceinline__ double clamp(double x, double min, double max) {
     return fmin(fmax(x, min), max);
 }
 
+
+__device__ __forceinline__ double clampVelocity(double x, double min, double max);
+
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
 using Vector2 = double2; 

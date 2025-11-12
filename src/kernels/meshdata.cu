@@ -87,6 +87,13 @@ __device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xA0A0
 //===============================================================================
 //     
 //===============================================================================
+
+
+__device__ __forceinline__ Vector2 clampVelocity(Vector2 v) {
+   return {clamp(v.x, -rmaxvelx, rmaxvelx), clamp(v.y, -rmaxvely, rmaxvely)};
+}
+
+
 __device__ __forceinline__ void update_bdef(double time, double x0, double y0, double &dep, Vector3 &vel) {
    // For imm=2, user needs to update bottom depth and velocity
 
@@ -223,8 +230,8 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
             nextElement = side->otherElem(this);
-            t = tt2;
-            tIntersect = max(small, min(tt1, 1.0-small));
+            t = clamp(tt2, 0.0, 1.0);
+            tIntersect = clamp(tt1, small, 1.0-small);
             found_intersection = true;
          }
       
@@ -273,7 +280,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // And uses this velocity instead to continue the tracking.
 
    // computes the intersection point in cartesian coordinates
-printf("XXXXXXXXXXXXXXXXXXXXXXXX tt = %.17g\n", tt);                                                
+   if (tt<0.0 || tt>1.0) printf("XXXXXXX tt = %.17g\n", tt);
    Point2 intersection = nextSide->p_t(tt);  // XXXX I don't think this is necessary. THE intersection is already computed in findNextIntersection.
 
    // Nudges the point to the barycenter of the element. 
@@ -375,7 +382,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    assert(found_intersection && "No intersection found at %d");
 
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
-printf("XXXXXXXXXXXXXXXXXXXXXXXX dt = %.17g  tIntersect = %.17g, t = %.17g\n", dt, tIntersect, t);                                                
+   if (t<0.0 || t>1.0) printf("XXXXXXX t = %.17g\n", t);
    Point2 xtmp = nextSide->p_t(t); // moves the target point to the intersection point
 
    // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
@@ -3564,10 +3571,9 @@ extern "C" {
          hat_gam += dt*side->nuGradU[nvrt-1];  // XXXX compute nuGradU
 
 
-         const double ux = clamp(hat_gam.x*hhat/htot, -rmaxvelx, rmaxvelx);
-         const double uy = clamp(hat_gam.y*hhat/htot, -rmaxvely, rmaxvely);
+         const Vector2 vel = clampVelocity(hat_gam*hhat/htot);
 
-         for (int k = 0; k < nvrt; k++) side->u2[k] = {ux, uy};
+         for (int k = 0; k < nvrt; k++) side->u2[k] = vel;
 
       }
       else { // 3D
@@ -3787,7 +3793,7 @@ extern "C" {
             const int kin = k - kb - 1;
    
             // Velocity is always clamped to maximum values
-            side->u2[k] = {clamp(soln[kin].x, -rmaxvelx, rmaxvelx), clamp(soln[kin].y, -rmaxvely, rmaxvely)};
+            side->u2[k] = clampVelocity(soln[kin]);
          } // k
 
       } // if side->is2D()
@@ -4307,9 +4313,7 @@ if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX 
 
                for (int k = kb; k < nvrt; k++)  {
                   Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k]; // u interpolated at node j.   XXXX Function for clamping velocities. const vector2 u
-                  u.x = clamp(u.x, -rmaxvelx, rmaxvelx);
-                  u.y = clamp(u.y, -rmaxvely, rmaxvely);
-                  // node->utmp[k] = node->utmp[k] + (1.0/numElements) * u; 
+                  u = clampVelocity(u);
                   atomicAdd(&(node->utmp[k].x), u.x);
                   atomicAdd(&(node->utmp[k].y), u.y);
 
