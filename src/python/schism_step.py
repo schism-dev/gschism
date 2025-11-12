@@ -119,7 +119,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Compute time ramps for boundary elevation forcing, wind and pressure forcing and tidal potential forcing
     cufunc.computeTimeRamps(time, opt.nws, opt.if_source, opt.drampbc, opt.drampwind, opt.drampwafo, opt.dramp_ss, opt.dramp)
     
-    print(f"[1] time = {time}, it = {it}")
+    print(f"time = {time}, it = {it}")
 
 
     #  Compute new bed deformation
@@ -134,7 +134,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Meteorological forcing
     computeMeteorologicalForcing(time, sflux)  # Lines 458-1014
 
-    print("[2]")
+
     # computeTracerStuff()            # Lines 1015-1145
 
 
@@ -179,7 +179,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Horizontal viscosity, implemented as a filter (also Shapiro filter)
     cufunc.computeHorizontalViscosity()       # Lines 3840-4160
 
-    print("[3]")
+
     # Backtracking/upwind for momentum
     try:
         monitor.debugPlotIdx[0] = 0        
@@ -192,8 +192,6 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         #         raise ValueError("Mesh is not valid")
     except Exception as e:
         print(f"Error in backtrackAllNodes: {e}")
-
-    print("[4]")
 
     # Vertical advection 
     # computeVerticalAdvection()        # Lines 5030-5122
@@ -219,25 +217,21 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Elem. average ghat1 (in eframe if ics=2; \breve{G} in notes). Dimension: m^2/s
     cufunc.computeElemAverageGhat()                 # Lines 5533-5783
 
-    print("[5]")
+
     # setup coefficient matrix, sparsem, for the wave equation
     #!...  No elevation essential b.c. are imposed yet but other b.c. is imposed
     cufunc.setupCoefficientMatrixAndRHS(time)       # Lines 5826-
 
-    print("[5.1]", flush=True)
+
     cufunc.rollUpElevation()
 
-    print("[5.2]", flush=True)
+
     cufunc.setEssentialBC()
 
 
-
-        
-
-    print("[6]", flush=True)
     #  Solve the wave equation
     solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0)
-    print("[7]", flush=True)
+
 
     # cufunc.printMatrix()   
     # if it >= 71:
@@ -277,7 +271,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     cufunc.applyMomentumBC()
 
-    print("[8]")
+
     # Transport    lines 7388-8111
 
     if opt.ishapiro == 1:
@@ -311,7 +305,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     # Adjust mass after level change
     # XXXXXXXXX IMPLEMENT THIS
-    print("[9]")
+
 
     # Compute nodal velocities from side velocities
     cufunc.zeroNodalVelocities()
@@ -322,7 +316,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # cufunc.resetVelocityOpenBndNodes()
     # cufunc.setVelocityOpenBndNodes()
 
-    print("[10]")
+
 
     # var = monitor.getElementVar("z", 0)
     # syncrhonize 
