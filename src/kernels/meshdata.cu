@@ -375,7 +375,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    assert(found_intersection && "No intersection found at %d");
 
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
-printf("XXXXXXXXXXXXXXXXXXXXXXXX dt = %.17g\n", dt);                                                
+printf("XXXXXXXXXXXXXXXXXXXXXXXX dt = %.17g  tIntersect = %.17g, t = %.17g\n", dt, tIntersect, t);                                                
    Point2 xtmp = nextSide->p_t(t); // moves the target point to the intersection point
 
    // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
