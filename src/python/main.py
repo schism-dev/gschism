@@ -77,8 +77,8 @@ if WINDOWS:
 elif VISTA:
     in_dir = r'/scratch/10922/jmglez/tests/RUN01b'
     out_dir = r'/scratch/10922/jmglez/tests/RUN01b/gpuoutput'
-    in_dir = r'/scratch/10922/jmglez/tests/RUN02a'
-    out_dir = r'/scratch/10922/jmglez/tests/RUN02a/gpuoutput'
+    # in_dir = r'/scratch/10922/jmglez/tests/RUN02a'
+    # out_dir = r'/scratch/10922/jmglez/tests/RUN02a/gpuoutput'
 else:
     raise Exception("Unsupported platform")
 
