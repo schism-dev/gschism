@@ -812,8 +812,8 @@ __inline__ __device__ double  SideBoundary::nuth(int k) const {
 
 
 
-__inline__ __device__ double  Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
-__inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
+__inline__ __device__ double  Side::x(double t)   const { if (t<0.0 || t>1.0) printf("XX t = %.7g\n", t); assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
+__inline__ __device__ double  Side::y(double t)   const { if (t<0.0 || t>1.0) printf("YY t = %.7g\n", t); assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
 __inline__ __device__ double  Side::lon(void) const { return 0.5*(n1->lon + n2->lon); }
 __inline__ __device__ double  Side::lat(void) const { return 0.5*(n1->lat + n2->lat); }
 __inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
