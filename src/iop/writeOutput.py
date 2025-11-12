@@ -224,6 +224,9 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     filenameW = 'verticalVelocity_%i.nc' % fileNum
     filenameZ = 'zCoordinates_%i.nc' % fileNum
 
+    # Create the directory if it doesn't exist
+    os.makedirs(path, exist_ok=True)
+
     # Remove the file if it exists before creating the NetCDF file
     filepath = os.path.join(path, filename)
     if os.path.exists(filepath):
