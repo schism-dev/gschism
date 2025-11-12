@@ -234,11 +234,13 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
             tIntersect = clamp(tt1, small, 1.0-small);
             found_intersection = true;
          }
+
+         assert(false && "Parallel segments should not happen under the new code");
       
       }
       else {  // parallel segments
 
-printf("XXXXXXX Parallel segments !!!!!!!!!!!!!!!!!!!!!!\n");
+         assert(false && "Parallel segments should not happen under the new code");
          // In this case, we check if they are colinear. if they are, we compute the intersection point as:
          // tt2 += length(x1 - x2) * sign(dot(x1 - x2, x3 - x4)) in {0, 1}
 

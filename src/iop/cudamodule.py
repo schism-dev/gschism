@@ -153,17 +153,9 @@ class CudaSourceManager:
         
         # Create the module
         try:
-            if options is None:
-                options = ("-std=c++17",)
-
-            if DEBUG:
-                options = (
-                        "-std=c++20",
-                        # "-lineinfo",
-                        # "--ptxas-options=-v",  # Show resource usage
-                        # "--device-debug"  # Enable device debug information
-
-                    )   
+            if not DEBUG:
+                options += ("-DNDEBUG",)
+                
             mod = cp.RawModule(code=processed_source, options = options)
             
             # Return a wrapped module that handles function lookup errors
