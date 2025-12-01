@@ -8,7 +8,7 @@ import cupy as cp
 import debug.monitor as monitor
 import time
 from python.pcgsolver import PCGSolver
-from iop.writeOutput import writeOutput, initializeOutput, outputTime
+from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 
 # pool = cp.cuda.MemoryPool()
 # cp.cuda.set_allocator(pool.malloc)
@@ -17,7 +17,7 @@ from iop.writeOutput import writeOutput, initializeOutput, outputTime
 from line_profiler import LineProfiler
 
 
-VISTA = True
+VISTA = False
 WINDOWS = not VISTA
 
 
@@ -71,8 +71,8 @@ import python.cuda_functions as cufunc
 if WINDOWS:
     # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b'
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
-    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
-    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a\gpuoutput'
+    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02d'
+    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02d\gpuoutput'
     # out_dir = r'c:\Users\jmgonzalez\src\temp'
 elif VISTA:
     in_dir = r'/scratch/10922/jmglez/tests/RUN01b'
@@ -290,6 +290,7 @@ if __name__ == "__main__":
         drag    = np.zeros(nodeCoords.shape[1])
         drag[:] = module.readHGridData(os.path.join(in_dir, 'drag.gr3'), nodeCoords.shape[1], elnode.shape[1])
 
+
     elif nchi == 1:
         roughness    = np.zeros(nodeCoords.shape[1])
         roughness[:] = module.readHGridData(os.path.join(in_dir, 'rough.gr3'), nodeCoords.shape[1], elnode.shape[1])
@@ -350,7 +351,12 @@ if __name__ == "__main__":
 
         fig, ax = plt.subplots(figsize=(12, 8))
         
-        plotLabels = False
+        plotLabels = True
+        useRange = True
+        lrXmin = -75500
+        lrXmax = -74200
+        lrYmin = 3575200
+        lrYmax = 3576400
 
         # Plot all nodes
         plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.', alpha=0.3, markersize=.3)
@@ -358,7 +364,8 @@ if __name__ == "__main__":
         if plotLabels:
             # Add node labels
             for i in range(nodeCoords.shape[1]):
-                plt.annotate(f'N{i}', 
+                if not useRange or (nodeCoords[0,i].get() > lrXmin and nodeCoords[0,i].get() < lrXmax and nodeCoords[1,i].get() > lrYmin and nodeCoords[1,i].get() < lrYmax):
+                    plt.annotate(f'N{i}', 
                             (nodeCoords[0,i].get(), nodeCoords[1,i].get()),
                             xytext=(2, 2),
                             textcoords='offset points',
@@ -401,14 +408,16 @@ if __name__ == "__main__":
                 centroid_x = np.mean(nodeCoords[0,tri_nodes].get())
                 centroid_y = np.mean(nodeCoords[1,tri_nodes].get())
                 
-                # Element label at centroid
-                plt.annotate(f'E{i}', 
-                            (centroid_x, centroid_y),
-                            xytext=(0, 0),
-                            textcoords='offset points',
-                            color='red',
-                            fontsize=6,
-                            alpha=0.6)
+                if not useRange or (centroid_x > lrXmin and centroid_x < lrXmax and centroid_y > lrYmin and centroid_y < lrYmax):
+                    # Element label at centroid
+                    plt.annotate(f'E{i}', 
+                                (centroid_x, centroid_y),
+                                xytext=(0, 0),
+                                textcoords='offset points',
+                                color='red',
+                                fontsize=6,
+                                alpha=0.6)
+
 
             # Add side labels
             for i in range(isidenode.shape[1]):
@@ -420,13 +429,15 @@ if __name__ == "__main__":
                 mid_y = np.mean(nodeCoords[1,side_nodes].get())
                 
                 # Side label at midpoint
-                plt.annotate(f'S{i}',
-                            (mid_x, mid_y),
-                            xytext=(0, 3),
-                            textcoords='offset points',
-                            color='blue',
-                            fontsize=6,
-                            alpha=0.3)
+                if not useRange or (mid_x > lrXmin and mid_x < lrXmax and mid_y > lrYmin and mid_y < lrYmax):                
+                    plt.annotate(f'S{i}',
+                                (mid_x, mid_y),
+                                xytext=(0, 3),
+                                textcoords='offset points',
+                                color='blue',
+                                fontsize=6,
+                                alpha=0.3)
+                
 
             
         # Prevent plot distortion by setting equal aspect ratio
@@ -736,7 +747,7 @@ if __name__ == "__main__":
         time1 = time2
         pass
 
-    print(f"Output time: {outputTime:.3f} s")
+    print(f"Output time: {getOutputTime():.3f} s")
     end_time = time.time()
     total_time = end_time - start_time
     print(f"\nTotal execution time: {total_time:.3f} s")

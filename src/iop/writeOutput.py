@@ -41,8 +41,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 def writeOutput(it, core, opt):
     # Write the output files
     global dataC, dataU, dataV, dataW, dataZ, fileNum, sizeNode, outputTime
-
-    outputTime += time.perf_counter()   
+    
 
     ihfskip = core.ihfskip
     nspool  = core.nspool
@@ -59,6 +58,8 @@ def writeOutput(it, core, opt):
             dataU.close()
             dataV.close()
             dataZ.close()
+            dataW.close()
+            pass
 
         fileNum += 1
 
@@ -68,6 +69,9 @@ def writeOutput(it, core, opt):
 
     if dataC is None:
         return
+
+    outputTime -= time.perf_counter()
+
 
     idxTime = ((it // nspool) - 1) % timesPerFile
 
@@ -206,9 +210,12 @@ def writeOutput(it, core, opt):
     time_var = dataZ.variables['time']
     time_var[idxTime] = it*dt
 
-    outputTime -= time.perf_counter()
+    outputTime += time.perf_counter()
 
 
+def getOutputTime():
+    global outputTime
+    return outputTime
 
 def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     """

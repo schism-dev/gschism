@@ -27,7 +27,6 @@ def solveWaveEquation(solver, maxIter=1000, tol=1e-12, ):
 
     time1 = time.time()
   
-
     its = solver.solve(rtol=tol, maxiter=maxIter)
 
     time2 = time.time()
@@ -196,6 +195,8 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Vertical advection 
     # computeVerticalAdvection()        # Lines 5030-5122
 
+    # if it >= 55:
+    #     monitor.fortranDebugPlot(it)
 
     cufunc.computeElevationBoundaryConditions(time)
 
@@ -290,13 +291,6 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     cufunc.ul0ComputeDryNodes()
 
-    
-
-    # cufunc.ul0UpdateZCoords()
-
-    # cufunc.ul0ComputeDryNodes()
-    
-    
     cufunc.ul0UpdateRewettedNodes(it, 0)  # iths XXXXXXX
     
     cufunc.ul0UpdateSides(it, 0)  # iths XXXXXXXX
@@ -313,6 +307,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     cufunc.computeNodalVerticalVelocities2()
     cufunc.computeNodalHorizontalVelocities1()
     cufunc.computeNodalHorizontalVelocities2()
+    pass
     # cufunc.resetVelocityOpenBndNodes()
     # cufunc.setVelocityOpenBndNodes()
 

@@ -980,7 +980,8 @@ struct Side {
    }
 
    __inline__ __device__ Element* findElementTowards(Vector2 u) const {
-      // From the elements that share this side, find the one that is in the direction of the target point (xt,yt)
+      // From the elements that share this side, find the one that is in the direction opposite to the velocity vector
+      // (unless it is a boundary side or a dry element, in which case we return the only wet element)
 
       assert(elems[0] != nullptr && "elems[0] is nullptr in findElementTowards");
 
@@ -998,8 +999,11 @@ struct Side {
 
       const bool isDry0 = elems[0]==nullptr || elems[0]->isDry;
       const bool isDry1 = elems[1]==nullptr || elems[1]->isDry;
-      if (dot_prod1*dot_prod2 > 0.0) return !isDry0 ? elems[0] : nullptr;
-      else                           return !isDry1 ? elems[1] : nullptr;
+
+      assert(!isDry0 || !isDry1 && "Both elements are dry in findElementTowards");
+
+      if (dot_prod1*dot_prod2 > 0.0) return !isDry0 ? elems[0] : elems[1];
+      else                           return !isDry1 ? elems[1] : elems[0];
 
  
    }

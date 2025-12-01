@@ -17,6 +17,8 @@ from cupyx.scipy.sparse import csr_matrix
 
 from line_profiler import LineProfiler
 
+checkEveryNIterations = 10
+
 class PCGSolver:
     def __init__(self, N, NNZ):
         """Pre-allocate everything for maximum performance."""
@@ -83,8 +85,8 @@ class PCGSolver:
         self.x_f    = cp.zeros(self.n, dtype=cp.float32)
 
         # Previous solutions
-        self.x1_f   = cp.zeros(self.n, dtype=cp.float32)
-        self.x2_f   = cp.zeros(self.n, dtype=cp.float32)
+        self.x1   = cp.zeros(self.n, dtype=cp.float64)
+        self.x2   = cp.zeros(self.n, dtype=cp.float64)
 
         # Set up scalars
         self.one_f  = np.array(1.0, np.float32)
@@ -93,7 +95,6 @@ class PCGSolver:
         self.cuda_dtype_f = _dtype.to_cuda_dtype(self.zero_f.dtype)
 
         # Pre-allocate cuSPARSE descriptors
-        self.handle = device.get_cusparse_handle()
         self.desc_A_f = cusparse.SpMatDescriptor.create(self.A_f)
         self.desc_p_f = cusparse.DnVecDescriptor.create(self.p_f)
         self.desc_q_f = cusparse.DnVecDescriptor.create(self.q_f)
@@ -116,103 +117,150 @@ class PCGSolver:
     def solve(self, rtol=1e-5, maxiter = None):
         """Solve with pre-allocated vectors - zero allocations in hot loop."""
  
-        
         cufunc.setupCGSolvers(self.diag, self.data, self.b, self.diag_f, self.data_f, self.b_f, self.indices, self.indptr)
 
-        # Initialize solution using parabolic extrapolation from previous solutions
-        self.x_f[:] = 2.0*self.x1_f - self.x2_f
+        self.desc_A = cusparse.SpMatDescriptor.create(self.A)
+        self.A._has_sorted_indices = False
+
+
+        self.A   = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.n, self.n))
+        self.A_f = csr_matrix((self.data_f, self.indices, self.indptr), shape=(self.n, self.n))
+
+        
+
+        # Recreate descriptors after matrix data is populated
+        # self.desc_A = cusparse.SpMatDescriptor.create(self.A)
+        # self.desc_A_f = cusparse.SpMatDescriptor.create(self.A_f)
+
+        resid = 1e100
 
         if maxiter is None:
             maxiter = self.n * 10
 
         old_iters = 0
 
-        atol_f = 1e-6 * cp.linalg.norm(self.b_f)
-        atol   = rtol * cp.linalg.norm(self.b)
-
+ 
         # Starts solving on single precision
         # ----------------------------------
 
         # Initial residual: r = b - A*x
         # r = A * x (in-place)
-        _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
-                       self.one_f.ctypes.data,  self.desc_A_f.desc, self.desc_x_f.desc,
-                       self.zero_f.ctypes.data, self.desc_q_f.desc, self.cuda_dtype_f, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
-                       self.buff_f.data.ptr)        
-        self.r_f[:] = self.b_f 
-        cublas.axpy(-1.0, self.q_f, self.r_f)  
+        self.r[:] = self.b - self.A @ self.x 
+        # self.x[:] = 0.0
+        # self.r_f[:] = self.r[:]
+        # _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+        #                self.one_f.ctypes.data,  self.desc_A_f.desc, self.desc_x_f.desc,
+        #                self.zero_f.ctypes.data, self.desc_q_f.desc, self.cuda_dtype_f, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
+        #                self.buff_f.data.ptr)        
+        # self.r_f[:] = self.b_f 
+        # cublas.axpy(-1.0, self.q_f, self.r_f)  
         # cp.subtract(b_f, self.q_f, out=self.r_f) # r = b - A*x
         
-        # CG iterations with pre-allocated vectors
-        rho = 0
-        for iters in range(maxiter):
-            # z = diag * r (in-place)
-            cp.multiply(self.r_f, self.diag_f, out=self.z_f)
-            
-            rho_new = cublas.dotc(self.r_f, self.z_f)
-            beta = rho_new / rho if rho != 0 else 0
-            
-            # p = z + beta * p (in-place)
-            self.p_f *= beta
-            self.p_f += self.z_f
-            
-            # q = A * p (in-place)
-            _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
-                           self.one_f.ctypes.data, self.desc_A_f.desc, self.desc_p_f.desc,
-                           self.zero_f.ctypes.data, self.desc_q_f.desc, self.cuda_dtype_f, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
-                           self.buff_f.data.ptr)
-        
-            
-            alpha = rho_new / cublas.dotc(self.p_f, self.q_f)
-            
-            # x += alpha * p, r -= alpha * q (in-place)
-            cublas.axpy( alpha, self.p_f, self.x_f)
-            cublas.axpy(-alpha, self.q_f, self.r_f)
-            
-            rho = rho_new
-            
-            # Check convergence
-            if iters % 10 == 0:  # Avoids checking every iteration because it's expensive
-                resid = cublas.nrm2(self.r_f)
-                if resid <= atol_f:
-                    old_iters = iters + 1
-                    break
+        # Tolerances are based on the first residual
+        abs_r = cp.linalg.norm(self.r)
+        atol_f = max(1e-3, rtol) * abs_r
+        atol   = float(rtol * abs_r)
 
-        if iters >= maxiter and not (resid <= atol_f):
-            raise ValueError("PCG solver did not converge")
+
+        # # Initialize solution using parabolic extrapolation from previous solutions
+        # # self.x_f[:] = 2.0*self.x_f - self.x1_f
+
+        # # Reset p_f to zero for CG algorithm
+        # self.p_f[:] = 0.0
+
+        # # CG iterations with pre-allocated vectors
+        # rho = 0.0
+        # for iters in range(maxiter):
+        #     # z = diag * r (in-place)
+        #     cp.multiply(self.r_f, self.diag_f, out=self.z_f)
+            
+        #     # Convert to double precision for scalar computations
+        #     rho_new = float(cublas.dotc(self.r_f, self.z_f))  # Convert to Python float (float64)
+        #     beta = rho_new / rho if rho != 0 else 0.0
+            
+        #     # p = z + beta * p (in-place)
+        #     self.p_f *= beta
+        #     self.p_f += self.z_f
+            
+        #     # q = A * p (in-place)
+        #     # _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+        #     #                self.one_f.ctypes.data, self.desc_A_f.desc, self.desc_p_f.desc,
+        #     #                self.zero_f.ctypes.data, self.desc_q_f.desc, self.cuda_dtype_f, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
+        #     #                self.buff_f.data.ptr)
+        #     self.q_f[:] = self.A_f @ self.p_f
+        
+
+        #     alpha = rho_new / float(cublas.dotc(self.p_f, self.q_f))
+            
+        #     # x += alpha * p, r -= alpha * q (in-place)
+        #     cublas.axpy( alpha, self.p_f, self.x_f)
+        #     cublas.axpy(-alpha, self.q_f, self.r_f)
+            
+        #     rho = rho_new
+            
+        #     # Check convergence
+        #     if iters % checkEveryNIterations == 0:  # Avoids checking every iteration because it's expensive
+        #         resid = cublas.nrm2(self.r_f)
+
+
+        #         r = self.b_f - self.A_f @ self.x_f
+        #         print(f"iters: {iters}, residual: {resid*resid}, residual2: {cp.linalg.norm(r)*cp.linalg.norm(r)}")
+        #         if resid <= atol_f:
+        #             old_iters = iters + 1
+        #             break
+
+        # if iters >= maxiter - 1 and not (resid <= atol_f):
+        #     raise ValueError("PCG solver did not converge")
 
         # Uses the solution from single precision as the initial guess for double precision
-        self.x[:] = self.x_f
+        # self.x[:] = self.x_f
+
+        # # store the previous solutions
+        # self.x2_f[:] = self.x1_f
+        # self.x1_f[:] = self.x_f
+        # self.x_f [:] = self.x
+
+        # cufunc.solverCopyResult(self.x)
+        # return iters
 
         # Initial residual: r = b - A*x
         # r = A * x (in-place)
-        _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
-                       self.one.ctypes.data,  self.desc_A.desc, self.desc_x.desc,
-                       self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
-                       self.buff.data.ptr)        
-        self.r[:] = self.b 
-        cublas.axpy(-1.0, self.q, self.r)  
+        # _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+        #                self.one.ctypes.data,  self.desc_A.desc, self.desc_x.desc,
+        #                self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
+        #                self.buff.data.ptr)        
+        # self.r[:] = self.b 
+        # cublas.axpy(-1.0, self.q, self.r)  
+        # self.r[:] = self.b 
         # cp.subtract(b, self.q, out=self.r) # r = b - A*x
-        
+
+
+        self.p[:] = 0.0
+        self.A.data[:] = 0.5*(self.A + self.A.T).data
+        aa = self.A - self.A.T
+        print(f"min = {cp.abs(aa.data).sum()}")
         # CG iterations with pre-allocated vectors
-        rho = 0
+        rho = 0.0
         for iters in range(old_iters, maxiter):
             # z = diag * r (in-place)
-            cp.multiply(self.r, self.diag, out=self.z)
+            cp.multiply(self.r, self.diag, out=self.z[:])
             
             rho_new = cublas.dotc(self.r, self.z)
-            beta = rho_new / rho if rho != 0 else 0
+            beta = rho_new / rho if rho != 0.0 else 0.0
             
             # p = z + beta * p (in-place)
-            self.p *= beta
-            self.p += self.z
+            self.p[:] *= beta
+            self.p[:] += self.z
+
             
             # q = A * p (in-place)
-            _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
-                           self.one.ctypes.data, self.desc_A.desc, self.desc_p.desc,
-                           self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
-                           self.buff.data.ptr)
-        
+            # _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+            #                self.one.ctypes.data, self.desc_A.desc, self.desc_p.desc,
+            #                self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
+            #                self.buff.data.ptr)
+            self.q[:] = self.A @ self.p
+            # qq = cp.linalg.norm(q - self.q)
+            # if (qq > 1e-10): print(f"qq = {qq}")
             
             alpha = rho_new / cublas.dotc(self.p, self.q)
             
@@ -223,16 +271,23 @@ class PCGSolver:
             rho = rho_new
             
             # Check convergence
-            if iters % 10 == 0:  # Avoids checking every iteration because it's expensive
+            if iters % checkEveryNIterations == 0:  # Avoids checking every iteration because it's expensive
                 # resid = cublas.nrm2(self.r)
                 resid = cublas.dotc(self.r, self.r) # nrm2 is more stable but more expensive. At this point there is no risk of overflow, so we use dotc.
+
+                # print(f"iters2: {iters}, residual: {resid}, residual2: {cp.linalg.norm(self.b - self.A @ self.x)**2}")
+
                 if resid <= atol*atol:
                     break
 
-        # store the previous solutions
-        self.x2_f[:] = self.x1_f
-        self.x1_f[:] = self.x_f
-        self.x_f [:] = self.x
+
+        if iters >= maxiter - 1 and not (resid <= atol*atol):
+            raise ValueError("PCG solver did not converge")
+
+        # Roll the previous solutions (for parabolic extrapolation)
+        # self.x2_f[:] = self.x1_f
+        # self.x1_f[:] = self.x_f
+        # self.x_f [:] = self.x
 
         cufunc.solverCopyResult(self.x)
         

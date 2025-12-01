@@ -71,9 +71,9 @@ constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 43; // Number of land boundary segments
-constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
+constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
+constexpr int nland = 2; // Number of land boundary segments
+constexpr int mnlnd = 990; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]

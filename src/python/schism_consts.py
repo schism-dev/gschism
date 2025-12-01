@@ -4,7 +4,7 @@ mntracers = 30  # Maximum number of tracers, used only for dimensioning btrack a
 
 blockSize = 256
 
-DEBUG = False
+DEBUG = True
 
 varInfoDict =  {'x':       {'is3D': False, 'type': 'Vector2'},
                 'z':       {'is3D': True,  'type': 'double'},

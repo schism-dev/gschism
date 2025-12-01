@@ -235,7 +235,6 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
             found_intersection = true;
          }
 
-         assert(false && "Parallel segments should not happen under the new code");
       
       }
       else {  // parallel segments
@@ -282,7 +281,6 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // And uses this velocity instead to continue the tracking.
 
    // computes the intersection point in cartesian coordinates
-   if (tt<0.0 || tt>1.0) printf("XXXXXXX tt = %.17g\n", tt);
    Point2 intersection = nextSide->p_t(tt);  // XXXX I don't think this is necessary. THE intersection is already computed in findNextIntersection.
 
    // Nudges the point to the barycenter of the element. 
@@ -384,7 +382,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    assert(found_intersection && "No intersection found at %d");
 
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
-   if (t<0.0 || t>1.0) printf("XXXXXXX t = %.17g\n", t);
+
    Point2 xtmp = nextSide->p_t(t); // moves the target point to the intersection point
 
    // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
@@ -404,8 +402,9 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
       // When this happens, the backtracking stops.
       dt = time_rm;
 
-      // In this cases, the next element is again the current element.
+      // In this case, the next element is again the current element.
       nextElem = this;
+
       // Returns "early", meaning that we stopped before we were able to reach the target point.
       // In this case, the caller (btrack) needs to take into account the remaining time.
       return true;    
@@ -823,8 +822,8 @@ __inline__ __device__ double  SideBoundary::nuth(int k) const {
 
 __inline__ __device__ double  Side::x(double t)   const { if (t<0.0 || t>1.0) printf("XX t = %.7g\n", t); assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
 __inline__ __device__ double  Side::y(double t)   const { if (t<0.0 || t>1.0) printf("YY t = %.7g\n", t); assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
-__inline__ __device__ double  Side::lon(void) const { return 0.5*(n1->lon + n2->lon); }
-__inline__ __device__ double  Side::lat(void) const { return 0.5*(n1->lat + n2->lat); }
+__inline__ __device__ double  Side::lon(void)     const { return 0.5*(n1->lon + n2->lon); }
+__inline__ __device__ double  Side::lat(void)     const { return 0.5*(n1->lat + n2->lat); }
 __inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
 __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition)(const Element*)) const {
    Vector2 grad = {0.0, 0.0};
@@ -845,14 +844,14 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
    }
 
    if (count > 0) {
-      grad = grad/count;
+      grad = grad*(1.0/count);
    }
    
    return grad;
 }
 
 __inline__ __device__ double  Side::grav3(void)   const { return 0.5*(n1->grav2  + n2->grav2); }
-__inline__ __device__ int     Side::iadv(void)    const { return min(n1->iadv,     n2->iadv); }   
+__inline__ __device__ int     Side::iadv(void)    const { return  min(n1->iadv,    n2->iadv); }   
 __inline__ __device__ double  Side::eta2(void)    const { return 0.5*(n1->eta2   + n2->eta2); }
 __inline__ __device__ double  Side::eta1(void)    const { return 0.5*(n1->eta1   + n2->eta1); }
 __inline__ __device__ double  Side::depth(void)   const { return 0.5*(n1->depth  + n2->depth); } 
@@ -908,22 +907,8 @@ const int oriJlev = jlev;
 
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards(toVector2(u_int));
+   assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
 
-
-   // If it starts at a boundary side, we must start with a velocity parallel to the side.
-   if (curElem == nullptr) {
-      // Make velocity parallel to the side
-      const Vector2 u2parallel = dot(toVector2(u_int), t())*t();
-      // u_int = {u2parallel.x, u2parallel.y, u_int.z};
-      curElem = otherElem(curElem);
-
-   }
-
-   if (curElem == nullptr || curElem->isDry) { 
-      // This means that the starting side is shared by dry elements (or one dry and one boundary side).
-      u_int = {0.0, 0.0, 0.0}; 
-      return true;
-   }
 
    // Nudges it towards the barycenter
    curElem->nudgeToBarycenter(toPoint2(x0)); // XXXX Necessary?
@@ -932,7 +917,7 @@ const int oriJlev = jlev;
    const int MAX_ITERATIONS = 1000; 
    Element* nextElem = nullptr;
    int iter = 0;
-assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
+   // assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
    Point3 xt = {-1.0e25, -1.0e25, -1.0e25};
    while(true) {
 
@@ -964,6 +949,9 @@ assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boun
 
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
    }
+
+   assert(!curElem->isDry && "Final element is dry");
+   assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element");
 
    // Interpolate the velocities at the final point
    curElem->interpolateVelocities(xt, u_int);
@@ -1129,10 +1117,12 @@ __device__ double Node::compZCoord(int k) const {
    // When ivcor=1, the z coordinate is computed using the localized sigma levels.
    // When ivcor=2, the z coordinate is computed using the zeta/sigma levels. Z levels are
    // used 
+
+   assert(k >= 0 && k < nvrt && "ZCOOR: invalid level\n");
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
 
-   if (isDry2()) return -depth;  // XXXX I used to return 0.0
+   if (isDry2()) return 0.0;  // XXXX I used to return 0.0
 
    assert(htot2() > h0 && "ZCOOR: invalid depth\n");
 
@@ -1143,16 +1133,17 @@ __device__ double Node::compZCoord(int k) const {
       const double theta_f = mesh->theta_f;
       const double sinh_theta_f = mesh->sinh_theta_f;
 
+
       // TODO: Here we are assuming that the bottom level, kbpl, was found in a previous step.
       // The FORTAN code computes it every time this function is called, but it should be done only 
       // once per time step/node.
       // CHECK: updateZCoordData
 
       //  To simplify comparisons, I define index versions of count variables.
-      if      (k == ivrt)           return eta2; 
-      else if (k == izlev)          return -hmod2;
-      else if (k == kb)             return -depth;
-      else if (k < izlev && k >= 0) return mesh->ztot[k];
+      if      (k == ivrt)     return eta2; 
+      else if (k == izlev)    return -hmod2;
+      else if (k == kb)       return -depth;
+      else if (k < izlev)     return mesh->ztot[k];
       else if (k > izlev) {
          const int ksig = k - izlev;
 
@@ -1160,14 +1151,14 @@ __device__ double Node::compZCoord(int k) const {
             return mesh->sigma[ksig] * (hmod2 + eta2) + eta2;
 
          } 
-         else if (eta2 <= - h_c - (depth - h_c) * theta_f/sinh_theta_f) {
+         else if (eta2 <= - h_c - (depth - h_c)*theta_f/sinh_theta_f) {
             printf("Please choose larger h_c: %f %f\n", eta2, h_c);
             assert(false && "ZCOOR: invalid h_c\n");
          } 
          else {
             return eta2*(1.0 + mesh->sigma[ksig]) + 
-                         h_c * mesh->sigma[ksig] + 
-                         (hmod2 - h_c) * mesh->cs[ksig];
+                   h_c * mesh->sigma[ksig] + 
+                   (hmod2 - h_c) * mesh->cs[ksig];
          }
       } else { 
          assert(false && "ZCOOR: invalid level or coordinate system\n");
@@ -1177,7 +1168,7 @@ __device__ double Node::compZCoord(int k) const {
    else if constexpr(ivcor == 1) {
       if (k == kb) return -depth;
       else if (k == nvrt-1) return eta2;
-      else if (k >= kb) return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
+      else if (k > kb) return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
    }
    
    assert(false && "ZCOOR: invalid level or coordinate system\n");
@@ -1221,6 +1212,7 @@ __device__ __forceinline__ void Node::computeBottomDragCd(void) {
       assert(false && "computeBottomDragVegetation:selected nchi not implemented.");
       
    } // if nchi
+
 }
 
 
@@ -1366,7 +1358,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
          node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
          
-         node.nodeBnd->segment->ifltype = 0 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
+         node.nodeBnd->segment->ifltype = 3 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
          node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
 
          // Initialize the length and area of the segment to nan to indicate that they are not yet computed
@@ -1730,7 +1722,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
       Element *elem = node1->elements[j];
 
-// if (elem->isDry) continue;  /// XXXX KKKKKK NOT IN THE ORIGINAL CODE
 
 
       // Compute the average gravity
@@ -1848,6 +1839,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // Integral of \nabla\phi_i \cdot \pmb{E}
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
 
+     
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
 
       // Additional terms 
@@ -2041,7 +2033,7 @@ extern "C" {
          indices[nzzIdx + k + 1] = j;
       }
 
-
+ 
    }
 
 
@@ -2074,6 +2066,7 @@ extern "C" {
       // swild98=0.d0 !init
 
 
+
       SIDE(side);
 
       const int kb = side->kb;
@@ -2084,7 +2077,7 @@ extern "C" {
 
   
 
-      // if (side->isDry) return;
+      if (side->isDry) return;
       
 // addDebugPlot(side->center, side->center, 0xFF001F, 'x');    
 
@@ -2139,7 +2132,9 @@ extern "C" {
             // No activity 
 
             side->btu[k] = side->u2[k];  // I don't think this is necessary because it has already been set to this value XXXX
-// addDebugPlot(side->center, side->center, 0x00000F, '+');            
+// addDebugPlot(side->center, side->center, 0x00000F, '+');     
+
+
             
          } else {  // do btrack
 
@@ -2187,11 +2182,12 @@ extern "C" {
 
             Vector3 u_int = {0.0, 0.0, 0.0};
 
-            side->btrack(k, dt, dtbk, u_int);
+            bool res =side->btrack(k, dt, dtbk, u_int);
 
             side->btu[k] = toVector2(u_int);
                
          } // if vmag (do backtrack)
+
 
       } // for k=kb,nvrt-1
 
@@ -2503,7 +2499,7 @@ extern "C" {
           node->grav2 = grav*(1.0 - beta_bar);
 
       } else {  // iloadtide=0,1
-        node->grav2=grav;
+          node->grav2 = grav;
 
       }
 
@@ -2855,15 +2851,18 @@ extern "C" {
 
                // Find the local index of the side in the element
                const int idxSide = elem->sideLocalIdx(side);
-               // Find the two sides that are connected to the side under consideration
-               const Side *side1 = elem->sides[elem->nxq(idxSide + 1)];
-               const Side *side2 = elem->sides[elem->nxq(idxSide - 1)];
 
-               sumU += side1->u2[k] + side2->u2[k] - 2*side->u2[k];   // XXXX Is this correct?
+               // Find the two sides that are connected to the side under consideration
+               const Side *s1 = elem->sides[elem->nxq(idxSide + 1)];
+               const Side *s2 = elem->sides[elem->nxq(idxSide - 1)];
+
+               sumU += s1->u2[k] + s2->u2[k] - 2*side->u2[k];   // XXXX Is this correct?
 
             }
 
             side->nuGradU[k] = hvis_coef0*sumU/dt;
+
+            assert(false && "computeHorizontalViscosity: Check if the above is correct");
    
          }
       }
@@ -2880,7 +2879,7 @@ extern "C" {
       NODE(node); // Each boundary node
       NodeBoundary *nodeBnd = node->nodeBnd;
       
-// nodeBnd->isEssentialBC = true;      
+ 
       // Check if this node has essential BC
       if (nodeBnd && nodeBnd->isEssentialBC) {
          // Verify BC value is valid
@@ -3511,7 +3510,7 @@ extern "C" {
       // Computes the gradient of the variables at the side center.
       auto isWet1 = [](const Element* e) { return !(e->isDry); };
       auto isWet2 = [](const Element* e) { return !(e->isDry2()); };
-      auto isWet3 = [](const Element* e) { return !(e->depth >= tip_dp); };
+      auto isWet3 = [](const Element* e) { return (e->depth >= tip_dp) && !(e->isDry); };
 
       side->gradEta1 = side->grad2(&Node::eta1, isWet1);
       side->gradEta2 = side->grad2(&Node::eta2, isWet2);
@@ -3544,11 +3543,11 @@ extern "C" {
       const double grav3 = side->grav3();
 
       if (side->is2D()) {
-         // Warning: Do not use htot2, which is updated.
+         // Remember: Do not use htot2, which is updated.
          const double htot = side->htot1();
          const double hhat = side->hhat;
 
-         // assert(hhat > 0.0 && htot > 0.0 && "solveMomentumEquations: Impossible");
+         assert(hhat > 0.0 && htot > 0.0 && "solveMomentumEquations: Impossible");
 
          Vector2 tau2 = {0.0, 0.0};
           
@@ -3566,7 +3565,6 @@ extern "C" {
          // hat_gam has units of m/s
 
          const Vector2 coriolisTerm = side->coriolis*rot90(side->u2[nvrt-1]);
-
          Vector2 hat_gam = side->btu[nvrt-1] + dt*(coriolisTerm - side->gradPr/rho0 + grav3*side->gradETP +
                            side->bcc[kb] + tau2/htot - grav3*((1 - thetai)*side->gradEta1 + thetai*side->gradEta2));
 
@@ -3708,7 +3706,6 @@ extern "C" {
 
 
          const Vector2 grad2D = grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0;
-
          for (int k = kb + 1; k < nvrt; k++) {
             const int kin = k - kb - 1;
 
@@ -3816,6 +3813,7 @@ extern "C" {
 
          } else if (side->is3D()) { // 3D no slip bottom   
             side->u2[kb] = {0.0, 0.0};
+
          }
           
       } // if imm
@@ -4001,7 +3999,7 @@ extern "C" {
       NODE(node);      
 
 
-      if (false) {//node->isDry) {  //XXXXXXXXXXXXXXXXX
+      if (false) { //node->isDry) { XXXXXXX
 
          assert((ivcor != 2) || (node->depth < mesh->h_s) && "Deep depth dry");
 
@@ -4103,9 +4101,8 @@ extern "C" {
 
       const bool wasDry = node->tmp.b;
 
-if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX KKKKKK NOT IN THE ORIGINAL CODE
+//  if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX KKKKKK NOT IN THE ORIGINAL CODE
 
-      // assert(node->isDry == node->isDry2() && "These two must be identical at this point"); XXXXX 
       if ((!node->isDry) && wasDry) {  // rewetted, remember that tmp.b is true if the node was previously dry.
 
          for (int k=0; k < nvrt; k++) {
@@ -4209,7 +4206,7 @@ if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX 
                   }
                }
                   
-               // assert(icount > 0 && "No wet sides around this side");  XXXXX RECOVER??? 
+               // assert(icount > 0 && "No wet sides around this side");    XXXX KKKKK
                if (icount > 0)  side->u2[k] = utmp/icount;
                else             side->u2[k] = {0.0, 0.0};
                   
@@ -4237,8 +4234,6 @@ if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX 
          // Update the side's dryness
          side->isDry = !isWet;
 
-// if (side->isDry) {for (int k = 0; k < nvrt; k++) {side->u2[k] = {0.0, 0.0};side->w2[k] = 0.0;}}  // XXXX KKKKKK Not in the original code
-
    }
 
 
@@ -4252,7 +4247,6 @@ if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX 
          node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
       }
    }
-
  
 
    __global__ void computeNodalVerticalVelocities1(void) {
@@ -4310,11 +4304,12 @@ if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX 
                const Side *s2 = elem->sides[(j + 1) % 3];
                const Side *s3 = elem->sides[(j + 2) % 3];
 
+               assert(s1->n1 != node && s1->n2 != node && "s1 must not be connected to node");
 
                atomicAdd(&(node->tmp.i), 1);
 
                for (int k = kb; k < nvrt; k++)  {
-                  Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k]; // u interpolated at node j.   XXXX Function for clamping velocities. const vector2 u
+                  Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k]; // u interpolated linearly at node j.   
                   u = clampVelocity(u);
                   atomicAdd(&(node->utmp[k].x), u.x);
                   atomicAdd(&(node->utmp[k].y), u.y);
@@ -4363,7 +4358,7 @@ if (node->isDry && !wasDry) node->eta2 = max(node->eta2, -node->depth); // XXXX 
       NODE_BND(nodebnd);
 
       if (nodebnd->segment != nullptr && nodebnd->segment->ifltype != 0) {
-         for (int k = 0; k < nvrt; k++) { nodebnd->node->u2[k] = {0.0, 0.0}; nodebnd->node->w2[k] = 0.0; }
+         for (int k = 0; k < nvrt; k++) { nodebnd->node->u2[k] = {0.0, 0.0}; nodebnd->node->w2[k] = 0.0; }  // XXXXXXX
       }
 
    }
