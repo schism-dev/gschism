@@ -17,7 +17,7 @@ from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 from line_profiler import LineProfiler
 
 
-VISTA = True
+# VISTA = True
 WINDOWS = not VISTA
 
 
