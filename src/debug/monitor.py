@@ -6,8 +6,9 @@ import numpy as np
 from matplotlib.collections import LineCollection
 import matplotlib
 from python.schism_consts import varInfoDict
-import paramiko
-import re
+if VISTA:
+    import paramiko
+    import re
 
 # matplotlib.use('TkAgg') 
 x, y, elem_x, elem_y,  sx, sy = None, None, None, None, None, None
