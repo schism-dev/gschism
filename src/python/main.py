@@ -726,6 +726,7 @@ if __name__ == "__main__":
     profiler = LineProfiler() 
     schism_step_wrapped = profiler(schism_step)
     profiler.add_function(solveWaveEquation)
+    profiler.add_function(solver.solve)
     
 
 

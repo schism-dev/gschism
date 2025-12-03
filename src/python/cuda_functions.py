@@ -122,7 +122,8 @@ def initializeCudaFunctions(sizes):
     global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
-    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test, setupCGSolvers, solverCopyResult, ul0ComputeDryElements, ul0ComputeDryNodes
+    global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
+    global setupCGSolvers, solverCopyResult, ul0ComputeDryElements, ul0ComputeDryNodes
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix, returnX, returnB
@@ -202,6 +203,7 @@ def initializeCudaFunctions(sizes):
 
         setupCGSolvers = mod.get_function('setupCGSolvers', sizes, kernel_type='nodes')
         solverCopyResult = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
+
     except Exception as e:
         print(f"Error getting CUDA functions: {e}")
         # Continue with error handling or exit

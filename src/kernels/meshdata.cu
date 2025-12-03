@@ -226,11 +226,11 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
          const double tt1 = delta1/delta; // delta is not zero, so we can divide
          const double tt2 = delta2/delta;
 
-         if (tt1 >= -small2 && tt2 >= -small2 && tt2 <= 1.0 + small2 && tt1 <= 1.0 + small2) {
+         if (tt1 >= -small && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
             closest_intersect_t = min(closest_intersect_t, tt1);
             side = side2;
             nextElement = side->otherElem(this);
-            t = clamp(tt2, 0.0, 1.0);
+            t =          clamp(tt2, small, 1.0-small);
             tIntersect = clamp(tt1, small, 1.0-small);
             found_intersection = true;
          }
@@ -351,6 +351,8 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // First thing is to check if the target point is inside the element. If it is, there is nothing
    // else to do. This means that the full step occurred within the current element.
    assert(!isDry && "Starting element is dry");
+   assert(containsPoint(toPoint2(x0)) && "Starting point is not inside the element");
+
    if (containsPoint(toPoint2(xt), true)) {  // The "true" means that, if the point is very close to the boundary, it is nudged to be definitely inside the element.
 
       assert(containsPoint(toPoint2(xt)) && "Target point is not inside the element");
@@ -365,11 +367,9 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    }
 
 
-   assert(containsPoint(toPoint2(x0)) && "XXXX Starting point is not inside the element");
+   
 
    assert(norm2(toVector2(xt - x0)) > 0.0 && "Zero length track"); 
-   
-   // const int MAX_ITERATIONS = 1000;
    
    double t;
    Side *nextSide = nullptr;
@@ -387,7 +387,6 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
    if (nextElem != nullptr && !nextElem->isDry) nextElem->nudgeToBarycenter(xtmp);
-   
 
    const double zint = (1 - tIntersect)*x0.z + tIntersect*xt.z;
    xt = {xtmp.x, xtmp.y, zint};
@@ -472,8 +471,7 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
-__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
-                                            bool fixNegshpCoord) const {
+__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegshpCoord) const {
 
    // Compute the shape coordinates of the point xt in the element.
    if (i34==3) {
@@ -503,19 +501,23 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4],
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       shpCoords[3] = 0.0;
 
-      const double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
-      const bool res = (tmpmin >= -small);     
+      double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
+      const bool res = (tmpmin >= -small);  
+      
+      // If the point is not inside the element, we do not need to fix the negative shape coordinates.
+      fixNegshpCoord = fixNegshpCoord && res;
 
+      
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
-      if ((tmpmin < 1.0e-4) && fixNegshpCoord) {
+      if ((tmpmin < 0) && fixNegshpCoord) {
 
          // NOTE: I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
          // keeping the sum of the shape coordinates equal to 1.
          // I have tested and compared the new algorithm with the old one, and they give
          // very similar results in terms of how close the "fixed" point is to the original point in cartesian coordinates.
          // The new algorithm should be faster since it is branchless.
-         const double a = - tmpmin + 1.0e-4;  // XXX it used to be 1.0e-4 in the comments of the original code
+         const double a = - tmpmin + 1.0e-8;  // XXX Is 1.0e-8 the best value?
          const double b = 1.0/(shpCoords[0] + shpCoords[1] + shpCoords[2] + 3.0*a);
          
          shpCoords[0] = (shpCoords[0] + a)*b;
@@ -820,8 +822,8 @@ __inline__ __device__ double  SideBoundary::nuth(int k) const {
 
 
 
-__inline__ __device__ double  Side::x(double t)   const { if (t<0.0 || t>1.0) printf("XX t = %.7g\n", t); assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
-__inline__ __device__ double  Side::y(double t)   const { if (t<0.0 || t>1.0) printf("YY t = %.7g\n", t); assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
+__inline__ __device__ double  Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
+__inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
 __inline__ __device__ double  Side::lon(void)     const { return 0.5*(n1->lon + n2->lon); }
 __inline__ __device__ double  Side::lat(void)     const { return 0.5*(n1->lat + n2->lat); }
 __inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
@@ -1998,8 +2000,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
 
 extern "C" {
-   __global__ void setupCGSolvers(double* diag_d, double* data_d, double* b_d, 
-                                  float*  diag_f, float*  data_f, float*  b_f, 
+   __global__ void setupCGSolvers(double* data_d, double* b_d, 
                                   int* indices, int* indptr) {
 
       NODE(node);
@@ -2014,13 +2015,8 @@ extern "C" {
       indices[nzzIdx] = idx;
 
       data_d[nzzIdx]    = node->coeffDiag;
-      data_f[nzzIdx]    = (float)node->coeffDiag;
-
-      diag_d[idx] = 1.0/node->coeffDiag;
-      diag_f[idx] = (float)(1.0/node->coeffDiag);
 
       b_d[idx] = node->qel;
-      b_f[idx] = (float)node->qel;
 
       for (int k = 0; k < node->numNodes; ++k) {
          const Node* nb = node->nodes[k];
@@ -2028,7 +2024,6 @@ extern "C" {
          const int j = nb->idx;
 
          data_d[nzzIdx + k + 1]    = node->coeffMatrix[k];
-         data_f[nzzIdx + k + 1]    = (float)node->coeffMatrix[k];
 
          indices[nzzIdx + k + 1] = j;
       }

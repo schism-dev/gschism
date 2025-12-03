@@ -545,6 +545,7 @@ struct Element {
 
    __inline__ __device__ void nudgeToBarycenter(Point2 &p) const {
       // Nudges the point (x,y) to the barycenter of the element
+
       p = (1.0 - btrack_nudge)*p + btrack_nudge*center;
    }
 
@@ -1569,9 +1570,10 @@ extern "C" {
    __global__ void computeHorGradientAtSide(void);  
 
 
-   __global__ void setupCGSolvers(double* diag_d, double* data_d, double* b_d, 
-                                  float*  diag_f, float*  data_f, float*  b_f, 
+   __global__ void setupCGSolvers(double* data_d, double* b_d, 
                                   int* indices, int* indptr);
+
+
 
 }
 
