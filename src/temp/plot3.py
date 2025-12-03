@@ -19,8 +19,9 @@ path = r"C:\Users\jmgonzalez\src\schism_test_suit\RUN02d"
 runs = [
     # {"name": "GPU", "dir": r"/sciclone/home/jgonzalezondin/scr10/RUN01b"},
     # {"name": "CPU", "dir": r"/sciclone/home/yinglong/DISKS/schism10/External_Exchanges/EX98/RUN01b/outputs"},
-    {"name": "GPU", "dir": join(path, 'gpuoutput')},
-    {"name": "CPU", "dir": join(path, 'outputs')},    
+    {"name": "CPU High Res", "dir": join(path, 'outputs_small_nudge')},
+    {"name": "GPU", "dir": join(path, 'gpuoutput')}, 
+    # {"name": "GPU", "dir": join(path, 'outputs_small_nudge')},    
     # add more as needed...
 ]
 
@@ -258,8 +259,13 @@ for page_num in range(num_pages):
         x_station, y_station = group[0][1], group[0][2]
         
         # Plot zCoordinates at level 0 from each run
-        lineStyles = {'GPU': '-', 'CPU':  '-'}
-        lineColors = {'GPU': 'blue', 'CPU': 'red'}  # Optional: add colors
+        lineStyles = {'GPU': '-', 'CPU':  '-', 'CPU High Res': '-'}
+        lineColors = {'GPU': 'blue', 'CPU': 'red', 'CPU High Res': 'red'}  # Optional: add colors
+        
+        # Store data for difference calculation
+        gpu_data = None
+        cpu_data = None
+        
         for run_name, run in run_data.items():
             time_data = run["time"]
             # Use zCoordinates at vertical level 0 instead of elevation
@@ -269,6 +275,18 @@ for page_num in range(num_pages):
             color = lineColors.get(run_name, None)  # None uses default color cycle
             ax.plot(time_data, z_coords_data, label=f"{run_name}", 
                    linestyle=linestyle, color=color, alpha=0.7, linewidth=0.5)
+            
+            # Store data for difference
+            if run_name == 'GPU':
+                gpu_data = z_coords_data
+            elif run_name == 'CPU':
+                cpu_data = z_coords_data
+        
+        # Plot difference scaled by 100 (convert to cm)
+        # if gpu_data is not None and cpu_data is not None:
+        #     diff_cm = 100.0 * (gpu_data - cpu_data)  # Difference in cm
+        #     ax.plot(time_data, diff_cm, label="Difference (100x, cm)", 
+        #            linestyle='--', color='green', alpha=0.6, linewidth=0.5)
         
         ax.set_xlabel("Time", fontsize=4)
         ax.set_ylabel("Elevation (m)", fontsize=4)
@@ -286,7 +304,7 @@ for page_num in range(num_pages):
     plt.tight_layout(rect=[0, 0, 1, 0.99])  # Leave room for suptitle
     
     # Save this page
-    filename = f"station_elevation_comparison_page_{page_num + 1:02d}.png"
+    filename = f"station_elevation_comparison_page_{page_num + 1:02d}_gpu_vs_cpu_high_res.png"
     filename = join(outdir, filename)
     plt.savefig(filename, dpi=dpi, bbox_inches='tight')
     print(f"Saved {filename}")

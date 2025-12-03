@@ -88,8 +88,8 @@ constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-compone
 constexpr double rho0 = 1000; // [kg/m^3]
 constexpr double dtb_min = 10; //XXXX
 constexpr double dtb_max = 30; //XXXX
-constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
-constexpr double btrack_nudge = 0.0003;   // Nudging factor for backtracking
+constexpr double velmin_btrack = 1e-05; // Minimum velocity for backtracking (m/s)
+constexpr double btrack_nudge = 0.0003013;   // Nudging factor for backtracking
 
 constexpr int nadv = 1; // Advection flag
 
@@ -840,6 +840,8 @@ struct Element {
       T values[4];
       getNodalValues(field, values);
 
+      assert(i34 == 4 || values[3] == T() && "mean: values[3] is not zero with i34 == 4");
+
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }
 
@@ -848,6 +850,8 @@ struct Element {
       T values[4];
       getSideValues(field, values);
       
+      assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
+
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }   
 
@@ -855,6 +859,8 @@ struct Element {
    __device__ T mean(int level, T (Node::* field)[nvrt]) const {
       T values[4];
       getNodalValues(level, field, values);
+
+      assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }
@@ -864,6 +870,8 @@ struct Element {
       T values[4];
       getSideValues(level, field, values);
       
+      // assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
+
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }   
 

@@ -101,7 +101,7 @@ class PCGSolver:
             self.A.data[:]   = 0.5*(self.A   + self.A.T  ).data  
             self.A_f.data[:] = 0.5*(self.A_f + self.A_f.T).data  
 
-        self.ilu = spilu(self.A)       
+        self.ilu = spilu(self.A.astype(cp.float32), drop_tol=1e-6)       
 
         
 

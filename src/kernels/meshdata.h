@@ -734,6 +734,8 @@ struct Element {
       T values[4];
       getNodalValues(field, values);
 
+      assert(i34 == 4 || values[3] == T() && "mean: values[3] is not zero with i34 == 4");
+
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }
 
@@ -742,6 +744,8 @@ struct Element {
       T values[4];
       getSideValues(field, values);
       
+      assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
+
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }   
 
@@ -749,6 +753,8 @@ struct Element {
    __device__ T mean(int level, T (Node::* field)[nvrt]) const {
       T values[4];
       getNodalValues(level, field, values);
+
+      assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }
@@ -758,6 +764,8 @@ struct Element {
       T values[4];
       getSideValues(level, field, values);
       
+      // assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
+
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }   
 
