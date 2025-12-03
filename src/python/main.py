@@ -8,6 +8,7 @@ import cupy as cp
 import debug.monitor as monitor
 import time
 from python.pcgsolver import PCGSolver
+from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 
 # pool = cp.cuda.MemoryPool()
@@ -16,9 +17,6 @@ from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 # For profiling
 from line_profiler import LineProfiler
 
-
-# VISTA = True
-WINDOWS = not VISTA
 
 
 # Enable verbose output

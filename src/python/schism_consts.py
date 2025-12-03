@@ -6,6 +6,7 @@ blockSize = 128
 
 DEBUG = True
 VISTA = True
+WINDOWS = not VISTA
 
 varInfoDict =  {'x':       {'is3D': False, 'type': 'Vector2'},
                 'z':       {'is3D': True,  'type': 'double'},
