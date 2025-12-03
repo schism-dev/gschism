@@ -6,7 +6,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 import matplotlib
 
-if VISTA:
+if not VISTA:
     import paramiko
     import re
 
