@@ -351,10 +351,10 @@ if __name__ == "__main__":
         
         plotLabels = True
         useRange = True
-        lrXmin = -75500
-        lrXmax = -74200
-        lrYmin = 3575200
-        lrYmax = 3576400
+        lrXmin = -86261 - 1000
+        lrXmax = -86261 + 1000
+        lrYmin = 3600645 - 1000
+        lrYmax = 3600645 + 1000
 
         # Plot all nodes
         plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.', alpha=0.3, markersize=.3)

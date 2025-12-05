@@ -885,7 +885,6 @@ struct Side {
 
    // Physical information
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
-   double  w2[nvrt];            // Vertical velocity at each vertical level
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 U;                   // Vertically averaged velocity vector  
 
@@ -954,6 +953,7 @@ struct Side {
    
    __inline__ __device__ double eta2(void) const;
    __inline__ __device__ double eta1(void) const;
+   __inline__ __device__ double w2(int k) const;
    __inline__ __device__ double depth(void) const;
    __inline__ __device__ double htot2(void) const { return eta2() + depth(); }
    __inline__ __device__ double htot1(void) const { return zc[nvrt - 1] - zc[kb]; }

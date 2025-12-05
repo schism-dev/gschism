@@ -20,8 +20,9 @@ runs = [
     # {"name": "GPU", "dir": r"/sciclone/home/jgonzalezondin/scr10/RUN01b"},
     # {"name": "CPU", "dir": r"/sciclone/home/yinglong/DISKS/schism10/External_Exchanges/EX98/RUN01b/outputs"},
     {"name": "CPU High Res", "dir": join(path, 'outputs_small_nudge')},
+    # {"name": "CPU", "dir": join(path, 'outputs')},
     {"name": "GPU", "dir": join(path, 'gpuoutput')}, 
-    # {"name": "GPU", "dir": join(path, 'outputs_small_nudge')},    
+    # {"name": "GPU High Res", "dir": join(path, 'gpuoutput_hires')},    
     # add more as needed...
 ]
 
@@ -259,34 +260,34 @@ for page_num in range(num_pages):
         x_station, y_station = group[0][1], group[0][2]
         
         # Plot zCoordinates at level 0 from each run
-        lineStyles = {'GPU': '-', 'CPU':  '-', 'CPU High Res': '-'}
-        lineColors = {'GPU': 'blue', 'CPU': 'red', 'CPU High Res': 'red'}  # Optional: add colors
+        lineStyles = ['-', '-']
+        lineColors = ['blue', 'red']
         
         # Store data for difference calculation
-        gpu_data = None
-        cpu_data = None
+        first_data = None
+        second_data = None
         
-        for run_name, run in run_data.items():
+        for run_idx, (run_name, run) in enumerate(run_data.items()):
             time_data = run["time"]
             # Use zCoordinates at vertical level 0 instead of elevation
             z_coords_data = run["z_coordinates"][:, node_idx, 1]  # Level 0 at this node over time
             
-            linestyle = lineStyles.get(run_name, '-')
-            color = lineColors.get(run_name, None)  # None uses default color cycle
+            linestyle = lineStyles[run_idx]
+            color = lineColors[run_idx]  # None uses default color cycle
             ax.plot(time_data, z_coords_data, label=f"{run_name}", 
                    linestyle=linestyle, color=color, alpha=0.7, linewidth=0.5)
             
-            # Store data for difference
-            if run_name == 'GPU':
-                gpu_data = z_coords_data
-            elif run_name == 'CPU':
-                cpu_data = z_coords_data
+            # Store data for difference (first and second runs)
+            if run_idx == 0:
+                first_data = z_coords_data
+            elif run_idx == 1:
+                second_data = z_coords_data
         
-        # Plot difference scaled by 100 (convert to cm)
-        # if gpu_data is not None and cpu_data is not None:
-        #     diff_cm = 100.0 * (gpu_data - cpu_data)  # Difference in cm
-        #     ax.plot(time_data, diff_cm, label="Difference (100x, cm)", 
-        #            linestyle='--', color='green', alpha=0.6, linewidth=0.5)
+ # Plot difference scaled by 10 (convert to dm)
+        if first_data is not None and second_data is not None:
+            diff_dm = 10.0 * (first_data - second_data)  # Difference in dm
+            ax.plot(time_data, diff_dm, label="Difference (10x, dm)", 
+                   linestyle='--', color='green', alpha=0.6, linewidth=0.5)
         
         ax.set_xlabel("Time", fontsize=4)
         ax.set_ylabel("Elevation (m)", fontsize=4)
@@ -304,7 +305,10 @@ for page_num in range(num_pages):
     plt.tight_layout(rect=[0, 0, 1, 0.99])  # Leave room for suptitle
     
     # Save this page
-    filename = f"station_elevation_comparison_page_{page_num + 1:02d}_gpu_vs_cpu_high_res.png"
+    run_names = [r['name'].lower().replace(' ', '_') for r in runs]
+    filename_suffix = '_vs_'.join(run_names)
+    filename = f"station_elevation_comparison_page_{page_num + 1:02d}_{filename_suffix}.png"
+    # filename = f"station_elevation_comparison_page_{page_num + 1:02d}_gpu_vs_cpu_high_res.png"
     filename = join(outdir, filename)
     plt.savefig(filename, dpi=dpi, bbox_inches='tight')
     print(f"Saved {filename}")

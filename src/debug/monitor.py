@@ -656,10 +656,17 @@ def plotMesh():
         # Plot all nodes
     # plt.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
 
+
     n1 = getSideVar("n1").astype(int).get()
     n2 = getSideVar("n2").astype(int).get()
-    n1 = (n1 - n1.min())//1584
-    n2 = (n2 - n2.min())//1584
+    n1 = getSideVar("n1").astype(int).get()
+    n2 = getSideVar("n2").astype(int).get()
+
+    nn = (n1 - n1.min()) 
+    tmp = np.sort(np.unique(nn))
+    tmplen = tmp[1] - tmp[0]    
+    n1 = nn//tmplen
+    n2 = (n2 - n2.min())//tmplen
     sx = getSideVar("x")
     sy = sx[1, :].get()
     sx = sx[0, :].get()
@@ -707,10 +714,10 @@ def plotMesh():
     # Adjust this value to make arrows longer or shorter while maintaining 1 m/s = constant length
     fixed_scale = 3.001  # Adjust this value as needed for your visualization
     
-    plt.quiver(sx, sy, fixed_scale*ux, fixed_scale*uy, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
-    plt.quiver(x, y, fixed_scale*nux, fixed_scale*nuy, angles='xy', scale_units='inches', scale=1, color='r', width=0.003)
+    # plt.quiver(sx, sy, fixed_scale*ux, fixed_scale*uy, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
+    # plt.quiver(x, y, fixed_scale*nux, fixed_scale*nuy, angles='xy', scale_units='inches', scale=1, color='r', width=0.003)
 
-    showLabels = True
+    showLabels = False
     
     # Plot labels if requested
     if showLabels:

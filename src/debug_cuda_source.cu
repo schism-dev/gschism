@@ -86,10 +86,10 @@ constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-compone
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
 constexpr double rho0 = 1000; // [kg/m^3]
-constexpr double dtb_min = 10; //XXXX
-constexpr double dtb_max = 30; //XXXX
+constexpr double dtb_min = 2; //XXXX
+constexpr double dtb_max = 4; //XXXX
 constexpr double velmin_btrack = 1e-05; // Minimum velocity for backtracking (m/s)
-constexpr double btrack_nudge = 0.0003013;   // Nudging factor for backtracking
+constexpr double btrack_nudge = 1e-05;   // Nudging factor for backtracking
 
 constexpr int nadv = 1; // Advection flag
 
@@ -991,7 +991,6 @@ struct Side {
 
    // Physical information
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
-   double  w2[nvrt];            // Vertical velocity at each vertical level
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 U;                   // Vertically averaged velocity vector  
 
@@ -1060,6 +1059,7 @@ struct Side {
    
    __inline__ __device__ double eta2(void) const;
    __inline__ __device__ double eta1(void) const;
+   __inline__ __device__ double w2(int k) const;
    __inline__ __device__ double depth(void) const;
    __inline__ __device__ double htot2(void) const { return eta2() + depth(); }
    __inline__ __device__ double htot1(void) const { return zc[nvrt - 1] - zc[kb]; }
@@ -1932,6 +1932,7 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
       }
       else {  // parallel segments
 
+         continue; 
          assert(false && "Parallel segments should not happen under the new code");
          // In this case, we check if they are colinear. if they are, we compute the intersection point as:
          // tt2 += length(x1 - x2) * sign(dot(x1 - x2, x3 - x4)) in {0, 1}
@@ -1993,14 +1994,12 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // The new velocity components are computed from the tangential velocity and the tangent vector.
    const double us = vtan*nextSide->t().x;
    const double vs = vtan*nextSide->t().y;
-   const double ws = 0.5*(nextSide->n1->w2[jlev] + nextSide->n2->w2[jlev]);  //  XXXX Why not use the side's velocity?
-
-   
-   // The end of this tracking segment is now the intersection point.
-   xt = {intersection.x, intersection.y, zint};
-
+   const double ws = nextSide->w2(jlev); 
 
    u_int = {us, vs, ws};
+
+   // The end of this tracking segment is now the intersection point.
+   xt = {intersection.x, intersection.y, zint};
    
 }
 
@@ -2074,12 +2073,13 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
    assert(found_intersection && "No intersection found at %d");
 
-   dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
-
    Point2 xtmp = nextSide->p_t(t); // moves the target point to the intersection point
 
    // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
-   if (nextElem != nullptr && !nextElem->isDry) nextElem->nudgeToBarycenter(xtmp);
+   if (nextElem != nullptr && !nextElem->isDry) {
+      assert(nextElem->containsPoint(xtmp) && "Intersection point is not inside the next element");
+      nextElem->nudgeToBarycenter(xtmp);
+   }
 
    const double zint = (1 - tIntersect)*x0.z + tIntersect*xt.z;
    xt = {xtmp.x, xtmp.y, zint};
@@ -2090,12 +2090,15 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
       trackGoesOutOfWater(nextSide, this, t, jlev, xt, zint, u_int);
 
-
+      assert(this->containsPoint(toPoint2(xt)) && "Target point is not inside the current element");
       // When this happens, the backtracking stops.
-      dt = time_rm;
+      // dt = time_rm;  LLLLLL KKKK XXXX
+      dt *= tIntersect;
 
       // In this case, the next element is again the current element.
       nextElem = this;
+
+// printf("trackGoesOutOfWater: side->idx = %d, dt = %.17f, time_rm = %.17f, u_int = (%.17f, %.17f, %.17f)\n", nextSide->idx, dt, time_rm, u_int.x, u_int.y, u_int.z);
 
       // Returns "early", meaning that we stopped before we were able to reach the target point.
       // In this case, the caller (btrack) needs to take into account the remaining time.
@@ -2106,6 +2109,9 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    assert(nextElem->containsPoint(toPoint2(xt)) && "Target point is not inside the next element");
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
+
+   
+   dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
 
    nextElem->interpolateVelocities(xt, u_int); 
 
@@ -2549,6 +2555,7 @@ __inline__ __device__ double  Side::grav3(void)   const { return 0.5*(n1->grav2 
 __inline__ __device__ int     Side::iadv(void)    const { return  min(n1->iadv,    n2->iadv); }   
 __inline__ __device__ double  Side::eta2(void)    const { return 0.5*(n1->eta2   + n2->eta2); }
 __inline__ __device__ double  Side::eta1(void)    const { return 0.5*(n1->eta1   + n2->eta1); }
+__inline__ __device__ double  Side::w2(int k)     const { return 0.5*(n1->w2[k]  + n2->w2[k]); }
 __inline__ __device__ double  Side::depth(void)   const { return 0.5*(n1->depth  + n2->depth); } 
 __inline__ __device__ double  Side::dfv(int k)    const { return 0.5*(n1->dfv[k] + n2->dfv[k]); }
 
@@ -2580,7 +2587,7 @@ __inline__ __device__ Vector2 Side::tau(void)    const { return 0.5*(n1->tau + n
  * @return: True if the backtracking was successful, false otherwise
  */
 __inline__ __device__ bool Side::btrack(
-      int jlev,
+      int jlev,             // Level at which the backtracking is performed XXX rename to k???
       double dt,            // Tracking time
       double dtbk,          // Tracking timestep
       Vector3 &u_int        // Velocities at the initial point
@@ -2588,17 +2595,13 @@ __inline__ __device__ bool Side::btrack(
 
    // Start from side center
    Point3 x0 = {center.x, center.y, zc[jlev]};
-double dt0 = dt; // XXXXX
-Point3 x00 = x0;
-const int oriJlev = jlev;
+
  
    double time_rm = dt; // Remaining time
 
 
-
-
    // Initial velocities
-   u_int = {u2[jlev].x, u2[jlev].y, 0.5*(n1->w2[jlev] + n2->w2[jlev])};
+   u_int = {u2[jlev].x, u2[jlev].y, w2(jlev)};
 
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards(toVector2(u_int));
@@ -2609,7 +2612,7 @@ const int oriJlev = jlev;
    curElem->nudgeToBarycenter(toPoint2(x0)); // XXXX Necessary?
 
 
-   const int MAX_ITERATIONS = 1000; 
+   const int MAX_ITERATIONS = 100; 
    Element* nextElem = nullptr;
    int iter = 0;
    // assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
@@ -2619,7 +2622,14 @@ const int oriJlev = jlev;
       // Calculate timestep
       double dtb = min(dtbk, time_rm);
 
+// if (idx == 18867) printf("iter = %d, side->idx = %d, curElem->idx = %d, dtb = %.17f, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, curElem->idx, dtb, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);      
+
       // Next point in the backtracking curve
+// if (iter >= MAX_ITERATIONS - 50)  {
+//    printf("iter = %d, side->idx = %d, dtb = %.17f, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, dtb, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);
+//    addDebugPlot(x0, x0 - dtb*u_int, 0xFF00FF, '+');        
+// }
+        
       xt = x0 - dtb*u_int;
 
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, time_rm, this);
@@ -2642,7 +2652,13 @@ const int oriJlev = jlev;
 
       iter++;
 
-      assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
+      if (iter >= MAX_ITERATIONS) break;
+
+      // if (iter >= MAX_ITERATIONS - 50) {
+      //    addDebugPlot(center, center, 0xFF001F, 'x');  
+      //    printf("iter = %d, side->idx = %d, elems[0]->idx = %d, elems[1]->idx = %d, curElem->idx = %d, time_rm = %.17f, dtb = %.17f, u_int = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f)\n", iter, idx, elems[0]->idx, elems[1]->idx, curElem->idx, time_rm, dtb, u_int.x, u_int.y, u_int.z, xt.x, xt.y, xt.z);      
+      //    }
+      // assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
    }
 
    assert(!curElem->isDry && "Final element is dry");
@@ -2650,6 +2666,8 @@ const int oriJlev = jlev;
 
    // Interpolate the velocities at the final point
    curElem->interpolateVelocities(xt, u_int);
+
+   // if (idx == 18867) printf("iter = %d, side->idx = %d, curElem->idx = %d, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, curElem->idx, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);         
 
 
 }
@@ -3747,12 +3765,8 @@ extern "C" {
    __global__ void backtrackAllNodes(void) {
 
       // max/min # of sub-divisions
-      const int ndelt_max = max(1.0, dt/dtb_min);
-      const int ndelt_min = max(1.0, dt/dtb_max); 
-
-      // Removed all references to swild98 XXX
-      // swild98=0.d0 !init
-
+      const int ndelt_max = (int)max(1.0, dt/dtb_min);
+      const int ndelt_min = (int)max(1.0, dt/dtb_max); 
 
 
       SIDE(side);
@@ -3826,13 +3840,16 @@ extern "C" {
             
          } else {  // do btrack
 
-            // Compute number of sub-divisions based on local gradients 
+            // Compute number of sub-divisions based on local gradients of the velocity field
+
             // XXX IS THIS NECESSARY?
+            // The gradient at a side is the average of the gradients at the elements sharing the side.
             double suma = 0.0;
             int icount = 0;
-            for (int ii=0; ii<2; ii++) {
+            for (int l=0; l<2; l++) {
+            // For each element sharing the side...
 
-               const Element *elem = side->elems[ii];
+               const Element *elem = side->elems[l];
                  
                if (elem == nullptr) continue;
 
@@ -3842,18 +3859,18 @@ extern "C" {
 
                double utmp[4];
                double vtmp[4];
-               for (int jj = 0; jj < elem->i34; jj++) {
+               for (int j = 0; j < elem->i34; j++) {
 
-                  const Node *node = elem->nodes[jj];
+                  const Node *node = elem->nodes[j];
 
                   if constexpr(ics==1) {
-                     utmp[jj] = node->u2[k].x;
-                     vtmp[jj] = node->u2[k].y;  
+                     utmp[j] = node->u2[k].x;
+                     vtmp[j] = node->u2[k].y;  
                   } else {
                      assert(false && "lat/lon not implemented in backtrackAllNodes");
-                     // call project_hvec(uu2(j,nd0),vv2(j,nd0),pframe(:,:,nd0),eframe(:,:,ie),utmp0(jj),vtmp0(jj))
+                     // call project_hvec(uu2(j,nd0),vv2(j,nd0),pframe(:,:,nd0),eframe(:,:,ie),utmp0(j),vtmp0(j))
                   }
-               } // for jj
+               } // for j
 
                const Vector2 grad_u = elem->grad2(utmp); 
                const Vector2 grad_v = elem->grad2(vtmp);
@@ -7428,10 +7445,10 @@ extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset,
          *offset = (int)((char*)&sides[0].isDry - (char*)sides);
          *sizeType = sizeof(int);
          break;            
-      case (int)VarCode::w:
-         *offset = (int)((char*)&sides[0].w2 - (char*)sides);
-         *sizeType = sizeof(double);
-         break;
+      // case (int)VarCode::w:
+      //    *offset = (int)((char*)&sides[0].w2 - (char*)sides);
+      //    *sizeType = sizeof(double);
+      //    break;
       case (int)VarCode::u:
          *offset = (int)((char*)&sides[0].u2[0].x - (char*)sides);
          *sizeType = sizeof(Vector2);
