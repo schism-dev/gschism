@@ -21,8 +21,8 @@ runs = [
     # {"name": "CPU", "dir": r"/sciclone/home/yinglong/DISKS/schism10/External_Exchanges/EX98/RUN01b/outputs"},
     {"name": "CPU High Res", "dir": join(path, 'outputs_small_nudge')},
     # {"name": "CPU", "dir": join(path, 'outputs')},
-    {"name": "GPU", "dir": join(path, 'gpuoutput')}, 
-    # {"name": "GPU High Res", "dir": join(path, 'gpuoutput_hires')},    
+    # {"name": "GPU", "dir": join(path, 'gpuoutput')}, 
+    {"name": "GPU High Res", "dir": join(path, 'gpuoutput_hires')},    
     # add more as needed...
 ]
 

@@ -981,82 +981,350 @@ __inline__ __device__ bool Side::btrack(
 
 
 
-// /**
-//    For a point (x1,y1) inside the element and a line segment (x1,y1)-(x2,y2), find the intersection point 
-//    (xIntersect,yIntersect) and the side (intersectingSide) that it intersects.
+/**
+ * This function performs backtracking from startPoint until a time -dt back in time from the current time. 
+ * The backtracking is performed using the velocities (u,v,w) at each intermediate point (except at open and land boundaries)
+ *
+ * We approximate the backtracking curve as a piecewise linear curve. Each segment has
+ * a maximum length of dtbk*vel_step, where vel_step is the module of the velocity at that step and dtbk is 
+ * the timestep (of the backtracking). The actual length of the segment can be shorter if the backtracking intersects a side or a node.
+ * 
+ * NOTE: Runge-Kutta is not implemented yet. XXX
+ * 
+ * @param startPoint: Starting point of the backtracking
+ * @param startVelocity: Velocities at the starting point
+ * @param klev: Level at which the backtracking is performed
+ * @param dt: Tracking time
+ * @param dtbk: Tracking timestep
+ * @param endPoint: End point of the backtracking
+ * @param endVelocity: Velocities at the end point
+ */
+ __inline__ __device__ void backtrackFromPoint(
+   const BTPoint &startPoint,
+   double dt,            // Tracking time
+   double dtbk,          // Tracking timestep
+   BTPoint &endPoint     // End point of the backtracking
+) {
 
-//    Inputs:
-//    @param x1, y1: point inside the element
-//    @param x2, y2: other end of the line segment
+   const int MAX_ITERATIONS = 1000; 
 
-//    Outputs:
-//    @param intersectingSide:  side that intersects the line segment
-//    @param nextElement: element that contains the intersection point
-//    @param xIntersect, yIntersect: intersection point  
+   double remainingTime = dt; 
 
-//    The equations for the two segments (the one we are considering and one of the sides of the element) are:
-//    P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 <= tt1 <= 1
-//    P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 <= tt2 <= 1
+   int iter = 0;
 
-//    If the two segments are parallel, they do not intersect. This is checked by the determinant of the two vectors
-//    (Delta) being zero.
+   endPoint = startPoint; // Initialize endPoint with the starting point for the case it leaves early
 
-//    The intersection point happens when:
-//    tt1(x2-x1) - tt2(x4-x3) = x3-x1
-//    tt1(y2-y1) - tt2(y4-y3) = y3-y1
-   
-//    Assumption: the 4 points (including those of the side segment) are different.
-//    The eqs. for the 2 lines are: X=X1+(X2-X1)*tt1 and X=X3+(X4-X3)*tt2.	
-//    Output: false: no intersection or colinear; true: exactly 1 intersection.	
-//    If true, (xIntersect,yIntersect) is the intersection.				
-//    Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
-// **/
-// __inline__ __device__ bool Element::findPathIntersection(double x1, double y1, double x2, double y2, 
-//                                                          Side& intersectingSide, Element& nextElement,
-//                                                          double& xIntersect, double& yIntersect) {
-//    for (int i = 0; i < i34; i++) {
-//       const double x3 = nodes[i]->x;
-//       const double y3 = nodes[i]->y;
-//       const double x4 = nodes[nxq(i+1)]->x;
-//       const double y4 = nodes[nxq(i+1)]->y;
+   Vector3 u = startPoint.interpolateVelocity();
+   BTPoint curPoint = startPoint;
 
-//       const Side& side = sides[i];
-
-//       xIntersect=-1.e25;
-//       yIntersect=-1.e25;
-
-//       const double delta  = (x2-x1)*(y3-y4)-(y2-y1)*(x3-x4);
-//       const double delta1 = (x3-x1)*(y3-y4)-(y3-y1)*(x3-x4);
-//       const double delta2 = (x2-x1)*(y3-y1)-(y2-y1)*(x3-x1); 
-
-//       if (delta != 0.0) {
-//          // Solves the two linear equations for tt1 and tt2
-//          const double tt1 = delta1/delta; // delta is not zero, so we can divide
-//          const double tt2 = delta2/delta;
-
-//          // It is enough to check tt2, since the range [0,1] is the same for both tt1 and tt2.
-//          // Similarly, we use tt2 to compute the intersection point.
-//          if (tt2 >= -small && tt2 <= 1.0 + small) {
-//             xIntersect = x3 + (x4 - x3)*tt2;
-//             yIntersect = y3 + (y4 - y3)*tt2;
-
-//             intersectingSide = side;
-//             nextElement = nghbElems[i];
-
-//             return true;
-//          }
+   while (remainingTime > 0.0) {
       
-//       }
-//       else {
-//          // The two segments are parallel
-//          return false;
-//       }
+      iter++;
 
-//    }
+      // If the velocity is too small, we stop the backtracking
+      if (length(toVector2(u)) <= velmin_btrack) break;
 
-//    return false;
+      assert(iter < MAX_ITERATIONS && "Max iterations reached in backtrackFromPoint");
 
-// }
+      // Finds the next point in the backtracking curve. updates curPoint, u and remainingTime.
+      findNextPoint(curPoint, u, dtbk, remainingTime);
+   } 
+
+   endPoint = curPoint;
+}
+
+
+/**
+ * Finds the next point in the backtracking curve from the current point.
+ * 
+ * @param curPoint      Current backtracking point (input/output - updated to next point)
+ * @param u             Current velocity (input/output - updated to velocity at next point)
+ * @param dtbk          Maximum timestep for this segment
+ * @param remainingTime Remaining backtracking time (input/output - reduced by actual time used)
+ * 
+ * The function handles three cases based on curPoint.type:
+ * - btElement: Point is in element interior
+ * - btSide: Point is on a side
+ * - btNode: Point is at a node
+ * 
+ * The actual timestep may be less than dtbk if an intersection is found.
+ */
+ __device__ void findNextPoint(BTPoint &curPoint, Vector3 &u, double dtbk, double &remainingTime) {
+   
+   // Get current 3D position and level (needed for velocity interpolation)
+   // Note: klev should be stored in BTPoint or passed separately - assuming it's available
+   int klev = curPoint.getLevel(); // Or however you store the level
+   Point3 x0_3d = curPoint.getPoint3D();
+   
+   // Calculate target point (backward in time)
+   double dtb = min(dtbk, remainingTime);
+   Point3 xt_3d = {x0_3d.x - dtb*u.x, x0_3d.y - dtb*u.y, x0_3d.z - dtb*u.z};
+   Point2 xt_2d = {xt_3d.x, xt_3d.y};
+   
+   double actual_dt = dtb;  // Will be reduced if intersection found before dtb
+   
+   switch (curPoint.type) {
+      
+      case BTPoint::BTPointType::btElement: {
+         // Starting from element interior
+         Element *elem = curPoint.elem;
+         
+         // Check if target point is still inside the element
+         if (elem->containsPoint(xt_2d)) {
+            // Still inside element - next point is in element interior
+            curPoint = {xt_2d, BTPoint::BTPointType::btElement, {.elem = elem}};
+            curPoint.setZ(xt_3d.z); // Store z coordinate
+            u = curPoint.interpolateVelocity();
+            // actual_dt remains dtb
+         } else {
+            // Target point is outside - find intersection with element boundary
+            Side *intersectSide = nullptr;
+            Element *nextElem = nullptr;
+            double t, tIntersect;
+            
+            bool found = elem->findNextIntersection(curPoint.x, xt_2d, intersectSide, nextElem, t, tIntersect);
+            assert(found && "No intersection found from element interior");
+            
+            // Reduce timestep to intersection time
+            actual_dt *= tIntersect;
+            Point2 intersect_pt = intersectSide->p_t(t);
+            double z_int = (1 - tIntersect)*x0_3d.z + tIntersect*xt_3d.z;
+            
+            // Check if intersection is exactly at a node (t == 0 or t == 1)
+            if (abs(t) < small) {
+               // Intersection at first node of side
+               curPoint = {{intersectSide->n1->p.x, intersectSide->n1->p.y}, 
+                          BTPoint::BTPointType::btNode, {.node = intersectSide->n1}};
+               curPoint.setZ(z_int);
+               u = curPoint.interpolateVelocity();
+            } else if (abs(t - 1.0) < small) {
+               // Intersection at second node of side
+               curPoint = {{intersectSide->n2->p.x, intersectSide->n2->p.y}, 
+                          BTPoint::BTPointType::btNode, {.node = intersectSide->n2}};
+               curPoint.setZ(z_int);
+               u = curPoint.interpolateVelocity();
+            } else {
+               // Intersection along the side (not at nodes)
+               curPoint = {intersect_pt, BTPoint::BTPointType::btSide, {.side = intersectSide}};
+               curPoint.setZ(z_int);
+               u = curPoint.interpolateVelocity();
+            }
+            
+            // Handle boundary/dry element - if we hit boundary, stop backtracking
+            if (intersectSide->isEdgeBoundary() || (nextElem == nullptr || nextElem->isDry)) {
+               remainingTime = 0.0; // Signal to stop
+            }
+         }
+         break;
+      }
+      
+      case BTPoint::BTPointType::btSide: {
+         // Starting from a side
+         Side *side = curPoint.side;
+         
+         // Get side tangent and normal vectors
+         Vector2 tangent = side->t();
+         Vector2 normal = side->n;
+         Vector2 u_2d = toVector2(u);
+         
+         // Decompose velocity into tangential and normal components
+         double v_tangential = dot(u_2d, tangent);
+         double v_normal = dot(u_2d, normal);
+         double vmag = length(u_2d);
+         
+         // Check if velocity is primarily along the side (tangential)
+         if (abs(v_normal) < small * vmag) {
+            // Velocity is along the side - next point will be along side or at a node
+            Point2 side_start = side->n1->p;
+            Point2 side_end = side->n2->p;
+            Vector2 side_vec = side_end - side_start;
+            double side_len = length(side_vec);
+            
+            // Project backtracking path onto the side
+            Vector2 to_target = xt_2d - side_start;
+            double t_side = dot(to_target, normalize(side_vec)) / side_len;
+            
+            // Clamp to [0, 1] range
+            t_side = max(0.0, min(1.0, t_side));
+            
+            // Check if we've reached a node
+            if (t_side < small) {
+               // Reached first node
+               curPoint = {{side->n1->p.x, side->n1->p.y}, 
+                          BTPoint::BTPointType::btNode, {.node = side->n1}};
+               curPoint.setZ(xt_3d.z);
+               u = curPoint.interpolateVelocity();
+               // Adjust actual_dt based on distance traveled along side
+               actual_dt = length(side_start - curPoint.x) / vmag;
+            } else if (t_side > 1.0 - small) {
+               // Reached second node
+               curPoint = {{side->n2->p.x, side->n2->p.y}, 
+                          BTPoint::BTPointType::btNode, {.node = side->n2}};
+               curPoint.setZ(xt_3d.z);
+               u = curPoint.interpolateVelocity();
+               // Adjust actual_dt based on distance traveled along side
+               actual_dt = length(side_end - curPoint.x) / vmag;
+            } else {
+               // Still along the side
+               Point2 side_pt = side->p_t(t_side);
+               curPoint = {side_pt, BTPoint::BTPointType::btSide, {.side = side}};
+               curPoint.setZ(xt_3d.z);
+               u = curPoint.interpolateVelocity();
+               // Adjust actual_dt based on distance traveled along side
+               actual_dt = length(side_pt - curPoint.x) / vmag;
+            }
+         } else {
+            // Velocity has normal component - find element in direction of velocity
+            Element *targetElem = nullptr;
+            
+            if (side->isBnd()) {
+               // Boundary side - handle specially
+               // For boundary sides, typically only one element exists
+               targetElem = (side->elems[0] != nullptr && !side->elems[0]->isDry) 
+                           ? side->elems[0] : side->elems[1];
+               // If it's a true boundary (land/open), we might need to stop
+               if (side->isEdgeBoundary()) {
+                  remainingTime = 0.0;
+                  break;
+               }
+            } else {
+               // Internal side - use findElementTowards to get element opposite to velocity
+               targetElem = side->findElementTowards(u_2d);
+            }
+            
+            assert(targetElem != nullptr && !targetElem->isDry && "Invalid target element from side");
+            
+            // Check if target point is inside the element
+            if (targetElem->containsPoint(xt_2d)) {
+               // Next point is in element interior
+               curPoint = {xt_2d, BTPoint::BTPointType::btElement, {.elem = targetElem}};
+               curPoint.setZ(xt_3d.z);
+               u = curPoint.interpolateVelocity();
+               // actual_dt remains dtb
+            } else {
+               // Target point is outside element - find intersection with element boundary
+               Side *intersectSide = nullptr;
+               Element *nextElem = nullptr;
+               double t, tIntersect;
+               
+               bool found = targetElem->findNextIntersection(curPoint.x, xt_2d, intersectSide, nextElem, t, tIntersect);
+               assert(found && "No intersection found from side");
+               
+               actual_dt *= tIntersect;
+               Point2 intersect_pt = intersectSide->p_t(t);
+               double z_int = (1 - tIntersect)*x0_3d.z + tIntersect*xt_3d.z;
+               
+               // Check if intersection is at a node
+               if (abs(t) < small) {
+                  curPoint = {{intersectSide->n1->p.x, intersectSide->n1->p.y}, 
+                             BTPoint::BTPointType::btNode, {.node = intersectSide->n1}};
+                  curPoint.setZ(z_int);
+                  u = curPoint.interpolateVelocity();
+               } else if (abs(t - 1.0) < small) {
+                  curPoint = {{intersectSide->n2->p.x, intersectSide->n2->p.y}, 
+                             BTPoint::BTPointType::btNode, {.node = intersectSide->n2}};
+                  curPoint.setZ(z_int);
+                  u = curPoint.interpolateVelocity();
+               } else {
+                  curPoint = {intersect_pt, BTPoint::BTPointType::btSide, {.side = intersectSide}};
+                  curPoint.setZ(z_int);
+                  u = curPoint.interpolateVelocity();
+               }
+               
+               // Handle boundary/dry element cases
+               if (intersectSide->isEdgeBoundary() || (nextElem == nullptr || nextElem->isDry)) {
+                  remainingTime = 0.0;
+               }
+            }
+         }
+         break;
+      }
+      
+      case BTPoint::BTPointType::btNode: {
+         // Starting from a node
+         Node *node = curPoint.node;
+         
+         // Search through all elements that share this node
+         Element *targetElem = nullptr;
+         bool found_in_element = false;
+         
+         // First, check if target point is inside any of the elements
+         for (int i = 0; i < node->numElements; i++) {
+            Element *elem = node->elements[i];
+            if (elem == nullptr || elem->isDry) continue;
+            
+            if (elem->containsPoint(xt_2d)) {
+               // Target point is in this element
+               targetElem = elem;
+               found_in_element = true;
+               curPoint = {xt_2d, BTPoint::BTPointType::btElement, {.elem = elem}};
+               curPoint.setZ(xt_3d.z);
+               u = curPoint.interpolateVelocity();
+               break;
+            }
+         }
+         
+         if (!found_in_element) {
+            // Target point is not in any element - find first intersection
+            // Search through all elements to find the closest intersection
+            Side *intersectSide = nullptr;
+            Element *nextElem = nullptr;
+            double t, tIntersect = 1e10;
+            
+            for (int i = 0; i < node->numElements; i++) {
+               Element *elem = node->elements[i];
+               if (elem == nullptr || elem->isDry) continue;
+               
+               Side *testSide = nullptr;
+               Element *testElem = nullptr;
+               double test_t, test_tIntersect;
+               
+               if (elem->findNextIntersection(curPoint.x, xt_2d, testSide, testElem, test_t, test_tIntersect)) {
+                  if (test_tIntersect < tIntersect) {
+                     tIntersect = test_tIntersect;
+                     t = test_t;
+                     intersectSide = testSide;
+                     nextElem = testElem;
+                  }
+               }
+            }
+            
+            assert(intersectSide != nullptr && "No intersection found from node");
+            
+            actual_dt *= tIntersect;
+            Point2 intersect_pt = intersectSide->p_t(t);
+            double z_int = (1 - tIntersect)*x0_3d.z + tIntersect*xt_3d.z;
+            
+            // Check if intersection is at a node
+            if (abs(t) < small) {
+               curPoint = {{intersectSide->n1->p.x, intersectSide->n1->p.y}, 
+                          BTPoint::BTPointType::btNode, {.node = intersectSide->n1}};
+               curPoint.setZ(z_int);
+               u = curPoint.interpolateVelocity();
+            } else if (abs(t - 1.0) < small) {
+               curPoint = {{intersectSide->n2->p.x, intersectSide->n2->p.y}, 
+                          BTPoint::BTPointType::btNode, {.node = intersectSide->n2}};
+               curPoint.setZ(z_int);
+               u = curPoint.interpolateVelocity();
+            } else {
+               curPoint = {intersect_pt, BTPoint::BTPointType::btSide, {.side = intersectSide}};
+               curPoint.setZ(z_int);
+               u = curPoint.interpolateVelocity();
+            }
+            
+            // Handle boundary/dry element cases
+            if (intersectSide->isEdgeBoundary() || (nextElem == nullptr || nextElem->isDry)) {
+               remainingTime = 0.0;
+            }
+         }
+         break;
+      }
+   }
+   
+   // Update remaining time
+   remainingTime -= actual_dt;
+}
+
 
 
 

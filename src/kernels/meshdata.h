@@ -1253,6 +1253,20 @@ struct Node {
 };
 
 
+// Types related to backtracking
+struct BTPoint {
+   Point2 x;
+   enum class BTPointType {btElement, btSide, btNode};
+   BTPointType type;
+   union {
+      Element *elem;
+      Side    *side;
+      Node    *node;
+   };
+};
+
+
+
 
 
 struct Mesh {
