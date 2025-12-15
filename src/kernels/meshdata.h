@@ -5,6 +5,9 @@ constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
 
+
+constexpr double geometricEpsilon = 1.0e-6; // Epsilon for geometric operations (back tracking)
+
 constexpr int internalSegment = -1;  // It is not really a segment, but we keep the name.
 constexpr int landSegment     = -2;
 
@@ -35,6 +38,9 @@ __device__ double *amig; // Frequency of the harmonic constituent
 __device__ double *face; // Nodal factor of the harmonic constituent
 __device__ double *ff;   // Earth equilibrium argument of the harmonic constituent
 
+
+
+using ShapeCoords = double[4]; // Shape coordinates of a point in an element
 
 // Union to store different types of variables in the same memory location. This is used to define temporary 
 // variables that can be used to store different types of variables.
@@ -128,6 +134,10 @@ __device__ __forceinline__ double norm2(const double2& v) {
 
 __device__ __forceinline__ double length(const double2& v) {
     return sqrt(v.x*v.x + v.y*v.y);
+}
+
+__device__ __forceinline__ double length(const double3& v) {
+   return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
 }
 
 __device__ __forceinline__ double2 normalize(const double2& v) {
@@ -391,7 +401,7 @@ struct Element {
 
    int kb;                    // Bottom index of the element
    double area;               // Area of the element
-   double ssign[4];           // Sign associated with each side of an element
+   double ssign[4];           // Sign associated with each side of an element. Allows to compute the outward normal vector to the side.
    double radius;             // Element equivalent radii
 
    Frame frame;
@@ -460,10 +470,32 @@ struct Element {
       return res;
    }
 
+   __inline__ __device__ int nodeLocalIdx(const Node *node) const {
+      // Find the local index of the node in the element (0,1,2,3)
+      int res = __ffs((nodes[0] == node) | 
+                     ((nodes[1] == node) << 1) | 
+                     ((nodes[2] == node) << 2) | 
+                     ((nodes[3] == node) << 3)) - 1;
+      
+      assert(res >= 0 && res < i34 && nodes[res] == node && "nodeLocalIdx: node not found in element");
+      return res;
+   }
 
+
+   __inline__ __device__ bool containsSide(const Side *side) const {
+      return sides[0] == side || sides[1] == side || sides[2] == side || (isQuad() && sides[3] == side);
+   }
+
+   __inline__ __device__ void getSidesContainingNode(const Node *node, int &idxSide1, int &idxSide2) const;
+
+
+   __inline__ __device__ bool containsSegment(const Node *node, const Point2 &xt) const;    
+    
+    
    __inline__ __device__ int findLevel(double z1, int k) const {
       // Starting at index k, find sequentially the level that contains z
 
+      assert(false && "findLevel: Not implemented"); // XXXXXXXXX
       // For testing purposes, forgets k and performs a full search.
       for (k = kb; k < nvrt - 1; k++) {
          if (z1 >= z[k] && z1 < z[k + 1]) return k;
@@ -488,6 +520,8 @@ struct Element {
          return 0;
       }
    }
+
+
 
    __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
@@ -549,9 +583,9 @@ struct Element {
       p = (1.0 - btrack_nudge)*p + btrack_nudge*center;
    }
 
-   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
+   __device__ void computeShapeCoords(Point2 &xt, ShapeCoords &shpCoords) const;
    
-   __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
+   __device__ void shapeCoordsToXY(ShapeCoords const &shpCoords, Vector2 &xt) const;
 
    __device__ double intPhiPhi(int i1, int i2) const;
 
@@ -595,32 +629,16 @@ struct Element {
       frame.update(ar1, ar2);        
     }
 
-   __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
+   __device__ void findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
 
-   __inline__ __device__ bool containsPoint(Vector2 xt) const { 
-      // Check if the point (xt,yt) is inside the element
-      double shpCoords[4];
 
-      bool res = computeShapeCoords(xt, shpCoords, false);
 
-      return res;
-   }
+   __forceinline__ __device__ bool containsPoint2(Point2 x) const;
 
-   __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords) const { 
-      // Check if the point (xt,yt) is inside the element.
-      // If fixCoords is true, and *the point is inside the element*, the point is nudged to be inside the element.
-      double shpCoords[4];
 
-      Vector2 tmp_xt = xt;
-      bool res = computeShapeCoords(tmp_xt, shpCoords, fixCoords);
 
-      if (fixCoords && res) xt = tmp_xt;
-
-      return res;
-   }
-
-   __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4]) const
+   __device__ double interpolate(const ShapeCoords &shapeCoords, const ShapeCoords &zAtNodes) const
    {
       // Interpolate the value at the point (xt,yt) using the shape coordinates and the values at the nodes
       // This function works for both triangular and quadrilateral elements, since shapeCoords[3] is always 0.0 for triangular elements
@@ -705,7 +723,7 @@ struct Element {
    }      
 
    template<typename T>
-   __device__ T interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const {
+   __device__ T interpolate(int level, const ShapeCoords shapeCoords, T (Node::*func)(int) const) const {
       T values[4];
       getNodalValues(level, func, values);
 
@@ -713,7 +731,7 @@ struct Element {
    }
 
    template<typename T>
-   __device__ T interpolate(const double shapeCoords[4], T Node::* field) const {
+   __device__ T interpolate(const ShapeCoords shapeCoords, T Node::* field) const {
       T values[4];
       getNodalValues(field, values);
       
@@ -722,7 +740,7 @@ struct Element {
 
 
    template<typename T>
-   __device__ T interpolate(int level, const double shapeCoords[4], T (Node::* field)[nvrt]) const {
+   __device__ T interpolate(int level, const ShapeCoords shapeCoords, T (Node::* field)[nvrt]) const {
       T values[4];
       getNodalValues(level, field, values);
 
@@ -788,13 +806,7 @@ struct Element {
       return true;
    }
 
-   __device__ void trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
-                                       Point3 &xt, double zint, Vector3 &u_int);
-    
-   __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
-                                                 Element *&nextElem, int &jlev, double &dt, double time_rm,
-                                                 const Side *origSide);
-
+ 
 };
 
 
@@ -868,7 +880,7 @@ struct Side {
    Element *elems[2];     // Elements that share this side XXX (why not e1,e2?)
 
    double len;            // Length of the side. Used to be called distj; but I think this name is less clear now.
-   Vector2 center;        // Location of side center. 
+   Point2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
 
    Frame frame;
@@ -925,6 +937,9 @@ struct Side {
    __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
    __inline__ __device__ double area(int k)     const { assert(k < nvrt - 1); return len*Dz(k + 1); }
 
+
+   __inline__ __device__ Vector3 interpolateCenterVelocityVertically(Point3 xt) const;
+
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
       assert(index >= 0 && index < 4); 
@@ -943,7 +958,20 @@ struct Side {
 
    __device__ Vector2 grad2(double Node::* field, bool (*condition)(const Element*)) const;
 
+   
+   __forceinline__ __device__ Vector2 t12(void) const { return {-n.y, n.x}; } // Unitary tangent vector from n1 to n2
+   __forceinline__ __device__ Vector2 t21(void) const { return {n.y, -n.x}; } // Unitary tangent vector from n2 to n1
    __forceinline__ __device__ Vector2 t(void) const { return {-n.y, n.x}; } // Tangent vector
+   __forceinline__ __device__ Vector2 t(const Node *node) const { if (node == n2) return t12(); else return t21(); } // Tangent vector towards node
+
+
+   __forceinline__ __device__ double relativeSignedDistanceToPoint(Vector2 x) const {
+      // Compute the relative (to the length) signed distance from the point to the side. It is positive if the point is to the side where n is pointing, negative otherwise.
+      return dot(x - center, n)/len;
+   }
+
+   __forceinline__ __device__ bool containsPoint(Vector2 x) const;
+
 
    __inline__ __device__ bool isBnd(void) const { return sideBnd != nullptr; } // True if the side is a boundary side
    __inline__ __device__ bool isInternal(void) const { return elems[1] != nullptr; } // Internal side
@@ -953,10 +981,10 @@ struct Side {
    
    __inline__ __device__ double eta2(void) const;
    __inline__ __device__ double eta1(void) const;
-   __inline__ __device__ double w2(int k) const;
    __inline__ __device__ double depth(void) const;
    __inline__ __device__ double htot2(void) const { return eta2() + depth(); }
    __inline__ __device__ double htot1(void) const { return zc[nvrt - 1] - zc[kb]; }
+   __inline__ __device__ double w2(int k) const;
 
    __inline__ __device__ double dfv(int k) const;
 
@@ -1027,7 +1055,7 @@ struct Side {
       return (n1 == node) ? n2 : n1;
    }
  
-   __inline__ __device__ bool btrack(int jlev, double dt, double dtbk, Vector3 &u_int) const;
+   __inline__ __device__ Vector2 btrack(int jlev, double dt, double dtbk) const;
 
 
 
@@ -1100,7 +1128,11 @@ struct Node {
    Element **elements; // Array of pointers to the elements that share this node
    int numElements;    // Number of elements that share this node
 
+   Side **sides;       // Array of pointers to the sides that are connected to this node.
    int numSides;       // Number of sides that are connected to this node
+
+
+   // XXXXXX I want to keep sides and nodes as separate arrays, for the time being. I have already implemented function nodes2(idx), that should become nodes() eventually.
 
    Point2 p;
    Vector2 u2[nvrt];
@@ -1194,7 +1226,9 @@ struct Node {
    }
 
 
-   __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }
+   __inline__ __device__ Node *nodes2(int index) const { index = index % numSides; const Side *side = sides[index]; return side->n1 == this ? side->n2 : side->n1; }
+
+   __inline__ __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }
 
    __device__ double sigmaTransitionDepth(void) const;
 
@@ -1255,15 +1289,24 @@ struct Node {
 
 // Types related to backtracking
 struct BTPoint {
-   Point2 x;
+   Point3 x;
+   // double pad1;
+   Vector3 u;  // Velocity interpolated at the current point. It is not necessarily the one used to compute the next point (because sliding along a side is allowed)
+   // double pad2;
+   double dt;
+   double  t; // Parametric value of the point on the side when type is btSide. This is not a time!!!
+
+   Element *elem;
+   Side    *side;
+   Node    *node;
+
    enum class BTPointType {btElement, btSide, btNode};
    BTPointType type;
-   union {
-      Element *elem;
-      Side    *side;
-      Node    *node;
-   };
+   // Constructor for creating a BTPoint
+   __device__ BTPoint(Point3 x_, BTPointType type_, Element *elem_ = nullptr, Side *side_ = nullptr, Node *node_ = nullptr, double t_ = 0.0, double dt_ = 0.0, Vector3 u_ = {0.0, 0.0, 0.0})
+      : x(x_), u(u_), dt(dt_), type(type_), elem(elem_), side(side_), node(node_), t(t_) {}
 };
+
 
 
 
@@ -1459,30 +1502,6 @@ struct Mesh {
    {
    }
 
-   __device__ void test(double x, double y, double z)
-   {
-      // XXXXX REMOVE THIS FUNCTION
-      printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
-      for (int i = 0; i < ne; i++) {
-         auto isInside = localElemData[i].containsPoint({x, y});
-
-         if (isInside) {
-            printf("Point %f %f %f is inside element %d\n", x, y, z, i);
-            Element *elem = &localElemData[i];
-            
-            Vector3 u_int;
-
-            // Choose the first side
-            Side *side = elem->sides[0];
-            int jlev = 5;  
-            // RECORDAR:
-            // - con y=0 no encuentra el triangulo
-            // - jlev = 5, z = 0.1...
-            side->btrack(5, 3000.0, 3.1, u_int);
-
-         }
-      }
-   } 
 
 }; // End of Mesh class
 
@@ -1498,10 +1517,17 @@ __device__ __inline__ double min3(double a, double b, double c) {
    return min(a, min(b, c));
 }
 
+__device__ __inline__ double max3(double a, double b, double c) {
+   return max(a, max(b, c));
+}
+
 __device__ __inline__ double min4(double a, double b, double c, double d) {
    return min(a, min(b, min(c, d)));
 }
 
+__device__ __inline__ double max4(double a, double b, double c, double d) {
+   return max(a, max(b, max(c, d)));
+}
 
 // Helper functions for computing the local node index at a given offset from another.
 __device__ __inline__ int nxq(int offset, int index, int size) {

@@ -199,7 +199,6 @@ def initializeCudaFunctions(sizes):
         getSideVarAddr                      = mod.get_function('getSideVarAddr',                      sizes, kernel_type='global')
         getNodeVarAddr                      = mod.get_function('getNodeVarAddr',                      sizes, kernel_type='global')
 
-        test = mod.get_function('test', sizes, kernel_type='global')
 
         setupCGSolvers = mod.get_function('setupCGSolvers', sizes, kernel_type='nodes')
         solverCopyResult = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
