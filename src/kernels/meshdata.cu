@@ -1014,7 +1014,8 @@ printf("HEREREREERE\n");
                // x0xt is contained in the same side x0 is on.
 printf("aaa0\n");               
                DEAL_WITH_POINT_MOVING_ALONG_SIDE(curPoint, xt);
-printf("aaa0, curPoint.type = %d, curPoint.elem = %p\n", curPoint.type, curPoint.elem);                     
+printf("aaa0, curPoint.type = %d, curPoint.elem = %p\n", curPoint.type, curPoint.elem);
+AAAA addDebugPlot(side->center, side->center, 0xFF001F, 'x')                     
             } else {
 
 printf("aaa1\n");
