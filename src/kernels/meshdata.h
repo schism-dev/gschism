@@ -6,7 +6,7 @@ constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
 
 
-constexpr double geometricEpsilon = 1.0e-6; // Epsilon for geometric operations (back tracking)
+constexpr double geometricEpsilon = 1.0e-12; // Epsilon for geometric operations (back tracking)
 
 constexpr int internalSegment = -1;  // It is not really a segment, but we keep the name.
 constexpr int landSegment     = -2;
@@ -927,11 +927,11 @@ struct Side {
    double chi;
    double chi2;
 
-   __inline__ __device__ double x(double t) const;
-   __inline__ __device__ double y(double t) const;
+   __inline__ __device__ double x(double t, bool checkInterval = true) const;
+   __inline__ __device__ double y(double t, bool checkInterval = true) const;
    __inline__ __device__ double lon(void) const;
    __inline__ __device__ double lat(void) const;
-   __inline__ __device__ Point2 p_t(double t) const;
+   __inline__ __device__ Point2 p_t(double t, bool checkInterval = true) const;
 
    __inline__ __device__ Point3 center3D(int k) const { assert(k < nvrt); return {center.x, center.y, zc[k]}; }
    __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
@@ -1034,13 +1034,8 @@ struct Side {
       // If the dot product is positive, returns the element whose vector to the centroid is in the same direction as the target point
       // Otherwise, returns the other element (otherwise includes dot_prod1 == 0)
 
-      const bool isDry0 = elems[0]==nullptr || elems[0]->isDry;
-      const bool isDry1 = elems[1]==nullptr || elems[1]->isDry;
-
-      assert(!isDry0 || !isDry1 && "Both elements are dry in findElementTowards");
-
-      if (dot_prod1*dot_prod2 > 0.0) return !isDry0 ? elems[0] : elems[1];
-      else                           return !isDry1 ? elems[1] : elems[0];
+      if (dot_prod1*dot_prod2 > 0.0) return elems[0] ;
+      else                           return elems[1];
 
  
    }
@@ -1302,7 +1297,11 @@ struct BTPoint {
 
    enum class BTPointType {btElement, btSide, btNode};
    BTPointType type;
-   // Constructor for creating a BTPoint
+
+   __device__ BTPoint() 
+      : x({0.0, 0.0, 0.0}), u({0.0, 0.0, 0.0}), dt(0.0), t(0.0), 
+        elem(nullptr), side(nullptr), node(nullptr), type(BTPointType::btElement) {}
+   
    __device__ BTPoint(Point3 x_, BTPointType type_, Element *elem_ = nullptr, Side *side_ = nullptr, Node *node_ = nullptr, double t_ = 0.0, double dt_ = 0.0, Vector3 u_ = {0.0, 0.0, 0.0})
       : x(x_), u(u_), dt(dt_), type(type_), elem(elem_), side(side_), node(node_), t(t_) {}
 };

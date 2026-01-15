@@ -7,6 +7,12 @@ __device__ double *debugPlot = nullptr;
 __device__ int *debugPlotIdx = nullptr;
 __device__ int debugPlotMutex = 0;
 
+__managed__ int lastBTPoint_elemIdx = -1;
+__managed__ int lastBTPoint_sideIdx = -1;
+__managed__ int lastBTPoint_nodeIdx = -1;
+__managed__ int lastBTPoint_type = 0;
+__managed__ int crashIter = -1;
+
 
 #define IDX(ptr) (ptr == nullptr ? -1 : (ptr->idx))
 
@@ -57,7 +63,7 @@ __device__ void unlock(int *mutex) {
 }
 
 __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF0000, char marker = 'o') {
-// return;   
+return;   
    // Lock the mutex
    lock(&debugPlotMutex);
  
@@ -300,14 +306,12 @@ __forceinline__ __device__ bool Element::containsPoint2(Point2 x) const {
    // And then checking if the minimum relative distance is larger than epsilon
    
    // ssign is positive if side->n is pointing outwards the element, negative if it is pointing inwards.
-   double maxDist = max3(ssign[0]*sides[0]->relativeSignedDistanceToPoint(x),
-                         ssign[1]*sides[1]->relativeSignedDistanceToPoint(x),
-                         ssign[2]*sides[2]->relativeSignedDistanceToPoint(x));
-   if (isQuad()) maxDist = max(maxDist, ssign[3]*sides[3]->relativeSignedDistanceToPoint(x));
+   double minDist = min3(-ssign[0]*sides[0]->relativeSignedDistanceToPoint(x),
+                         -ssign[1]*sides[1]->relativeSignedDistanceToPoint(x),
+                         -ssign[2]*sides[2]->relativeSignedDistanceToPoint(x));
+   if (isQuad()) minDist = min(minDist, -ssign[3]*sides[3]->relativeSignedDistanceToPoint(x));
 
-printf("containsPoint2: maxDist = %.17f, x = %f, %f, n1->p = %f, %f, n2->p = %f, %f, n3->p = %f, %f, n4->p = %f, %f\n", maxDist, x.x, x.y, nodes[0]->p.x, nodes[0]->p.y, nodes[1]->p.x, nodes[1]->p.y, nodes[2]->p.x, nodes[2]->p.y);   
-
-   return maxDist > geometricEpsilon;
+   return minDist > geometricEpsilon;
 }
 
 
@@ -682,11 +686,11 @@ __inline__ __device__ double  SideBoundary::nuth(int k) const {
 
 
 
-__inline__ __device__ double  Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
-__inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
+__inline__ __device__ double  Side::x(double t, bool checkInterval)   const { assert(!checkInterval || (t >= 0.0 && t <= 1.0)); return (1-t)*n1->p.x + t*n2->p.x; }
+__inline__ __device__ double  Side::y(double t, bool checkInterval)   const { assert(!checkInterval || (t >= 0.0 && t <= 1.0)); return (1-t)*n1->p.y + t*n2->p.y; }
 __inline__ __device__ double  Side::lon(void)     const { return 0.5*(n1->lon + n2->lon); }
 __inline__ __device__ double  Side::lat(void)     const { return 0.5*(n1->lat + n2->lat); }
-__inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
+__inline__ __device__ Point2  Side::p_t(double t, bool checkInterval) const { return {x(t, checkInterval), y(t, checkInterval)}; }
 __inline__ __device__ Vector3 Side::interpolateCenterVelocityVertically(Point3 xt) const { 
 // Interpolates the side's center vertically at point xt.
 // 
@@ -702,7 +706,6 @@ __inline__ __device__ Vector3 Side::interpolateCenterVelocityVertically(Point3 x
 // @return: Interpolated 3D velocity vector (u, v, w) at the side center at the vertical 
 //          level corresponding to xt.z
 
-   assert(containsPoint(toPoint2(xt)) && "Point is not on the side");
 
    // Convert 2d coordinates to parametric coordinates on the side
    const double t = dot(toPoint2(xt) - n1->p, t12())/len;
@@ -821,11 +824,13 @@ __inline__ __device__ Vector2 Side::btrack(
  
    double time_rm = dt; // Remaining time
 
-   BTPoint btPoint(x0, BTPoint::BTPointType::btSide, nullptr, const_cast<Side*>(this));
+   BTPoint btPoint(x0, BTPoint::BTPointType::btSide, this->elems[0], const_cast<Side*>(this));
 
    btPoint.u = {u2[jlev].x, u2[jlev].y, w2(jlev)};
 
+if (btPoint.elem->idx == 56898) printf("6222 btPoint.elem = %p, btPoint.type = %d\n", btPoint.elem, btPoint.type);
    backtrackFromPoint(btPoint, dt, dtbk);
+if (btPoint.elem->idx == 56898) printf("6333 btPoint.elem = %p, btPoint.type = %d\n", btPoint.elem, btPoint.type);
 
    return toVector2(btPoint.u);
 
@@ -837,6 +842,19 @@ __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt,
 __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_SIDE(BTPoint &curPoint, Point3 &xt);
 __device__ void DEAL_WITH_POINT_MOVING_ALONG_SIDE(BTPoint &curPoint, Point3 &xt);
 __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(BTPoint &curPoint, Point3 &xt);
+
+extern "C" {
+   __global__ void getLastBTPointState(
+      int *elemIdx_out, int *sideIdx_out, int *nodeIdx_out, 
+      int *type_out, int *iter_out) {
+         
+      *elemIdx_out = lastBTPoint_elemIdx;
+      *sideIdx_out = lastBTPoint_sideIdx;
+      *nodeIdx_out = lastBTPoint_nodeIdx;
+      *type_out = lastBTPoint_type;
+      *iter_out = crashIter;
+   }
+}
 
 
 /**
@@ -864,19 +882,25 @@ __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(BTPoint &curPoint, Point3 &x
    int iter = 0;
 
    while (remainingTime > 0.0) {
-printf("1 findNextPoint, bkPoint.type = %d\n", bkPoint.type);      
+    
       
       iter++;
 
       // If the velocity is too small, we stop the backtracking
       if (length(bkPoint.u) <= velmin_btrack) break;
-
+      
       assert(iter < MAX_ITERATIONS && "Max iterations reached in backtrackFromPoint");
+
+      lastBTPoint_elemIdx = (bkPoint.elem != nullptr) ? bkPoint.elem->idx : -1;
+      lastBTPoint_sideIdx = (bkPoint.side != nullptr) ? bkPoint.side->idx : -1;
+      lastBTPoint_nodeIdx = (bkPoint.node != nullptr) ? bkPoint.node->idx : -1;
+      lastBTPoint_type = (int)bkPoint.type;
+      crashIter = iter;
 
       // Finds the next point in the backtracking curve. updates bkPoint.
       findNextPoint(bkPoint, min(dtbk, remainingTime));
 
-printf("2 findNextPoint: remainingTime = %f, bkPoint.dt = %f, dtbk = %f\n", remainingTime, bkPoint.dt, dtbk);
+
 
       remainingTime -= bkPoint.dt;
    } 
@@ -901,20 +925,20 @@ printf("2 findNextPoint: remainingTime = %f, bkPoint.dt = %f, dtbk = %f\n", rema
  */
  __device__ void findNextPoint(BTPoint &curPoint, double dtbk) {
 
-   printf("3 findNextPoint curPoint.type = %d\n", curPoint.type);      
-
    const Point3 x0 = curPoint.x;
    const Vector3 u = curPoint.u;
    
    // Calculate target point (backward in time)
    Point3 xt = x0 - dtbk*u;
-
+// printf("ZZZZ curPoint.side = %p, curPoint.elem = %p, curPoint.node = %p, curPoint.type = %d\n", curPoint.side, curPoint.elem, curPoint.node, curPoint.type);
    // The current point always 'belongs' to an element (even if it is a node or a side, in which case it is one of the elements sharing the node or the side).
    // This element is used to interpolate the velocity.
    const Element *elem = curPoint.elem;  
+   assert(elem != nullptr && "elem is nullptr in findNextPoint");
 
    curPoint.dt = dtbk;
 
+// printf("BBBBB curPoint.type = %d, elem->idx = %d\n", curPoint.type, elem->idx);   
  
    // How the next point is found depends on the type of the current point:
    switch (curPoint.type) {
@@ -925,22 +949,24 @@ printf("2 findNextPoint: remainingTime = %f, bkPoint.dt = %f, dtbk = %f\n", rema
          // When starting from the interior of an element, the next point is either in the interior of the same element, or it will intersect a side or a node.
 // printf("4 elem = %p\n", elem);      
 ShapeCoords shpCoord;   
-elem->computeShapeCoords(toVector2(xt), shpCoord);
-printf("4 findNextPoint: xt = %f, %f, shpCoord = %f, %f, %f, %f, elem->containsPoint2(toPoint2(xt)) = %d\n", xt.x, xt.y, shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3], elem->containsPoint2(toPoint2(xt)));
-         
+elem->computeShapeCoords(toVector2(xt), shpCoord); // XXXX
+
          // If the target point is still inside the 'skinny' element, the next point is in the element interior
          if (elem->containsPoint2(toPoint2(xt))) {
             // Still inside element -> next point is in element interior
             // In this case, the next point is in the interior of the same element.
-
             curPoint.x = xt;
             curPoint.dt = dtbk;
             // The rest of fields of curPoint do not change in this case (except for u, which is computed at the end)
+            addDebugPlot(x0, xt, 0xDF401F, '+');            
 
          } else {
             // Target point is outside -> An intersection with element boundary is *guaranteed*.
             // In this case, the next point is on a side or a node.
+printf("AAxxA3\n");            
             DEAL_WITH_POINT_INTERSECTING_SIDE(curPoint, xt, nullptr, nullptr);
+printf("AAxxA4  elem->idx = %d\n", curPoint.elem->idx);            
+            addDebugPlot(x0, xt, 0x1FF01F, 'o');            
  
          }
 
@@ -953,7 +979,7 @@ printf("4 findNextPoint: xt = %f, %f, shpCoord = %f, %f, %f, %f, elem->containsP
       case BTPoint::BTPointType::btSide: {  // Starting from a side...
       
   
-         // In this case there are three main possibilities:
+         // In this case there are four main possibilities:
          // - xt is in the interior of one of the elements sharing the side.
          // - x0xt intersects the sides of one of the elements sharing the side (not including the shared side).
          // - x0xt is collinear with the shared side.
@@ -969,8 +995,9 @@ printf("4 findNextPoint: xt = %f, %f, shpCoord = %f, %f, %f, %f, elem->containsP
          assert((e1 != nullptr && !e1->isDry) || (e2 != nullptr && !e2->isDry) && "Side has no wet elements");
 
          // e2 can be nullptr if the side is a boundary side.
-         const bool isInsideE1 = e1->containsPoint2(toPoint2(xt));
-         const bool isInsideE2 = (e2 != nullptr && !isInsideE1)?e2->containsPoint2(toPoint2(xt)):false;      
+         const bool isInsideE1 =  e1 != nullptr && !e1->isDry && e1->containsPoint2(toPoint2(xt));
+         const bool isInsideE2 = (e2 != nullptr && !e2->isDry && !isInsideE1) ? e2->containsPoint2(toPoint2(xt)) : false;
+              
          
 
          // Check if it is inside one of the elements
@@ -978,20 +1005,20 @@ printf("4 findNextPoint: xt = %f, %f, shpCoord = %f, %f, %f, %f, elem->containsP
             // If it is inside one of the elements, the next point is in the interior of an element.
             
             Element *nextElem = isInsideE1?e1:e2;
-printf("5 nextElem = %p, isInsideE1 = %d, isInsideE2 = %d\n", nextElem, isInsideE1, isInsideE2);
+
             assert(!(nextElem->isDry) && "Element is dry"); // XXXX 
             // The new current point will be the target point
             curPoint.x = xt;
             curPoint.type = BTPoint::BTPointType::btElement;
             curPoint.elem = nextElem;
+assert(nextElem!=nullptr && !nextElem->isDry && "EEEE3");
             curPoint.side = nullptr;
             curPoint.node = nullptr;
             curPoint.t = 0.0; 
             curPoint.dt = dtbk;
-            printf("5 \n");
-         } else {
 
-printf("HEREREREERE\n");
+         } else {  // Point xt is not inside one of the elements sharing the side...
+
             // The element is either along the current side or intersects the sides of one of the elements sharing the side.
 
             // Checks if x0xt is collinear with the side in a consistent way.
@@ -1012,25 +1039,30 @@ printf("HEREREREERE\n");
 
             if (isAlongSide) {
                // x0xt is contained in the same side x0 is on.
-printf("aaa0\n");               
                DEAL_WITH_POINT_MOVING_ALONG_SIDE(curPoint, xt);
-printf("aaa0, curPoint.type = %d, curPoint.elem = %p\n", curPoint.type, curPoint.elem);
-AAAA addDebugPlot(side->center, side->center, 0xFF001F, 'x')                     
+
+addDebugPlot(x0, curPoint.x, 0x1FF01F, '+');
             } else {
 
-printf("aaa1\n");
-               if (curPoint.elem == nullptr || curPoint.elem->isDry) {
+               // Gets the element that is in the direction opposite to the velocity vector (remember that we are backtracking)
+               Element *nextElem = side->findElementTowards(toVector2(u));
+             
+               
+
+               if (nextElem == nullptr || nextElem->isDry) {
                   // The segment goes out of water.
                   DEAL_WITH_POINT_MOVING_OUTSIDE_SIDE(curPoint, xt);
                   
                } else {
                   // x0xt intersects another side of the element.
-                  // Gets the element that is in the direction opposite to the velocity vector (remember that we are backtracking)
-                  curPoint.elem = side->findElementTowards(toVector2(u));
+                  
+                  curPoint.elem = nextElem;
+                  assert(curPoint.elem != nullptr && "curPoint.elem is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
 
                   // This is a situation we know how to handle. 
+                  printf("DDD2, nextElem = %p, nextElem->isDry = %d\n", nextElem, nextElem->isDry);                              
                   DEAL_WITH_POINT_INTERSECTING_SIDE(curPoint, xt, side, nullptr);
-
+                  printf("DDD3\n");
                }
 
             }
@@ -1039,13 +1071,15 @@ printf("aaa1\n");
 
       }
 
+addDebugPlot(x0, xt, 0x4FD01F, '+');        
+
       break;
       
       case BTPoint::BTPointType::btNode: {  // Starting from a node...
 
-printf("btNode\n");         
-         
          const Node *node = curPoint.node;
+
+         printf("btNode, node = %p\n", node);         
          
          // Check if the xt is inside one of the elements sharing the node
          for (int i = 0; i < node->numElements; i++) {
@@ -1058,8 +1092,9 @@ printf("btNode\n");
 
                
                if (e->isDry) {
+printf("AAA1, curPoint.elem = %p, e = %p, curPoint.elem->isDry = %d\n", curPoint.elem, e, curPoint.elem->isDry);                  
                   DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(curPoint, xt);
-                  break;
+                  return;
 
                }
 
@@ -1069,9 +1104,10 @@ printf("btNode\n");
                   curPoint.dt = dtbk;
                   curPoint.type = BTPoint::BTPointType::btElement;
                   curPoint.elem = e;
+assert(e !=nullptr && !e->isDry && "EEEE1");                  
                   curPoint.side = nullptr;
                   curPoint.node = nullptr;
-                  break;
+                  return;
 
                } else {
                   // xt must intersect one of the opposite sides of the element
@@ -1080,25 +1116,34 @@ printf("btNode\n");
                   const Side *side1 = e->sides[idxSide1];
                   const Side *side2 = e->sides[idxSide2];
                   curPoint.elem = e;
+assert(e !=nullptr && !e->isDry && "EEEE2");
+                  printf("DDD3a\n");                              
                   DEAL_WITH_POINT_INTERSECTING_SIDE(curPoint, xt, side1, side2);
-                  break;
+                  printf("DDD3b\n");                              
+                  return;
                }
                   
             } 
             
 
          } 
-
+printf("AAA2aaaa\n");         
+if (curPoint.node != nullptr) printf("AAA2 curPoint.node.idx = %d, node.p = %.17f, %.17f\n", curPoint.node->idx, curPoint.node->p.x, curPoint.node->p.y);                  
+else printf("AAA2 curPoint.node = nullptr\n");                  
          // computes the maximal contiguous block of wet elements containing curPoint.elem.
          DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(curPoint, xt);    
          
       }
 
    } // switch
-printf("6 curPoint.type = %d, curPoint.elem = %p\n", curPoint.type, curPoint.elem);
+// if (curPoint.elem == 0) curPoint.elem = curPoint.side->elems[0];
+// if (curPoint.side != nullptr && curPoint.side->idx == 5) printf("6 curPoint.type = %d, curPoint.elem = %p\n", curPoint.type, curPoint.elem);
+if (curPoint.elem->idx == 16191) printf("6 curPoint.elem = %p, type = %d, dtbk = %.17f, curPoint.elem = %p, curPoint.side = %p\n", curPoint.elem, curPoint.type, curPoint.dt, curPoint.elem, curPoint.side);
+if (curPoint.elem == nullptr) printf("XXXXXXXXXXXXX curPoint.side = %p\n", curPoint.side);
    // Interpolates the velocities at the next point
+   assert(curPoint.elem != nullptr && "curPoint.elem is nullptr");
    curPoint.elem->interpolateVelocities(curPoint.x, curPoint.u);
-printf("7 \n");   
+if (curPoint.elem->idx == 16191) printf("6222 curPoint.elem = %p, type = %d\n", curPoint.elem, curPoint.type);
 }
 
 __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt, const Side *excludeSide1, const Side *excludeSide2) {
@@ -1112,12 +1157,14 @@ __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt,
    const Point2 x2 = toPoint2(xt);
    const Element *elem = curPoint.elem;
 
-   assert( elem->containsPoint2(x1) && "Starting point is not inside the element");                                    
+   assert(elem != nullptr && "elem is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
+
+   // assert( elem->containsPoint2(x1) && "Starting point is not inside the element");                                    
    assert(!elem->containsPoint2(x2) && "Ending point is not outside the element");
 
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
-   double tt1, tt2, last_tt2;
+   double tt1, tt2, last_tt2 = 77777777.0;
    for (int i = 0; i < elem->i34; i++) {
 
       Side *side = elem->sides[i];
@@ -1140,18 +1187,15 @@ __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt,
          tt1 = delta1/delta; // delta is not zero, so we can divide
          tt2 = delta2/delta;
 
-         if (tt1 >= -geometricEpsilon  && tt1 <= 1.0 + geometricEpsilon) {
+         // Computes a distance to interval [0,1]
+         const double distTo01 = max3(0.0, -tt1, tt1 - 1.0);
 
-            assert(tt2 >= 0.0 && tt2 <= 1.0 + 3*geometricEpsilon && "tt2 is not in the range [0,1]"); // 3*geometricEpsilon is to ensure that intersection always exists.
-
-            if (closest_intersect_t > tt1) {
-               intersectSide = side;
-               closest_intersect_t = clamp(tt1, 0, 1.0);
-               nextElem = side->otherElem(elem);
-               found_intersection = true;
-               last_tt2 = tt2;
-            }
-
+         if (closest_intersect_t > distTo01) {
+            intersectSide = side;
+            closest_intersect_t = distTo01;
+            nextElem = side->otherElem(elem);
+            found_intersection = true;
+            last_tt2 = tt2;
          }
 
       }
@@ -1159,6 +1203,12 @@ __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt,
    } // for
 
    assert(found_intersection && "No intersection found");
+
+   if (nextElem == nullptr) printf("LLLL intersectSide->elems[0]->isDry = %d\n", intersectSide->elems[0]->isDry);
+   if (nextElem == nullptr && intersectSide->elems[1] != nullptr) printf("LLLL intersectSide->elems[1]->isDry = %d\n", intersectSide->elems[1]->isDry);
+   if (nextElem == nullptr) nextElem = intersectSide->elems[0];  // elems[0] is never nullptr. This is done in case the element is not set yet.
+   printf("LLLL nextElem = %p, intersectSide = %p\n", nextElem, intersectSide);
+   
 
    if (last_tt2 < geometricEpsilon) {
       curPoint.type = BTPoint::BTPointType::btNode;
@@ -1185,7 +1235,7 @@ __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt,
    curPoint.dt = curPoint.dt*closest_intersect_t;
    toPoint2(curPoint.x) = intersectSide->p_t(curPoint.t);
    curPoint.x.z = (1.0 - closest_intersect_t)*curPoint.x.z + closest_intersect_t*xt.z;
-
+printf("YYY t=%.17f\n", curPoint.t);
 
 }
  
@@ -1196,9 +1246,17 @@ __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_SIDE(BTPoint &curPoint, Point3 &x
    // Instead of the interpolated velocity, we use the tangent of the velocity *at the side center* as the velocity of the point. 
 
    const Side *side = curPoint.side;
+// // Debug: Check assertion conditions
+// const bool isBnd = side->isBnd();
+// Element *otherElem = side->otherElem(curPoint.elem);
+// const bool otherIsDry = (otherElem != nullptr) ? otherElem->isDry : false;
+// const bool curElemIsDry = (curPoint.elem != nullptr) ? curPoint.elem->isDry : true;
+  
+//   printf("DEAL_WITH_POINT_MOVING_OUTSIDE_SIDE: side->idx = %d, side->isBnd() = %d, curPoint.elem = %p, curPoint.elem->isDry = %d, otherElem = %p, otherElem->isDry = %d, assertion = %d\n",
+//          side->idx, isBnd, curPoint.elem, curElemIsDry, otherElem, otherIsDry, (isBnd || otherIsDry));
 
-   // We start with a point on the side and it is moving along it. First we check that it is a side in a boundary.
-   assert(side->isBnd() || side->otherElem(curPoint.elem)->isDry && "Side is not a boundary between wet and dry elements (or boundary side)");
+//    // We start with a point on the side and it is moving along it. First we check that it is a side in a boundary.
+//    assert(side->isBnd() || side->otherElem(curPoint.elem)->isDry && "Side is not a boundary between wet and dry elements (or boundary side)");
 
    const Vector2 tangent = side->t12();
 
@@ -1226,8 +1284,10 @@ __device__ void DEAL_WITH_POINT_MOVING_ALONG_SIDE(BTPoint &curPoint, Point3 &xt)
    const double t = dot(toPoint2(xt) - side->n1->p, tangent)/side->len;  // Parameterization of the location of the point on the side (0 at n1, 1 at n2)
 
    if (curPoint.elem == nullptr) curPoint.elem = side->elems[0];  // elems[0] is never nullptr. This is done in case the element is not set yet.
+assert(side->elems[0] != nullptr && "side->elems[0] is nullptr");
+// if (side->elems[0] != nullptr) printf("PPPP side->elems[0]->isDry = %d\n", side->elems[0]->isDry);
+// if (side->elems[1] != nullptr) printf("PPPP2 side->elems[1]->isDry = %d\n", side->elems[1]->isDry);
 
-printf(">>>> t = %f, x0 = %f, %f, %f, xt = %f, %f, %f\n", t, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);   
    if (t < geometricEpsilon) {
       // The point is at a node.
       curPoint.type = BTPoint::BTPointType::btNode;
@@ -1253,14 +1313,19 @@ printf(">>>> t = %f, x0 = %f, %f, %f, xt = %f, %f, %f\n", t, x0.x, x0.y, x0.z, x
       curPoint.t = t;
       
    }
-
+if (curPoint.t != t) printf("YYY2 curPoint.t=%.17f, t=%.17f\n", curPoint.t, t);
    toPoint2(curPoint.x) = side->p_t(curPoint.t);
+
+   // Computes the fraction between the lenth it should have traveled if the side was infinite and
+   // the actual length it has traveled.
+   const double lenOrig  = length(side->p_t(t, false) - toPoint2(x0));
    const double lenFinal = length(toPoint2(curPoint.x) - toPoint2(x0));
-   const double fractionOfLength = lenFinal/len;
-printf("fractionOfLength = %f\n", fractionOfLength);   
+   const double fractionOfLength = lenFinal/lenOrig;
+  
    curPoint.x.z = (1.0 - fractionOfLength)*x0.z + fractionOfLength*xt.z;   
-   curPoint.dt = curPoint.dt*fractionOfLength;
-   
+   curPoint.dt = curPoint.dt*fractionOfLength; 
+
+addDebugPlot(x0, curPoint.x, 0xFF010F, 'x');
 }
 
 __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(BTPoint &curPoint, Point3 &xt) {
@@ -1270,9 +1335,10 @@ __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(BTPoint &curPoint, Point3 &x
    const Node *node    = curPoint.node;
    const Point3 x0     = curPoint.x;
 
-   // computes the sides that delimit the contiguous block of wet elements containing e = curPoint.elem.
+   // computes the sides that delimit the contiguous block of wet elements containing elem
 
-   assert(elem != nullptr && !elem->isDry && "elem cannot be nullptr or dry");
+   assert(elem != nullptr && "elem is nullptr");
+   assert(!elem->isDry && "elem is dry");
    assert(node != nullptr && "node cannot be nullptr");
 
    const int numSides = node->numSides;
@@ -1337,6 +1403,7 @@ __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(BTPoint &curPoint, Point3 &x
          // Once xt and curPoint.u are updated to slide along s2, we can call the function to deal with the case where the point is moving along a side.
          DEAL_WITH_POINT_MOVING_ALONG_SIDE(curPoint, xt);
       }
+
 
       return;
    }
@@ -2479,7 +2546,7 @@ extern "C" {
 
             Vector3 u_int = {0.0, 0.0, 0.0};
 
-printf("backtrackAllNodes: side->idx = %d, k = %d, dt = %f, dtbk = %f\n", side->idx, k, dt, dtbk);
+            
             side->btu[k] = side->btrack(k, dt, dtbk);
 
                

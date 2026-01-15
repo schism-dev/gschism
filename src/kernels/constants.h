@@ -20,9 +20,9 @@ constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
 constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
-constexpr int ncor = 0;               // Option to include Coriolis force
+constexpr int ncor = 1;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 45*deg2rad; // Reference latitude for Coriolis force
+constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
 
 
 constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
@@ -39,11 +39,11 @@ constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometri
 constexpr double veg_lai = 1; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 0;            // Number of tidal potential components
-constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
+constexpr int ntip = 8;            // Number of tidal potential components
+constexpr double tip_dp = 50;   // cut-off depth for applying tidal potential
 
 // Boundary forcing frequencies
-constexpr int nbfr = 1;            // Number of boundary forcing frequencies
+constexpr int nbfr = 8;            // Number of boundary forcing frequencies
 
 // Boundary condition types
 constexpr int nettype = 0;      // Total number of type I elevation boundaries
@@ -71,33 +71,33 @@ constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 3; // Maximum number of nodes per open boundary segment
-constexpr int nland = 1; // Number of land boundary segments
-constexpr int mnlnd = 7; // Maximum number of nodes per land boundary segment
+constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
+constexpr int nland = 2; // Number of land boundary segments
+constexpr int mnlnd = 990; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
 
-constexpr double thetai = 0.6;
+constexpr double thetai = 1;
 
-constexpr double rmaxvel = 10; // Maximum velocity for the x-component
+constexpr double rmaxvel = 4; // Maximum velocity for the x-component
 constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
 constexpr double rho0 = 1000; // [kg/m^3]
-constexpr double dtb_min = 10; //XXXX
-constexpr double dtb_max = 30; //XXXX
-constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
-constexpr double btrack_nudge = 0.009013;   // Nudging factor for backtracking
+constexpr double dtb_min = 2; //XXXX
+constexpr double dtb_max = 4; //XXXX
+constexpr double velmin_btrack = 1e-05; // Minimum velocity for backtracking (m/s)
+constexpr double btrack_nudge = 1e-05;   // Nudging factor for backtracking
 
 constexpr int nadv = 1; // Advection flag
 
-constexpr double dfv0 = 0; 
+constexpr double dfv0 = 0.01; 
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 300;  // Time step  XXX 
+constexpr double dt = 120;  // Time step  XXX 
 
-constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
+constexpr double h0 = 0.0001;  // Minimum water depth for wetting and drying [m]
 
 enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35}; // Var codes for getElementVar, getNodeVar...

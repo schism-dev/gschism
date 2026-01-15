@@ -131,7 +131,7 @@ def initializeCudaFunctions(sizes):
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
     global getElementVar, getNodeVar, getSideVar, getSideBndVar
-    global getElementVarAddr, getSideVarAddr, getNodeVarAddr
+    global getElementVarAddr, getSideVarAddr, getNodeVarAddr, getLastBTPointState
 
     # Get kernel functions with better error handling
     try:
@@ -198,6 +198,7 @@ def initializeCudaFunctions(sizes):
         getElementVarAddr                   = mod.get_function('getElementVarAddr',                   sizes, kernel_type='global')
         getSideVarAddr                      = mod.get_function('getSideVarAddr',                      sizes, kernel_type='global')
         getNodeVarAddr                      = mod.get_function('getNodeVarAddr',                      sizes, kernel_type='global')
+        getLastBTPointState                 = mod.get_function('getLastBTPointState',                 sizes, kernel_type='global')
 
 
         setupCGSolvers = mod.get_function('setupCGSolvers', sizes, kernel_type='nodes')

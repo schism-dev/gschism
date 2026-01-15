@@ -181,11 +181,17 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     # Backtracking/upwind for momentum
     try:
-        monitor.debugPlotIdx[0] = 0        
-        cufunc.backtrackAllNodes()              # Lines 4161-5029
+        monitor.debugPlotIdx[0] = 0  
+        try:      
+            lastBTPoint_elemIdx_ptr = cufunc.mod.get_global('lastBTPoint_elemIdx')
+            cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        if it == 11:
-            monitor.plotMesh()        
+        except Exception as e:
+            
+            monitor.plotMesh()       
+
+        if it >= 1168:
+            monitor.plotMesh()   
 
         cp.cuda.Device().synchronize()
         # if it >= 69:
