@@ -102,7 +102,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     core = namelist.core
     opt  = namelist.opt
 
-    
+    cufunc.setCurrentIteration(it)
 
     # SAL option: scale gravity
     cufunc.scaleGravity(opt.loadtide_coef)
@@ -183,7 +183,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     try:
         monitor.debugPlotIdx[0] = 0  
         try:      
-            lastBTPoint_elemIdx_ptr = cufunc.mod.get_global('lastBTPoint_elemIdx')
+            monitor.plotMesh(aroundNode = 31238)
             cufunc.backtrackAllNodes()              # Lines 4161-5029
 
         except Exception as e:

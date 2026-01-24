@@ -23,6 +23,7 @@ returnMatrix = None
 returnX = None
 returnB = None
 scaleGravity = None
+setCurrentIteration = None
 computeTimeRamps = None
 computeBedDeformation = None
 computeTidalPotential = None
@@ -117,7 +118,7 @@ def initializeCudaKernelManager(_project_root):
 def initializeCudaFunctions(sizes):
     global mod
     global populateMesh, populateNodes, populateSides, populateElements, populateBoundaryNodes
-    global scaleGravity, computeTimeRamps
+    global scaleGravity, computeTimeRamps, setCurrentIteration
     global computeBedDeformation, computeTidalPotential
     global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
@@ -131,7 +132,7 @@ def initializeCudaFunctions(sizes):
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
     global getElementVar, getNodeVar, getSideVar, getSideBndVar
-    global getElementVarAddr, getSideVarAddr, getNodeVarAddr, getLastBTPointState
+    global getElementVarAddr, getSideVarAddr, getNodeVarAddr
 
     # Get kernel functions with better error handling
     try:
@@ -198,7 +199,7 @@ def initializeCudaFunctions(sizes):
         getElementVarAddr                   = mod.get_function('getElementVarAddr',                   sizes, kernel_type='global')
         getSideVarAddr                      = mod.get_function('getSideVarAddr',                      sizes, kernel_type='global')
         getNodeVarAddr                      = mod.get_function('getNodeVarAddr',                      sizes, kernel_type='global')
-        getLastBTPointState                 = mod.get_function('getLastBTPointState',                 sizes, kernel_type='global')
+        setCurrentIteration                 = mod.get_function('setCurrentIteration',                 sizes, kernel_type='global')
 
 
         setupCGSolvers = mod.get_function('setupCGSolvers', sizes, kernel_type='nodes')

@@ -3,16 +3,27 @@
 #include <cuda_runtime.h>
 
 
+// Add this macro definition near the top of the file (after includes, around line 10-15)
+#define DEBUG_INFO() \
+   do { } while(0)
+      // if (it >=115) { \
+      //    printf("DEBUG_INFO: Line=%d, type = %d, elem->idx = %d\n", __LINE__, (int)curPoint.type, curPoint.elem->idx); \
+      // } \
+   } while(0)
+
 __device__ double *debugPlot = nullptr;
 __device__ int *debugPlotIdx = nullptr;
 __device__ int debugPlotMutex = 0;
 
-__managed__ int lastBTPoint_elemIdx = -1;
-__managed__ int lastBTPoint_sideIdx = -1;
-__managed__ int lastBTPoint_nodeIdx = -1;
-__managed__ int lastBTPoint_type = 0;
-__managed__ int crashIter = -1;
+__managed__ int  it = -1;
 
+
+
+extern "C" {
+   __global__ void setCurrentIteration(int iteration) {
+      it = iteration;
+   }
+}
 
 #define IDX(ptr) (ptr == nullptr ? -1 : (ptr->idx))
 
@@ -839,22 +850,12 @@ if (btPoint.elem->idx == 56898) printf("6333 btPoint.elem = %p, btPoint.type = %
 
 __device__ void findNextPoint(BTPoint &curPoint, double dtbk);
 __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt, const Side *excludeSide1, const Side *excludeSide2); 
+__device__ void DEAL_WITH_POINT_INTERSECTING_SIDE2(BTPoint &curPoint, Point3 &xt, const Side *excludeSide1, const Side *excludeSide2); 
 __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_SIDE(BTPoint &curPoint, Point3 &xt);
 __device__ void DEAL_WITH_POINT_MOVING_ALONG_SIDE(BTPoint &curPoint, Point3 &xt);
 __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(BTPoint &curPoint, Point3 &xt);
 
-extern "C" {
-   __global__ void getLastBTPointState(
-      int *elemIdx_out, int *sideIdx_out, int *nodeIdx_out, 
-      int *type_out, int *iter_out) {
-         
-      *elemIdx_out = lastBTPoint_elemIdx;
-      *sideIdx_out = lastBTPoint_sideIdx;
-      *nodeIdx_out = lastBTPoint_nodeIdx;
-      *type_out = lastBTPoint_type;
-      *iter_out = crashIter;
-   }
-}
+
 
 
 /**
@@ -891,11 +892,6 @@ extern "C" {
       
       assert(iter < MAX_ITERATIONS && "Max iterations reached in backtrackFromPoint");
 
-      lastBTPoint_elemIdx = (bkPoint.elem != nullptr) ? bkPoint.elem->idx : -1;
-      lastBTPoint_sideIdx = (bkPoint.side != nullptr) ? bkPoint.side->idx : -1;
-      lastBTPoint_nodeIdx = (bkPoint.node != nullptr) ? bkPoint.node->idx : -1;
-      lastBTPoint_type = (int)bkPoint.type;
-      crashIter = iter;
 
       // Finds the next point in the backtracking curve. updates bkPoint.
       findNextPoint(bkPoint, min(dtbk, remainingTime));
@@ -927,6 +923,8 @@ extern "C" {
 
    const Point3 x0 = curPoint.x;
    const Vector3 u = curPoint.u;
+
+DEBUG_INFO();
    
    // Calculate target point (backward in time)
    Point3 xt = x0 - dtbk*u;
@@ -944,13 +942,13 @@ extern "C" {
    switch (curPoint.type) {
       
       case BTPoint::BTPointType::btElement: {  // Starting from element interior...
-         
+DEBUG_INFO();
 
          // When starting from the interior of an element, the next point is either in the interior of the same element, or it will intersect a side or a node.
 // printf("4 elem = %p\n", elem);      
 ShapeCoords shpCoord;   
 elem->computeShapeCoords(toVector2(xt), shpCoord); // XXXX
-
+DEBUG_INFO();
          // If the target point is still inside the 'skinny' element, the next point is in the element interior
          if (elem->containsPoint2(toPoint2(xt))) {
             // Still inside element -> next point is in element interior
@@ -963,13 +961,13 @@ elem->computeShapeCoords(toVector2(xt), shpCoord); // XXXX
          } else {
             // Target point is outside -> An intersection with element boundary is *guaranteed*.
             // In this case, the next point is on a side or a node.
-printf("AAxxA3\n");            
-            DEAL_WITH_POINT_INTERSECTING_SIDE(curPoint, xt, nullptr, nullptr);
-printf("AAxxA4  elem->idx = %d\n", curPoint.elem->idx);            
+// printf("AAxxA3\n");            
+            DEAL_WITH_POINT_INTERSECTING_SIDE2(curPoint, xt, nullptr, nullptr);
+// printf("AAxxA4  elem->idx = %d\n", curPoint.elem->idx);            
             addDebugPlot(x0, xt, 0x1FF01F, 'o');            
  
          }
-
+DEBUG_INFO();
 
       }
 
@@ -978,7 +976,7 @@ printf("AAxxA4  elem->idx = %d\n", curPoint.elem->idx);
 
       case BTPoint::BTPointType::btSide: {  // Starting from a side...
       
-  
+DEBUG_INFO();
          // In this case there are four main possibilities:
          // - xt is in the interior of one of the elements sharing the side.
          // - x0xt intersects the sides of one of the elements sharing the side (not including the shared side).
@@ -998,14 +996,14 @@ printf("AAxxA4  elem->idx = %d\n", curPoint.elem->idx);
          const bool isInsideE1 =  e1 != nullptr && !e1->isDry && e1->containsPoint2(toPoint2(xt));
          const bool isInsideE2 = (e2 != nullptr && !e2->isDry && !isInsideE1) ? e2->containsPoint2(toPoint2(xt)) : false;
               
-         
+DEBUG_INFO();   
 
          // Check if it is inside one of the elements
          if (isInsideE1 || isInsideE2) {
             // If it is inside one of the elements, the next point is in the interior of an element.
             
             Element *nextElem = isInsideE1?e1:e2;
-
+DEBUG_INFO();
             assert(!(nextElem->isDry) && "Element is dry"); // XXXX 
             // The new current point will be the target point
             curPoint.x = xt;
@@ -1016,9 +1014,10 @@ assert(nextElem!=nullptr && !nextElem->isDry && "EEEE3");
             curPoint.node = nullptr;
             curPoint.t = 0.0; 
             curPoint.dt = dtbk;
+DEBUG_INFO();            
 
          } else {  // Point xt is not inside one of the elements sharing the side...
-
+DEBUG_INFO(); 
             // The element is either along the current side or intersects the sides of one of the elements sharing the side.
 
             // Checks if x0xt is collinear with the side in a consistent way.
@@ -1026,17 +1025,20 @@ assert(nextElem!=nullptr && !nextElem->isDry && "EEEE3");
             const Vector2 v2 = toPoint2(xt) - toPoint2(x0);
             const double lenX0Xt = length(v2);
             bool isAlongSide = false;
-
+DEBUG_INFO();
             if (lenSide > lenX0Xt) { // if x0xt is shorter than the side...
+DEBUG_INFO();
                isAlongSide = side->containsPoint(toPoint2(xt));
             }
             else { // if x0xt is longer than the side...
+DEBUG_INFO();
                // Computes a smaller collinear segment that starts at x0 and has length lenSide. The end point of this segment must be on the side.
                const Point2 xtmp = toPoint2(x0) + v2*lenSide/lenX0Xt;
                isAlongSide = side->containsPoint(xtmp);
+DEBUG_INFO();
 
             }
-
+DEBUG_INFO(); 
             if (isAlongSide) {
                // x0xt is contained in the same side x0 is on.
                DEAL_WITH_POINT_MOVING_ALONG_SIDE(curPoint, xt);
@@ -1070,13 +1072,13 @@ addDebugPlot(x0, curPoint.x, 0x1FF01F, '+');
          }
 
       }
-
+DEBUG_INFO();
 addDebugPlot(x0, xt, 0x4FD01F, '+');        
-
+DEBUG_INFO();
       break;
       
       case BTPoint::BTPointType::btNode: {  // Starting from a node...
-
+DEBUG_INFO();
          const Node *node = curPoint.node;
 
          printf("btNode, node = %p\n", node);         
@@ -1132,10 +1134,11 @@ if (curPoint.node != nullptr) printf("AAA2 curPoint.node.idx = %d, node.p = %.17
 else printf("AAA2 curPoint.node = nullptr\n");                  
          // computes the maximal contiguous block of wet elements containing curPoint.elem.
          DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(curPoint, xt);    
-         
+DEBUG_INFO();         
       }
 
    } // switch
+DEBUG_INFO();
 // if (curPoint.elem == 0) curPoint.elem = curPoint.side->elems[0];
 // if (curPoint.side != nullptr && curPoint.side->idx == 5) printf("6 curPoint.type = %d, curPoint.elem = %p\n", curPoint.type, curPoint.elem);
 if (curPoint.elem->idx == 16191) printf("6 curPoint.elem = %p, type = %d, dtbk = %.17f, curPoint.elem = %p, curPoint.side = %p\n", curPoint.elem, curPoint.type, curPoint.dt, curPoint.elem, curPoint.side);
@@ -1144,11 +1147,13 @@ if (curPoint.elem == nullptr) printf("XXXXXXXXXXXXX curPoint.side = %p\n", curPo
    assert(curPoint.elem != nullptr && "curPoint.elem is nullptr");
    curPoint.elem->interpolateVelocities(curPoint.x, curPoint.u);
 if (curPoint.elem->idx == 16191) printf("6222 curPoint.elem = %p, type = %d\n", curPoint.elem, curPoint.type);
+DEBUG_INFO();
 }
 
 __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt, const Side *excludeSide1, const Side *excludeSide2) {
    // This function deals with the case where the segment x0xt intersects a side of the element that is not one of the two sides to exclude.
-
+// if (it>=115) printf("ZZZZZ1 curPoint.type = %d, curPoint.elem.idx = %d, curPoint.side = %p\n", curPoint.type, curPoint.elem->idx, curPoint.side);
+Element *oldelem = curPoint.elem;
    Side *intersectSide = nullptr;
    Element *nextElem = nullptr;
    double t, tIntersect;
@@ -1164,10 +1169,12 @@ __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt,
 
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
-   double tt1, tt2, last_tt2 = 77777777.0;
+   double tt1, tt2, last_tt2 = 77777777.0; // XXXXXX
    for (int i = 0; i < elem->i34; i++) {
 
       Side *side = elem->sides[i];
+
+assert(side != nullptr && "side is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
 
       if (excludeSide1 == side || excludeSide2 == side) continue;
 
@@ -1202,14 +1209,18 @@ __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt,
 
    } // for
 
-   assert(found_intersection && "No intersection found");
-
-   if (nextElem == nullptr) printf("LLLL intersectSide->elems[0]->isDry = %d\n", intersectSide->elems[0]->isDry);
-   if (nextElem == nullptr && intersectSide->elems[1] != nullptr) printf("LLLL intersectSide->elems[1]->isDry = %d\n", intersectSide->elems[1]->isDry);
-   if (nextElem == nullptr) nextElem = intersectSide->elems[0];  // elems[0] is never nullptr. This is done in case the element is not set yet.
-   printf("LLLL nextElem = %p, intersectSide = %p\n", nextElem, intersectSide);
+   assert(found_intersection && "No intersection found in DEAL_WITH_POINT_INTERSECTING_SIDE");
+   assert(intersectSide != nullptr && "intersectSide is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
    
 
+
+   // if (nextElem == nullptr) printf("LLLL intersectSide->elems[0]->isDry = %d\n", intersectSide->elems[0]->isDry);
+
+   // if (nextElem == nullptr && intersectSide->elems[1] != nullptr) printf("LLLL intersectSide->elems[1]->isDry = %d\n", intersectSide->elems[1]->isDry);
+   if (nextElem == nullptr) nextElem = intersectSide->elems[0];  // elems[0] is never nullptr. This is done in case the element is not set yet.
+   assert(nextElem != nullptr && "nextElem is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
+
+   
    if (last_tt2 < geometricEpsilon) {
       curPoint.type = BTPoint::BTPointType::btNode;
       curPoint.node = intersectSide->n1;
@@ -1235,8 +1246,121 @@ __device__ void DEAL_WITH_POINT_INTERSECTING_SIDE(BTPoint &curPoint, Point3 &xt,
    curPoint.dt = curPoint.dt*closest_intersect_t;
    toPoint2(curPoint.x) = intersectSide->p_t(curPoint.t);
    curPoint.x.z = (1.0 - closest_intersect_t)*curPoint.x.z + closest_intersect_t*xt.z;
-printf("YYY t=%.17f\n", curPoint.t);
+if (it>=115) printf("ZZZZZ2 curPoint.type = %d, oldelem.idx = %d, newelem.idx = %d, IDX(curPoint.side) = %d IDX(curPoint.side->n1) = %d IDX(curPoint.side->n2) = %d\n", curPoint.type, oldelem->idx, nextElem->idx, curPoint.side->idx, curPoint.side->n1->idx, curPoint.side->n2->idx);
 
+}
+
+
+
+__device__ void DEAL_WITH_POINT_INTERSECTING_SIDE2(BTPoint &curPoint, Point3 &xt, const Side *excludeSide1, const Side *excludeSide2) {
+   // This function deals with the case where the segment x0xt intersects a side of the element that is not one of the two sides to exclude.
+// if (it>=115) printf("ZZZZZ1 curPoint.type = %d, curPoint.elem.idx = %d, curPoint.side = %p\n", curPoint.type, curPoint.elem->idx, curPoint.side);
+Element *oldelem = curPoint.elem;
+   Side *intersectSide = nullptr;
+   Element *nextElem = nullptr;
+   double t, tIntersect;
+
+   const Point2 x1 = toPoint2(curPoint.x);
+   const Point2 x2 = toPoint2(xt);
+   const Element *elem = curPoint.elem;
+
+   assert(elem != nullptr && "elem is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
+
+   // assert( elem->containsPoint2(x1) && "Starting point is not inside the element");                                    
+   assert(!elem->containsPoint2(x2) && "Ending point is not outside the element");
+
+   double closest_intersect_t = 1e10;
+   bool found_intersection = false;
+   double tt1, tt2, last_tt2 = 77777777.0; // XXXXXX
+   for (int i = 0; i < elem->i34; i++) {
+
+      Side *side = elem->sides[i];
+
+assert(side != nullptr && "side is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
+
+      if (excludeSide1 == side || excludeSide2 == side) continue;
+
+      // (x3,y3)-(x4,y4) is the element side line
+      const Point2 x3 = side->n1->p;
+      const Point2 x4 = side->n2->p;
+
+      // delta is 0 if the two lines are parallel. In this case, they do not intersect.
+      const double delta = cross(x2 - x1, x3 - x4);
+
+      if (abs(delta) > 0) {
+
+         const double delta1 = cross(x3 - x1, x3 - x4);
+         const double delta2 = cross(x2 - x1, x3 - x1); 
+
+         // Solves the two linear equations for tt1 and tt2
+         tt1 = delta1/delta; // delta is not zero, so we can divide
+         tt2 = delta2/delta;
+
+         // Computes a distance to interval [0,1]
+         const double distTo01 = max3(0.0, -tt1, tt1 - 1.0);
+
+         if (closest_intersect_t > distTo01) {
+            intersectSide = side;
+            closest_intersect_t = distTo01;
+            nextElem = side->otherElem(elem);
+            found_intersection = true;
+            last_tt2 = tt2;
+         }
+
+      }
+
+   } // for
+
+   assert(found_intersection && "No intersection found in DEAL_WITH_POINT_INTERSECTING_SIDE");
+   assert(intersectSide != nullptr && "intersectSide is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
+   
+
+
+   // if (nextElem == nullptr) printf("LLLL intersectSide->elems[0]->isDry = %d\n", intersectSide->elems[0]->isDry);
+
+   // if (nextElem == nullptr && intersectSide->elems[1] != nullptr) printf("LLLL intersectSide->elems[1]->isDry = %d\n", intersectSide->elems[1]->isDry);
+   if (nextElem == nullptr) nextElem = intersectSide->elems[0];  // elems[0] is never nullptr. This is done in case the element is not set yet.
+   assert(nextElem != nullptr && "nextElem is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
+
+//  printf("YYYYY1 intersectSide = %p, n1 = %d, n2 = %d, last_tt2 = %.16f\n", intersectSide, intersectSide->n1->idx, intersectSide->n2->idx, last_tt2);
+// printf("TTTTTT last_tt2 = %.16f geometricEpsilon = %.16f  intersectSide = %p, sizeof(BTPointType) = %d\n", last_tt2, geometricEpsilon, intersectSide, sizeof(BTPoint::BTPointType));
+// printf("TTTTTT curPoint.type = %d, it = %d\n", curPoint.type, it);
+
+   if (last_tt2 < geometricEpsilon) {
+      curPoint.type = BTPoint::BTPointType::btNode;
+      curPoint.node = intersectSide->n1;
+      curPoint.side = intersectSide;
+      curPoint.t = 0.0; 
+
+   }
+   else if (last_tt2 > 1.0 - geometricEpsilon) {
+      curPoint.type = BTPoint::BTPointType::btNode;
+      curPoint.node = intersectSide->n2;
+      curPoint.side = intersectSide;
+      curPoint.t = 1.0; 
+      
+   }
+   else {
+return;
+
+unsigned long long type_addr = (unsigned long long)&curPoint.side;
+unsigned long long type_size = sizeof(BTPoint::BTPointType);
+unsigned long long align_mask = 15;
+unsigned long long type_offset = (type_addr & align_mask);
+// printf("TTTTTT type_addr = %llu, type_size = %llu, align_mask = %llu, type_offset = %llu\n", type_addr, type_size, align_mask, type_offset);
+curPoint.type= curPoint.type;
+      // curPoint.type = BTPoint::BTPointType::btSide;
+      curPoint.side = intersectSide;
+      curPoint.node = nullptr;
+      curPoint.t = last_tt2;
+   }
+
+   curPoint.elem = nextElem;
+   curPoint.dt = curPoint.dt*closest_intersect_t;
+   toPoint2(curPoint.x) = intersectSide->p_t(curPoint.t);
+   curPoint.x.z = (1.0 - closest_intersect_t)*curPoint.x.z + closest_intersect_t*xt.z;
+if (it>=115) printf("ZZZZZ2 curPoint.type = %d, oldelem.idx = %d, newelem.idx = %d, IDX(curPoint.side) = %d IDX(curPoint.side->n1) = %d IDX(curPoint.side->n2) = %d\n", curPoint.type, oldelem->idx, nextElem->idx, curPoint.side->idx, curPoint.side->n1->idx, curPoint.side->n2->idx);
+return;
 }
  
 __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_SIDE(BTPoint &curPoint, Point3 &xt) {
@@ -1346,10 +1470,17 @@ __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(BTPoint &curPoint, Point3 &x
    int idxStartWet = 0;      // First wet side index
    int idxEndWet = numSides; // Last wet side index
 
+printf("BBBBB numSides = %d\n", numSides);
+
+
+
    // Finds the first wet side index
    for (int i = 0; i < numSides; i++) {
       const int prevIdx = (i + numSides - 1) % numSides;
-
+if (it>=135) printf("BBBBB i = %d, prevIdx = %d, numSides = %d, node = %p\n", i, prevIdx, numSides, node);
+if (it>=135) printf("BBBBB node->idx = %d, node->sides = %p\n", node->idx, node->sides);
+if (it>=135) printf("BBBBB i = %d, node->sides[prevIdx] = %p, node->sides[i] = %p\n", node->sides[prevIdx], node->sides[i]);
+// if (it>=135 && node != nullptr) printf("BBBBB prevIdx = %d, i = %d, node->sides[prevIdx] = %p, node->sides[i] = %p\n", prevIdx, i, node->sides[prevIdx], node->sides[i]);
       if (node->sides[prevIdx]->isDry && !node->sides[i]->isDry) idxStartWet = i;
 
       if (elem->containsSide(node->sides[i])) break;
@@ -1804,6 +1935,11 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    // Counts the number of sides connected to each node
    side.n1->numSides++;
    side.n2->numSides++;
+
+   // Adds the side to the list of sides connected to each node
+   side.n1->sides[side.n1->numSides - 1] = &side;
+   side.n2->sides[side.n2->numSides - 1] = &side;
+
 
    // Normal, unitary vector to the side
    side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};

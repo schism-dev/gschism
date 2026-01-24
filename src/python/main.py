@@ -235,7 +235,7 @@ if __name__ == "__main__":
     
     numPartitions = 1
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
-        nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
+        nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes, nodeNeighSides = \
             module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions, namelist.opt.ncor)
     
     sizeMatrix = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.

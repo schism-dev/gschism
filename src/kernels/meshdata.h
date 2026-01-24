@@ -91,15 +91,15 @@ __device__ __forceinline__ double clampVelocity(double x, double min, double max
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
 using Vector2 = double2; 
-using Vector3 = double3;
+using Vector3 = double4;
 using Point2  = double2;
-using Point3  = double3;
+using Point3  = double4;
 
 __device__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
     return make_double2(a.x + b.x, a.y + b.y);
 }
-using Vector2 = double2; 
-using Vector3 = double3;
+// using Vector2 = double2;  XXXX
+// using Vector3 = double4;
 __device__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
     a.x += b.x;
     a.y += b.y;
@@ -136,7 +136,7 @@ __device__ __forceinline__ double length(const double2& v) {
     return sqrt(v.x*v.x + v.y*v.y);
 }
 
-__device__ __forceinline__ double length(const double3& v) {
+__device__ __forceinline__ double length(const double4& v) {
    return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
 }
 
@@ -148,6 +148,7 @@ __device__ __forceinline__ double dot(const double2& v, const double2& w) {
     return v.x*w.x + v.y*w.y;
 }
 
+
 __device__ __forceinline__ double cross(const double2& v, const double2& w) {
     return v.x*w.y - v.y*w.x;
 }
@@ -156,64 +157,69 @@ __device__ __forceinline__ double2 rot90(const double2& a) {
     return make_double2(a.y, -a.x);
 }
 
-__device__ __forceinline__ double3 operator+(const double3& a, const double3& b) {
-    return make_double3(a.x + b.x, a.y + b.y, a.z + b.z);
+__device__ __forceinline__ double4 operator+(const double4& a, const double4& b) {
+    return {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
 }
 
-__device__ __forceinline__ double3 operator+=(double3& a, const double3& b) {
+__device__ __forceinline__ double4 operator+=(double4& a, const double4& b) {
     a.x += b.x;
     a.y += b.y;
     a.z += b.z;
+    a.w += b.w;
     return a;
 }
 
-__device__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
-    return make_double3(a.x - b.x, a.y - b.y, a.z - b.z);
+__device__ __forceinline__ double4 operator-(const double4& a, const double4& b) {
+    return {a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
 }
 
-__device__ __forceinline__ double3 operator*(const double3& v, double s) {
-    return make_double3(v.x * s, v.y * s, v.z * s);
+__device__ __forceinline__ double4 operator*(const double4& v, double s) {
+    return {v.x * s, v.y * s, v.z * s, v.w * s};
 }
 
-__device__ __forceinline__ double3 operator*(double s, const double3& v) {
+__device__ __forceinline__ double4 operator*(double s, const double4& v) {
     return v * s;
 }
 
-__device__ __forceinline__ double3 operator/(const double3& v, double s) {
-    return make_double3(v.x / s, v.y / s, v.z / s);
+__device__ __forceinline__ double4 operator/(const double4& v, double s) {
+    return {v.x / s, v.y / s, v.z / s, v.w / s};
 }
 
-__device__ __forceinline__ double dot(const double3& v, const double3& w) {
-    return v.x*w.x + v.y*w.y + v.z*w.z;
+__device__ __forceinline__ double dot(const double4& v, const double4& w) {
+    return v.x*w.x + v.y*w.y + v.z*w.z + v.w*w.w;
 }
 
-__device__ __forceinline__ double norm2(const double3& v) {
-    return v.x*v.x + v.y*v.y + v.z*v.z;
+__device__ __forceinline__ double norm2(const double4& v) {
+    return v.x*v.x + v.y*v.y + v.z*v.z + v.w*v.w;
 }
 
-__device__ __forceinline__ Vector2 toVector2(const double3& v) {
+__device__ __forceinline__ Vector2 toVector2(const double4& v) {
     return make_double2(v.x, v.y);
 }
 
-__device__ __forceinline__ double3 toVector3(const double2& v, double w) {
-    return make_double3(v.x, v.y, w);
+__device__ __forceinline__ Vector3 toVector3(const double2& v, double w) {
+    return {v.x, v.y, w, 0.0};
 }
 
-__device__ __forceinline__ Point2 toPoint2(const double3& p) {
+__device__ __forceinline__ Point2 toPoint2(const double4& p) {
     return make_double2(p.x, p.y);
 }
 
 __device__ __forceinline__ Point3 toPoint3(const double2& p, double z) {
-    return make_double3(p.x, p.y, z);
+    return {p.x, p.y, z, 0.0};
 }
 
-__device__ __forceinline__ Vector2& toVector2(double3& v) {
-    return *reinterpret_cast<Vector2*>(&v);
+__device__ __forceinline__ Vector2& toVector2(double4& v) {
+// check 16-byte alignment
+   assert((((unsigned long long)&v) & 0xFULL) == 0 && "double4 must be 16-byte aligned for Vector2 reinterpret_cast");
+   return *reinterpret_cast<Vector2*>(&v);
 }
 
 
-__device__ __forceinline__ Point2& toPoint2(double3& p) {
-    return *reinterpret_cast<Point2*>(&p);
+__device__ __forceinline__ Point2& toPoint2(double4& p) {
+
+   assert((((unsigned long long)&p) & 0xFULL) == 0 && "double4 must be 16-byte aligned for Vector2 reinterpret_cast");
+   return *reinterpret_cast<Point2*>(&p);
 }
 
 
@@ -447,7 +453,7 @@ struct Element {
    __inline__ __device__ bool is2D(void) const { return kb == nvrt - 2; }
    __inline__ __device__ bool is3D(void) const { return kb <  nvrt - 2; }
 
-   __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }
+   __inline__ __device__ int nxq(int index) const { assert(index + 16*i34 >= 0); return (index + 16*i34) % i34; }  // The 16* is to avoid negative numbers (within reason) and ensure fast product computation
    __inline__ __device__ int nodeLocalIdx(Node *node) const {
       // Find the local index of the node in the element (0,1,2,3)
       int res = __ffs((nodes[0] == node) | 

@@ -19,8 +19,9 @@ constexpr int landNode = -2;
 // ic3[4, nElements] -> For each element, global index to the other element that shares the side 
 // isdel[2, nSides] -> Global index to the elements that share the side
 // isidenodes[2, nSides] -> Global index to the nodes that form the side
-// nodeNeighElems[:, nNodes]: ArrayOfRows -> Global index to the nodes that are neighbors of each node
+// nodeNeighElems[:, nNodes]: ArrayOfRows -> Global index to the elems that are neighbors of each node
 // nodeNeighNodes[:, nNodes]: ArrayOfRows -> Global index to the nodes that are neighbors of each node
+// nodeNeighSides[:, nNodes]: ArrayOfRows -> Global index to the sides that are neighbors of each node
 
 
 
@@ -84,9 +85,9 @@ void buildListsOfElementNeighbors(const Array2D<int>& elnode, const std::vector<
 }
 
 
-void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const std::vector<int>& i34, 
+void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const Array2D<int>& elside, const Array2D<int>& isidenode, const std::vector<int>& i34, 
                               const std::vector<int>& isbnd, int nElements, int nNodes, 
-                              ArrayOfRows<int>& nodeNeighElems, ArrayOfRows<int>& nodeNeighNodes) {
+                              ArrayOfRows<int>& nodeNeighElems, ArrayOfRows<int>& nodeNeighNodes, ArrayOfRows<int>& nodeNeighSides) {
 
     // Build node-to-nodes mapping.
     // NOTE: A node is considered a neighborg of another if there is an element that contains both. 
@@ -114,6 +115,7 @@ void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const std::vector<int
 
     // Allocate space
     nodeNeighNodes.rebuild(nnp);
+    nodeNeighSides.rebuild(nnp);
 
     // Second pass: fill the neighbors array
     std::vector<size_t> currentCount(nNodes, 0);
@@ -144,6 +146,18 @@ void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const std::vector<int
             // Add nodes counter-clockwise around this node
             for (int k = 1; k < i34[ie] - 1; k++) {
                 nodeNeighNodes(i, currentCount[i]) = elnode(nxq(k, ii, i34[ie]), ie);
+
+                // The side connecting node i to this neighbor
+                const int localSideIdx = nxq(k + 1, ii, i34[ie]);
+                const int neighborNode = elnode(nxq(k, ii, i34[ie]), ie);
+                const int sideIdx = elside(localSideIdx, ie);
+                const int sideNode1 = isidenode(0, sideIdx);
+                const int sideNode2 = isidenode(1, sideIdx);
+                assert(((sideNode1 == i && sideNode2 == neighborNode) || 
+                    (sideNode1 == neighborNode && sideNode2 == i)) &&
+                    "Side does not connect node i to its neighbor");
+                nodeNeighSides(i, currentCount[i]) = sideIdx;
+
                 currentCount[i]++;
             }
             
@@ -162,6 +176,26 @@ void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const std::vector<int
                 } else {  // Boundary node
                     // For boundary nodes, add the last node
                     nodeNeighNodes(i, currentCount[i]) = lastNode;
+
+                    int lastSidePos = (ii + i34[ie] - 2) % i34[ie];
+                    assert(((sideNode1 == i && sideNode2 == neighborNode) || 
+                        (sideNode1 == neighborNode && sideNode2 == i)) &&
+                        "Side does not connect node i to its neighbor");
+
+                    // The side connecting node i to this neighbor
+                    // Side at position (ii + k - 1) % i34[ie] connects these nodes
+                    const int k = i34[ie]-1;
+                    const int localSideIdx = nxq(k + 2, ii, i34[ie]);
+                    const int neighborNode = elnode(nxq(k, ii, i34[ie]), ie);
+                    const int sideIdx = elside(localSideIdx, ie);
+                    const int sideNode1 = isidenode(0, sideIdx);
+                    const int sideNode2 = isidenode(1, sideIdx);
+                    assert((sideNode1 == i && sideNode2 == neighborNode) || 
+                        (sideNode1 == neighborNode && sideNode2 == i) &&
+                        "Side does not connect node i to its neighbor");
+
+                    nodeNeighSides(i, currentCount[i]) = sideIdx;
+
                     currentCount[i]++;
                 }
             }
@@ -754,7 +788,8 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>,    // iond
            py::array_t<int32_t>,    // ilnd
            py::tuple,               // nodeNeighElems
-           py::tuple                // nodeNeighNodes
+           py::tuple,               // nodeNeighNodes
+           py::tuple                // nodeNeighSides
            >
 readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPartitions, int ncor) {
 
@@ -974,7 +1009,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
 
 
     // Process the mesh
-    ArrayOfRows<int> nodeNeighElems, nodeNeighNodes;
+    ArrayOfRows<int> nodeNeighElems, nodeNeighNodes, nodeNeighSides;
 
 
     buildListsOfElementNeighbors(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
@@ -992,7 +1027,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
 
     // This function must be called after reorderElementsCounterClockwise. In general, the order
     // of functions is important in this section.
-    buildListsOfNodeNeighbors(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
+    buildListsOfNodeNeighbors(elnode, elside, isidenode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes, nodeNeighSides);
 
     idx_t nvtxs = nElements;  // number of vertices (elements in our case)
     std::vector<idx_t> partElements(nvtxs);  // array to store partition numbers
@@ -1118,7 +1153,8 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
         toPyArray(iond),
         toPyArray(ilnd),
         toPyArray(nodeNeighElems),
-        toPyArray(nodeNeighNodes)
+        toPyArray(nodeNeighNodes),
+        toPyArray(nodeNeighSides)
 
     );  
 }
