@@ -1357,6 +1357,7 @@ struct Mesh {
   
    // Additional topology information
    Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
+   Side    **nodeNeighSides; // Array of pointers to the sides neighbors of each node
    Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
 
    BoundarySegment landBoundarySegment;
@@ -1415,6 +1416,7 @@ struct Mesh {
                    Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
+                   Side    **localNodeNeighSidesMem,
                    Element **localNodeNeighElemsMem,
                    double *partCoeffMatrixMem,
                    NodeBoundary *localNodeBoundaryMem,
@@ -1427,7 +1429,7 @@ struct Mesh {
                        max_np(max_np), max_ne(max_ne), max_ns(max_ns),
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
-                       nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
+                       nodeNeighNodes(localNodeNeighNodesMem), nodeNeighSides(localNodeNeighSidesMem), nodeNeighElems(localNodeNeighElemsMem),
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
@@ -1452,6 +1454,7 @@ struct Mesh {
                   double *node_coords, double *node_coords_ll, bool use_ll,
                   double *wind_rotate_angle, 
                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                  int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
@@ -1463,6 +1466,7 @@ struct Mesh {
                   int *isdel, int *isidenode, int *isbnd,
                   int *nond, int *nlnd, int *iond, int *ilnd,                                  
                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                  int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -1475,6 +1479,7 @@ struct Mesh {
                      int *isdel, int *isidenode, int *isbnd,
                      int *nond, int *nlnd, int *iond, int *ilnd,                                  
                      int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                     int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                      int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                      int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                      int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,

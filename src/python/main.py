@@ -329,6 +329,8 @@ if __name__ == "__main__":
     ilnd                 = cp.array(ilnd,              dtype=cp.int32, order='F')
     nodeNeighNodesStart  = cp.array(nodeNeighNodes[1], dtype=cp.int32, order='F')
     nodeNeighNodes       = cp.array(nodeNeighNodes[0], dtype=cp.int32, order='F')
+    nodeNeighSidesStart  = cp.array(nodeNeighSides[1], dtype=cp.int32, order='F')
+    nodeNeighSides       = cp.array(nodeNeighSides[0], dtype=cp.int32, order='F')
     nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32, order='F')
     nodeNeighElems       = cp.array(nodeNeighElems[0], dtype=cp.int32, order='F')
     nodeCoords           = cp.array(nodeCoords,        dtype=cp.float64, order='F')
@@ -556,6 +558,7 @@ if __name__ == "__main__":
     sidesPtr = cp.array(sidesMemList, dtype=cp.uintp)
 
     partNodeNeighNodesMem = []
+    partNodeNeighSidesMem = []
     partNodeNeighElemsMem = []
     partCoeffMatrixMem    = []
 
@@ -567,6 +570,7 @@ if __name__ == "__main__":
             maskElemsPart = (partElements == ipart)
 
             partNodeNeighNodesSize = maskNodesPart.sum().item()
+            partNodeNeighSidesSize = maskNodesPart.sum().item()
             partNodeNeighElemsSize = maskElemsPart.sum().item()
 
             # compute the local size of the node and element neighbor arrays  XXXX is the [maskNodesPart] below correct?
@@ -575,6 +579,7 @@ if __name__ == "__main__":
 
             pointerSize = cp.dtype(cp.uintp).itemsize 
             partNodeNeighNodesMem += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
+            partNodeNeighSidesMem += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
             partNodeNeighElemsMem += [cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)]
             partCoeffMatrixMem    += [cp.zeros(partNodeNeighNodesCount.sum().item(), dtype=cp.float64)]
     print(f"SIZE OF partCoeffMatrixMem = {partCoeffMatrixMem[0].size}") # XXXXXX REMOVE
@@ -639,7 +644,7 @@ if __name__ == "__main__":
                               max(numPartNodes), max(numPartElements), max(numPartSides),
                               nodesPtr, elemsPtr, sidesPtr,
                               nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
-                              partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 
+                              partNodeNeighNodesMem[ipart], partNodeNeighSidesMem[ipart], partNodeNeighElemsMem[ipart], 
                               partCoeffMatrixMem[ipart],
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
                               h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs,
@@ -664,6 +669,7 @@ if __name__ == "__main__":
             cufunc.populateNodes(i34Part, isbnd, sharedIdxNodeBoundary, 
                        nodeCoordsPart, nodeCoords_llPart, use_ll, windRotateAnglePart, 
                        nodeNeighNodesStart, nodeNeighNodes,
+                       nodeNeighSidesStart, nodeNeighSides,
                        nodeNeighElemsStart, nodeNeighElems,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
@@ -675,6 +681,7 @@ if __name__ == "__main__":
                        isdel, isidenode, isbnd,
                        nond, nlnd, iond, ilnd,                                  
                        nodeNeighNodesStart, nodeNeighNodes,
+                       nodeNeighSidesStart, nodeNeighSides,
                        nodeNeighElemsStart, nodeNeighElems,
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
@@ -687,6 +694,7 @@ if __name__ == "__main__":
                        isdel, isidenode, isbnd,
                        nond, nlnd, iond, ilnd,                                  
                        nodeNeighNodesStart, nodeNeighNodes,
+                       nodeNeighSidesStart, nodeNeighSides,
                        nodeNeighElemsStart, nodeNeighElems,
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
@@ -699,6 +707,7 @@ if __name__ == "__main__":
                                 isdel, isidenode, isbnd,
                                 nond, nlnd, iond, ilnd, 
                                 nodeNeighNodesStart, nodeNeighNodes,
+                                nodeNeighSidesStart, nodeNeighSides,
                                 nodeNeighElemsStart, nodeNeighElems,
                                 globalNodeIndices, globalElemIndices, globalSideIndices,
                                 localNodeIndices, localElemIndices, localSideIndices,

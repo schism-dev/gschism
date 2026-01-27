@@ -1463,6 +1463,7 @@ struct Mesh {
   
    // Additional topology information
    Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
+   Side    **nodeNeighSides; // Array of pointers to the sides neighbors of each node
    Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
 
    BoundarySegment landBoundarySegment;
@@ -1521,6 +1522,7 @@ struct Mesh {
                    Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
+                   Side    **localNodeNeighSidesMem,
                    Element **localNodeNeighElemsMem,
                    double *partCoeffMatrixMem,
                    NodeBoundary *localNodeBoundaryMem,
@@ -1533,7 +1535,7 @@ struct Mesh {
                        max_np(max_np), max_ne(max_ne), max_ns(max_ns),
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
-                       nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
+                       nodeNeighNodes(localNodeNeighNodesMem), nodeNeighSides(localNodeNeighSidesMem), nodeNeighElems(localNodeNeighElemsMem),
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
@@ -1558,6 +1560,7 @@ struct Mesh {
                   double *node_coords, double *node_coords_ll, bool use_ll,
                   double *wind_rotate_angle, 
                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                  int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
@@ -1569,6 +1572,7 @@ struct Mesh {
                   int *isdel, int *isidenode, int *isbnd,
                   int *nond, int *nlnd, int *iond, int *ilnd,                                  
                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                  int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -1581,6 +1585,7 @@ struct Mesh {
                      int *isdel, int *isidenode, int *isbnd,
                      int *nond, int *nlnd, int *iond, int *ilnd,                                  
                      int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                     int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                      int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                      int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                      int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -2946,7 +2951,7 @@ assert(side != nullptr && "side is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE"
       }
 
    } // for
-
+printf("ZZZZZ3 found_intersection = %d, closest_intersect_t = %.16f, last_tt2 = %.16f, elem->idx = %d, curPoint.x = %.16f, %.16f\n", found_intersection, closest_intersect_t, last_tt2, elem->idx, curPoint.x.x, curPoint.x.y);
    assert(found_intersection && "No intersection found in DEAL_WITH_POINT_INTERSECTING_SIDE");
    assert(intersectSide != nullptr && "intersectSide is nullptr in DEAL_WITH_POINT_INTERSECTING_SIDE");
    
@@ -3197,6 +3202,9 @@ __device__ void DEAL_WITH_POINT_MOVING_OUTSIDE_NODE(BTPoint &curPoint, Point3 &x
    const Node *node    = curPoint.node;
    const Point3 x0     = curPoint.x;
 
+curPoint.t = 0.0;
+return;
+
    // computes the sides that delimit the contiguous block of wet elements containing elem
 
    assert(elem != nullptr && "elem is nullptr");
@@ -3215,12 +3223,12 @@ printf("BBBBB numSides = %d\n", numSides);
    // Finds the first wet side index
    for (int i = 0; i < numSides; i++) {
       const int prevIdx = (i + numSides - 1) % numSides;
-if (it>=135) printf("BBBBB i = %d, prevIdx = %d, numSides = %d, node = %p\n", i, prevIdx, numSides, node);
-if (it>=135) printf("BBBBB node->idx = %d, node->sides = %p\n", node->idx, node->sides);
-if (it>=135) printf("BBBBB i = %d, node->sides[prevIdx] = %p, node->sides[i] = %p\n", node->sides[prevIdx], node->sides[i]);
+if (it>=141) printf("BBBBB i = %d, prevIdx = %d, numSides = %d, node = %p\n", i, prevIdx, numSides, node);
+if (it>=141) printf("BBBBB node->idx = %d, node->sides = %p\n", node->idx, node->sides);
+if (it>=141) printf("BBBBB i = %d, node->sides[prevIdx] = %p, node->sides[i] = %p\n", i, node->sides[prevIdx], node->sides[i]);
 // if (it>=135 && node != nullptr) printf("BBBBB prevIdx = %d, i = %d, node->sides[prevIdx] = %p, node->sides[i] = %p\n", prevIdx, i, node->sides[prevIdx], node->sides[i]);
       if (node->sides[prevIdx]->isDry && !node->sides[i]->isDry) idxStartWet = i;
-
+if (it>=141) printf("BBBBB idxStartWet = %d, elem->containsSide(node->sides[i]) = %d\n", idxStartWet, elem->containsSide(node->sides[i]));
       if (elem->containsSide(node->sides[i])) break;
    }
 
@@ -3228,10 +3236,12 @@ if (it>=135) printf("BBBBB i = %d, node->sides[prevIdx] = %p, node->sides[i] = %
    for (int i = numSides - 1; i >= 0; i--) {
       const int nextIdx = (i + 1) % numSides;
 
-      if (node->sides[nextIdx]->isDry && !node->sides[i]->isDry) idxEndWet = i;
+      if (node->sides[nextIdx]->isDry && !node->sides[i]->isDry) idxEndWet = i - 1;
 
-      if (elem->containsSide(node->sides[i])) break;
+      if (elem->containsSide(node->sides[nextIdx])) break;
    }
+
+if (it>=141) printf("BBBBB idxEndWet = %d, elem->containsSide(node->sides[i]) = %d\n", idxEndWet, elem->containsSide(node->sides[idxEndWet]));
 
    // At this point idxStartWet and idxEndWet are the indices of the first and last wet sides in the contiguous block of wet sides containing elem.
    // If idxStartWet == 0 and idxEndWet == numSides - 1, all the sides are wet. This is only possible if the node is a boundary node.
@@ -3247,9 +3257,9 @@ if (it>=135) printf("BBBBB i = %d, node->sides[prevIdx] = %p, node->sides[i] = %
    // - If both side velocities point towards the node, This is considered a death trap and the algorithm will stop here.
    const Vector3 uSide1 = s1->interpolateCenterVelocityVertically(xt);
    const Vector3 uSide2 = s2->interpolateCenterVelocityVertically(xt);
-   const double u1tan = dot(toVector2(uSide1), s1->t(node));  // s1->t(node) is the unitary tangent vector to the side s1 pointing towards 'node'.
-   const double u2tan = dot(toVector2(uSide2), s2->t(node));  // s2->t(node) is the unitary tangent vector to the side s2 pointing towards 'node'.
-
+   const double u1tan = -dot(toVector2(uSide1), s1->t(node));  // s1->t(node) is the unitary tangent vector to the side s1 pointing towards 'node'.
+   const double u2tan = -dot(toVector2(uSide2), s2->t(node));  // s2->t(node) is the unitary tangent vector to the side s2 pointing towards 'node'.
+if (it>=141) printf("BBBBB node->idx = %d, elem->idx = %d, u1tan = %f, u2tan = %f\n", node->idx, elem->idx, u1tan, u2tan);
    if (u1tan < 0.0 || u2tan < 0.0) {
       // The point will slide along the side with the highest velocity component pointing away from the node.
       if (u1tan < u2tan) {
@@ -3279,6 +3289,9 @@ if (it>=135) printf("BBBBB i = %d, node->sides[prevIdx] = %p, node->sides[i] = %
    else
    {
       // DEATH TRAP: Both side velocities point towards the node. This is considered a death trap and the algorithm will stop here.
+printf("DEATH TRAP: Both side velocities point towards the node. IMPLEMENT THIS CASE\n");
+curPoint.t = 0.0;
+return;
       assert(false && "DEATH TRAP: Both side velocities point towards the node. IMPLEMENT THIS CASE");
    }
 
@@ -3517,6 +3530,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     double *node_coords, double *node_coords_ll, bool use_ll,
                                     double *wind_rotate_angle, 
                                     int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                                    int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart,
@@ -3534,6 +3548,10 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.nodes = nodeNeighNodes + idxNodeStart;
    node.coeffMatrix = coeffMatrixMem + idxNodeStart;
 
+   const int idxSideStart = nodeNeighSidesStart[i];
+   const int idxSideEnd   = nodeNeighSidesStart[i+1];
+   node.sides = nodeNeighSides + idxSideStart;
+
 
 
    const int idxElemStart = nodeNeighElemsStart[i];
@@ -3550,6 +3568,16 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       Node *node_ptr = nodes[partNode] + idxNode;
       
       nodeNeighNodes[idx] = node_ptr;
+   }
+
+   for (int idx = idxSideStart; idx < idxSideEnd; idx++) {
+      const int idxSideGlobal = nodeNeighSidesIndices[idx];
+      const int partSide = localSidePart[idxSideGlobal]; 
+      const int idxSide  = localSideIndices[idxSideGlobal];
+
+      Side *side_ptr = sides[partSide] + idxSide;
+      
+      nodeNeighSides[idx] = side_ptr;
    }
 
 
@@ -3641,6 +3669,7 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
                                     int *isdel, int *isidenode, int *isbnd,
                                     int *nond, int *nlnd, int *iond, int *ilnd,                                  
                                     int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                                    int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                                     int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -3796,6 +3825,7 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
    int *isdel, int *isidenode, int *isbnd,
    int *nond, int *nlnd, int *iond, int *ilnd,                                  
    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+   int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -7452,7 +7482,7 @@ __global__ void createMesh(int partNum,
                            int max_np, int max_ne, int max_ns,
                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
-                           Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
+                           Node **partNodeNeighNodesMem, Side **partNodeNeighSidesMem, Element **partNodeNeighElemsMem,
                            double *partCoeffMatrixMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
                            double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
@@ -7485,7 +7515,7 @@ __global__ void createMesh(int partNum,
                    max_np, max_ne, max_ns, nseg, 
                    nodesPtr, elemsPtr, sidesPtr, 
                    nodes, elems, sides,
-                   partNodeNeighNodesMem, partNodeNeighElemsMem, 
+                   partNodeNeighNodesMem, partNodeNeighSidesMem, partNodeNeighElemsMem, 
                    partCoeffMatrixMem,
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
                    h_c, h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
@@ -7528,6 +7558,7 @@ extern "C"
 extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
    double *node_coords, double *node_coords_ll, bool use_ll, double *wind_rotate_angle, 
    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+   int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
@@ -7536,6 +7567,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
                        nodeNeighNodesStart, nodeNeighNodesIndices,
+                       nodeNeighSidesStart, nodeNeighSidesIndices,
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
@@ -7548,6 +7580,7 @@ extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                                          int *isdel, int *isidenode, int *isbnd,
                                          int *nond, int *nlnd, int *iond, int *ilnd,                                  
                                          int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+                                         int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
                                          int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                                          int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                                          int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -7558,7 +7591,12 @@ extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                        wind_rotate_angle,   
                        isdel, isidenode, isbnd,
                        nond, nlnd, iond, ilnd,                                  
-                       nodeNeighNodesStart, nodeNeighNodesIndices, nodeNeighElemsStart, nodeNeighElemsIndices, globalNodeIndices, globalElemIndices, globalSideIndices, localNodeIndices, localElemIndices, localSideIndices, localNodePart, localElemPart, localSidePart, drag, roughness);                          
+                       nodeNeighNodesStart, nodeNeighNodesIndices, 
+                       nodeNeighSidesStart, nodeNeighSidesIndices,
+                       nodeNeighElemsStart, nodeNeighElemsIndices, 
+                       globalNodeIndices, globalElemIndices, globalSideIndices, 
+                       localNodeIndices, localElemIndices, localSideIndices,
+                       localNodePart, localElemPart, localSidePart, drag, roughness);                          
 
 }
 
@@ -7568,6 +7606,7 @@ extern "C" __global__ void populateElements(int *i34, int *elnode, int *elside,
    int *isdel, int *isidenode, int *isbnd,
    int *nond, int *nlnd, int *iond, int *ilnd,                                  
    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+   int *nodeNeighSidesStart, int *nodeNeighSidesIndices,
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -7578,7 +7617,12 @@ extern "C" __global__ void populateElements(int *i34, int *elnode, int *elside,
                           wind_rotate_angle,   
                           isdel, isidenode, isbnd,
                           nond, nlnd, iond, ilnd,                                  
-                          nodeNeighNodesStart, nodeNeighNodesIndices, nodeNeighElemsStart, nodeNeighElemsIndices, globalNodeIndices, globalElemIndices, globalSideIndices, localNodeIndices, localElemIndices, localSideIndices, localNodePart, localElemPart, localSidePart, drag, roughness);                          
+                          nodeNeighNodesStart, nodeNeighNodesIndices, 
+                          nodeNeighSidesStart, nodeNeighSidesIndices,
+                          nodeNeighElemsStart, nodeNeighElemsIndices, 
+                          globalNodeIndices, globalElemIndices, globalSideIndices, 
+                          localNodeIndices, localElemIndices, localSideIndices,
+                          localNodePart, localElemPart, localSidePart, drag, roughness);                          
 
 } 
 
