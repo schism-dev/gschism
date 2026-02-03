@@ -80,7 +80,13 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__NCOR__': (namelist.opt.ncor, 'namelist.opt'),
         '__CORICOEF__': (namelist.opt.coricoef, 'namelist.opt'),
         '__SFEA0__': (namelist.opt.sfea0, 'namelist.opt'),
-
+        '__NWS__': (namelist.opt.nws, 'namelist.opt'),
+        '__WTIMINC__': (namelist.opt.wtiminc, 'namelist.opt'),
+        '__IWIND_FORM__': (namelist.opt.iwind_form, 'namelist.opt'),
+        '__IWINDOFF__': (namelist.opt.iwindoff, 'namelist.opt'),
+        '__DRAMPWIND__': (namelist.opt.drampwind, 'namelist.opt'),
+        '__IHCONSV__': (namelist.opt.ihconsv, 'namelist.opt'),
+        '__ISCONSV__': (namelist.opt.isconsv, 'namelist.opt'),
         # From grid parameters
         '__IVCOR__': (ivcor, 'grid'),
         '__NVRT__': (nvrt, 'grid'),

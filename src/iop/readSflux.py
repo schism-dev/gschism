@@ -21,7 +21,7 @@ Main usage:
        The object will construct the two datasets and compute the interpolation weights.
       
     2. Get interpolated meteorological data at any time:
-       sflux.getWind(time_now, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
+       sflux.getWinds(time_now, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
 
 The SFlux class can handle two datasets of different resolutions (typically global/regional) 
 and combines them using weights specified in the namelist. It automatically handles:
@@ -131,7 +131,7 @@ class DatasetInfo:
         prefix = 'sflux/'
         suffix = '.nc'
         
-        return f'{prefix}{self.name}.{num:04d}{suffix}'
+        return f'{prefix}{self.name}.{num:d}{suffix}'
 
 
     def filter_triangles_by_grid(self, tri, nx, ny, i_orig, j_orig):
@@ -217,8 +217,8 @@ class DatasetInfo:
 
         # Get the coordinates of the nodes of the input grid and the indices for each node
         i, j = np.indices(self.lat.shape)
-        x_grid = np.ma.filled(self.lon.flatten().astype(np.float64), fill_value=None)
-        y_grid = np.ma.filled(self.lat.flatten().astype(np.float64), fill_value=None)
+        x_grid = np.rad2deg(np.ma.filled(self.lon.flatten().astype(np.float64), fill_value=None))
+        y_grid = np.rad2deg(np.ma.filled(self.lat.flatten().astype(np.float64), fill_value=None))
         
         # Create the Delaunay triangulation
         tri = Delaunay(np.column_stack((x_grid, y_grid)))
@@ -475,7 +475,7 @@ class DatasetInfo:
         """
         try:
             # Open netCDF file in read-only mode
-            file_name = self.getFileName(file_num)
+            file_name = self.getFileName(file_num + 1)
             with Dataset(path.join(self.in_dir, file_name), 'r') as nc:
                 # Read the data for the specified time
                 # netCDF is 0-based, so we subtract 1 from time_num
@@ -652,25 +652,29 @@ class SFlux:
 
 
 
-    def getWind(self, time_now: float, u_air_node: np.ndarray, v_air_node: np.ndarray, p_air_node: np.ndarray, t_air_node: np.ndarray, q_air_node: np.ndarray) -> tuple:
+    def getWinds(self, time: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Load wind and atmospheric data at the given time and return per-node arrays.
+        Caller is responsible for passing these to the mesh (e.g. so node->setWind() and
+        p_air/t_air/q_air can be set on the device).
+        """
+        n_node = self.nodes.shape[1]
+        u_air_node = np.zeros(n_node, dtype=np.float64)
+        v_air_node = np.zeros(n_node, dtype=np.float64)
+        p_air_node = np.zeros(n_node, dtype=np.float64)
+        t_air_node = np.zeros(n_node, dtype=np.float64)
+        q_air_node = np.zeros(n_node, dtype=np.float64)
 
-        # XXX REMOVE THIS FUNCTION
-        self.getCombinedData(time_now, self.inputs['uwind_name'], u_air_node)
-        self.getCombinedData(time_now, self.inputs['vwind_name'], v_air_node)
-        self.getCombinedData(time_now, self.inputs['prmsl_name'], p_air_node)
-        self.getCombinedData(time_now, self.inputs['stmp_name' ], t_air_node)
-        self.getCombinedData(time_now, self.inputs['spfh_name' ], q_air_node)
+        self.getCombinedData(time, self.inputs['uwind_name'], u_air_node)
+        self.getCombinedData(time, self.inputs['vwind_name'], v_air_node)
+        self.getCombinedData(time, self.inputs['prmsl_name'], p_air_node)
+        self.getCombinedData(time, self.inputs['stmp_name'],  t_air_node)
+        self.getCombinedData(time, self.inputs['spfh_name'],  q_air_node)
 
-           
         # convert air temperatures to Celsius
-        t_air_node = t_air_node - t_freeze
+        t_air_node[:] = t_air_node - t_freeze
 
-        # rotate the winds from geographic to the grid's map projection
-        self.rotate_winds(u_air_node, v_air_node)
+        # Winds here are in geographic coordinates, so we'll need to rotate them to the grid's map projection
+        # This is done in setWind() 
 
-
-    def getWinds(self, time: float):
-        # assert(False and 'IMPLEMENT THIS!!!!, should be similar to getWind()')
-        print('IMPLEMENT THIS!!!!, should be similar to getWind()')
-        print('Use node->setWind() in meshdata.h')
-        print('time = ', time)
+        return (u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)

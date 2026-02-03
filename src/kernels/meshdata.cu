@@ -2518,6 +2518,21 @@ extern "C" {
    }
 
 
+   __global__ void setWinds(double *windx, double *windy) {
+      NODE(node);
+
+      const int idx = node->idx;
+      Vector2 wind = {windx[idx], windy[idx]};
+
+      if constexpr(nws != 0 && iwindoff != 0) {
+         assert(false && "setWinds: windfactor not implemented");
+      }
+
+      // Sets the wind speed (rotated to the mesh angle) and surface stress vector due to wind.
+      node->setWind(wind);
+
+   }
+
    __global__ void computeTidalPotential(double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
 
       NODE_BND(nodeBnd);

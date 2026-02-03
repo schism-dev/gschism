@@ -44,7 +44,6 @@ from matplotlib import pyplot as plt
 from matplotlib.collections import LineCollection
 
 
-nws = 0
 
 # sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'src'))
@@ -69,8 +68,8 @@ import python.cuda_functions as cufunc
 if WINDOWS:
     # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b'
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
-    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02d'
-    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02d\gpuoutput'
+    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02b'
+    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02b\gpuoutput'
     # out_dir = r'c:\Users\jmgonzalez\src\temp'
 elif VISTA:
     in_dir = r'/scratch/10922/jmglez/tests/RUN01b'
@@ -254,7 +253,8 @@ if __name__ == "__main__":
     [ivcor, nvrt, nzlev, nsiglev], ztot, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
         module.readVGrid(vgrid_file, nodeCoords.shape[1])
 
-    if (nws == 2):
+    # If nw2 is 2, read the wind rotation angle from the windrot_geo2proj.gr3 file. Otherwise, set it to 0.
+    if (namelist.opt.nws == 2):
         wind_rotate_angle = module.readWindRotationAngle(os.path.join(in_dir, 'windrot_geo2proj.gr3'), nodeCoords.shape[1])
     else:
         wind_rotate_angle = np.zeros(nodeCoords.shape[1])
@@ -267,16 +267,14 @@ if __name__ == "__main__":
     # Test the readSflux module
     # nodeCoords[:2,:] = np.deg2rad(nodeCoords[:2,:]) # XXX Why deg2rad?  XXX Why was I doing this? Is important in other contexts???
 
-    sflux = SFlux(in_dir, r'sflux_inputs.txt', nodeCoords) 
+    sflux = SFlux(in_dir, r'sflux_inputs.txt', nodeCoords_ll) 
 
     u_air_node = np.zeros(nodeCoords.shape[1])
     v_air_node = np.zeros(nodeCoords.shape[1])
     p_air_node = np.zeros(nodeCoords.shape[1])
     t_air_node = np.zeros(nodeCoords.shape[1])
     q_air_node = np.zeros(nodeCoords.shape[1])
-    # sflux.getWind(2452424.0, u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
-
-   
+  
 
   
     # Read in bottom friction coefficients 

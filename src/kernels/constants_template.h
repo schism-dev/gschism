@@ -23,6 +23,14 @@ constexpr int niter_shap = __NITER_SHAP__;   // Number of iterations for Shapiro
 constexpr int ncor = __NCOR__;               // Option to include Coriolis force
 constexpr double coricoef = __CORICOEF__;    // Coriolis force coefficient
 constexpr double sfea0 = __SFEA0__*deg2rad; // Reference latitude for Coriolis force
+constexpr int nws = __NWS__;               // Option to include wind forcing
+constexpr double wtiminc = __WTIMINC__;    // Time increment for wind forcing
+constexpr int iwind_form = __IWIND_FORM__; // Option to include wind forcing
+constexpr int iwindoff = __IWINDOFF__;     // Option to include wind forcing
+constexpr double drampwind = __DRAMPWIND__; // Option to include wind forcing
+
+constexpr int ihconsv = __IHCONSV__;     // Option to include conservative wind forcing
+constexpr int isconsv = __ISCONSV__;     // Option to include conservative wind forcing
 
 
 constexpr int nchi = __NCHI__;             // Option to compute drag coefficients chi and chi2

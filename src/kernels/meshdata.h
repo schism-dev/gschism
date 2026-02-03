@@ -1184,13 +1184,43 @@ struct Node {
    double wind_angle;  // Wind rotation angle
 
    __device__ void setWind(Vector2 &u) {
-   // Sets the wind vector taking into account the wind rotation angle
+   // Sets the wind vector taking into account the mesh angle
    
       const double dir = atan2(-u.x,-u.y);
       const double speed = length(u);
 
       // Calculate new u and v components with added rotation angle
       u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
+
+      // Sets the surface stress vector due to wind.
+      if constexpr(nws == 0) {
+         tau = {0.0, 0.0};
+
+      } else if constexpr(nws == 2 && ihconsv == 1 && iwind_form == 0) {
+         assert(false && "setWinds: nws==2, ihconsv==1, iwind_form==0 (tauxz/tauyz) not supported");
+
+      } else {
+
+         double dragcoef;
+
+         if constexpr(iwind_form == -1) {
+            const double speed_clamp = clamp(speed, 6.0, 50.0);
+            dragcoef = 1.0e-3 * (0.61 + 0.063*speed_clamp);
+
+            const double cff = 0.001293*dragcoef*speed*rampwind;
+            tau = cff*u_air;
+ 
+         } else if constexpr(iwind_form == 1) {
+            if (speed <= 35.0) dragcoef = 1.0e-4*(-0.016*speed*speed + 0.967*speed + 8.058);
+            else               dragcoef = 2.23e-3*35.0/speed;
+
+            const double cff = 0.001293*dragcoef*speed*rampwind;
+            tau = cff*u_air;
+
+         } else {
+            tau = {0.0, 0.0};
+         }
+      }
    }
 
 

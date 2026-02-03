@@ -38,11 +38,14 @@ def solveWaveEquation(solver, maxIter=1000, tol=1e-12, ):
 
 
 
-def computeMeteorologicalForcing(time, sflux):
-    sflux.getWinds(time)
+def computeMeteorologicalForcing(opt, time, sflux):
+    # Convert simulation time (seconds from start) to Julian day using namelist start and sflux's JD convention
+    jd_midnight = sflux.dataset1.julianDay(opt.start_year, opt.start_month, opt.start_day)
+    julian_day = jd_midnight + opt.start_hour / 24.0 + time / 86400.0
 
-    print("IMPLEMENT THIS: computeMeteorologicalForcing!!!!")
-    # stop
+    sflux.getWinds(julian_day)
+
+    
 #     # Re-scale wind
 #     if (nws != 0 && iwindoff!=0) {
 #         do i=1,npa
@@ -131,7 +134,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
 
     # Meteorological forcing
-    computeMeteorologicalForcing(time, sflux)  # Lines 458-1014
+    computeMeteorologicalForcing(opt, time, sflux)  # Lines 458-1014
 
 
     # computeTracerStuff()            # Lines 1015-1145
@@ -184,8 +187,8 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         monitor.debugPlotIdx[0] = 0        
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        if it == 168:
-            monitor.plotMesh()        
+        # if it == 168:
+        #     monitor.plotMesh()        
 
         cp.cuda.Device().synchronize()
         # if it >= 69:

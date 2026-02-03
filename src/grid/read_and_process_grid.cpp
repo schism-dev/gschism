@@ -1310,7 +1310,6 @@ readVGrid(const std::string& filename, int nNodes) {
 
         // Level nz is not neccesary to be read.
         std::getline(file,  dummy);  
-printf("SSSS dummy = %s\n", dummy.c_str());
 
         // Read the sigma levels
         sigma[0] = -1.0; //bottom

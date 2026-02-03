@@ -24,6 +24,14 @@ constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
 constexpr int ncor = 1;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
 constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
+constexpr int nws = 2;               // Option to include wind forcing
+constexpr double wtiminc = 3600;    // Time increment for wind forcing
+constexpr int iwind_form = 1; // Option to include wind forcing
+constexpr int iwindoff = 0;     // Option to include wind forcing
+constexpr double drampwind = 1; // Option to include wind forcing
+
+constexpr int ihconsv = 0;     // Option to include conservative wind forcing
+constexpr int isconsv = 0;     // Option to include conservative wind forcing
 
 
 constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
@@ -72,9 +80,9 @@ constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
-constexpr int nland = 2; // Number of land boundary segments
-constexpr int mnlnd = 990; // Maximum number of nodes per land boundary segment
+constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
+constexpr int nland = 43; // Number of land boundary segments
+constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
@@ -86,10 +94,10 @@ constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-compone
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
 constexpr double rho0 = 1000; // [kg/m^3]
-constexpr double dtb_min = 2; //XXXX
-constexpr double dtb_max = 4; //XXXX
-constexpr double velmin_btrack = 1e-05; // Minimum velocity for backtracking (m/s)
-constexpr double btrack_nudge = 1e-05;   // Nudging factor for backtracking
+constexpr double dtb_min = 10; //XXXX
+constexpr double dtb_max = 30; //XXXX
+constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
+constexpr double btrack_nudge = 0.009013;   // Nudging factor for backtracking
 
 constexpr int nadv = 1; // Advection flag
 
@@ -1290,13 +1298,43 @@ struct Node {
    double wind_angle;  // Wind rotation angle
 
    __device__ void setWind(Vector2 &u) {
-   // Sets the wind vector taking into account the wind rotation angle
+   // Sets the wind vector taking into account the mesh angle
    
       const double dir = atan2(-u.x,-u.y);
       const double speed = length(u);
 
       // Calculate new u and v components with added rotation angle
       u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
+
+      // Sets the surface stress vector due to wind.
+      if constexpr(nws == 0) {
+         tau = {0.0, 0.0};
+
+      } else if constexpr(nws == 2 && ihconsv == 1 && iwind_form == 0) {
+         assert(false && "setWinds: nws==2, ihconsv==1, iwind_form==0 (tauxz/tauyz) not supported");
+
+      } else {
+
+         double dragcoef;
+
+         if constexpr(iwind_form == -1) {
+            const double speed_clamp = clamp(speed, 6.0, 50.0);
+            dragcoef = 1.0e-3 * (0.61 + 0.063*speed_clamp);
+
+            const double cff = 0.001293*dragcoef*speed*rampwind;
+            tau = cff*u_air;
+ 
+         } else if constexpr(iwind_form == 1) {
+            if (speed <= 35.0) dragcoef = 1.0e-4*(-0.016*speed*speed + 0.967*speed + 8.058);
+            else               dragcoef = 2.23e-3*35.0/speed;
+
+            const double cff = 0.001293*dragcoef*speed*rampwind;
+            tau = cff*u_air;
+
+         } else {
+            tau = {0.0, 0.0};
+         }
+      }
    }
 
 
@@ -4210,6 +4248,21 @@ extern "C" {
 
    }
 
+
+   __global__ void setWinds(double *windx, double *windy) {
+      NODE(node);
+
+      const int idx = node->idx;
+      Vector2 wind = {windx[idx], windy[idx]};
+
+      if constexpr(nws != 0 && iwindoff != 0) {
+         assert(false && "setWinds: windfactor not implemented");
+      }
+
+      // Sets the wind speed (rotated to the mesh angle) and surface stress vector due to wind.
+      node->setWind(wind);
+
+   }
 
    __global__ void computeTidalPotential(double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
 
