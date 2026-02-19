@@ -1186,7 +1186,8 @@ py::array_t<double> readHGridData(const std::string& filename, int nNodes, int n
  * 2. SZ coordinates (ivcor = 2). In this case, the sigma coordinates are defined for each level
 */
 std::tuple<py::array_t<int32_t>,     // ivcor, nvrt
-           py::array_t<double>,       // ztot (nNodes for ivcor=1, empty for ivcor=2)
+           py::array_t<double>,       // ztot (nvrt for ivcor=2, empty for ivcor=1)
+           py::array_t<int32_t>,      // kb (nNodes for ivcor=1, empty for ivcor=2)
            py::array_t<double>,       // h_c, h_s, theta_b, theta_f (3 values for ivcor=2, empty for ivcor=1)
            py::array_t<double>,       // sigma_lcl (nvrt x nNodes for ivcor=1, empty for ivcor=2)
            py::array_t<double>,       // sigma (nvrt values for ivcor=2, empty for ivcor=1)
@@ -1205,7 +1206,7 @@ readVGrid(const std::string& filename, int nNodes) {
     std::string dummy;
     file >> ivcor;
     std::getline(file, dummy);
-    printFormatted(ansi::yellow("ivcor = %d, dummy = %s"), ivcor, dummy.c_str());
+printFormatted(ansi::yellow("ivcor = %d, nvrt = %d, dummy = %s"), ivcor, nvrt, dummy.c_str()); // XXXXXX
 
     printFormatted(ansi::yellow("Reading vertical grid file: %s"), filename.c_str());
 
@@ -1218,36 +1219,44 @@ readVGrid(const std::string& filename, int nNodes) {
 
         file >> nvrt;
         std::getline(file, dummy);
+
+printFormatted(ansi::yellow("ivcor = %d, nvrt = %d, dummy = %s"), ivcor, nvrt, dummy.c_str());
     
         Array2D<double> sigma_lcl(nvrt, nNodes);
-        std::vector<double> ztot(nNodes);
+        std::vector<int32_t> kb(nNodes);
     
         for (int i = 0; i < nNodes; i++) {
-            int node_number;
-            file >> node_number;
+// XXXX Are there two formats for the vgrid file? Why did I write this code?
+//             int node_number;
+//             file >> node_number;
 
-            progressBar("Reading localized sigma coordinates", i, nNodes, ansi::YELLOW, 20);
+//             progressBar("Reading localized sigma coordinates", i, nNodes, ansi::YELLOW, 20);
 
-            if (node_number != i + 1) {  // node number is 1-based index, but we use 0-based indexing
-                throw std::runtime_error("Invalid node number in vgrid file");
-            }
+// printFormatted(ansi::yellow("node_number = %d, i = %d"), node_number, i);
+//             if (node_number != i + 1) {  // node number is 1-based index, but we use 0-based indexing
+//                 throw std::runtime_error("Invalid node number in vgrid file");
+//             }
             
-            file >> ztot[i];
-            if (ztot[i] < 0) {
-                throw std::runtime_error("Negative ztot value found");
+            file >> kb[i];
+            if (kb[i] < 0 || kb[i] >= nvrt) {
+                throw std::runtime_error("Invalid kb value found");
             }
-            
-            printf("Reading sigma_lcl for node %d\n", i);
-            for (int k = 0; k < nvrt; k++) {
+        }
+
+        for (int k = 0; k < nvrt; k++) {
+            progressBar("Reading localized sigma coordinates", k, nvrt, ansi::YELLOW, 20);
+
+            for (int i = 0; i < nNodes; i++) {
                 file >> sigma_lcl(k, i);
-                printf("sigma_lcl(%d, %d) = %f\n", k, i, sigma_lcl(k, i));
+                if (i<10) printf("sigma_lcl(%d, %d) = %f\n", k, i, sigma_lcl(k, i));
             }
         }
         
         return std::make_tuple(
             toPyArray(std::vector<int>{ivcor, nvrt, 0, nvrt}),
-            toPyArray(ztot),                          // ztot for ivcor=1
-            toPyArray(std::vector<double>()),         // empty h_c, h_s, theta_b, theta_f
+            toPyArray(std::vector<double>()),         // empty ztot 
+            toPyArray(kb),                            // kb
+            toPyArray(std::vector<double>{0.0, 0.0, 0.0, 0.0}),         // h_c, h_s, theta_b, theta_f
             toPyArray(sigma_lcl),                     // sigma_lcl for ivcor=1
             toPyArray(std::vector<double>()),         // empty sigma
             toPyArray(std::vector<double>()),         // empty cs
@@ -1367,9 +1376,10 @@ readVGrid(const std::string& filename, int nNodes) {
         return std::make_tuple(
             toPyArray(std::vector<int>{ivcor, nvrt, kz, nsiglev}),
             toPyArray(ztot),        
-            toPyArray(std::vector<double>{h_c, h_s, theta_b, theta_f}),  // SZ parameters
-            toPyArray(Array2D<double>()),                           // XXXX empty sigma_lcl
-            toPyArray(sigma),                                        // sigma for ivcor=2
+            toPyArray(Array2D<int32_t>()),                              // empty kb
+            toPyArray(std::vector<double>{h_c, h_s, theta_b, theta_f}), // SZ parameters
+            toPyArray(Array2D<double>()),                               //  empty sigma_lcl
+            toPyArray(sigma),                                           // sigma for ivcor=2
             toPyArray(cs),
             toPyArray(dcs)
         );

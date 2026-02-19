@@ -477,7 +477,7 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
-__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegshpCoord) const {
+__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegshpCoord) const {
 
    // Compute the shape coordinates of the point xt in the element.
    if (i34==3) {
@@ -510,13 +510,13 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], boo
       double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
       const bool res = (tmpmin >= -small);  
       
-      // If the point is not inside the element, we do not need to fix the negative shape coordinates.
-      fixNegshpCoord = fixNegshpCoord && res;
+      // If the point is not inside the element (with a small tolerance), we do not need to fix the negative shape coordinates.
+      const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
       
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
-      if ((tmpmin < 0) && fixNegshpCoord) {
+      if ((tmpmin < 0) && fix) {
 
          // NOTE: I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
          // keeping the sum of the shape coordinates equal to 1.
@@ -530,10 +530,9 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], boo
          shpCoords[1] = (shpCoords[1] + a)*b;
          shpCoords[2] = (shpCoords[2] + a)*b;          
 
-         if (shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
-             shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) {
-            Error("Negative shape coordinates in computeshpCoord, when fixNegshpCoord is true");
-         }
+         assert(!(shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
+                  shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) &&
+                "Negative shape coordinates in computeShapeCoords, when fixNegshpCoord is true");
 
          // Update the point coordinates for the new shape coordinates
          double xcoords[3] = {x0.x, x1.x, x2.x};
@@ -690,7 +689,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    double shpCoord[4];
 
    // First step is to compute the shape coordinates of (xt,yt)
-   computeShapeCoords(toVector2(xt), shpCoord, true);
+   computeShapeCoords(toVector2(xt), shpCoord, fiOnlyInside);
 
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
@@ -969,7 +968,9 @@ __inline__ __device__ bool Side::btrack(
    }
 
    assert(!curElem->isDry && "Final element is dry");
-   assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element");
+double shpDummyCoords[4];
+if (!(curElem->containsPoint(toPoint2(xt)))) curElem->computeShapeCoords(toPoint2(xt), shpDummyCoords, Element::fiAnywhere);
+   assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element"); 
 
    // Interpolate the velocities at the final point
    curElem->interpolateVelocities(xt, u_int);
@@ -1336,8 +1337,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       nodeNeighElems[idx] = elem_ptr;
    }      
 
-   node.wind_angle = wind_rotate_angle[i];
-
+   // Compute the cosine and sine of the mesh rotation angle. We use float here because memory efficiency is more important than precision in this case.
+   sincosf((float)wind_rotate_angle[i], &node.sRot, &node.cRot);
 
    node.p.x   = node_coords[i * 3];
    node.p.y   = node_coords[i * 3 + 1];
@@ -2518,18 +2519,21 @@ extern "C" {
    }
 
 
-   __global__ void setWinds(double *windx, double *windy) {
+   __global__ void setWinds(double *xWind, double *yWind, double *pressAir) {
       NODE(node);
 
       const int idx = node->idx;
-      Vector2 wind = {windx[idx], windy[idx]};
+      Vector2 wind = {xWind[idx], yWind[idx]};
 
       if constexpr(nws != 0 && iwindoff != 0) {
-         assert(false && "setWinds: windfactor not implemented");
+         assert(false && "setWinds: windfactor not implemented (nws != 0 && iwindoff != 0)");
       }
 
       // Sets the wind speed (rotated to the mesh angle) and surface stress vector due to wind.
       node->setWind(wind);
+
+      node->pr = pressAir[idx];
+      node->p_air = pressAir[idx]; // XXXXXX is this the same as pr?
 
    }
 

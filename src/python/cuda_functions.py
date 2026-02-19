@@ -23,6 +23,7 @@ returnMatrix = None
 returnX = None
 returnB = None
 scaleGravity = None
+setWinds = None
 computeTimeRamps = None
 computeBedDeformation = None
 computeTidalPotential = None
@@ -117,7 +118,7 @@ def initializeCudaKernelManager(_project_root):
 def initializeCudaFunctions(sizes):
     global mod
     global populateMesh, populateNodes, populateSides, populateElements, populateBoundaryNodes
-    global scaleGravity, computeTimeRamps
+    global scaleGravity, computeTimeRamps, setWinds
     global computeBedDeformation, computeTidalPotential
     global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
@@ -142,6 +143,7 @@ def initializeCudaFunctions(sizes):
         populateBoundaryNodes               = mod.get_function('populateBoundaryNodes',               sizes, kernel_type='nodeBnd')
 
         scaleGravity                        = mod.get_function('scaleGravity',                        sizes, kernel_type='nodes')
+        setWinds                            = mod.get_function('setWinds',                            sizes, kernel_type='nodes')
         computeTimeRamps                    = mod.get_function('computeTimeRamps',                    sizes, kernel_type='global')
         computeBedDeformation               = mod.get_function('computeBedDeformation',               sizes, kernel_type='global')
         computeTidalPotential               = mod.get_function('computeTidalPotential',               sizes, kernel_type='nodeBnd')

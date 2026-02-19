@@ -663,7 +663,9 @@ struct Element {
       p = (1.0 - btrack_nudge)*p + btrack_nudge*center;
    }
 
-   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
+   enum EFixIf { fiNo, fiOnlyInside, fiAnywhere };
+
+   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo) const;
    
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
@@ -716,7 +718,7 @@ struct Element {
       // Check if the point (xt,yt) is inside the element
       double shpCoords[4];
 
-      bool res = computeShapeCoords(xt, shpCoords, false);
+      bool res = computeShapeCoords(xt, shpCoords, fiNo);
 
       return res;
    }
@@ -727,7 +729,8 @@ struct Element {
       double shpCoords[4];
 
       Vector2 tmp_xt = xt;
-      bool res = computeShapeCoords(tmp_xt, shpCoords, fixCoords);
+      const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
+      bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords);
 
       if (fixCoords && res) xt = tmp_xt;
 
@@ -1292,19 +1295,18 @@ struct Node {
 
    // Meteorological forcing
    Vector2 u_air;
-   double p_air;
+   double p_air;  // XXXX is this the same as pr?
    double t_air;
    double q_air;
-   double wind_angle;  // Wind rotation angle
+   float cRot, sRot;  // Cosine and sine of the mesh rotation matrix
 
    __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the mesh angle
    
-      const double dir = atan2(-u.x,-u.y);
       const double speed = length(u);
 
-      // Calculate new u and v components with added rotation angle
-      u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
+      // Rotate wind vector to the node frame
+      const Vector2 u_air = {u.x*cRot - u.y*sRot, u.x*sRot + u.y*cRot};
 
       // Sets the surface stress vector due to wind.
       if constexpr(nws == 0) {
@@ -1325,8 +1327,8 @@ struct Node {
             tau = cff*u_air;
  
          } else if constexpr(iwind_form == 1) {
-            if (speed <= 35.0) dragcoef = 1.0e-4*(-0.016*speed*speed + 0.967*speed + 8.058);
-            else               dragcoef = 2.23e-3*35.0/speed;
+            if (speed <= 35.0) dragcoef = 1.00e-4 * (-0.016*speed*speed + 0.967*speed + 8.058);
+            else               dragcoef = 2.23e-3 * 35.0/speed;
 
             const double cff = 0.001293*dragcoef*speed*rampwind;
             tau = cff*u_air;
@@ -2208,7 +2210,7 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
-__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegshpCoord) const {
+__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegshpCoord) const {
 
    // Compute the shape coordinates of the point xt in the element.
    if (i34==3) {
@@ -2241,13 +2243,13 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], boo
       double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
       const bool res = (tmpmin >= -small);  
       
-      // If the point is not inside the element, we do not need to fix the negative shape coordinates.
-      fixNegshpCoord = fixNegshpCoord && res;
+      // If the point is not inside the element (with a small tolerance), we do not need to fix the negative shape coordinates.
+      const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
       
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
-      if ((tmpmin < 0) && fixNegshpCoord) {
+      if ((tmpmin < 0) && fix) {
 
          // NOTE: I have changed this algorithm. Now it scales and offsets all the shape coordinates by the same factor,
          // keeping the sum of the shape coordinates equal to 1.
@@ -2261,10 +2263,9 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], boo
          shpCoords[1] = (shpCoords[1] + a)*b;
          shpCoords[2] = (shpCoords[2] + a)*b;          
 
-         if (shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
-             shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) {
-            Error("Negative shape coordinates in computeshpCoord, when fixNegshpCoord is true");
-         }
+         assert(!(shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
+                  shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) &&
+                "Negative shape coordinates in computeShapeCoords, when fixNegshpCoord is true");
 
          // Update the point coordinates for the new shape coordinates
          double xcoords[3] = {x0.x, x1.x, x2.x};
@@ -2421,7 +2422,7 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
    double shpCoord[4];
 
    // First step is to compute the shape coordinates of (xt,yt)
-   computeShapeCoords(toVector2(xt), shpCoord, true);
+   computeShapeCoords(toVector2(xt), shpCoord, fiOnlyInside);
 
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
@@ -2700,7 +2701,9 @@ __inline__ __device__ bool Side::btrack(
    }
 
    assert(!curElem->isDry && "Final element is dry");
-   assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element");
+double shpDummyCoords[4];
+if (!(curElem->containsPoint(toPoint2(xt)))) curElem->computeShapeCoords(toPoint2(xt), shpDummyCoords, Element::fiAnywhere);
+   assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element"); 
 
    // Interpolate the velocities at the final point
    curElem->interpolateVelocities(xt, u_int);
@@ -3067,8 +3070,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       nodeNeighElems[idx] = elem_ptr;
    }      
 
-   node.wind_angle = wind_rotate_angle[i];
-
+   // Compute the cosine and sine of the mesh rotation angle. We use float here because memory efficiency is more important than precision in this case.
+   sincosf((float)wind_rotate_angle[i], &node.sRot, &node.cRot);
 
    node.p.x   = node_coords[i * 3];
    node.p.y   = node_coords[i * 3 + 1];
@@ -4249,18 +4252,21 @@ extern "C" {
    }
 
 
-   __global__ void setWinds(double *windx, double *windy) {
+   __global__ void setWinds(double *xWind, double *yWind, double *pressAir) {
       NODE(node);
 
       const int idx = node->idx;
-      Vector2 wind = {windx[idx], windy[idx]};
+      Vector2 wind = {xWind[idx], yWind[idx]};
 
       if constexpr(nws != 0 && iwindoff != 0) {
-         assert(false && "setWinds: windfactor not implemented");
+         assert(false && "setWinds: windfactor not implemented (nws != 0 && iwindoff != 0)");
       }
 
       // Sets the wind speed (rotated to the mesh angle) and surface stress vector due to wind.
       node->setWind(wind);
+
+      node->pr = pressAir[idx];
+      node->p_air = pressAir[idx]; // XXXXXX is this the same as pr?
 
    }
 

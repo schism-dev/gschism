@@ -9,24 +9,6 @@ from os.path import join
 import os
 from scipy.spatial import cKDTree as KDTree
 
-invalid_threshold = 1e10
-dpi = 450
-outdir = r'C:\Users\jmgonzalez\src\temp'
-
-# ------------------------------- CONFIG -------------------------------
-# Runs to compare (name + folder with out2d_*.nc)
-path = r"C:\Users\jmgonzalez\src\schism_test_suit\RUN02d"
-runs = [
-    # {"name": "GPU", "dir": r"/sciclone/home/jgonzalezondin/scr10/RUN01b"},
-    # {"name": "CPU", "dir": r"/sciclone/home/yinglong/DISKS/schism10/External_Exchanges/EX98/RUN01b/outputs"},
-    {"name": "CPU High Res", "dir": join(path, 'outputs_small_nudge')},
-    # {"name": "CPU", "dir": join(path, 'outputs')},
-    {"name": "GPU", "dir": join(path, 'gpuoutput')}, 
-    # {"name": "GPU High Res", "dir": join(path, 'gpuoutput_hires')},    
-    # add more as needed...
-]
-
-
 
 def sorted_out2d_files(folder, start_num=1, end_num=None):
     """Get sorted out2d files with optional range limits."""
@@ -191,127 +173,273 @@ def load_run_concat(folder, max_files=None):
         "tree": tree
     }
 
-run_data = {}
-for r in runs:
-    print(f"Loading {r['name']} from {r['dir']} ...")
-    rd = load_run_concat(r["dir"])
-    rd["name"] = r["name"]
-    rd["dir"]  = r["dir"]
-    run_data[r["name"]] = rd
 
-# Plot comparisons of the elevation for each run (cpu and cpu) at the stations.
+# Statistics matrices: rows = cases, columns = stations (nodes)
+# Allocated on first case once we know num_stations
+stats_std_diff = None   # shape (len(case_names), num_stations)
+stats_max_amp1 = None   # max |first run| per (case, station)
+stats_max_amp2 = None   # max |second run| per (case, station)
 
-# Load station data
-stations_file = Path(__file__).parent / "RUN2Astations.dat"
-stations_data = np.loadtxt(stations_file, skiprows=1)  # Skip header
-station_indices = stations_data[:, 0].astype(int)
-station_x = stations_data[:, 1]
-station_y = stations_data[:, 2]
-station_z = stations_data[:, 3]
+invalid_threshold = 1e10
+dpi = 450
+case_names = ['run02f', 'run02g', 'run02a', 'run02a_1', 'run02a_2', 'run02a_3']
+case_dtb_max = ['120.0', '40.0', '30.0', '10.0', '5.0', '2.0']
+for case_idx, case_name in enumerate(case_names):
+    outdir = r'C:\Users\jmgonzalez\src\temp\%s' % case_name
 
-# Group stations by (x, y) to handle multiple z-levels per location
-from collections import defaultdict
-station_groups = defaultdict(list)
-for i, (idx, x, y, z) in enumerate(stations_data):
-    # Use rounded coordinates as key to group nearby stations
-    key = (round(x, 2), round(y, 2))
-    station_groups[key].append((idx, x, y, z, i))
+    # ------------------------------- CONFIG -------------------------------
+    # Runs to compare (name + folder with out2d_*.nc)
+    path = r"C:\Users\jmgonzalez\src\schism_test_suit\%s" % case_name
+    runs = [
+        # {"name": "GPU", "dir": r"/sciclone/home/jgonzalezondin/scr10/RUN01b"},
+        # {"name": "CPU", "dir": r"/sciclone/home/yinglong/DISKS/schism10/External_Exchanges/EX98/RUN01b/outputs"},
+        # {"name": "CPU High Res", "dir": join(path, 'outputs_small_nudge')},
+        {"name": "CPU", "dir": join(path, 'outputs')},
+        {"name": "GPU", "dir": join(path, 'gpuoutput')}, 
+        # {"name": "GPU High Res", "dir": join(path, 'gpuoutput_hires')},    
+        # add more as needed...
+    ]
 
-# Find nearest mesh nodes for each unique station location
-station_node_indices = {}
-for (x_key, y_key), group in station_groups.items():
-    # Use first station in group for x, y (they should be the same)
-    x_station, y_station = group[0][1], group[0][2]
-    
-    # Find nearest node using KDTree (use first run's tree)
-    first_run = list(run_data.values())[0]
-    dist, idx = first_run["tree"].query([x_station, y_station], k=1)
-    station_node_indices[(x_key, y_key)] = idx
-    print(f"Station at ({x_station:.2f}, {y_station:.2f}) -> Node {idx} (distance: {dist:.2f})")
 
-# Extract elevation time series for each station from each run
-# Create multiple pages with 32 plots per page
 
-plots_per_page = 4
-rows_per_page = 2
-cols_per_page = 2  # 4x8 = 32 plots per page
 
-# Get sorted station groups - sort by minimum station index in each group
-sorted_stations = sorted(station_groups.items(), key=lambda item: min(st[0] for st in item[1]))
-num_stations = len(sorted_stations)
-num_pages = (num_stations + plots_per_page - 1) // plots_per_page  # Ceiling division
+    run_data = {}
+    for r in runs:
+        print(f"Loading {r['name']} from {r['dir']} ...")
+        rd = load_run_concat(r["dir"])
+        rd["name"] = r["name"]
+        rd["dir"]  = r["dir"]
+        run_data[r["name"]] = rd
 
-print(f"Creating {num_pages} pages with up to {plots_per_page} plots each")
+    # Plot comparisons of the elevation for each run (cpu and cpu) at the stations.
 
-for page_num in range(num_pages):
-    start_idx = page_num * plots_per_page
-    end_idx = min(start_idx + plots_per_page, num_stations)
-    stations_on_page = sorted_stations[start_idx:end_idx]
-    
-    # Create figure for this page
-    fig, axes = plt.subplots(rows_per_page, cols_per_page, 
-                             figsize=(cols_per_page * 3.5, rows_per_page * 2.5))
-    axes = axes.flatten()  # Flatten to 1D array for easier indexing
-    
-    # Plot each station on this page
-    for plot_idx, ((x_key, y_key), group) in enumerate(stations_on_page):
-        ax = axes[plot_idx]
-        node_idx = station_node_indices[(x_key, y_key)]
+    # Load station data
+    stations_file = Path(__file__).parent / "RUN2Astations.dat"
+    stations_data = np.loadtxt(stations_file, skiprows=1)  # Skip header
+    station_indices = stations_data[:, 0].astype(int)
+    station_x = stations_data[:, 1]
+    station_y = stations_data[:, 2]
+    station_z = stations_data[:, 3]
+
+    # Group stations by (x, y) to handle multiple z-levels per location
+    from collections import defaultdict
+    station_groups = defaultdict(list)
+    for i, (idx, x, y, z) in enumerate(stations_data):
+        # Use rounded coordinates as key to group nearby stations
+        key = (round(x, 2), round(y, 2))
+        station_groups[key].append((idx, x, y, z, i))
+
+    # Find nearest mesh nodes for each unique station location
+    station_node_indices = {}
+    for (x_key, y_key), group in station_groups.items():
+        # Use first station in group for x, y (they should be the same)
         x_station, y_station = group[0][1], group[0][2]
         
-        # Plot zCoordinates at level 0 from each run
-        lineStyles = ['-', '-']
-        lineColors = ['blue', 'red']
+        # Find nearest node using KDTree (use first run's tree)
+        first_run = list(run_data.values())[0]
+        dist, idx = first_run["tree"].query([x_station, y_station], k=1)
+        station_node_indices[(x_key, y_key)] = idx
+        print(f"Station at ({x_station:.2f}, {y_station:.2f}) -> Node {idx} (distance: {dist:.2f})")
+
+    # Extract elevation time series for each station from each run
+    # Create multiple pages with 32 plots per page
+
+    plots_per_page = 4
+    rows_per_page = 2
+    cols_per_page = 2  # 4x8 = 32 plots per page
+
+    # Get sorted station groups - sort by minimum station index in each group
+    sorted_stations = sorted(station_groups.items(), key=lambda item: min(st[0] for st in item[1]))
+    num_stations = len(sorted_stations)
+    num_pages = (num_stations + plots_per_page - 1) // plots_per_page  # Ceiling division
+
+    # Allocate stats matrices on first case (rows = cases, columns = stations)
+    if stats_std_diff is None:
+        stats_std_diff = np.full((len(case_names), num_stations), np.nan)
+        stats_max_amp1 = np.full((len(case_names), num_stations), np.nan)
+        stats_max_amp2 = np.full((len(case_names), num_stations), np.nan)
+
+    print(f"Creating {num_pages} pages with up to {plots_per_page} plots each")
+
+    for page_num in range(num_pages):
+        start_idx = page_num * plots_per_page
+        end_idx = min(start_idx + plots_per_page, num_stations)
+        stations_on_page = sorted_stations[start_idx:end_idx]
         
-        # Store data for difference calculation
-        first_data = None
-        second_data = None
+        # Create figure for this page
+        fig, axes = plt.subplots(rows_per_page, cols_per_page, 
+                                 figsize=(cols_per_page * 3.5, rows_per_page * 2.5))
+        axes = axes.flatten()  # Flatten to 1D array for easier indexing
         
-        for run_idx, (run_name, run) in enumerate(run_data.items()):
-            time_data = run["time"]
-            # Use zCoordinates at vertical level 0 instead of elevation
-            z_coords_data = run["z_coordinates"][:, node_idx, 1]  # Level 0 at this node over time
+        # Plot each station on this page
+        for plot_idx, ((x_key, y_key), group) in enumerate(stations_on_page):
+            ax = axes[plot_idx]
+            node_idx = station_node_indices[(x_key, y_key)]
+            x_station, y_station = group[0][1], group[0][2]
             
-            linestyle = lineStyles[run_idx]
-            color = lineColors[run_idx]  # None uses default color cycle
-            ax.plot(time_data, z_coords_data, label=f"{run_name}", 
-                   linestyle=linestyle, color=color, alpha=0.7, linewidth=0.5)
+            # Plot zCoordinates at level 0 from each run
+            lineStyles = ['-', '-']
+            lineColors = ['blue', 'red']
             
-            # Store data for difference (first and second runs)
-            if run_idx == 0:
-                first_data = z_coords_data
-            elif run_idx == 1:
-                second_data = z_coords_data
+            # Store data for difference calculation
+            first_data = None
+            second_data = None
+            
+            for run_idx, (run_name, run) in enumerate(run_data.items()):
+                time_data = run["time"]
+                # Use zCoordinates at vertical level 0 instead of elevation
+                z_coords_data = run["z_coordinates"][:, node_idx, 1]  # Level 0 at this node over time
+                
+                linestyle = lineStyles[run_idx]
+                color = lineColors[run_idx]  # None uses default color cycle
+                ax.plot(time_data, z_coords_data, label=f"{run_name}", 
+                    linestyle=linestyle, color=color, alpha=0.7, linewidth=0.5)
+                
+                # Store data for difference (first and second runs)
+                if run_idx == 0:
+                    first_data = z_coords_data
+                elif run_idx == 1:
+                    second_data = z_coords_data
+            
+            # Plot difference scaled by 10 (convert to dm)
+            if first_data is not None and second_data is not None:
+                diff_dm = 10.0 * (first_data - second_data)  # Difference in dm
+                ax.plot(time_data, diff_dm, label="Difference (10x, dm)", 
+                    linestyle='--', color='green', alpha=0.6, linewidth=0.5)
+            
+            # Compute max absolute value from only first_data and set ylim
+            if first_data is not None:
+                line_data = first_data.flatten()
+                try:
+                    max_abs = np.nanmax(np.abs(line_data))
+                except Exception:
+                    max_abs = None
+                if max_abs is not None and not np.isnan(max_abs) and max_abs > 0:
+                    ylim = np.ceil(max_abs * 10) / 10.0
+                    ax.set_ylim(-ylim, ylim)
+            ax.set_xlabel("Time", fontsize=4)
+            ax.set_ylabel("Elevation (m)", fontsize=4)
+            ax.set_title(f"{case_name} - Stn {group[0][0]:.0f}\n({x_station:.0f}, {y_station:.0f})", fontsize=4.5)
+            ax.legend(fontsize=3.5)
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(axis='both', labelsize=3.5)
+
+            # Std. dev. of difference and max amplitude of first and second data (on the side of each plot)
+            if first_data is not None and second_data is not None:
+                run_names = list(run_data.keys())
+                name1 = run_names[0] if len(run_names) > 0 else "Run 1"
+                name2 = run_names[1] if len(run_names) > 1 else "Run 2"
+                std_diff = np.nanstd(first_data - second_data)
+                max_amp1 = np.nanmax(np.abs(first_data))
+                max_amp2 = np.nanmax(np.abs(second_data))
+                # Store in matrices: rows = cases, columns = stations
+                station_global_idx = page_num * plots_per_page + plot_idx
+                stats_std_diff[case_idx, station_global_idx] = std_diff
+                stats_max_amp1[case_idx, station_global_idx] = max_amp1
+                stats_max_amp2[case_idx, station_global_idx] = max_amp2
+
+                stats_text = (
+                    f"σ(diff) = {std_diff:.4f} m\n"
+                    f"max|{name1}| = {max_amp1:.4f} m\n"
+                    f"max|{name2}| = {max_amp2:.4f} m"
+                )
+                ax.text(0.98, 0.98, stats_text, transform=ax.transAxes, fontsize=3,
+                        verticalalignment='top', horizontalalignment='right',
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
         
- # Plot difference scaled by 10 (convert to dm)
-        if first_data is not None and second_data is not None:
-            diff_dm = 10.0 * (first_data - second_data)  # Difference in dm
-            ax.plot(time_data, diff_dm, label="Difference (10x, dm)", 
-                   linestyle='--', color='green', alpha=0.6, linewidth=0.5)
+        # Hide unused subplots
+        for plot_idx in range(len(stations_on_page), plots_per_page):
+            axes[plot_idx].axis('off')
+
+
         
-        ax.set_xlabel("Time", fontsize=4)
-        ax.set_ylabel("Elevation (m)", fontsize=4)
-        ax.set_title(f"Stn {group[0][0]:.0f}\n({x_station:.0f}, {y_station:.0f})", fontsize=4.5)
-        ax.legend(fontsize=3.5)
-        ax.grid(True, alpha=0.3)
-        ax.tick_params(axis='both', labelsize=3.5)
-    
-    # Hide unused subplots
-    for plot_idx in range(len(stations_on_page), plots_per_page):
-        axes[plot_idx].axis('off')
-    
-    plt.suptitle(f"Station Elevation Comparison - Page {page_num + 1} of {num_pages}", 
-                 fontsize=7, y=0.995)
-    plt.tight_layout(rect=[0, 0, 1, 0.99])  # Leave room for suptitle
-    
-    # Save this page
-    run_names = [r['name'].lower().replace(' ', '_') for r in runs]
-    filename_suffix = '_vs_'.join(run_names)
-    filename = f"station_elevation_comparison_page_{page_num + 1:02d}_{filename_suffix}.png"
-    # filename = f"station_elevation_comparison_page_{page_num + 1:02d}_gpu_vs_cpu_high_res.png"
-    filename = join(outdir, filename)
-    plt.savefig(filename, dpi=dpi, bbox_inches='tight')
-    print(f"Saved {filename}")
-    plt.close()  # Close figure to free memory
+        plt.suptitle(f"Station Elevation Comparison - Page {page_num + 1} of {num_pages}", 
+                    fontsize=7, y=0.995)
+        plt.tight_layout(rect=[0, 0, 1, 0.99])  # Leave room for suptitle
+        
+        # Save this page
+        run_names = [r['name'].lower().replace(' ', '_') for r in runs]
+        filename_suffix = '_vs_'.join(run_names)
+        filename = f"station_elevation_comparison_page_{page_num + 1:02d}_{filename_suffix}.png"
+        # filename = f"station_elevation_comparison_page_{page_num + 1:02d}_gpu_vs_cpu_high_res.png"
+        filename = join(outdir, filename)
+        # INSERT_YOUR_CODE
+        # Make sure output directory exists before saving
+        os.makedirs(outdir, exist_ok=True)
+
+        plt.savefig(filename, dpi=dpi, bbox_inches='tight')
+        print(f"Saved {filename}")
+        plt.close()  # Close figure to free memory
+
+# Save stats matrices (rows = cases, columns = stations)
+if stats_std_diff is not None:
+    outdir_root = Path(r'C:\Users\jmgonzalez\src\temp')
+    outdir_root.mkdir(parents=True, exist_ok=True)
+    np.save(outdir_root / 'stats_std_diff.npy', stats_std_diff)
+    np.save(outdir_root / 'stats_max_amp1.npy', stats_max_amp1)
+    np.save(outdir_root / 'stats_max_amp2.npy', stats_max_amp2)
+    np.savetxt(outdir_root / 'stats_std_diff.csv', stats_std_diff, delimiter=',',
+               header=','.join(case_names), comments='')
+    np.savetxt(outdir_root / 'stats_max_amp1.csv', stats_max_amp1, delimiter=',',
+               header=','.join(case_names), comments='')
+    np.savetxt(outdir_root / 'stats_max_amp2.csv', stats_max_amp2, delimiter=',',
+               header=','.join(case_names), comments='')
+    print(f"Saved stats matrices: shape (cases, stations) = {stats_std_diff.shape}")
+
+    # Plot stats: one set of pages, 4 subplots per page; each subplot has 3 lines (σ(diff), max|run1|, max|run2|) vs runs
+    num_cases, num_stations = stats_std_diff.shape
+    from collections import defaultdict
+    stations_data_plot = np.loadtxt(Path(__file__).parent / "RUN2Astations.dat", skiprows=1)
+    station_groups_plot = defaultdict(list)
+    for i, (idx, x, y, z) in enumerate(stations_data_plot):
+        key = (round(x, 2), round(y, 2))
+        station_groups_plot[key].append((idx, x, y, z, i))
+    sorted_stations_plot = sorted(station_groups_plot.items(), key=lambda item: min(st[0] for st in item[1]))
+    plots_per_page_s = 4
+    rows_per_page_s = 2
+    cols_per_page_s = 2
+    num_pages_s = (num_stations + plots_per_page_s - 1) // plots_per_page_s
+
+    for page_num in range(num_pages_s):
+        start_idx = page_num * plots_per_page_s
+        fig, axes = plt.subplots(rows_per_page_s, cols_per_page_s, figsize=(cols_per_page_s * 3.5, rows_per_page_s * 2.5))
+        axes = axes.flatten()
+        for plot_idx in range(plots_per_page_s):
+            ax = axes[plot_idx]
+            station_global_idx = start_idx + plot_idx
+            if station_global_idx >= num_stations:
+                ax.axis('off')
+                continue
+            (x_key, y_key), group = sorted_stations_plot[station_global_idx]
+            x_station, y_station = group[0][1], group[0][2]
+            stn_id = group[0][0]
+            x = np.arange(len(case_names))
+
+            # Left y-axis: max |elevation| (CPU, GPU)
+            ax.plot(x, stats_max_amp1[:, station_global_idx], 's-', label='max|CPU|', color='#ff7f0e', markersize=4)
+            ax.plot(x, stats_max_amp2[:, station_global_idx], '^-', label='max|GPU|', color='#2ca02c', markersize=4)
+            ax.set_ylabel('max |elevation| (m)', fontsize=6)
+            ax.set_xlabel('dtb_max (s)', fontsize=6)
+            ax.set_title(f"Stn {stn_id:.0f} ({x_station:.0f}, {y_station:.0f})", fontsize=6)
+            ax.grid(True, alpha=0.3)
+            # Right y-axis: σ(CPU−GPU)
+            ax2 = ax.twinx()
+            ax2.plot(x, stats_std_diff[:, station_global_idx], 'o-', label='σ(CPU−GPU)', color='#1f77b4', markersize=4)
+            ax2.set_ylabel('σ(CPU−GPU) (m)', fontsize=6, color='#1f77b4')
+            ax2.tick_params(axis='y', labelcolor='#1f77b4', labelsize=6)
+            # Single legend for both axes
+            lines1, labels1 = ax.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            ax.legend(lines1 + lines2, labels1 + labels2, fontsize=5)
+            ax.set_xticks(x)
+            ax.set_xticklabels(case_dtb_max, fontsize=6, rotation=15)
+        plt.suptitle(f"Stats by run - Page {page_num + 1} of {num_pages_s}", fontsize=8, y=0.995)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        fname = outdir_root / f"stats_by_run_page_{page_num + 1:02d}.png"
+        plt.savefig(fname, dpi=dpi, bbox_inches='tight')
+        plt.close()
+        print(f"Saved {fname}")
+
 
 print(f"All {num_pages} pages saved successfully!")
+

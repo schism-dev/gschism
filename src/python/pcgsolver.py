@@ -45,6 +45,7 @@ class PCGSolver:
 
         
         # Pre-allocate all work vectors (no allocations in solve loop)
+        self.diag = cp.empty(self.n, dtype=cp.float64)
         self.r    = cp.empty(self.n, dtype=cp.float64)
         self.z    = cp.empty(self.n, dtype=cp.float64) 
         self.p    = cp.empty(self.n, dtype=cp.float64)
@@ -101,12 +102,13 @@ class PCGSolver:
             self.A.data[:]   = 0.5*(self.A   + self.A.T  ).data  
             self.A_f.data[:] = 0.5*(self.A_f + self.A_f.T).data  
 
-        self.ilu = spilu(self.A.astype(cp.float32), drop_tol=1e-6)       
-
-        
-
         # Recreate descriptors after matrix data is populated
         self.desc_A = cusparse.SpMatDescriptor.create(self.A)
+
+        # Uncomment this to use ILU preconditioner
+        # self.ilu = spilu(self.A.astype(cp.float32), drop_tol=1e-6)       
+        # store the inverse of the diagonal of the matrix
+        self.diag[:] = 1.0/self.A.diagonal()   # XXXXX Can it be made faster?
 
         resid = 1e100
 
@@ -140,8 +142,9 @@ class PCGSolver:
         for iters in range(old_iters, maxiter):
             # Apply the preconditioner
             # z = diag * r (in-place)
-            # cp.multiply(self.r, self.diag, out=self.z[:])
-            self.z[:] = self.ilu.solve(self.r)  # ILU preconditioner
+            # Comment this and uncomment the ILU preconditioner to use it
+            cp.multiply(self.r, self.diag, out=self.z[:])
+            # self.z[:] = self.ilu.solve(self.r)  # ILU preconditioner
 
             rho_new = cublas.dotc(self.r, self.z)
             beta = rho_new / rho if rho != 0.0 else 0.0

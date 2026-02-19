@@ -68,8 +68,8 @@ import python.cuda_functions as cufunc
 if WINDOWS:
     # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b'
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
-    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02b'
-    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02b\gpuoutput'
+    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02e'
+    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02e\gpuoutput'
     # out_dir = r'c:\Users\jmgonzalez\src\temp'
 elif VISTA:
     in_dir = r'/scratch/10922/jmglez/tests/RUN01b'
@@ -250,9 +250,9 @@ if __name__ == "__main__":
 
 
 
-    [ivcor, nvrt, nzlev, nsiglev], ztot, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
+    [ivcor, nvrt, nzlev, nsiglev], ztot, kb, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
         module.readVGrid(vgrid_file, nodeCoords.shape[1])
-
+copy kb into populate
     # If nw2 is 2, read the wind rotation angle from the windrot_geo2proj.gr3 file. Otherwise, set it to 0.
     if (namelist.opt.nws == 2):
         wind_rotate_angle = module.readWindRotationAngle(os.path.join(in_dir, 'windrot_geo2proj.gr3'), nodeCoords.shape[1])

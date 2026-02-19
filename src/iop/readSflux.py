@@ -1,5 +1,6 @@
 from os import path
 import numpy as np
+import cupy as cp
 from netCDF4 import Dataset
 from datetime import datetime
 from typing import Tuple
@@ -659,7 +660,7 @@ class SFlux:
         p_air/t_air/q_air can be set on the device).
         """
         n_node = self.nodes.shape[1]
-        u_air_node = np.zeros(n_node, dtype=np.float64)
+        u_air_node = np.zeros(n_node, dtype=np.float64)  # XXXXXXX These should be cupy arrays
         v_air_node = np.zeros(n_node, dtype=np.float64)
         p_air_node = np.zeros(n_node, dtype=np.float64)
         t_air_node = np.zeros(n_node, dtype=np.float64)
@@ -677,4 +678,4 @@ class SFlux:
         # Winds here are in geographic coordinates, so we'll need to rotate them to the grid's map projection
         # This is done in setWind() 
 
-        return (u_air_node, v_air_node, p_air_node, t_air_node, q_air_node)
+        return (cp.array(u_air_node), cp.array(v_air_node), cp.array(p_air_node), cp.array(t_air_node), cp.array(q_air_node))

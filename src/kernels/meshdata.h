@@ -549,7 +549,9 @@ struct Element {
       p = (1.0 - btrack_nudge)*p + btrack_nudge*center;
    }
 
-   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], bool fixNegShapeCoords = false) const;
+   enum EFixIf { fiNo, fiOnlyInside, fiAnywhere };
+
+   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo) const;
    
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
@@ -602,7 +604,7 @@ struct Element {
       // Check if the point (xt,yt) is inside the element
       double shpCoords[4];
 
-      bool res = computeShapeCoords(xt, shpCoords, false);
+      bool res = computeShapeCoords(xt, shpCoords, fiNo);
 
       return res;
    }
@@ -613,7 +615,8 @@ struct Element {
       double shpCoords[4];
 
       Vector2 tmp_xt = xt;
-      bool res = computeShapeCoords(tmp_xt, shpCoords, fixCoords);
+      const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
+      bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords);
 
       if (fixCoords && res) xt = tmp_xt;
 
@@ -1178,19 +1181,18 @@ struct Node {
 
    // Meteorological forcing
    Vector2 u_air;
-   double p_air;
+   double p_air;  // XXXX is this the same as pr?
    double t_air;
    double q_air;
-   double wind_angle;  // Wind rotation angle
+   float cRot, sRot;  // Cosine and sine of the mesh rotation matrix
 
    __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the mesh angle
    
-      const double dir = atan2(-u.x,-u.y);
       const double speed = length(u);
 
-      // Calculate new u and v components with added rotation angle
-      u_air = {-speed*sin(dir + wind_angle), -speed*cos(dir + wind_angle)};
+      // Rotate wind vector to the node frame
+      const Vector2 u_air = {u.x*cRot - u.y*sRot, u.x*sRot + u.y*cRot};
 
       // Sets the surface stress vector due to wind.
       if constexpr(nws == 0) {
@@ -1211,8 +1213,8 @@ struct Node {
             tau = cff*u_air;
  
          } else if constexpr(iwind_form == 1) {
-            if (speed <= 35.0) dragcoef = 1.0e-4*(-0.016*speed*speed + 0.967*speed + 8.058);
-            else               dragcoef = 2.23e-3*35.0/speed;
+            if (speed <= 35.0) dragcoef = 1.00e-4 * (-0.016*speed*speed + 0.967*speed + 8.058);
+            else               dragcoef = 2.23e-3 * 35.0/speed;
 
             const double cff = 0.001293*dragcoef*speed*rampwind;
             tau = cff*u_air;
