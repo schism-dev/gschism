@@ -1187,6 +1187,7 @@ __device__ double Node::compZCoord(int k) const {
 
    }
    else if constexpr(ivcor == 1) {
+printf("CCCC k = %d, kb = %d\n", k, kb);
       if (k == kb) return -depth;
       else if (k == nvrt-1) return eta2;
       else if (k > kb) return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
@@ -1294,7 +1295,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart,
-                                    double *drag, double *roughness, double *rmanning) {
+                                    double *drag, double *roughness, double *rmanning, int *kb) {
 
    NODE(pnode);  
    const int i = idx_node;
@@ -1358,6 +1359,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else if constexpr(nchi == -1) node.rmanning = rmanning[i];
    else assert(false && "populateNodes: selected nchi not implemented.");
    
+   if constexpr(ivcor == 1) node.kb = kb[i];
+
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
    for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
    for (int k = 0; k < nvrt; k++) node.dfv[k] = dfv0;   // XXXX 
@@ -5248,7 +5251,7 @@ __global__ void createMesh(int partNum,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
                            double *partCoeffMatrixMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
-                           double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
+                           int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
                            double *ztot, double *cs, double *dcs,
                            double *_debugPlot, int *_debugPlotIdx) {
 
@@ -5281,7 +5284,7 @@ __global__ void createMesh(int partNum,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
                    partCoeffMatrixMem,
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
-                   h_c, h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
+                   kb, h_c, h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
 
    // XXX read from file
    polyDischarge = new Polynomial<4>(0.0, 0.0, 0.0, 0.0, 0.0);                   
@@ -5324,7 +5327,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
-   double *drag, double *roughness, double *rmanning) {
+   double *drag, double *roughness, double *rmanning, int *kb) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
@@ -5332,7 +5335,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning);
+                       drag, roughness, rmanning, kb);
 }  
 
 extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,

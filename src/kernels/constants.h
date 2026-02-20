@@ -4,7 +4,7 @@ constexpr int BLOCK_SIZE = 128;
 
 constexpr int N_TRACERS = 2;
 
-constexpr int ivcor = 2;              // Vertical coordinate system
+constexpr int ivcor = 1;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: global, 2: local
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
@@ -69,9 +69,9 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 2; // Number of vertical levels
-constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
+constexpr int nvrt    = 50; // Number of vertical levels
+constexpr int nzlev   = 0; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = 50; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;

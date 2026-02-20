@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
     [ivcor, nvrt, nzlev, nsiglev], ztot, kb, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
         module.readVGrid(vgrid_file, nodeCoords.shape[1])
-copy kb into populate
+
     # If nw2 is 2, read the wind rotation angle from the windrot_geo2proj.gr3 file. Otherwise, set it to 0.
     if (namelist.opt.nws == 2):
         wind_rotate_angle = module.readWindRotationAngle(os.path.join(in_dir, 'windrot_geo2proj.gr3'), nodeCoords.shape[1])
@@ -334,6 +334,7 @@ copy kb into populate
 
     ztot                 = cp.array(ztot,              dtype=cp.float64, order='F')
     sigma_lcl            = cp.array(sigma_lcl,         dtype=cp.float64, order='F')
+    kb                   = cp.array(kb,                dtype=cp.int32,   order='F')
     sigma                = cp.array(sigma,             dtype=cp.float64, order='F')
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
     dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
@@ -341,6 +342,7 @@ copy kb into populate
     drag                 = cp.array(drag,              dtype=cp.float64, order='F')
     roughness            = cp.array(roughness,         dtype=cp.float64, order='F')
     rmanning             = cp.array(rmanning,          dtype=cp.float64, order='F')
+
 
 
     if False:   
@@ -639,7 +641,7 @@ copy kb into populate
                               partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 
                               partCoeffMatrixMem[ipart],
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
-                              h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs,
+                              kb, h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs,
                               monitor.debugPlot.data.ptr, monitor.debugPlotIdx.data.ptr)
             
             # Given a local index, this array will return the global index
@@ -658,13 +660,13 @@ copy kb into populate
             sharedIdxNodeBoundary  = cp.zeros(1, dtype=cp.int32) - 1 # the first increment makes it 0
             sharedIdxSideBoundary  = cp.zeros(1, dtype=cp.int32) - 1 
 
-            cufunc.populateNodes(i34Part, isbnd, sharedIdxNodeBoundary, 
+            cufunc.populateNodes(i34Part, isbnd, sharedIdxNodeBoundary,
                        nodeCoordsPart, nodeCoords_llPart, use_ll, windRotateAnglePart, 
                        nodeNeighNodesStart, nodeNeighNodes,
                        nodeNeighElemsStart, nodeNeighElems,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning)
+                       drag, roughness, rmanning, kb)
 
             cufunc.populateSides(i34Part, sharedIdxSideBoundary,
                        nodeCoordsPart, nodeCoords_llPart, use_ll,

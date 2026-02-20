@@ -5,7 +5,7 @@ constexpr int BLOCK_SIZE = 128;
 
 constexpr int N_TRACERS = 2;
 
-constexpr int ivcor = 2;              // Vertical coordinate system
+constexpr int ivcor = 1;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: global, 2: local
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
@@ -70,9 +70,9 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 2; // Number of vertical levels
-constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
+constexpr int nvrt    = 50; // Number of vertical levels
+constexpr int nzlev   = 0; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = 50; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;
@@ -1539,7 +1539,7 @@ struct Mesh {
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *drag, double *roughness, double *rmanning);
+                  double *drag, double *roughness, double *rmanning, int *kb);
 
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
@@ -2920,6 +2920,7 @@ __device__ double Node::compZCoord(int k) const {
 
    }
    else if constexpr(ivcor == 1) {
+printf("CCCC k = %d, kb = %d\n", k, kb);
       if (k == kb) return -depth;
       else if (k == nvrt-1) return eta2;
       else if (k > kb) return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
@@ -3027,7 +3028,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart,
-                                    double *drag, double *roughness, double *rmanning) {
+                                    double *drag, double *roughness, double *rmanning, int *kb) {
 
    NODE(pnode);  
    const int i = idx_node;
@@ -3091,6 +3092,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else if constexpr(nchi == -1) node.rmanning = rmanning[i];
    else assert(false && "populateNodes: selected nchi not implemented.");
    
+   if constexpr(ivcor == 1) node.kb = kb[i];
+
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
    for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
    for (int k = 0; k < nvrt; k++) node.dfv[k] = dfv0;   // XXXX 
@@ -7057,7 +7060,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
-   double *drag, double *roughness, double *rmanning) {
+   double *drag, double *roughness, double *rmanning, int *kb) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
@@ -7065,7 +7068,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning);
+                       drag, roughness, rmanning, kb);
 }  
 
 extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,

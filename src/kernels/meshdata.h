@@ -1114,6 +1114,10 @@ struct Node {
    double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
    double depth;
 
+#ifdef USE_LOCALIZED_SIGMA   
+   double sigma_local[nvrt];
+#endif
+
    int kb;       // Bottom index of the node
 
    bool isDry;     // True if the node is dry
@@ -1339,8 +1343,7 @@ struct Mesh {
 
    double theta_b;
    double theta_f, sinh_theta_f;
-   double *sigma_lcl;
-   double *sigma;
+   double *sigma;  // There is a sigma_local on each node for the case ivcor=1
    double *ztot;
    double *cs;
    double *dcs;
@@ -1390,7 +1393,7 @@ struct Mesh {
                    NodeBoundary *localNodeBoundaryMem,
                    SideBoundary *localSideBoundaryMem,
                    BoundarySegment *localSegmentMem,
-                   double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
+                   int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
                    double *cs, double *dcs
                    ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
                        np(np), ne(ne), ns(ns),
@@ -1425,7 +1428,7 @@ struct Mesh {
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *drag, double *roughness, double *rmanning);
+                  double *drag, double *roughness, double *rmanning, int *kb);
 
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
