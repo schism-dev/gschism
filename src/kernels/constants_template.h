@@ -1,3 +1,5 @@
+#define __USE_LOCALIZED_SIGMA__
+
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 
 constexpr int BLOCK_SIZE = __BLOCK_SIZE__;

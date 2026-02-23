@@ -1,3 +1,5 @@
+#define USE_LOCALIZED_SIGMA
+
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 
 constexpr int BLOCK_SIZE = 128;

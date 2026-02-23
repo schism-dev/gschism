@@ -27,10 +27,15 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         Path where constants.h will be generated
     """
    
+    if ivcor != 1:
+        useLocalizedSigma = 'NO_USE_LOCALIZED_SIGMA'
+    else:
+        useLocalizedSigma = 'USE_LOCALIZED_SIGMA'
     # Define mapping of template placeholders to values
     # Format: 'PLACEHOLDER': (value, source_description)
     constantsMapping = {
         # From namelist CORE section
+        '__USE_LOCALIZED_SIGMA__': (useLocalizedSigma, 'namelist.core'),
         '__BLOCK_SIZE__': (blockSize, 'cuda'),
         '__N_TRACERS__': (namelist.core.ntracer_gen, 'namelist.core'),
         '__IBC__': (namelist.core.ibc, 'namelist.core'),

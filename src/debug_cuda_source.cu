@@ -1,4 +1,6 @@
 // BEGIN INCLUDE: constants.h
+#define USE_LOCALIZED_SIGMA
+
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 
 constexpr int BLOCK_SIZE = 128;
@@ -1228,6 +1230,10 @@ struct Node {
    double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
    double depth;
 
+#ifdef USE_LOCALIZED_SIGMA   
+   double localSigma[nvrt];
+#endif
+
    int kb;       // Bottom index of the node
 
    bool isDry;     // True if the node is dry
@@ -1453,8 +1459,7 @@ struct Mesh {
 
    double theta_b;
    double theta_f, sinh_theta_f;
-   double *sigma_lcl;
-   double *sigma;
+   double *sigma;  // There is a sigma_local on each node for the case ivcor=1
    double *ztot;
    double *cs;
    double *dcs;
@@ -1504,7 +1509,7 @@ struct Mesh {
                    NodeBoundary *localNodeBoundaryMem,
                    SideBoundary *localSideBoundaryMem,
                    BoundarySegment *localSegmentMem,
-                   double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
+                   int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma, double *ztot,
                    double *cs, double *dcs
                    ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
                        np(np), ne(ne), ns(ns),
@@ -1514,7 +1519,7 @@ struct Mesh {
                        nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
-                       h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
+                       h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
                        coeffMatrixMem(partCoeffMatrixMem),
                        landBoundarySegment(true),
@@ -1539,7 +1544,7 @@ struct Mesh {
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *drag, double *roughness, double *rmanning, int *kb);
+                  double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
 
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
@@ -2920,10 +2925,9 @@ __device__ double Node::compZCoord(int k) const {
 
    }
    else if constexpr(ivcor == 1) {
-printf("CCCC k = %d, kb = %d\n", k, kb);
       if (k == kb) return -depth;
       else if (k == nvrt-1) return eta2;
-      else if (k > kb) return (eta2 + depth) * mesh->sigma_lcl[k] + eta2;
+      else if (k > kb) return (eta2 + depth)*localSigma[k] + eta2;
    }
    
    assert(false && "ZCOOR: invalid level or coordinate system\n");
@@ -3028,7 +3032,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart,
-                                    double *drag, double *roughness, double *rmanning, int *kb) {
+                                    double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
 
    NODE(pnode);  
    const int i = idx_node;
@@ -5829,7 +5833,7 @@ extern "C" {
          elem->z[k] = n1->z[max(k, kb1)] + n2->z[max(k, kb2)] + n3->z[max(k, kb3)];
          if (elem->isQuad()) elem->z[k] += n4->z[max(k, kb4)];          
          elem->z[k] /= elem->i34;
-
+if (((k < elem->kb + 1)  || (elem->z[k] - elem->z[k-1] > 0.0))) printf("EEEE k = %d, kb = %d, z = %f\n", k, elem->kb, elem->z[k]);
          assert(((k < elem->kb + 1)  || (elem->z[k] - elem->z[k-1] > 0.0)) && "Weird element z");
       }
                   
@@ -6984,7 +6988,7 @@ __global__ void createMesh(int partNum,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
                            double *partCoeffMatrixMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
-                           double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, 
+                           int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma, 
                            double *ztot, double *cs, double *dcs,
                            double *_debugPlot, int *_debugPlotIdx) {
 
@@ -7017,7 +7021,7 @@ __global__ void createMesh(int partNum,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
                    partCoeffMatrixMem,
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
-                   h_c, h_s, theta_b, theta_f, sigma_lcl, sigma, ztot, cs, dcs);
+                   kb, h_c, h_s, theta_b, theta_f, sigma, ztot, cs, dcs);
 
    // XXX read from file
    polyDischarge = new Polynomial<4>(0.0, 0.0, 0.0, 0.0, 0.0);                   
@@ -7060,7 +7064,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
-   double *drag, double *roughness, double *rmanning, int *kb) {
+   double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
@@ -7068,7 +7072,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        nodeNeighElemsStart, nodeNeighElemsIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning, kb);
+                       drag, roughness, rmanning, kb, localSigma);
 }  
 
 extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,

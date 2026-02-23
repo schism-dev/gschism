@@ -333,7 +333,7 @@ if __name__ == "__main__":
     wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
 
     ztot                 = cp.array(ztot,              dtype=cp.float64, order='F')
-    sigma_lcl            = cp.array(sigma_lcl,         dtype=cp.float64, order='F')
+    sigma_lcl            = cp.array(sigma_lcl,         dtype=cp.float64, order='F')  # XXX REMOVE???
     kb                   = cp.array(kb,                dtype=cp.int32,   order='F')
     sigma                = cp.array(sigma,             dtype=cp.float64, order='F')
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
@@ -456,7 +456,8 @@ if __name__ == "__main__":
     cufunc.initTidalHarmonicConstituents(bctides.amig, bctides.face, bctides.ff)
 
     # This list stores references to the device memory of the local arrays. This ensures that the memory is not freed until the mesh is destroyed.
-    deviceMemRef = [ztot, sigma_lcl, sigma, cs, dcs]
+    deviceMemRef = [ztot, sigma, cs, dcs]
+
 
     numNodes = nodeCoords.shape[1]
     numElements = elnode.shape[1]
@@ -641,7 +642,7 @@ if __name__ == "__main__":
                               partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 
                               partCoeffMatrixMem[ipart],
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
-                              kb, h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, sigma, ztot, cs, dcs,
+                              kb, h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, ztot, cs, dcs,
                               monitor.debugPlot.data.ptr, monitor.debugPlotIdx.data.ptr)
             
             # Given a local index, this array will return the global index
@@ -666,7 +667,7 @@ if __name__ == "__main__":
                        nodeNeighElemsStart, nodeNeighElems,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning, kb)
+                       drag, roughness, rmanning, kb, sigma_lcl)
 
             cufunc.populateSides(i34Part, sharedIdxSideBoundary,
                        nodeCoordsPart, nodeCoords_llPart, use_ll,
@@ -711,7 +712,6 @@ if __name__ == "__main__":
                                          bctides.emo, bctides.efa, 
                                          bctides.umo, bctides.ufa,
                                          bctides.vmo, bctides.vfa)                                
-
 
 
 

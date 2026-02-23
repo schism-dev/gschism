@@ -1115,7 +1115,7 @@ struct Node {
    double depth;
 
 #ifdef USE_LOCALIZED_SIGMA   
-   double sigma_local[nvrt];
+   double localSigma[nvrt];
 #endif
 
    int kb;       // Bottom index of the node
@@ -1393,7 +1393,7 @@ struct Mesh {
                    NodeBoundary *localNodeBoundaryMem,
                    SideBoundary *localSideBoundaryMem,
                    BoundarySegment *localSegmentMem,
-                   int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma_lcl, double *sigma, double *ztot,
+                   int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma, double *ztot,
                    double *cs, double *dcs
                    ) : partNum(partNum), npgb(npgb), negb(negb), nsgb(nsgb),
                        np(np), ne(ne), ns(ns),
@@ -1403,7 +1403,7 @@ struct Mesh {
                        nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
-                       h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma_lcl(sigma_lcl), sigma(sigma), ztot(ztot),
+                       h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
                        coeffMatrixMem(partCoeffMatrixMem),
                        landBoundarySegment(true),
@@ -1428,7 +1428,7 @@ struct Mesh {
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *drag, double *roughness, double *rmanning, int *kb);
+                  double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
 
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
