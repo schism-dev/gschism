@@ -2805,7 +2805,7 @@ __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mes
 __device__ void Node::updateKb(void) {
 // Updates the node's kb index. Must be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
-   if constexpr(ivcor == 1) return;
+   if constexpr(ivcor == 1) return; // When ivcor=1, the kb index is fixed and read from the vgrid file  XXXX What if the bed changes???
 
 
    // assert(!isDry && "ZCOOR: node is dry"); XXXX
@@ -2925,8 +2925,8 @@ __device__ double Node::compZCoord(int k) const {
 
    }
    else if constexpr(ivcor == 1) {
-      if (k == kb) return -depth;
-      else if (k == nvrt-1) return eta2;
+      if (k == kb) return -depth; 
+      else if (k == nvrt - 1) return eta2;
       else if (k > kb) return (eta2 + depth)*localSigma[k] + eta2;
    }
    
@@ -3096,7 +3096,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else if constexpr(nchi == -1) node.rmanning = rmanning[i];
    else assert(false && "populateNodes: selected nchi not implemented.");
    
-   if constexpr(ivcor == 1) node.kb = kb[i];
+   if constexpr(ivcor == 1) 
+   {  
+      node.kb = kb[i];
+      for (int k = 0; k < nvrt; k++) node.localSigma[k] = localSigma[k + i*nvrt];
+   }
 
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
    for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
@@ -5833,8 +5837,9 @@ extern "C" {
          elem->z[k] = n1->z[max(k, kb1)] + n2->z[max(k, kb2)] + n3->z[max(k, kb3)];
          if (elem->isQuad()) elem->z[k] += n4->z[max(k, kb4)];          
          elem->z[k] /= elem->i34;
-if (((k < elem->kb + 1)  || (elem->z[k] - elem->z[k-1] > 0.0))) printf("EEEE k = %d, kb = %d, z = %f\n", k, elem->kb, elem->z[k]);
-         assert(((k < elem->kb + 1)  || (elem->z[k] - elem->z[k-1] > 0.0)) && "Weird element z");
+
+if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx1 = %d, idx2 = %d, idx3 = %d, z1[k] = %f, z2[k] = %f, z3[k] = %f, z1[k-1] = %f, z2[k-1] = %f, z3[k-1] = %f, k = %d, kb = %d, kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d, z[k] = %f, z[k-1] = %f\n", elem->isDry, n1->idx, n2->idx, n3->idx, n1->z[max(k, kb1)], n2->z[max(k, kb2)], n3->z[max(k, kb3)], n1->z[max(k-1, kb1)], n2->z[max(k-1, kb2)], n3->z[max(k-1, kb3)],  k, elem->kb, kb1, kb2, kb3, kb4, elem->z[k], elem->z[k-1]);
+         assert(k == elem->kb || (elem->z[k] > elem->z[k-1]) && "ivcor = 1: z must increase monotonically");
       }
                   
    }

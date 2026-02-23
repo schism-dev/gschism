@@ -1206,7 +1206,6 @@ readVGrid(const std::string& filename, int nNodes) {
     std::string dummy;
     file >> ivcor;
     std::getline(file, dummy);
-printFormatted(ansi::yellow("ivcor = %d, nvrt = %d, dummy = %s"), ivcor, nvrt, dummy.c_str()); // XXXXXX
 
     printFormatted(ansi::yellow("Reading vertical grid file: %s"), filename.c_str());
 
@@ -1220,7 +1219,6 @@ printFormatted(ansi::yellow("ivcor = %d, nvrt = %d, dummy = %s"), ivcor, nvrt, d
         file >> nvrt;
         std::getline(file, dummy);
 
-printFormatted(ansi::yellow("ivcor = %d, nvrt = %d, dummy = %s"), ivcor, nvrt, dummy.c_str());
     
         Array2D<double> sigma_lcl(nvrt, nNodes);
         std::vector<int32_t> kb(nNodes);
@@ -1248,7 +1246,6 @@ printFormatted(ansi::yellow("ivcor = %d, nvrt = %d, dummy = %s"), ivcor, nvrt, d
 
             for (int i = 0; i < nNodes; i++) {
                 file >> sigma_lcl(k, i);
-                if (i<10) printf("sigma_lcl(%d, %d) = %f\n", k, i, sigma_lcl(k, i));
             }
         }
         

@@ -333,7 +333,7 @@ if __name__ == "__main__":
     wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
 
     ztot                 = cp.array(ztot,              dtype=cp.float64, order='F')
-    sigma_lcl            = cp.array(sigma_lcl,         dtype=cp.float64, order='F')  # XXX REMOVE???
+    sigma_lcl            = cp.array(sigma_lcl,         dtype=cp.float64, order='F') 
     kb                   = cp.array(kb,                dtype=cp.int32,   order='F')
     sigma                = cp.array(sigma,             dtype=cp.float64, order='F')
     cs                   = cp.array(cs,                dtype=cp.float64, order='F')
