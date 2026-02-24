@@ -2912,7 +2912,7 @@ __device__ double Node::compZCoord(int k) const {
          } 
          else if (eta2 <= - h_c - (depth - h_c)*theta_f/sinh_theta_f) {
             printf("Please choose larger h_c: %f %f\n", eta2, h_c);
-            assert(false && "ZCOOR: invalid h_c\n");
+            assert(false && "ZCOOR (1): invalid h_c\n");
          } 
          else {
             return eta2*(1.0 + mesh->sigma[ksig]) + 
@@ -2920,17 +2920,17 @@ __device__ double Node::compZCoord(int k) const {
                    (hmod2 - h_c) * mesh->cs[ksig];
          }
       } else { 
-         assert(false && "ZCOOR: invalid level or coordinate system\n");
+         assert(false && "ZCOOR (2): invalid level or coordinate system\n");
       }
 
    }
    else if constexpr(ivcor == 1) {
-      if (k == kb) return -depth; 
-      else if (k == nvrt - 1) return eta2;
-      else if (k > kb) return (eta2 + depth)*localSigma[k] + eta2;
+      if (k <= kb)        return -depth; 
+      else if (k == ivrt) return eta2;
+      else if (k > kb)    return (eta2 + depth)*localSigma[k] + eta2;
    }
    
-   assert(false && "ZCOOR: invalid level or coordinate system\n");
+   assert(false && "ZCOOR (3): invalid level or coordinate system\n");
    return 0.0;
 }
 
@@ -5824,7 +5824,7 @@ extern "C" {
       const int kb1 = n1->kb;
       const int kb2 = n2->kb;
       const int kb3 = n3->kb;
-      const int kb4 = (elem->isQuad()) ? n4->kb : INT_MAX;
+      const int kb4 = (elem->isQuad()) ? n4->kb : INT_MAX;  // INT_MAX is never used (see below).
 
 
       elem->kb = min(min(kb1, kb2), min(kb3, kb4));

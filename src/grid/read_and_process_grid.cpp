@@ -1235,15 +1235,21 @@ readVGrid(const std::string& filename, int nNodes) {
 //                 throw std::runtime_error("Invalid node number in vgrid file");
 //             }
             
-            file >> kb[i];
+            int fortranKb;
+            file >> fortranKb;
+            kb[i] = fortranKb - 1;
             if (kb[i] < 0 || kb[i] >= nvrt) {
                 throw std::runtime_error("Invalid kb value found");
             }
         }
 
+
         for (int k = 0; k < nvrt; k++) {
             progressBar("Reading localized sigma coordinates", k, nvrt, ansi::YELLOW, 20);
 
+            int row;
+            file >> row;
+            assert(row == k + 1 && "Invalid row number in vgrid file");
             for (int i = 0; i < nNodes; i++) {
                 file >> sigma_lcl(k, i);
             }

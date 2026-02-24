@@ -2912,7 +2912,7 @@
  2912:          } 
  2913:          else if (eta2 <= - h_c - (depth - h_c)*theta_f/sinh_theta_f) {
  2914:             printf("Please choose larger h_c: %f %f\n", eta2, h_c);
- 2915:             assert(false && "ZCOOR: invalid h_c\n");
+ 2915:             assert(false && "ZCOOR (1): invalid h_c\n");
  2916:          } 
  2917:          else {
  2918:             return eta2*(1.0 + mesh->sigma[ksig]) + 
@@ -2920,17 +2920,17 @@
  2920:                    (hmod2 - h_c) * mesh->cs[ksig];
  2921:          }
  2922:       } else { 
- 2923:          assert(false && "ZCOOR: invalid level or coordinate system\n");
+ 2923:          assert(false && "ZCOOR (2): invalid level or coordinate system\n");
  2924:       }
  2925: 
  2926:    }
  2927:    else if constexpr(ivcor == 1) {
- 2928:       if (k == kb) return -depth; 
- 2929:       else if (k == nvrt - 1) return eta2;
- 2930:       else if (k > kb) return (eta2 + depth)*localSigma[k] + eta2;
+ 2928:       if (k <= kb)        return -depth; 
+ 2929:       else if (k == ivrt) return eta2;
+ 2930:       else if (k > kb)    return (eta2 + depth)*localSigma[k] + eta2;
  2931:    }
  2932:    
- 2933:    assert(false && "ZCOOR: invalid level or coordinate system\n");
+ 2933:    assert(false && "ZCOOR (3): invalid level or coordinate system\n");
  2934:    return 0.0;
  2935: }
  2936: 
@@ -5824,7 +5824,7 @@
  5824:       const int kb1 = n1->kb;
  5825:       const int kb2 = n2->kb;
  5826:       const int kb3 = n3->kb;
- 5827:       const int kb4 = (elem->isQuad()) ? n4->kb : INT_MAX;
+ 5827:       const int kb4 = (elem->isQuad()) ? n4->kb : INT_MAX;  // INT_MAX is never used (see below).
  5828: 
  5829: 
  5830:       elem->kb = min(min(kb1, kb2), min(kb3, kb4));
