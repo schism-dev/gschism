@@ -50,6 +50,8 @@ def computeMeteorologicalForcing(opt, time, sflux):
 
     cufunc.setWinds(u_air_node, v_air_node, p_air_node)
 
+    print("WARNING: Sflux reading is not well optimized yet. I believe it does unnecesary computations every time step")  # XXXXXXXX
+
 
 
 
