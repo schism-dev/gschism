@@ -301,7 +301,7 @@ struct Frame {
       t(2,1) = (rearth_pole/rearth_eq)*cos_ar2;
 
       const double ar4 = sqrt(t(0,1)*t(0,1) + t(1,1)*t(1,1) + t(2,1)*t(2,1));
-      assert (ar4!=0.0 && "GRID: ar4=0");
+      assert (ar4 != 0.0 && "GRID: ar4=0");
 
       const double ar4_inv = 1.0/ar4;
       t(0,1) = t(0,1)*ar4_inv;
@@ -315,26 +315,28 @@ struct Frame {
    }
 
 
-   __forceinline__ __device__ Vector2 project_hvec(Vector2 const &vec0, Frame const &frameout) const {
-   // Do plane rotation of a vector (i.e., assuming z-axes are same)
+   __forceinline__ __device__ Vector2 projHorVec(Vector2 const &vec0, Frame const &frameout) const {
+   // Transforms a horizontal vector from one frame to another and projects it to the new local horizontal plane.
    // Inputs:
    //        vec0: vel. in this frame;
    //        frameout: Output frame;
    // Output: 
-   //        vec1: vel. in new frame  
+   //        vel. in new frame  
 
-      auto const fo = frameout;
-      Vector2 vec1;
+      auto const fo = frameout; // Just an alias for the output frame.
+      Vector2 res;
 
       // Since frame tensors are orthogonal, the transpose is the inverse. That's why the indices
       // of t and fo.t are the same.
-      vec1.x = vec0.x*(t(0,0)*fo.t(0,0) + t(1,0)*fo.t(1,0) + t(2,0)*fo.t(2,0)) +
-               vec0.y*(t(0,1)*fo.t(0,0) + t(1,1)*fo.t(1,0) + t(2,1)*fo.t(2,0));
+      res.x = vec0.x*(t(0,0)*fo.t(0,0) + t(1,0)*fo.t(1,0) + t(2,0)*fo.t(2,0)) +
+              vec0.y*(t(0,1)*fo.t(0,0) + t(1,1)*fo.t(1,0) + t(2,1)*fo.t(2,0));
 
-      vec1.y = vec0.x*(t(0,0)*fo.t(0,1) + t(1,0)*fo.t(1,1) + t(2,0)*fo.t(2,1)) +
-               vec0.y*(t(0,1)*fo.t(0,1) + t(1,1)*fo.t(1,1) + t(2,1)*fo.t(2,1));
+      res.y = vec0.x*(t(0,0)*fo.t(0,1) + t(1,0)*fo.t(1,1) + t(2,0)*fo.t(2,1)) +
+              vec0.y*(t(0,1)*fo.t(0,1) + t(1,1)*fo.t(1,1) + t(2,1)*fo.t(2,1));
 
-      return vec1;
+      // The z-component is disregarded, making it an effective projection to the horizontal plane.
+
+      return res;
    }
 
    __forceinline__ __device__ void G2L(Vector3 const &vi, Vector3 &vo) const {
@@ -394,7 +396,9 @@ struct Element {
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
 
+#ifdef USE_FRAMES
    Frame frame;
+#endif
 
    Vector2 gradPhi[4];        // Derivatives of shape functions
    Vector2 gradEta;           // Gradient of free surface elevation
@@ -588,6 +592,7 @@ struct Element {
     }
 
 
+#ifdef USE_FRAMES
    __device__ void setFrame(void) {
 
       double ar1, ar2;
@@ -631,7 +636,7 @@ struct Element {
       
    }
 
-   __device__ void interpolateVelocities(Point3 xt, Vector3& u_int) const;
+   __device__ Vector3 interpolateVelocities(Point3 xt) const;
 
    // ------------------------------------------------------------------------------------------------
    // These are functions that work on all nodes of the element.
@@ -874,7 +879,9 @@ struct Side {
    Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
 
+#ifdef USE_FRAMES
    Frame frame;
+#endif
 
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
@@ -1105,14 +1112,19 @@ struct Node {
 
    int numSides;       // Number of sides that are connected to this node
 
-   Point2 p;
+   Point2 p;           // Horizontal coordinates at the node. (if ics == 2, this are the x,y coordinates of the 3d global cartesian coordinates. Together with gz, they form the 3D global cartesian coordinates.)
+   double gz;          // Global vertical coordinate at the node.
    Vector2 u2[nvrt];
    double  w2[nvrt];
    Vector2 utmp[nvrt];  // Temporary array to store velocities
-   double z[nvrt];
+   double z[nvrt];      // Local vertical coordinate at each vertical level. 
    double lon, lat;
    double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
    double depth;
+
+#ifdef USE_FRAMES
+   Frame frame;
+#endif
 
 #ifdef USE_LOCALIZED_SIGMA   
    double localSigma[nvrt];
@@ -1230,7 +1242,10 @@ struct Node {
    }
 
 
-   __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }
+   __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
+
+   // 3D local coordinates at the node. If ics == 1, p coordinates are already projected. If ics == 2, p coordinates are the x,y coordinates of the 3D global cartesian coordinates. Together with gz, they form the 3D global cartesian coordinates.
+   __device__ Point3 localP3D(void) const { if constexpr(ics==1) { return {p.x, p.y, 0.0}; } else { return frame.G2L(toVector3(p, gz)); } }  
 
    __device__ double sigmaTransitionDepth(void) const;
 

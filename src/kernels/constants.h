@@ -7,7 +7,7 @@ constexpr int BLOCK_SIZE = 128;
 constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 1;              // Vertical coordinate system
-constexpr int ics = 1;                 // 1: global, 2: local
+constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation

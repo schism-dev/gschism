@@ -31,11 +31,18 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         useLocalizedSigma = 'NO_USE_LOCALIZED_SIGMA'
     else:
         useLocalizedSigma = 'USE_LOCALIZED_SIGMA'
+
+    if namelist.core.ics == 1:
+        useFrames = 'NO_USE_FRAMES'
+    else:
+        useFrames = 'USE_FRAMES'
+
     # Define mapping of template placeholders to values
     # Format: 'PLACEHOLDER': (value, source_description)
     constantsMapping = {
         # From namelist CORE section
         '__USE_LOCALIZED_SIGMA__': (useLocalizedSigma, 'namelist.core'),
+        '__USE_FRAMES__': (useFrames, 'namelist.core'),
         '__BLOCK_SIZE__': (blockSize, 'cuda'),
         '__N_TRACERS__': (namelist.core.ntracer_gen, 'namelist.core'),
         '__IBC__': (namelist.core.ibc, 'namelist.core'),

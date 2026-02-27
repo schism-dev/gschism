@@ -116,6 +116,7 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
             const int kb1 = max(k, nodes[1]->kb);
             const int kb2 = max(k, nodes[2]->kb);
 
+FIX
             const Vector3 n20 = nodes[2]->p3D(k) - nodes[0]->p3D(k);
             const Vector3 n10 = nodes[1]->p3D(k) - nodes[0]->p3D(k);
             
@@ -357,7 +358,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
       assert(containsPoint(toPoint2(xt)) && "Target point is not inside the element");
       assert(!isDry && "Target point is inside a dry element");
 
-      interpolateVelocities(xt, u_int);
+      u_int = interpolateVelocities(xt);
 
       nextElem = this;
 
@@ -480,27 +481,20 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
 __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegshpCoord) const {
 
    // Compute the shape coordinates of the point xt in the element.
+   //   If fixNegshpCoord = fiOnlyInside, only fix the shape coordinates if the point is *almost*inside the element.
+   //   If fixNegshpCoord = fiAnywhere, we fix the shape coordinates if they are negative.
+   // It's not reliable to use the area coord for ics=2 when the pt is far away
+   // from the local frame, so use additional check.
+
    if (i34==3) {
-      // Compute area coordinates for a given pt w.r.t. to a triangular element
-      // If ifl=1, will fix 0 or negative area coord. (assuming it's not too negative)
-      // and in this case, the pt will be nudged into the element
-      // It's not reliable to use the area coord for ics=2 when the pt is far away
-      // from the local frame, so use additional check.
+
 
       Point2 x0, x1, x2;
 
-      if constexpr(ics==1) {
-         x0 = nodes[0]->p;
-         x1 = nodes[1]->p;
-         x2 = nodes[2]->p;
-      }
-      else // lat/lon
-      {
-         Error("Not implemented yet");
-         // globalToLocal(nodes[0]->x, nodes[0]->y, nodes[0]->z, x0, y0, z0);
-         // globalToLocal(nodes[1]->x, nodes[1]->y, nodes[1]->z, x1, y1, z1);
-         // globalToLocal(nodes[2]->x, nodes[2]->y, nodes[2]->z, x2, y2, z2);
-      }
+      // Horinzontal local node coordinates. If ics == 2, the node coordinates are transformed to local frame.
+      const Point2 x0 = toPoint2(nodes[0]->localP3D());
+      const Point2 x1 = toPoint2(nodes[1]->localP3D());
+      const Point2 x2 = toPoint2(nodes[2]->localP3D());
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
@@ -553,8 +547,9 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
          yn2 = yt;
       }
       else {
-         localToGlobal(xt, yt, gcor0, xcg2, ycg2, zcg2)
-         globalToLocal(xcg2, ycg2, zcg2, xctr, yctr, zctr, xn2, yn2, zn2)
+         // Transform the point coordinates to the local frame
+         frame.G2L(xt, xn2);
+         frame.G2L(yt, yn2);
       }
 
       return quad_shape(1,6,nnel,xn2,yn2,inside2,arco)
@@ -873,7 +868,18 @@ __inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->v
 
 __inline__ __device__ double  Side::Cd(void)     const { if (!isDry) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
 
-__inline__ __device__ Vector2 Side::tau(void)    const { return 0.5*(n1->tau + n2->tau); }
+__inline__ __device__ Vector2 Side::tau(void)    const { 
+   // Returns the value of the tau at the side center, taking care of the projection to the side frame (ics==1 or ics==2)
+   if constexpr(ics==1) { 
+      return 0.5*(n1->tau + n2->tau);
+   } else {
+      // Project the tau from the node frames to the side frame
+      const Vector2 stau1 = n1->frame.projHorVec(n1->tau(), frame);
+      const Vector2 stau2 = n2->frame.projHorVec(n2->tau(), frame);
+
+      return 0.5*(stau1 + stau2);
+   }
+}
 
 /**
  * This method performs backtracking from the side center until a time -dt back in time 
@@ -968,8 +974,6 @@ __inline__ __device__ bool Side::btrack(
    }
 
    assert(!curElem->isDry && "Final element is dry");
-double shpDummyCoords[4];
-if (!(curElem->containsPoint(toPoint2(xt)))) curElem->computeShapeCoords(toPoint2(xt), shpDummyCoords, Element::fiAnywhere);
    assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element"); 
 
    // Interpolate the velocities at the final point
@@ -1558,10 +1562,11 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
          side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
       }
       else {
-         side.coriolis = 2.0*omega_e*sin(sphi);
+         side.coriolis = 2.0*omega_e*sin(sphi);  // XXX Sin()? Can it be optimized?
       }
 
    }
+
 }
 
 
@@ -1850,8 +1855,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       for (int m=0; m < elem->i34; m++) {      
          const Side *side = elem->sides[m];
 
-         if constexpr(ics == 1) U += side->U; // XXXXX IS THIS JUST ONE VALUE OR TWO????
-         else                   U += side->frame.project_hvec(side->U, elem->frame);
+         if constexpr(ics == 1) U += side->U; 
+         else                   U += side->frame.projHorVec(side->U, elem->frame);  // In global coordinates, we must project the side velocity to the element frame
       }
       U = U/elem->i34;
 
@@ -2115,28 +2120,12 @@ extern "C" {
 
       for (int k = kb; k < nvrt; k++) {
       //  Initialize (xt,yt,zt), nnel and vel.
-      //  For ics=2, the coordinates are in local frames
+      //  For ics=2, the coordinates are all in the side's local frame
       //  Caution! nnel must be initialized inside this loop as it is updated inside.
 
 
          const int iadvf = side->iadv();  // Advection flag   
          assert(nadv == 1 && "Advection flag is only implemented for nadv = 1");
-
-         Point3 xt;
-         if constexpr(ics==1) {
-            xt = side->center3D(k); 
-         }
-         else // lat/lon; in side lat/lon frame
-         {
-            assert(false && "lat/lon not implemented in backtrackAllNodes");
-         // XXX IMPLEMENT THIS
-      //          xt=0.d0
-      //          yt=0.d0
-      //          !centroid coord. for nudging
-      //          call project_pt('g2l',xctr(ie0),yctr(ie0),zctr(ie0), &
-      //   &(/xcj(isd0),ycj(isd0),zcj(isd0)/),swild10_tmp,xctr2,yctr2,tmp)
-         }  // ics
-
 
 
          // If on land or open boundary...
@@ -2169,7 +2158,9 @@ extern "C" {
 
                icount++;
 
-               // Not strictly along z; in ll frame for ics=2
+               // Original Fortran code comment: "Not strictly along z; in local frame for ics=2"
+               // I understand it to mean that u2[k] is assumed to be horizontal-only when transformed to
+               // the local frame. This is not strictly true, but it is a reasonable approximation.
 
                double utmp[4];
                double vtmp[4];
@@ -2180,9 +2171,13 @@ extern "C" {
                   if constexpr(ics==1) {
                      utmp[j] = node->u2[k].x;
                      vtmp[j] = node->u2[k].y;  
+
                   } else {
-                     assert(false && "lat/lon not implemented in backtrackAllNodes");
-                     // call project_hvec(uu2(j,nd0),vv2(j,nd0),pframe(:,:,nd0),eframe(:,:,ie),utmp0(j),vtmp0(j))
+                     // 'Project' the velocity from the node frame to the element frame
+                     const Vector2 tmp_u2 = frame.projHorVec(node->u2[k], elem->frame);
+                     utmp[j] = tmp_u2.x;
+                     vtmp[j] = tmp_u2.y;
+
                   }
                } // for j
 
@@ -2971,7 +2966,7 @@ extern "C" {
          
       if(side->isDry) return;
 
-      // Vertically integrated velocity U (in ll if ics=2)
+      // Vertically integrated velocity U
       for (int k = side->kb; k < nvrt - 1; k++) { 
          const Vector2 uc = 0.5*(side->u2[k] + side->u2[k + 1]);
          side->U += side->Dz(k + 1)*uc;  
@@ -3463,14 +3458,14 @@ extern "C" {
       if (side->isDry) return;
 
       const Element *e1 = side->elems[0];
-      const Element *e2 = side->elems[1];      
+      const Element *e2 = side->elems[1]; 
       const int kb = side->kb;
       
       assert(e1 != nullptr || e2 != nullptr && "computeSideDensityGradient: side needs to have at least one element");
 
       // interpolates vertically the density gradient of the two elements at the half level/
 
-      int k1 = max(kb, nvrt / 2);
+      int k1 = max(kb, nvrt / 2);  // Start the search for the half level at the bottom of the side
       int k2 = max(kb, nvrt / 2);
 
       // Starts the integration at the surface and goes down to the bottom
@@ -3495,24 +3490,32 @@ extern "C" {
             
             k1 = e1->findLevel(side->zc[k], k1); // finds the index at the half level starting the search at k1
             const double zrat = (side->zc[k] - e1->z[k1])/(e1->z[k1 + 1] - e1->z[k1]);
-            // assert(zrat >= 0.0 && zrat <= 1.0 && "computeSideDensityGradient: zrat is not in [0, 1]");
+            assert(zrat >= 0.0 && zrat <= 1.0 && "computeSideDensityGradient: zrat is not in [0, 1]");
 
-            gradRho += (e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1 + 1]*zrat)*w1;
+            // Grad(rho) vertically interpolated at the side's half level
+            Vector2 gradRho1 = e1->gradRho[k1]*(1.0 - zrat) + e1->gradRho[k1 + 1]*zrat;
+
+            // Projects the element density gradient to the side frame if needed.
+            if constexpr(ics==2) gradRho1 = e1->frame.projHorVec(gradRho1, side->frame);
+
+            // Adds the contribution of the density gradient at the side's half level
+            gradRho += gradRho1*w1;
          }      
          if (e2 != nullptr && k > kb) {
             k2 = e2->findLevel(side->zc[k], k2); // finds the index at the half level starting the search at k2
             const double zrat = (side->zc[k] - e2->z[k2])/(e2->z[k2 + 1] - e2->z[k2]);
+            assert(zrat >= 0.0 && zrat <= 1.0 && "computeSideDensityGradient: zrat is not in [0, 1]");
             
-            gradRho += (e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat)*w2;
+            // Grad(rho) vertically interpolated at the side's half level
+            const Vector2 gradRho2 = e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat;
+
+            // Projects the element density gradient to the side frame if needed.
+            if constexpr(ics==2) gradRho2 = e2->frame.projHorVec(gradRho2, side->frame);
+
+            // Adds the contribution of the density gradient at the side's half level
+            gradRho += gradRho2*w2;
          }
 
-         if constexpr(ics==2) {
-            assert(false && "Not implemented: ics == 2");
-            // IMPLEMENT THIS XXXXXX
-            // call project_hvec(swild(1),swild(2),eframe(:,:,ie),sframe2(:,:,i),tmp1,tmp2)
-            // swild(1)=tmp1
-            // swild(2)=tmp2
-         }
          
          // Integrate (using a central Gauss point) the density gradient from the surface to the bottom 
          // multiplied by -rampbc*(g/rho0)  (In ll if ics=2)
@@ -3586,18 +3589,8 @@ extern "C" {
 
          assert(hhat > 0.0 && htot > 0.0 && "solveMomentumEquations: Impossible");
 
-         Vector2 tau2 = {0.0, 0.0};
-          
-         if constexpr(ics==1) {
-            tau2 = side->tau();
-
-         } else {
-            assert(false && "Not implemented: ics == 2");
-            // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
-            // call project_hvec(tau(1,node2),tau(2,node2),pframe(:,:,node2),sframe2(:,:,j),tt1,ss1)
-            // taux2=(vn1+tt1)*0.5d0
-            // tauy2=(vn2+ss1)*0.5d0
-         } // if ics         
+         // tau() takes care of the projection to the side frame (ics==1 or ics==2)
+         const Vector2 tau2 = side->tau();
 
          // hat_gam has units of m/s
 
@@ -3778,20 +3771,10 @@ extern "C" {
                // else assert(false && "itur # Not implemented");
 
             } else { // k == nvrt - 1 SURFACE
-               Vector2 tau2 = {0.0, 0.0};
-               if constexpr(ics==1) {
-                  tau2 = side->tau();
-      
-               } else {
-                  assert(false && "Not implemented: ics == 2");
-                  // call project_hvec(tau(1,node1),tau(2,node1),pframe(:,:,node1),sframe2(:,:,j),vn1,vn2)
-                  // call project_hvec(tau(1,node2),tau(2,node2),pframe(:,:,node2),sframe2(:,:,j),tt1,ss1)
-                  // taux2=(vn1+tt1)*0.5d0
-                  // tauy2=(vn2+ss1)*0.5d0
-               } // if ics
+               // tau() takes care of the projection to the side frame (ics==1 or ics==2)
+               const Vector2 tau2 = side->tau();
 
-               rrhs[kin] += dt*tau2;
-          
+               rrhs[kin] += dt*tau2;          
 
             } // if k<nvrt
 
@@ -3986,16 +3969,13 @@ extern "C" {
                int kin = k;
                if (!(nSide->isDry)) kin = max(k, nSide->kb + 1);
                
-               if constexpr(ics==1) {
-                  suru += nSide->u2[kin];
+               // Get the velocity at the neighbor's side.
+               Vector2 nSideU2 = nSide->u2[kin];
 
-               } else {
-                  assert(false && "Not implemented: ics == 2");
-                  // Vector2 vn1, vn2;
-                  // project_hvec(side->u2[kin], side->v2[kin], nSide->sframe, side->sframe, vn1, vn2);
-                  // suru=suru+vn1;
-                  // surv=surv+vn2;
-               }
+               // Projects the velocity to the current side frame if needed.
+               if constexpr(ics==2) nSideU2 = nSide->frame.projHorVec(nSideU2, side->frame);
+
+               suru += nSideU2;
             }
 
             // Reusing bcc as a temporary array to store the suru values.
@@ -4734,41 +4714,32 @@ extern "C" {
                }  // if iveg
             }  // for k
          }  //2D/3D
+
+         // If needed, project the side velocities to the element frame
+         if constexpr(ics==2) {
+            Ustar       = side->frame.projHorVec(Ustar,       elem->frame);
+            Ustar_alpha = side->frame.projHorVec(Ustar_alpha, elem->frame);
+         }
          
 
          // Add btrack & surface stress terms to \breve{G} first
-         if constexpr(ics==1) {
+         elem->ghat1 += cff1*Ustar - cff3*Ustar_alpha;
 
-            elem->ghat1 += cff1*Ustar - cff3*Ustar_alpha;
 
-         } else {
-            assert(false && "computeElemAverageGhat: Not implemented");
-            // XXX IMPLEMENT THIS
-            // call project_hvec(xtmp,ytmp,sframe2(:,:,isd),eframe(:,:,i),tt1,ss1)
-            // elem->ghat1[0] += cff1*vn1 - cff3*tt1;
-            // elem->ghat1[1] += cff1*vn2 - cff3*ss1;
-         }  // if ics
 
-         // Surface and bottom stress terms
-         if constexpr(ics==1) {
-            const Vector2 tau    = side->tau();
-            const Vector2 ubstar = side->btu[side->kb + 1]; // XXX CHECK INDICES
+         // Both tau and ubstar are in the side frame (for both ics==1 and ics==2)
+         Vector2 tau    = side->tau();  
+         Vector2 ubstar = side->btu[side->kb + 1];  
 
-            // Term for surface and bottom stress
-            elem->ghat1 -= chi*dt*cff2*ubstar + dt*cff1*tau;
+         // If needed, project tau and ubstar to the element frame
+         if constexpr(ics==2) {
+            tau    = side->frame.projHorVec(tau,    elem->frame);  // Here we are doing two projections: from the node frame to the side frame, and from the side frame to the element frame. This is different from the original code where they only did one projection.
+            ubstar = side->frame.projHorVec(ubstar, elem->frame);
+         }
 
-         } else {
-            assert(false && "computeElemAverageGhat: Not implemented");
-            // XXX IMPLEMENT THIS
-            // n1=isidenode(1,isd); n2=isidenode(2,isd)
-            // call project_hvec(tau(1,n1),tau(2,n1),pframe(:,:,n1),eframe(:,:,i),vn1,vn2)
-            // call project_hvec(tau(1,n2),tau(2,n2),pframe(:,:,n2),eframe(:,:,i),tt1,ss1)
-            // tau_x=(vn1+tt1)/2.d0
-            // tau_y=(vn2+ss1)/2.d0
-            // call project_hvec(sdbt(1,kbs(isd)+1,isd),sdbt(2,kbs(isd)+1,isd),sframe2(:,:,isd),eframe(:,:,i),ubstar,vbstar)
-         }  // if ics
+         // Term for surface and bottom stress
+         elem->ghat1 -= chi*dt*cff2*ubstar + dt*cff1*tau;
 
-         
 
          // All terms in F,F^\alpha,f_b except baroclinic
          // F, f_b: all explicit terms excluding vegetation 
@@ -4805,18 +4776,16 @@ extern "C" {
             } // if iveg
          } // for k
 
-         fb += side->nuGradU[side->kb];
+         // Get nu*grad(U) at the side's bottom level
+         Vector2 nuGradU = side->nuGradU[side->kb];
 
-         // Add to ghat1
+         fb += nuGradU;
+
+         // If needed, project vectorsF, fb and Fa to the element frame
          if constexpr(ics==2) {
-            assert(false && "computeElemAverageGhat: Not implemented");
-            // XXX IMPLEMENT THIS
-            // call project_hvec(bigf1,bigf2,sframe2(:,:,isd),eframe(:,:,i),vn1,vn2)
-            // bigf1=vn1; bigf2=vn2
-            // call project_hvec(botf1,botf2,sframe2(:,:,isd),eframe(:,:,i),vn1,vn2)
-            // botf1=vn1; botf2=vn2
-            // call project_hvec(bigfa1,bigfa2,sframe2(:,:,isd),eframe(:,:,i),vn1,vn2)
-            // bigfa1=vn1; bigfa2=vn2
+            F    = side->frame.projHorVec(F,    elem->frame);
+            fb   = side->frame.projHorVec(fb,   elem->frame);
+            Fa   = side->frame.projHorVec(Fa,   elem->frame);
          } // if ics
 
          elem->ghat1 += cff1*dt*F - cff2*chi*dt*dt*fb - cff3*dt*Fa;

@@ -1254,7 +1254,10 @@ readVGrid(const std::string& filename, int nNodes) {
                 file >> sigma_lcl(k, i);
             }
         }
-        
+
+        print("");
+        printFormatted(ansi::green("Read localized sigma coordinates"));
+
         return std::make_tuple(
             toPyArray(std::vector<int>{ivcor, nvrt, 0, nvrt}),
             toPyArray(std::vector<double>()),         // empty ztot 

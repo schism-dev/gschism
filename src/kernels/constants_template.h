@@ -1,4 +1,5 @@
 #define __USE_LOCALIZED_SIGMA__
+#define __USE_FRAMES__
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 
@@ -7,7 +8,7 @@ constexpr int BLOCK_SIZE = __BLOCK_SIZE__;
 constexpr int N_TRACERS = __N_TRACERS__;
 
 constexpr int ivcor = __IVCOR__;              // Vertical coordinate system
-constexpr int ics = __ICS__;                 // 1: global, 2: local
+constexpr int ics = __ICS__;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = __IMM__;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = __INDVEL__;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = __IVEG__;               // Vegetation option, 0: no vegetation, 1: vegetation

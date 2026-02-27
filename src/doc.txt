@@ -1,0 +1,5 @@
+DOCUMENTATION:
+
+Coordinate systems (ics):
+ics=1: Cartesian / projected. Node positions (xnd, ynd) in a flat projection plane (e.g. UTM), znd=0, in meters. One global frame; derivatives and fluxes use it.
+ics=2: Spherical domain. Node positions (xnd, ynd, znd) in Earth-centered Cartesian meters (origin at Earth center, X to prime meridian, Z to pole; surface ~6.4e6 m). Velocities and fluxes use local frames: at each node/side/element, pframe/sframe2/eframe are orthonormal (zonal, meridional, radial), origin on the surface so radial is “up” and (0,0,0) is on the ellipsoid. Shape derivatives (dldxy) and element math use the element frame, not global coordinates.
