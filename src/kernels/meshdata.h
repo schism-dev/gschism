@@ -437,9 +437,7 @@ struct Element {
    bool isDry;                // True if the element is dry
 
    Vector2 center;            // Element center coordinates
-   #ifdef USE_FRAMES
-   double zcenter;            // Element center z-coordinate
-   #endif
+
    double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)

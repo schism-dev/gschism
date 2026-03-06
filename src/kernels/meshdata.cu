@@ -104,6 +104,7 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 
 
 __device__ __forceinline__ double Element::centerZ(void) const { 
+// Z coordinate of the element center in the global cartesian coordinates
    assert(!isQuad() && "centerZ only works for triangles");
 
    if constexpr(ics==1) { 
@@ -115,25 +116,28 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
 
 __device__ __forceinline__ Point2 Element::getLocalHorizontalNodePosition(int idxNode) const {
-   // "Local" here means that the coordinates are in a frame where the element is horizontal.
+// Local horizontal node position in the element frame. idxNode = 0,1,2,3
+// "Local" here means that the coordinates are in the element frame where the element is horizontal.
+// Only when ics == 2, the origin is at the element center.
 
-   assert(idxNode < i34 && "getLocalHorizontalNodePosition: idxNode out of range");
+   assert(idxNode < i34 && idxNode >= 0 && "getLocalHorizontalNodePosition: idxNode out of range");
 
    if constexpr(ics==1) {
       return nodes[idxNode]->p;
+
    } else {
       const Vector3 c = {center.x, center.y, centerZ()}; // Element center
 
       const Point3 p = toPoint3(nodes[idxNode]->p, nodes[idxNode]->gz); // XXXXX use p3D or similar?
 
-      return toVector2(frame.G2L(p - c));  // Vectors are implicitly cast into points at the local frame centered at c
+      return toVector2(frame.G2L(p - c));  // Vectors are implicitly cast into points (in this case at the local frame centered at c)
    }
 
 }
 
 
 __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Point2 &x0, Point2 &x1, Point2 &x2) const {
-// "Local" here means that the coordinates are in a frame where the element is horizontal.
+// Performs "getLocalHorizontalNodePosition" for the three nodes of the triangle.
 
    assert(!isQuad() && "getLocalHorizontalNodePositions only works for triangles");
 
@@ -157,7 +161,7 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Poin
 }
 
 __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const {
-// "Local" here means that the coordinates are in a frame where the element is horizontal. 
+// Performs "getLocalHorizontalNodePosition" for the four nodes of the quad.
 
    assert(isQuad() && "getLocalHorizontalNodePositionsQuad only works for quads");
 
@@ -185,57 +189,58 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Poi
 
 
 __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
-   // Computes the *local* (element frame) 3D normal vector to the element at level k
-   // Returns the normal vector and the area of the element
+// Computes the *local* (element frame) 3D normal vector to the element at level k
+// Returns the normal vector and the area of the element at this level
 
-      if (isTri()) {
-         // For triangles...
+   if (isTri()) {
+      // For triangles...
 
-         // Indices of the nodes at level k, taking care of not going below the bed
-         const int k0 = max(k, nodes[0]->kb);
-         const int k1 = max(k, nodes[1]->kb);
-         const int k2 = max(k, nodes[2]->kb);
+      // Indices of the nodes at level k, taking care of not going below the bed
+      const int k0 = max(k, nodes[0]->kb);
+      const int k1 = max(k, nodes[1]->kb);
+      const int k2 = max(k, nodes[2]->kb);
 
-         // Gets the element frame coordinates of the nodes at level k
-         Point3 x0, x1, x2;
-         if constexpr(ics==1) {
-            x0 = toPoint3(nodes[0]->p, nodes[0]->z[k0]);
-            x1 = toPoint3(nodes[1]->p, nodes[1]->z[k1]);
-            x2 = toPoint3(nodes[2]->p, nodes[2]->z[k2]);
+      // Gets the element frame coordinates of the nodes at level k
+      Point3 x0, x1, x2;
+      if constexpr(ics==1) {
+         x0 = toPoint3(nodes[0]->p, nodes[0]->z[k0]);
+         x1 = toPoint3(nodes[1]->p, nodes[1]->z[k1]);
+         x2 = toPoint3(nodes[2]->p, nodes[2]->z[k2]);
 
-         } else {  // ics == 2
-            Vector2 h0, h1, h2;
-            getLocalHorizontalNodePositions(h0, h1, h2);
-            x0 = toPoint3(h0, nodes[0]->z[k0]);
-            x1 = toPoint3(h1, nodes[1]->z[k1]);
-            x2 = toPoint3(h2, nodes[2]->z[k2]);
-         }
-         const Vector3 n20 = x2 - x0;
-         const Vector3 n10 = x1 - x0; 
+      } else {  // ics == 2
+         Vector2 h0, h1, h2;
 
-         // Computes the cross product of vectors (n2 - n0) and (n1 - n0). 
-         const double nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
-         const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
-         const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
+         getLocalHorizontalNodePositionsTri(h0, h1, h2);
 
-         const double len = sqrt(nx*nx + ny*ny + nz*nz);
-         area3D = 0.5*len;
-
-         assert(area3D > 0.0 && "Element normal vector: area3D is negative");
-
-         const double inv_len = 1.0/len;
-         return {nx*inv_len, ny*inv_len, nz*inv_len};
-      
+         x0 = toPoint3(h0, nodes[0]->z[k0]);
+         x1 = toPoint3(h1, nodes[1]->z[k1]);
+         x2 = toPoint3(h2, nodes[2]->z[k2]);
       }
-      else {
-         // For quads...
 
-         assert(false && "Element normal vector: quads not yet implemented");
-         return {0.0, 0.0, 0.0};
+      const Vector3 n20 = x2 - x0;
+      const Vector3 n10 = x1 - x0; 
 
+      // Computes the cross product of vectors (n2 - n0) and (n1 - n0). 
+      const double nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
+      const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
+      const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
 
-      }
+      const double len = sqrt(nx*nx + ny*ny + nz*nz);
+      area3D = 0.5*len;
+
+      const double inv_len = 1.0/len;
+      return {nx*inv_len, ny*inv_len, nz*inv_len};
+   
    }
+   else {
+      // For quads...
+
+      assert(false && "Element normal vector: quads not yet implemented");
+      return {0.0, 0.0, 0.0};
+
+
+   }
+}
 
 /**
    For a point on a side of an element and a line segment starting at that point and ending at (x2,y2), 
@@ -578,7 +583,7 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       Point2 x0, x1, x2;
 
       // Horizontal local node coordinates. If ics == 2, the node coordinates are transformed to local frame.
-      getLocalHorizontalNodePositions(x0, x1, x2);
+      getLocalHorizontalNodePositionsTri(x0, x1, x2);
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
@@ -915,14 +920,17 @@ __inline__ __device__ double  Side::lon(void)     const { return 0.5*(n1->lon + 
 __inline__ __device__ double  Side::lat(void)     const { return 0.5*(n1->lat + n2->lat); }
 __inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
 __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition)(const Element*)) const {
+// Computes the gradient of the field at the side center.
    Vector2 grad = {0.0, 0.0};
    int count = 0;
 
+   // Goes over the two elements that share this side, computes the gradient of the field at the side center,
+   // as the average of the gradients at each element.
    // First element
    if (elems[0] != nullptr && condition(elems[0])) {
       Vector2 elemGrad = elems[0]->grad2(field);
 
-      // For ics=2, projects the element gradient to the side frame
+      // For ics=2, projects the element gradient from its frame to the side frame
       if constexpr(ics == 2) elemGrad = elems[0]->frame.projHorVec(elemGrad, frame);
 
       grad += elemGrad;
@@ -935,7 +943,7 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
 
       Vector2 elemGrad = elems[1]->grad2(field);
 
-      // For ics=2, projects the element gradient to the side frame
+      // For ics=2, projects the element gradient from its frame to the side frame
       if constexpr(ics == 2) elemGrad = elems[1]->frame.projHorVec(elemGrad, frame);
 
       grad += elemGrad;
@@ -943,6 +951,7 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
       count++;
    }
 
+   // If there are valid elements, returns the average of the gradients at the side's frame.
    if (count > 0) {
       grad = grad*(1.0/count);
    }
@@ -967,9 +976,10 @@ __inline__ __device__ double  Side::veg_alpha3D(int k) const { return 0.5*(n1->v
 __inline__ __device__ double  Side::Cd(void)     const { if (!isDry) return 0.5*(n1->Cd + n2->Cd); else return 0.0; }
 
 __inline__ __device__ Vector2 Side::tau(void)    const { 
-   // Returns the value of the tau at the side center, taking care of the projection to the side frame (ics==1 or ics==2)
-   if constexpr(ics==1) { 
+   // Returns the value of the tau at the side center, taking care of the projection from the node frames to the side frame (ics==1 or ics==2)
+   if constexpr(ics == 1) { 
       return 0.5*(n1->tau + n2->tau);
+
    } else {
       // Project the tau from the node frames to the side frame
       const Vector2 stau1 = n1->frame.projHorVec(n1->tau, frame);
@@ -1654,13 +1664,13 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
    else {
       const double sphi = side.lat();  // Latitude at the center of the side
 
-// XXXXXX ERROR WHEN use_ll is false??????
+      assert(use_ll && "use_ll must be true when ncor > 0");
+
       if constexpr(ics == 1) {
-         // XXXXXXX
          side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
       }
-      else {
-         side.coriolis = 2.0*omega_e*sin(sphi);  // XXX Sin()? Can it be optimized?
+      else { // ics == 2
+         side.coriolis = 2.0*omega_e*sin(sphi);  
       }
 
    }
@@ -1707,17 +1717,12 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
 
    // Compute the barycenter of the element and its depth
    elem.center = {0.0, 0.0};
-   elem.depth = 0.0;
+   elem.depth = 1e10;
    for (int j = 0; j < i34[i]; j++) {
 
       elem.center += elem.nodes[j]->p/i34[i];
-      elem.depth  += elem.nodes[j]->depth/i34[i];
+      elem.depth  = min(elem.depth, elem.nodes[j]->depth);
    }
-
-
-   
-   // if constexpr(ics==2) elem.zc += elem.znd[j]/i34;   XXX Implement this?
-   // if(dp(elnode(j,ie))<dpe(ie)) dpe(ie)=dp(elnode(j,ie))
 
    elem.area = elem.computeSignedArea(); 
    elem.radius = sqrt(elem.area)/pi; 
