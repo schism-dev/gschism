@@ -279,12 +279,11 @@ struct Tracers {
 
 
 struct Frame {
-   double _t[9]; // t stands for tensor.
-
-   // Access the tensor in Fortran order
-   __device__ __forceinline__ double& t(int i, int j) { return _t[i + 3*j]; }
-
-   __device__ __forceinline__ double t(int i, int j) const { return _t[i + 3*j]; }
+   // Column 0 (East):  (-sin_lon, cos_lon, 0)              — store 2 values, t20=0 implicit
+   // Column 1 (North): Normalized oblate ellipsoid vector  — store 3 values
+   // Column 2 (Up):    cross(col0, col1)                   — recomputed on demand
+    double t00, t10;        // col0 (t20=0 implicit)
+    double t01, t11, t21;   // col1
 
    __device__ void update(double ar1, double ar2) { // XXX use lat, lon instead of ar1, ar2?
 
@@ -292,26 +291,32 @@ struct Frame {
       sincos(ar1, &sin_ar1, &cos_ar1); // These functions are faster than sin(ar1) and cos(ar1).
       sincos(ar2, &sin_ar2, &cos_ar2);
 
-      t(0,0) = -sin_ar1;
-      t(1,0) =  cos_ar1;
-      t(2,0) =  0.0;
-      t(0,1) = -cos_ar1*sin_ar2;
-      t(1,1) = -sin_ar1*sin_ar2;
+      t00 = -sin_ar1;
+      t10 =  cos_ar1;
+      t01 = -cos_ar1*sin_ar2;
+      t11 = -sin_ar1*sin_ar2;
+      t21 = (rearth_pole/rearth_eq)*cos_ar2;
 
-      t(2,1) = (rearth_pole/rearth_eq)*cos_ar2;
+      const double col1_norm = sqrt(t01*t01 + t11*t11 + t21*t21);
+      assert (col1_norm != 0.0 && "GRID: col1_norm=0");
 
-      const double ar4 = sqrt(t(0,1)*t(0,1) + t(1,1)*t(1,1) + t(2,1)*t(2,1));
-      assert (ar4 != 0.0 && "GRID: ar4=0");
+      const double col1_norm_inv = 1.0/col1_norm;
+      t01 = t01*col1_norm_inv;
+      t11 = t11*col1_norm_inv;
+      t21 = t21*col1_norm_inv;
 
-      const double ar4_inv = 1.0/ar4;
-      t(0,1) = t(0,1)*ar4_inv;
-      t(1,1) = t(1,1)*ar4_inv;
-      t(2,1) = t(2,1)*ar4_inv;
+      // The 3rd column (col2) is the cross product of the first two and is computed when needed.
 
-      // The third vector is the cross product of the first two
-      crossProduct(t(0,0), t(1,0), t(2,0), 
-                   t(0,1), t(1,1), t(2,1), 
-                   t(0,2), t(1,2), t(2,2));
+   }
+
+   __forceinline__ __device__ void getCol2(double &t02, double &t12, double &t22) const {
+      // cross(col0, col1), with t20=0 implicitly:
+      // |  i       j       k   |
+      // | t00     t10      0   |
+      // | t01     t11     t21  |
+      t02 =  t10*t21;
+      t12 = -t00*t21;
+      t22 =  t00*t11 - t10*t01;
    }
 
 
@@ -322,47 +327,71 @@ struct Frame {
    //        frameout: Output frame;
    // Output: 
    //        vel. in new frame  
+   //
+   // Projects a horizontal vector from frame 1 (this) to frame 2 (frameout),
+   // discarding the z-component of the result to keep only the local horizontal
+   // plane of frame 2.
+   //
+   // Since F1 and F2 are global-to-local rotation matrices, transforming from
+   // frame 1 to frame 2 requires F2 * F1^{-1} = F2 * F1^T, as rotation matrices
+   // are orthogonal. This product is computed as dot products between columns of
+   // F1 and columns of F2, which is equivalent to multiplying rows of F1^T by
+   // columns of F2.// 
 
       auto const fo = frameout; // Just an alias for the output frame.
       Vector2 res;
 
       // Since frame tensors are orthogonal, the transpose is the inverse. That's why the indices
       // of t and fo.t are the same.
-      res.x = vec0.x*(t(0,0)*fo.t(0,0) + t(1,0)*fo.t(1,0) + t(2,0)*fo.t(2,0)) +
-              vec0.y*(t(0,1)*fo.t(0,0) + t(1,1)*fo.t(1,0) + t(2,1)*fo.t(2,0));
+      const double d00 = t00*fo.t00 + t10*fo.t10;
+      const double d10 = t01*fo.t00 + t11*fo.t10;
 
-      res.y = vec0.x*(t(0,0)*fo.t(0,1) + t(1,0)*fo.t(1,1) + t(2,0)*fo.t(2,1)) +
-              vec0.y*(t(0,1)*fo.t(0,1) + t(1,1)*fo.t(1,1) + t(2,1)*fo.t(2,1));
+      const double d01 = t00*fo.t01 + t10*fo.t11;
+      const double d11 = t01*fo.t01 + t11*fo.t11 + t21*fo.t21;
 
-      // The z-component is disregarded, making it an effective projection to the horizontal plane.
+      res.x = vec0.x * d00 + vec0.y * d10;
+      res.y = vec0.x * d01 + vec0.y * d11;
 
       return res;
    }
 
-   __forceinline__ __device__ void G2L(Vector3 const &vi, Vector3 &vo) const {
-      // Transform a vector from global to local frame
-      vo.x = vi.x*t(0,0) + vi.y*t(1,0) + vi.z*t(2,0);
-      vo.y = vi.x*t(0,1) + vi.y*t(1,1) + vi.z*t(2,1);
-      vo.z = vi.x*t(0,2) + vi.y*t(1,2) + vi.z*t(2,2);
+   __forceinline__ __device__ Vector3 G2L(Vector3 const &vi) const {
+      Vector3 vo;
+      double t02, t12, t22;
+
+      getCol2(t02, t12, t22);
+
+      vo.x = vi.x*t00 + vi.y*t10;
+      vo.y = vi.x*t01 + vi.y*t11 + vi.z*t21;
+      vo.z = vi.x*t02 + vi.y*t12 + vi.z*t22;
+
+      return vo;
+   
    }
 
-   __forceinline__ __device__ void L2G(Vector3 const &vi, Vector3 &vo) const {
-      // Transform a vector from local to global frame
-      vo.x = vi.x*t(0,0) + vi.y*t(0,1) + vi.z*t(0,2);
-      vo.y = vi.x*t(1,0) + vi.y*t(1,1) + vi.z*t(1,2);
-      vo.z = vi.x*t(2,0) + vi.y*t(2,1) + vi.z*t(2,2);
-   }   
+   __forceinline__ __device__ Vector3 L2G(Vector3 const &vi) const {
+      Vector3 vo;
+      double t02, t12, t22;
 
-   __forceinline__ __device__ void G2L(Point3 const &pi, Point3 const &origin0, Point3 &po) const {
-   // Tranforms a point from global to local frame     
-      G2L(pi - origin0, po);
+      getCol2(t02, t12, t22);
+
+      // F * vi (non-transposed, so we use rows of F)
+      vo.x = vi.x*t00 + vi.y*t01 + vi.z*t02;
+      vo.y = vi.x*t10 + vi.y*t11 + vi.z*t12;
+      vo.z =            vi.y*t21 + vi.z*t22;  // t20=0 term dropped
+
+      return vo;
    }
 
-   __forceinline__ __device__ void L2G(Point3 const &pi, Point3 const &origin0, Point3 &po) const {
-   // Transforms a point from local to global frame      
-      L2G(pi, po);
-      po = po + origin0;
-   }
+   // __forceinline__ __device__ Point3 G2L(Point3 const &pi, Point3 const &origin0) const {
+   // // Tranforms a point from global to local frame     
+   //    return G2L(pi - origin0); // XXXX IS THIS CORRECT?
+   // }
+
+   // __forceinline__ __device__ Point3 L2G(Point3 const &pi, Point3 const &origin0) const {
+   // // Transforms a point from local to global frame      
+   //    return L2G(pi) + origin0;  // XXXX IS THIS CORRECT?
+   // }
 
 };
 
@@ -396,9 +425,9 @@ struct Element {
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
 
-#ifdef USE_FRAMES
+   #ifdef USE_FRAMES
    Frame frame;
-#endif
+   #endif
 
    Vector2 gradPhi[4];        // Derivatives of shape functions
    Vector2 gradEta;           // Gradient of free surface elevation
@@ -407,7 +436,10 @@ struct Element {
 
    bool isDry;                // True if the element is dry
 
-   Vector2 center;         // Element center coordinates
+   Vector2 center;            // Element center coordinates
+   #ifdef USE_FRAMES
+   double zcenter;            // Element center z-coordinate
+   #endif
    double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
@@ -496,42 +528,52 @@ struct Element {
    __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
 
-   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
-   __device__ __forceinline__ Point2 GaussPoint(int idx) const {
+
+   __device__ __forceinline__ double centerZ(void) const;
+
+   // "Local" horizontal coordinates at the nodes. They are computed from the 3D global node coordinates. For ics == 1 and 2
+   // Local is in quotes because for ics == 1, the coordinates are unchanged. It just means that in these coordinates, the element is horizontal.
+   __device__ __forceinline__ Point2 getLocalHorizontalNodePosition(int idxNode) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const;
+
+
+   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idxNode = 0,1,2,3)
+   __device__ __forceinline__ Point2 GaussPoint(int idxNode) const {
        constexpr double g = 0.5773502691896257; // 1/sqrt(3)
-       assert(idx >= 0 && idx < 4 && "GaussPoint: idx out of range");
-       const double eta = (idx & 1) ? +g : -g;
-       const double xi  = (idx & 2) ? +g : -g;
+       assert(idxNode >= 0 && idxNode < 4 && "GaussPoint: idxNode out of range");
+       const double eta = (idxNode & 1) ? +g : -g;
+       const double xi  = (idxNode & 2) ? +g : -g;
        return {eta, xi};
    }  
 
    // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
-   __device__ __forceinline__ double etaSign(int idx) const {
+   __device__ __forceinline__ double etaSign(int idxNode) const {
       // bit1: 0 -> -1, 1 -> +1
-      assert(idx >= 0 && idx < 4 && "etaSign: idx out of range");
-      return (idx & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
+      assert(idxNode >= 0 && idxNode < 4 && "etaSign: idxNode out of range");
+      return (idxNode & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
    }
 
-   __device__ __forceinline__ double xiSign(int idx) const {
+   __device__ __forceinline__ double xiSign(int idxNode) const {
       // +1 if (bit0 XOR bit1), else -1
-      assert(idx >= 0 && idx < 4 && "xiSign: idx out of range");
-      return ((idx & 1) ^ (idx >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
+      assert(idxNode >= 0 && idxNode < 4 && "xiSign: idxNode out of range");
+      return ((idxNode & 1) ^ (idxNode >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
 
    }
 
-   // Shape function Phi_idx at a given point p = (eta,xi), idx = 0,1,2,3
-   __device__ __forceinline__ double Phi(int idx, Point2 p) const {
-      return 0.25*(1.0 + p.x*etaSign(idx))*(1.0 + p.y*xiSign(idx));
+   // Shape function Phi at a given point p = (eta,xi), idxNode = node index 0,1,2,3
+   __device__ __forceinline__ double Phi(int idxNode, Point2 p) const {
+      return 0.25*(1.0 + p.x*etaSign(idxNode))*(1.0 + p.y*xiSign(idxNode));
    }
 
-   // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi) 
-   __device__ __forceinline__ double dPhi_dxi(int idx, Point2 p) const {
-      return 0.25*xiSign(idx)*(1.0 + p.x*etaSign(idx));
+   // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi)
+   __device__ __forceinline__ double dPhi_dxi(int idxNode, Point2 p) const {
+      return 0.25*xiSign(idxNode)*(1.0 + p.x*etaSign(idxNode));
    }   
 
    // Derivative of shape function Phi_idx/deta at a given point p = (eta,xi) 
-   __device__ __forceinline__ double dPhi_deta(int idx, Point2 p) const {
-      return 0.25*(1.0 + p.y*xiSign(idx))*etaSign(idx);
+   __device__ __forceinline__ double dPhi_deta(int idxNode, Point2 p) const {
+      return 0.25*(1.0 + p.y*xiSign(idxNode))*etaSign(idxNode);
    }      
    
    __inline__ __device__ double detJ_eta(void) const;
@@ -601,6 +643,7 @@ struct Element {
 
       frame.update(ar1, ar2);        
     }
+#endif
 
    __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
@@ -1243,9 +1286,6 @@ struct Node {
 
 
    __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
-
-   // 3D local coordinates at the node. If ics == 1, p coordinates are already projected. If ics == 2, p coordinates are the x,y coordinates of the 3D global cartesian coordinates. Together with gz, they form the 3D global cartesian coordinates.
-   __device__ Point3 localP3D(void) const { if constexpr(ics==1) { return {p.x, p.y, 0.0}; } else { return frame.G2L(toVector3(p, gz)); } }  
 
    __device__ double sigmaTransitionDepth(void) const;
 

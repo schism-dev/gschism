@@ -1,5 +1,6 @@
 // BEGIN INCLUDE: constants.h
 #define USE_LOCALIZED_SIGMA
+#define USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 
@@ -8,7 +9,7 @@ constexpr int BLOCK_SIZE = 128;
 constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 1;              // Vertical coordinate system
-constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
+constexpr int ics = 2;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
@@ -395,12 +396,11 @@ struct Tracers {
 
 
 struct Frame {
-   double _t[9]; // t stands for tensor.
-
-   // Access the tensor in Fortran order
-   __device__ __forceinline__ double& t(int i, int j) { return _t[i + 3*j]; }
-
-   __device__ __forceinline__ double t(int i, int j) const { return _t[i + 3*j]; }
+   // Column 0 (East):  (-sin_lon, cos_lon, 0)              — store 2 values, t20=0 implicit
+   // Column 1 (North): Normalized oblate ellipsoid vector  — store 3 values
+   // Column 2 (Up):    cross(col0, col1)                   — recomputed on demand
+    double t00, t10;        // col0 (t20=0 implicit)
+    double t01, t11, t21;   // col1
 
    __device__ void update(double ar1, double ar2) { // XXX use lat, lon instead of ar1, ar2?
 
@@ -408,26 +408,32 @@ struct Frame {
       sincos(ar1, &sin_ar1, &cos_ar1); // These functions are faster than sin(ar1) and cos(ar1).
       sincos(ar2, &sin_ar2, &cos_ar2);
 
-      t(0,0) = -sin_ar1;
-      t(1,0) =  cos_ar1;
-      t(2,0) =  0.0;
-      t(0,1) = -cos_ar1*sin_ar2;
-      t(1,1) = -sin_ar1*sin_ar2;
+      t00 = -sin_ar1;
+      t10 =  cos_ar1;
+      t01 = -cos_ar1*sin_ar2;
+      t11 = -sin_ar1*sin_ar2;
+      t21 = (rearth_pole/rearth_eq)*cos_ar2;
 
-      t(2,1) = (rearth_pole/rearth_eq)*cos_ar2;
+      const double col1_norm = sqrt(t01*t01 + t11*t11 + t21*t21);
+      assert (col1_norm != 0.0 && "GRID: col1_norm=0");
 
-      const double ar4 = sqrt(t(0,1)*t(0,1) + t(1,1)*t(1,1) + t(2,1)*t(2,1));
-      assert (ar4 != 0.0 && "GRID: ar4=0");
+      const double col1_norm_inv = 1.0/col1_norm;
+      t01 = t01*col1_norm_inv;
+      t11 = t11*col1_norm_inv;
+      t21 = t21*col1_norm_inv;
 
-      const double ar4_inv = 1.0/ar4;
-      t(0,1) = t(0,1)*ar4_inv;
-      t(1,1) = t(1,1)*ar4_inv;
-      t(2,1) = t(2,1)*ar4_inv;
+      // The 3rd column (col2) is the cross product of the first two and is computed when needed.
 
-      // The third vector is the cross product of the first two
-      crossProduct(t(0,0), t(1,0), t(2,0), 
-                   t(0,1), t(1,1), t(2,1), 
-                   t(0,2), t(1,2), t(2,2));
+   }
+
+   __forceinline__ __device__ void getCol2(double &t02, double &t12, double &t22) const {
+      // cross(col0, col1), with t20=0 implicitly:
+      // |  i       j       k   |
+      // | t00     t10      0   |
+      // | t01     t11     t21  |
+      t02 =  t10*t21;
+      t12 = -t00*t21;
+      t22 =  t00*t11 - t10*t01;
    }
 
 
@@ -438,47 +444,71 @@ struct Frame {
    //        frameout: Output frame;
    // Output: 
    //        vel. in new frame  
+   //
+   // Projects a horizontal vector from frame 1 (this) to frame 2 (frameout),
+   // discarding the z-component of the result to keep only the local horizontal
+   // plane of frame 2.
+   //
+   // Since F1 and F2 are global-to-local rotation matrices, transforming from
+   // frame 1 to frame 2 requires F2 * F1^{-1} = F2 * F1^T, as rotation matrices
+   // are orthogonal. This product is computed as dot products between columns of
+   // F1 and columns of F2, which is equivalent to multiplying rows of F1^T by
+   // columns of F2.// 
 
       auto const fo = frameout; // Just an alias for the output frame.
       Vector2 res;
 
       // Since frame tensors are orthogonal, the transpose is the inverse. That's why the indices
       // of t and fo.t are the same.
-      res.x = vec0.x*(t(0,0)*fo.t(0,0) + t(1,0)*fo.t(1,0) + t(2,0)*fo.t(2,0)) +
-              vec0.y*(t(0,1)*fo.t(0,0) + t(1,1)*fo.t(1,0) + t(2,1)*fo.t(2,0));
+      const double d00 = t00*fo.t00 + t10*fo.t10;
+      const double d10 = t01*fo.t00 + t11*fo.t10;
 
-      res.y = vec0.x*(t(0,0)*fo.t(0,1) + t(1,0)*fo.t(1,1) + t(2,0)*fo.t(2,1)) +
-              vec0.y*(t(0,1)*fo.t(0,1) + t(1,1)*fo.t(1,1) + t(2,1)*fo.t(2,1));
+      const double d01 = t00*fo.t01 + t10*fo.t11;
+      const double d11 = t01*fo.t01 + t11*fo.t11 + t21*fo.t21;
 
-      // The z-component is disregarded, making it an effective projection to the horizontal plane.
+      res.x = vec0.x * d00 + vec0.y * d10;
+      res.y = vec0.x * d01 + vec0.y * d11;
 
-      return vec1;
+      return res;
    }
 
-   __forceinline__ __device__ void G2L(Vector3 const &vi, Vector3 &vo) const {
-      // Transform a vector from global to local frame
-      vo.x = vi.x*t(0,0) + vi.y*t(1,0) + vi.z*t(2,0);
-      vo.y = vi.x*t(0,1) + vi.y*t(1,1) + vi.z*t(2,1);
-      vo.z = vi.x*t(0,2) + vi.y*t(1,2) + vi.z*t(2,2);
+   __forceinline__ __device__ Vector3 G2L(Vector3 const &vi) const {
+      Vector3 vo;
+      double t02, t12, t22;
+
+      getCol2(t02, t12, t22);
+
+      vo.x = vi.x*t00 + vi.y*t10;
+      vo.y = vi.x*t01 + vi.y*t11 + vi.z*t21;
+      vo.z = vi.x*t02 + vi.y*t12 + vi.z*t22;
+
+      return vo;
+   
    }
 
-   __forceinline__ __device__ void L2G(Vector3 const &vi, Vector3 &vo) const {
-      // Transform a vector from local to global frame
-      vo.x = vi.x*t(0,0) + vi.y*t(0,1) + vi.z*t(0,2);
-      vo.y = vi.x*t(1,0) + vi.y*t(1,1) + vi.z*t(1,2);
-      vo.z = vi.x*t(2,0) + vi.y*t(2,1) + vi.z*t(2,2);
-   }   
+   __forceinline__ __device__ Vector3 L2G(Vector3 const &vi) const {
+      Vector3 vo;
+      double t02, t12, t22;
 
-   __forceinline__ __device__ void G2L(Point3 const &pi, Point3 const &origin0, Point3 &po) const {
-   // Tranforms a point from global to local frame     
-      G2L(pi - origin0, po);
+      getCol2(t02, t12, t22);
+
+      // F * vi (non-transposed, so we use rows of F)
+      vo.x = vi.x*t00 + vi.y*t01 + vi.z*t02;
+      vo.y = vi.x*t10 + vi.y*t11 + vi.z*t12;
+      vo.z =            vi.y*t21 + vi.z*t22;  // t20=0 term dropped
+
+      return vo;
    }
 
-   __forceinline__ __device__ void L2G(Point3 const &pi, Point3 const &origin0, Point3 &po) const {
-   // Transforms a point from local to global frame      
-      L2G(pi, po);
-      po = po + origin0;
-   }
+   // __forceinline__ __device__ Point3 G2L(Point3 const &pi, Point3 const &origin0) const {
+   // // Tranforms a point from global to local frame     
+   //    return G2L(pi - origin0); // XXXX IS THIS CORRECT?
+   // }
+
+   // __forceinline__ __device__ Point3 L2G(Point3 const &pi, Point3 const &origin0) const {
+   // // Transforms a point from local to global frame      
+   //    return L2G(pi) + origin0;  // XXXX IS THIS CORRECT?
+   // }
 
 };
 
@@ -512,9 +542,9 @@ struct Element {
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
 
-#ifdef USE_FRAMES
+   #ifdef USE_FRAMES
    Frame frame;
-#endif
+   #endif
 
    Vector2 gradPhi[4];        // Derivatives of shape functions
    Vector2 gradEta;           // Gradient of free surface elevation
@@ -523,7 +553,10 @@ struct Element {
 
    bool isDry;                // True if the element is dry
 
-   Vector2 center;         // Element center coordinates
+   Vector2 center;            // Element center coordinates
+   #ifdef USE_FRAMES
+   double zcenter;            // Element center z-coordinate
+   #endif
    double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
@@ -612,42 +645,52 @@ struct Element {
    __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
 
-   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
-   __device__ __forceinline__ Point2 GaussPoint(int idx) const {
+
+   __device__ __forceinline__ double centerZ(void) const;
+
+   // "Local" horizontal coordinates at the nodes. They are computed from the 3D global node coordinates. For ics == 1 and 2
+   // Local is in quotes because for ics == 1, the coordinates are unchanged. It just means that in these coordinates, the element is horizontal.
+   __device__ __forceinline__ Point2 getLocalHorizontalNodePosition(int idxNode) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const;
+
+
+   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idxNode = 0,1,2,3)
+   __device__ __forceinline__ Point2 GaussPoint(int idxNode) const {
        constexpr double g = 0.5773502691896257; // 1/sqrt(3)
-       assert(idx >= 0 && idx < 4 && "GaussPoint: idx out of range");
-       const double eta = (idx & 1) ? +g : -g;
-       const double xi  = (idx & 2) ? +g : -g;
+       assert(idxNode >= 0 && idxNode < 4 && "GaussPoint: idxNode out of range");
+       const double eta = (idxNode & 1) ? +g : -g;
+       const double xi  = (idxNode & 2) ? +g : -g;
        return {eta, xi};
    }  
 
    // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
-   __device__ __forceinline__ double etaSign(int idx) const {
+   __device__ __forceinline__ double etaSign(int idxNode) const {
       // bit1: 0 -> -1, 1 -> +1
-      assert(idx >= 0 && idx < 4 && "etaSign: idx out of range");
-      return (idx & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
+      assert(idxNode >= 0 && idxNode < 4 && "etaSign: idxNode out of range");
+      return (idxNode & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
    }
 
-   __device__ __forceinline__ double xiSign(int idx) const {
+   __device__ __forceinline__ double xiSign(int idxNode) const {
       // +1 if (bit0 XOR bit1), else -1
-      assert(idx >= 0 && idx < 4 && "xiSign: idx out of range");
-      return ((idx & 1) ^ (idx >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
+      assert(idxNode >= 0 && idxNode < 4 && "xiSign: idxNode out of range");
+      return ((idxNode & 1) ^ (idxNode >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
 
    }
 
-   // Shape function Phi_idx at a given point p = (eta,xi), idx = 0,1,2,3
-   __device__ __forceinline__ double Phi(int idx, Point2 p) const {
-      return 0.25*(1.0 + p.x*etaSign(idx))*(1.0 + p.y*xiSign(idx));
+   // Shape function Phi at a given point p = (eta,xi), idxNode = node index 0,1,2,3
+   __device__ __forceinline__ double Phi(int idxNode, Point2 p) const {
+      return 0.25*(1.0 + p.x*etaSign(idxNode))*(1.0 + p.y*xiSign(idxNode));
    }
 
-   // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi) 
-   __device__ __forceinline__ double dPhi_dxi(int idx, Point2 p) const {
-      return 0.25*xiSign(idx)*(1.0 + p.x*etaSign(idx));
+   // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi)
+   __device__ __forceinline__ double dPhi_dxi(int idxNode, Point2 p) const {
+      return 0.25*xiSign(idxNode)*(1.0 + p.x*etaSign(idxNode));
    }   
 
    // Derivative of shape function Phi_idx/deta at a given point p = (eta,xi) 
-   __device__ __forceinline__ double dPhi_deta(int idx, Point2 p) const {
-      return 0.25*(1.0 + p.y*xiSign(idx))*etaSign(idx);
+   __device__ __forceinline__ double dPhi_deta(int idxNode, Point2 p) const {
+      return 0.25*(1.0 + p.y*xiSign(idxNode))*etaSign(idxNode);
    }      
    
    __inline__ __device__ double detJ_eta(void) const;
@@ -708,6 +751,7 @@ struct Element {
     }
 
 
+#ifdef USE_FRAMES
    __device__ void setFrame(void) {
 
       double ar1, ar2;
@@ -716,6 +760,7 @@ struct Element {
 
       frame.update(ar1, ar2);        
     }
+#endif
 
    __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
@@ -1359,9 +1404,6 @@ struct Node {
 
    __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
 
-   // 3D local coordinates at the node. If ics == 1, p coordinates are already projected. If ics == 2, p coordinates are the x,y coordinates of the 3D global cartesian coordinates. Together with gz, they form the 3D global cartesian coordinates.
-   __device__ Point3 localP3D(void) const { if constexpr(ics==1) { return {p.x, p.y, 0.0}; } else { return frame.G2L(toVector3(p, gz)); } }  
-
    __device__ double sigmaTransitionDepth(void) const;
 
    __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
@@ -1855,42 +1897,129 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 }
 
 
+__device__ __forceinline__ double Element::centerZ(void) const { 
+   assert(!isQuad() && "centerZ only works for triangles");
+
+   if constexpr(ics==1) { 
+      return 0.0; 
+   } else { 
+      return (1.0/3.0)*(nodes[0]->gz + nodes[1]->gz + nodes[2]->gz); 
+   } 
+}
+
+
+__device__ __forceinline__ Point2 Element::getLocalHorizontalNodePosition(int idxNode) const {
+   // "Local" here means that the coordinates are in a frame where the element is horizontal.
+
+   assert(idxNode < i34 && "getLocalHorizontalNodePosition: idxNode out of range");
+
+   if constexpr(ics==1) {
+      return nodes[idxNode]->p;
+   } else {
+      const Vector3 c = {center.x, center.y, centerZ()}; // Element center
+
+      const Point3 p = toPoint3(nodes[idxNode]->p, nodes[idxNode]->gz); // XXXXX use p3D or similar?
+
+      return toVector2(frame.G2L(p - c));  // Vectors are implicitly cast into points at the local frame centered at c
+   }
+
+}
+
+
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Point2 &x0, Point2 &x1, Point2 &x2) const {
+// "Local" here means that the coordinates are in a frame where the element is horizontal.
+
+   assert(!isQuad() && "getLocalHorizontalNodePositions only works for triangles");
+
+   if constexpr(ics==1) {
+      x0 = nodes[0]->p;
+      x1 = nodes[1]->p;
+      x2 = nodes[2]->p;
+
+   } else {
+      const Vector3 c = {center.x, center.y, centerZ()}; // Element center
+
+      const Point3 p0 = toPoint3(nodes[0]->p, nodes[0]->gz); // XXXXX use p3D or similar?
+      const Point3 p1 = toPoint3(nodes[1]->p, nodes[1]->gz);
+      const Point3 p2 = toPoint3(nodes[2]->p, nodes[2]->gz);
+
+      x0 = toVector2(frame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
+      x1 = toVector2(frame.G2L(p1 - c));
+      x2 = toVector2(frame.G2L(p2 - c));
+   }
+
+}
+
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const {
+// "Local" here means that the coordinates are in a frame where the element is horizontal. 
+
+   assert(isQuad() && "getLocalHorizontalNodePositionsQuad only works for quads");
+
+   if constexpr(ics==1) {
+      x0 = nodes[0]->p;
+      x1 = nodes[1]->p;
+      x2 = nodes[2]->p;  
+      x3 = nodes[3]->p;
+
+   } else {
+      const Vector3 c = {center.x, center.y, centerZ()}; // Element center
+
+      const Point3 p0 = toPoint3(nodes[0]->p, nodes[0]->gz); // XXXXX use p3D or similar?
+      const Point3 p1 = toPoint3(nodes[1]->p, nodes[1]->gz);
+      const Point3 p2 = toPoint3(nodes[2]->p, nodes[2]->gz);
+      const Point3 p3 = toPoint3(nodes[3]->p, nodes[3]->gz);
+
+      x0 = toVector2(frame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
+      x1 = toVector2(frame.G2L(p1 - c));
+      x2 = toVector2(frame.G2L(p2 - c));
+      x3 = toVector2(frame.G2L(p3 - c));
+   }
+
+}
+
+
 __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
-   // Computes the 3D normal vector to the element at level k
+   // Computes the *local* (element frame) 3D normal vector to the element at level k
    // Returns the normal vector and the area of the element
 
       if (isTri()) {
          // For triangles...
 
-         // Gets the normal vector to the element (with a length equal to twice the area)
+         // Indices of the nodes at level k, taking care of not going below the bed
+         const int k0 = max(k, nodes[0]->kb);
+         const int k1 = max(k, nodes[1]->kb);
+         const int k2 = max(k, nodes[2]->kb);
+
+         // Gets the element frame coordinates of the nodes at level k
+         Point3 x0, x1, x2;
          if constexpr(ics==1) {
-            const int kb0 = max(k, nodes[0]->kb);
-            const int kb1 = max(k, nodes[1]->kb);
-            const int kb2 = max(k, nodes[2]->kb);
+            x0 = toPoint3(nodes[0]->p, nodes[0]->z[k0]);
+            x1 = toPoint3(nodes[1]->p, nodes[1]->z[k1]);
+            x2 = toPoint3(nodes[2]->p, nodes[2]->z[k2]);
 
-FIX
-            const Vector3 n20 = nodes[2]->p3D(k) - nodes[0]->p3D(k);
-            const Vector3 n10 = nodes[1]->p3D(k) - nodes[0]->p3D(k);
-            
-            // Computes the cross product of vectors (n2 - n0) and (n1 - n0). 
-            const double nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
-            const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
-            const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
-
-            const double len = sqrt(nx*nx + ny*ny + nz*nz);
-            area3D = 0.5*len;
-
-            assert(area3D > 0.0 && "Element normal vector: area3D is negative");
-
-            return {nx/len, ny/len, nz/len};
-
-           
+         } else {  // ics == 2
+            Vector2 h0, h1, h2;
+            getLocalHorizontalNodePositions(h0, h1, h2);
+            x0 = toPoint3(h0, nodes[0]->z[k0]);
+            x1 = toPoint3(h1, nodes[1]->z[k1]);
+            x2 = toPoint3(h2, nodes[2]->z[k2]);
          }
-         else {  // lat/lon
-            assert(false && "Element normal vector: lat/lon not implemented for triangles");
-            return {0.0, 0.0, 0.0};
+         const Vector3 n20 = x2 - x0;
+         const Vector3 n10 = x1 - x0; 
 
-         } // if ics
+         // Computes the cross product of vectors (n2 - n0) and (n1 - n0). 
+         const double nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
+         const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
+         const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
+
+         const double len = sqrt(nx*nx + ny*ny + nz*nz);
+         area3D = 0.5*len;
+
+         assert(area3D > 0.0 && "Element normal vector: area3D is negative");
+
+         const double inv_len = 1.0/len;
+         return {nx*inv_len, ny*inv_len, nz*inv_len};
+      
       }
       else {
          // For quads...
@@ -2173,7 +2302,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
 
-   nextElem->interpolateVelocities(xt, u_int); 
+   u_int = nextElem->interpolateVelocities(xt); 
 
    assert(nextElem != this && "Next element is the same as the current element");
 
@@ -2238,15 +2367,12 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
    // It's not reliable to use the area coord for ics=2 when the pt is far away
    // from the local frame, so use additional check.
 
-   if (i34==3) {
-
+   if (i34==3) { // Triangular element
 
       Point2 x0, x1, x2;
 
-      // Horinzontal local node coordinates. If ics == 2, the node coordinates are transformed to local frame.
-      const Point2 x0 = toPoint2(nodes[0]->localP3D());
-      const Point2 x1 = toPoint2(nodes[1]->localP3D());
-      const Point2 x2 = toPoint2(nodes[2]->localP3D());
+      // Horizontal local node coordinates. If ics == 2, the node coordinates are transformed to local frame.
+      getLocalHorizontalNodePositions(x0, x1, x2);
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
@@ -2430,10 +2556,11 @@ __device__ double Element::intGradPhiGradPhi(int i1, int i2) const {
    4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
       horizontally and vertically.
 **/
-__device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const {
+__device__ Vector3 Element::interpolateVelocities(Point3 xt) const {
    // Interpolate the velocities at the point xt. 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
+   Vector3 u_int;
 
    // First step is to compute the shape coordinates of (xt,yt)
    computeShapeCoords(toVector2(xt), shpCoord, fiOnlyInside);
@@ -2498,6 +2625,8 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
 
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
+
+   return u_int;
 
 }
 
@@ -2583,17 +2712,28 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
    Vector2 grad = {0.0, 0.0};
    int count = 0;
 
-   if constexpr(ics == 2) assert(false && "grad2: ics = 2 not implemented");
-
    // First element
    if (elems[0] != nullptr && condition(elems[0])) {
-      grad += elems[0]->grad2(field);
+      Vector2 elemGrad = elems[0]->grad2(field);
+
+      // For ics=2, projects the element gradient to the side frame
+      if constexpr(ics == 2) elemGrad = elems[0]->frame.projHorVec(elemGrad, frame);
+
+      grad += elemGrad;
+
       count++;
    }
 
    // Second element
    if (elems[1] != nullptr && condition(elems[1])) {
-      grad += elems[1]->grad2(field);
+
+      Vector2 elemGrad = elems[1]->grad2(field);
+
+      // For ics=2, projects the element gradient to the side frame
+      if constexpr(ics == 2) elemGrad = elems[1]->frame.projHorVec(elemGrad, frame);
+
+      grad += elemGrad;
+
       count++;
    }
 
@@ -2626,8 +2766,8 @@ __inline__ __device__ Vector2 Side::tau(void)    const {
       return 0.5*(n1->tau + n2->tau);
    } else {
       // Project the tau from the node frames to the side frame
-      const Vector2 stau1 = n1->frame.projHorVec(n1->tau(), frame);
-      const Vector2 stau2 = n2->frame.projHorVec(n2->tau(), frame);
+      const Vector2 stau1 = n1->frame.projHorVec(n1->tau, frame);
+      const Vector2 stau2 = n2->frame.projHorVec(n2->tau, frame);
 
       return 0.5*(stau1 + stau2);
    }
@@ -2729,7 +2869,7 @@ __inline__ __device__ bool Side::btrack(
    assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element"); 
 
    // Interpolate the velocities at the final point
-   curElem->interpolateVelocities(xt, u_int);
+   u_int = curElem->interpolateVelocities(xt);
 
    // if (idx == 18867) printf("iter = %d, side->idx = %d, curElem->idx = %d, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, curElem->idx, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);         
 
@@ -3401,13 +3541,25 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
          // This expression can be derived from the derivatives of the shape functions in area coordinates.
          // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
          // da1/dx = (y1 - y2)/(2*area)
-         const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id3]->p.y)/(2*area); 
-         const double dPhi_j_dy = (elem.nodes[id3]->p.x - elem.nodes[id2]->p.x)/(2*area); 
+
+         // Get the horizontal coordinates of the nodes id2 and id3 in the local frame
+         const Point2 p2 = elem.getLocalHorizontalNodePosition(id2);
+         const Point2 p3 = elem.getLocalHorizontalNodePosition(id3);
+
+         const double dPhi_j_dx = (p2.y - p3.y)/(2*area); 
+         const double dPhi_j_dy = (p3.x - p2.x)/(2*area); 
+
          elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
       }
       else  { // Quad; evaluate at centroid
-         const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id4]->p.y)/(2*area); 
-         const double dPhi_j_dy = (elem.nodes[id4]->p.x - elem.nodes[id2]->p.x)/(2*area); 
+
+         // Get the horizontal coordinates of the nodes id2 and id4 in the local frame
+         const Point2 p2 = elem.getLocalHorizontalNodePosition(id2);
+         const Point2 p4 = elem.getLocalHorizontalNodePosition(id4);
+
+         const double dPhi_j_dx = (p2.y - p4.y)/(2*area); 
+         const double dPhi_j_dy = (p4.x - p2.x)/(2*area); 
+
          elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
       } // if Tri
 
@@ -3421,7 +3573,6 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
                                             double *emo, double *efa, 
                                             double *umo, double *ufa, 
                                             double *vmo, double *vfa) {
-
 
    NODE_BND(nodeBnd);
    const int idx = idx_node_bnd;    
@@ -3532,9 +3683,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          Node *node2 = elem->nodes[id2];
          Node *node3 = elem->nodes[id3];
 
-         const Point2 x1 = node1->p;
-         const Point2 x2 = node2->p;
-         const Point2 x3 = node3->p;
+         Point2 x1, x2, x3;
+         elem->getLocalHorizontalNodePositions(x1, x2, x3);
 
          // integral of phi_i*phi_j
          const double ipp_ii = (1.0/6.0 )*area;
@@ -3926,7 +4076,7 @@ extern "C" {
 
                   } else {
                      // 'Project' the velocity from the node frame to the element frame
-                     const Vector2 tmp_u2 = frame.projHorVec(node->u2[k], elem->frame);
+                     const Vector2 tmp_u2 = node->frame.projHorVec(node->u2[k], elem->frame);
                      utmp[j] = tmp_u2.x;
                      vtmp[j] = tmp_u2.y;
 
@@ -4602,7 +4752,7 @@ extern "C" {
 
    __global__ void computeHorizontalViscosity(void) { 
 
-      assert(ics == 1 && "computeHorizontalViscosity: implemented only for ics=1");
+      assert(ihorcon == 0 || ics == 1 && "computeHorizontalViscosity: implemented only for ics=1");
 
       SIDE(side);
 
@@ -5259,7 +5409,7 @@ extern "C" {
             assert(zrat >= 0.0 && zrat <= 1.0 && "computeSideDensityGradient: zrat is not in [0, 1]");
             
             // Grad(rho) vertically interpolated at the side's half level
-            const Vector2 gradRho2 = e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat;
+            Vector2 gradRho2 = e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat;
 
             // Projects the element density gradient to the side frame if needed.
             if constexpr(ics==2) gradRho2 = e2->frame.projHorVec(gradRho2, side->frame);

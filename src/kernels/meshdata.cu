@@ -103,42 +103,129 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 }
 
 
+__device__ __forceinline__ double Element::centerZ(void) const { 
+   assert(!isQuad() && "centerZ only works for triangles");
+
+   if constexpr(ics==1) { 
+      return 0.0; 
+   } else { 
+      return (1.0/3.0)*(nodes[0]->gz + nodes[1]->gz + nodes[2]->gz); 
+   } 
+}
+
+
+__device__ __forceinline__ Point2 Element::getLocalHorizontalNodePosition(int idxNode) const {
+   // "Local" here means that the coordinates are in a frame where the element is horizontal.
+
+   assert(idxNode < i34 && "getLocalHorizontalNodePosition: idxNode out of range");
+
+   if constexpr(ics==1) {
+      return nodes[idxNode]->p;
+   } else {
+      const Vector3 c = {center.x, center.y, centerZ()}; // Element center
+
+      const Point3 p = toPoint3(nodes[idxNode]->p, nodes[idxNode]->gz); // XXXXX use p3D or similar?
+
+      return toVector2(frame.G2L(p - c));  // Vectors are implicitly cast into points at the local frame centered at c
+   }
+
+}
+
+
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Point2 &x0, Point2 &x1, Point2 &x2) const {
+// "Local" here means that the coordinates are in a frame where the element is horizontal.
+
+   assert(!isQuad() && "getLocalHorizontalNodePositions only works for triangles");
+
+   if constexpr(ics==1) {
+      x0 = nodes[0]->p;
+      x1 = nodes[1]->p;
+      x2 = nodes[2]->p;
+
+   } else {
+      const Vector3 c = {center.x, center.y, centerZ()}; // Element center
+
+      const Point3 p0 = toPoint3(nodes[0]->p, nodes[0]->gz); // XXXXX use p3D or similar?
+      const Point3 p1 = toPoint3(nodes[1]->p, nodes[1]->gz);
+      const Point3 p2 = toPoint3(nodes[2]->p, nodes[2]->gz);
+
+      x0 = toVector2(frame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
+      x1 = toVector2(frame.G2L(p1 - c));
+      x2 = toVector2(frame.G2L(p2 - c));
+   }
+
+}
+
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const {
+// "Local" here means that the coordinates are in a frame where the element is horizontal. 
+
+   assert(isQuad() && "getLocalHorizontalNodePositionsQuad only works for quads");
+
+   if constexpr(ics==1) {
+      x0 = nodes[0]->p;
+      x1 = nodes[1]->p;
+      x2 = nodes[2]->p;  
+      x3 = nodes[3]->p;
+
+   } else {
+      const Vector3 c = {center.x, center.y, centerZ()}; // Element center
+
+      const Point3 p0 = toPoint3(nodes[0]->p, nodes[0]->gz); // XXXXX use p3D or similar?
+      const Point3 p1 = toPoint3(nodes[1]->p, nodes[1]->gz);
+      const Point3 p2 = toPoint3(nodes[2]->p, nodes[2]->gz);
+      const Point3 p3 = toPoint3(nodes[3]->p, nodes[3]->gz);
+
+      x0 = toVector2(frame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
+      x1 = toVector2(frame.G2L(p1 - c));
+      x2 = toVector2(frame.G2L(p2 - c));
+      x3 = toVector2(frame.G2L(p3 - c));
+   }
+
+}
+
+
 __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
-   // Computes the 3D normal vector to the element at level k
+   // Computes the *local* (element frame) 3D normal vector to the element at level k
    // Returns the normal vector and the area of the element
 
       if (isTri()) {
          // For triangles...
 
-         // Gets the normal vector to the element (with a length equal to twice the area)
+         // Indices of the nodes at level k, taking care of not going below the bed
+         const int k0 = max(k, nodes[0]->kb);
+         const int k1 = max(k, nodes[1]->kb);
+         const int k2 = max(k, nodes[2]->kb);
+
+         // Gets the element frame coordinates of the nodes at level k
+         Point3 x0, x1, x2;
          if constexpr(ics==1) {
-            const int kb0 = max(k, nodes[0]->kb);
-            const int kb1 = max(k, nodes[1]->kb);
-            const int kb2 = max(k, nodes[2]->kb);
+            x0 = toPoint3(nodes[0]->p, nodes[0]->z[k0]);
+            x1 = toPoint3(nodes[1]->p, nodes[1]->z[k1]);
+            x2 = toPoint3(nodes[2]->p, nodes[2]->z[k2]);
 
-FIX
-            const Vector3 n20 = nodes[2]->p3D(k) - nodes[0]->p3D(k);
-            const Vector3 n10 = nodes[1]->p3D(k) - nodes[0]->p3D(k);
-            
-            // Computes the cross product of vectors (n2 - n0) and (n1 - n0). 
-            const double nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
-            const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
-            const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
-
-            const double len = sqrt(nx*nx + ny*ny + nz*nz);
-            area3D = 0.5*len;
-
-            assert(area3D > 0.0 && "Element normal vector: area3D is negative");
-
-            return {nx/len, ny/len, nz/len};
-
-           
+         } else {  // ics == 2
+            Vector2 h0, h1, h2;
+            getLocalHorizontalNodePositions(h0, h1, h2);
+            x0 = toPoint3(h0, nodes[0]->z[k0]);
+            x1 = toPoint3(h1, nodes[1]->z[k1]);
+            x2 = toPoint3(h2, nodes[2]->z[k2]);
          }
-         else {  // lat/lon
-            assert(false && "Element normal vector: lat/lon not implemented for triangles");
-            return {0.0, 0.0, 0.0};
+         const Vector3 n20 = x2 - x0;
+         const Vector3 n10 = x1 - x0; 
 
-         } // if ics
+         // Computes the cross product of vectors (n2 - n0) and (n1 - n0). 
+         const double nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
+         const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
+         const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
+
+         const double len = sqrt(nx*nx + ny*ny + nz*nz);
+         area3D = 0.5*len;
+
+         assert(area3D > 0.0 && "Element normal vector: area3D is negative");
+
+         const double inv_len = 1.0/len;
+         return {nx*inv_len, ny*inv_len, nz*inv_len};
+      
       }
       else {
          // For quads...
@@ -421,7 +508,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
 
-   nextElem->interpolateVelocities(xt, u_int); 
+   u_int = nextElem->interpolateVelocities(xt); 
 
    assert(nextElem != this && "Next element is the same as the current element");
 
@@ -486,15 +573,12 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
    // It's not reliable to use the area coord for ics=2 when the pt is far away
    // from the local frame, so use additional check.
 
-   if (i34==3) {
-
+   if (i34==3) { // Triangular element
 
       Point2 x0, x1, x2;
 
-      // Horinzontal local node coordinates. If ics == 2, the node coordinates are transformed to local frame.
-      const Point2 x0 = toPoint2(nodes[0]->localP3D());
-      const Point2 x1 = toPoint2(nodes[1]->localP3D());
-      const Point2 x2 = toPoint2(nodes[2]->localP3D());
+      // Horizontal local node coordinates. If ics == 2, the node coordinates are transformed to local frame.
+      getLocalHorizontalNodePositions(x0, x1, x2);
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
@@ -678,10 +762,11 @@ __device__ double Element::intGradPhiGradPhi(int i1, int i2) const {
    4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
       horizontally and vertically.
 **/
-__device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const {
+__device__ Vector3 Element::interpolateVelocities(Point3 xt) const {
    // Interpolate the velocities at the point xt. 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
+   Vector3 u_int;
 
    // First step is to compute the shape coordinates of (xt,yt)
    computeShapeCoords(toVector2(xt), shpCoord, fiOnlyInside);
@@ -746,6 +831,8 @@ __device__ void Element::interpolateVelocities(Point3 xt, Vector3& u_int) const 
 
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
+
+   return u_int;
 
 }
 
@@ -831,17 +918,28 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
    Vector2 grad = {0.0, 0.0};
    int count = 0;
 
-   if constexpr(ics == 2) assert(false && "grad2: ics = 2 not implemented");
-
    // First element
    if (elems[0] != nullptr && condition(elems[0])) {
-      grad += elems[0]->grad2(field);
+      Vector2 elemGrad = elems[0]->grad2(field);
+
+      // For ics=2, projects the element gradient to the side frame
+      if constexpr(ics == 2) elemGrad = elems[0]->frame.projHorVec(elemGrad, frame);
+
+      grad += elemGrad;
+
       count++;
    }
 
    // Second element
    if (elems[1] != nullptr && condition(elems[1])) {
-      grad += elems[1]->grad2(field);
+
+      Vector2 elemGrad = elems[1]->grad2(field);
+
+      // For ics=2, projects the element gradient to the side frame
+      if constexpr(ics == 2) elemGrad = elems[1]->frame.projHorVec(elemGrad, frame);
+
+      grad += elemGrad;
+
       count++;
    }
 
@@ -874,8 +972,8 @@ __inline__ __device__ Vector2 Side::tau(void)    const {
       return 0.5*(n1->tau + n2->tau);
    } else {
       // Project the tau from the node frames to the side frame
-      const Vector2 stau1 = n1->frame.projHorVec(n1->tau(), frame);
-      const Vector2 stau2 = n2->frame.projHorVec(n2->tau(), frame);
+      const Vector2 stau1 = n1->frame.projHorVec(n1->tau, frame);
+      const Vector2 stau2 = n2->frame.projHorVec(n2->tau, frame);
 
       return 0.5*(stau1 + stau2);
    }
@@ -977,7 +1075,7 @@ __inline__ __device__ bool Side::btrack(
    assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element"); 
 
    // Interpolate the velocities at the final point
-   curElem->interpolateVelocities(xt, u_int);
+   u_int = curElem->interpolateVelocities(xt);
 
    // if (idx == 18867) printf("iter = %d, side->idx = %d, curElem->idx = %d, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, curElem->idx, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);         
 
@@ -1649,13 +1747,25 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
          // This expression can be derived from the derivatives of the shape functions in area coordinates.
          // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
          // da1/dx = (y1 - y2)/(2*area)
-         const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id3]->p.y)/(2*area); 
-         const double dPhi_j_dy = (elem.nodes[id3]->p.x - elem.nodes[id2]->p.x)/(2*area); 
+
+         // Get the horizontal coordinates of the nodes id2 and id3 in the local frame
+         const Point2 p2 = elem.getLocalHorizontalNodePosition(id2);
+         const Point2 p3 = elem.getLocalHorizontalNodePosition(id3);
+
+         const double dPhi_j_dx = (p2.y - p3.y)/(2*area); 
+         const double dPhi_j_dy = (p3.x - p2.x)/(2*area); 
+
          elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
       }
       else  { // Quad; evaluate at centroid
-         const double dPhi_j_dx = (elem.nodes[id2]->p.y - elem.nodes[id4]->p.y)/(2*area); 
-         const double dPhi_j_dy = (elem.nodes[id4]->p.x - elem.nodes[id2]->p.x)/(2*area); 
+
+         // Get the horizontal coordinates of the nodes id2 and id4 in the local frame
+         const Point2 p2 = elem.getLocalHorizontalNodePosition(id2);
+         const Point2 p4 = elem.getLocalHorizontalNodePosition(id4);
+
+         const double dPhi_j_dx = (p2.y - p4.y)/(2*area); 
+         const double dPhi_j_dy = (p4.x - p2.x)/(2*area); 
+
          elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
       } // if Tri
 
@@ -1669,7 +1779,6 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
                                             double *emo, double *efa, 
                                             double *umo, double *ufa, 
                                             double *vmo, double *vfa) {
-
 
    NODE_BND(nodeBnd);
    const int idx = idx_node_bnd;    
@@ -1780,9 +1889,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          Node *node2 = elem->nodes[id2];
          Node *node3 = elem->nodes[id3];
 
-         const Point2 x1 = node1->p;
-         const Point2 x2 = node2->p;
-         const Point2 x3 = node3->p;
+         Point2 x1, x2, x3;
+         elem->getLocalHorizontalNodePositions(x1, x2, x3);
 
          // integral of phi_i*phi_j
          const double ipp_ii = (1.0/6.0 )*area;
@@ -2174,7 +2282,7 @@ extern "C" {
 
                   } else {
                      // 'Project' the velocity from the node frame to the element frame
-                     const Vector2 tmp_u2 = frame.projHorVec(node->u2[k], elem->frame);
+                     const Vector2 tmp_u2 = node->frame.projHorVec(node->u2[k], elem->frame);
                      utmp[j] = tmp_u2.x;
                      vtmp[j] = tmp_u2.y;
 
@@ -2850,7 +2958,7 @@ extern "C" {
 
    __global__ void computeHorizontalViscosity(void) { 
 
-      assert(ics == 1 && "computeHorizontalViscosity: implemented only for ics=1");
+      assert(ihorcon == 0 || ics == 1 && "computeHorizontalViscosity: implemented only for ics=1");
 
       SIDE(side);
 
@@ -3507,7 +3615,7 @@ extern "C" {
             assert(zrat >= 0.0 && zrat <= 1.0 && "computeSideDensityGradient: zrat is not in [0, 1]");
             
             // Grad(rho) vertically interpolated at the side's half level
-            const Vector2 gradRho2 = e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat;
+            Vector2 gradRho2 = e2->gradRho[k2]*(1.0 - zrat) + e2->gradRho[k2 + 1]*zrat;
 
             // Projects the element density gradient to the side frame if needed.
             if constexpr(ics==2) gradRho2 = e2->frame.projHorVec(gradRho2, side->frame);

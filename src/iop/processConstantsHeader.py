@@ -28,14 +28,16 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
     """
    
     if ivcor != 1:
-        useLocalizedSigma = 'NO_USE_LOCALIZED_SIGMA'
+        useLocalizedSigma = 'DO_NOT_USE_LOCALIZED_SIGMA'
     else:
         useLocalizedSigma = 'USE_LOCALIZED_SIGMA'
 
-    if namelist.core.ics == 1:
-        useFrames = 'NO_USE_FRAMES'
-    else:
+    if namelist.opt.ics == 1:
+        useFrames = 'DO_NOT_USE_FRAMES'
+    if namelist.opt.ics == 2:
         useFrames = 'USE_FRAMES'
+    else:
+        raise ValueError(f"Invalid ics = {namelist.opt.ics}, not in [1, 2]")
 
     # Define mapping of template placeholders to values
     # Format: 'PLACEHOLDER': (value, source_description)
