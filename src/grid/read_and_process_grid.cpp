@@ -1091,8 +1091,6 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
                 nodeCoords_ll(1, i) = lat;
             }
 
-
-
         }
 
         print("");

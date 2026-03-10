@@ -1,6 +1,4 @@
 
-
-
 constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
@@ -89,11 +87,22 @@ using Vector3 = double3;
 using Point2  = double2;
 using Point3  = double3;
 
+using Vector2 = double2; 
+using Vector3 = double3;
+
+
+template<typename T>
+struct IsVector2 { static constexpr bool value = false; };
+template<>
+struct IsVector2<Vector2> { static constexpr bool value = true; };
+
+
 __device__ __forceinline__ double2 operator+(const double2& a, const double2& b) {
     return make_double2(a.x + b.x, a.y + b.y);
 }
-using Vector2 = double2; 
-using Vector3 = double3;
+
+
+
 __device__ __forceinline__ double2 operator+=(double2& a, const double2& b) {
     a.x += b.x;
     a.y += b.y;
@@ -251,20 +260,44 @@ __forceinline__ __device__ void crossProduct(double x1, double y1, double z1, do
 
 
 __forceinline__ __device__ void computeLonLat(Point3 const &p, double &rlon, double &rlat) {
-// Given a 3D global point (may not be on surface of earth), find its longitude and latitude in radians
+// Given a 3D global point (may not be on the surface of the Earth), find its longitude and latitude in radians
+//
 
    const double radius2 = dot(p, p);
-   assert(radius2 != 0.0     && "computeLonLat: radius = 0");
+   const double radius = sqrt(radius2);
+ 
+   assert(radius != 0.0      && "computeLonLat: radius = 0");
    assert(p.z*p.z <= radius2 && "computeLonLat: p.z <= radius");
 
    rlon = atan2(p.y, p.x); // (-pi,pi]
 
    if (abs(rearth_pole - rearth_eq) < 1.0e-2) { // for backward compatibility
-      rlat = asin(p.z/sqrt(radius2));
+      rlat = asin(p.z/radius);
    } else {
       rlat = asin(p.z/rearth_pole);
    }
   
+}
+
+
+__forceinline__ __device__ Point3 computeXYZfromLatLon(double lat, double lon) {
+// Compute the 3D Cartesian coordinates from the latitude and longitude
+// Inputs:
+//        lat: latitude in radians
+//        lon: longitude in radians
+// Output:
+//        x, y, z: 3D Cartesian coordinates
+
+   double sin_lat, cos_lat, sin_lon, cos_lon;
+
+   sincos(lat, &sin_lat, &cos_lat);
+   sincos(lon, &sin_lon, &cos_lon);
+
+   const double x = rearth_eq*cos_lat*cos_lon;
+   const double y = rearth_eq*cos_lat*sin_lon;
+   const double z = rearth_pole*sin_lat;
+
+   return make_double3(x, y, z);
 }
 
 __inline__ __device__ void Error(const char* msg) {
@@ -307,6 +340,10 @@ struct Frame {
 
       // The 3rd column (col2) is the cross product of the first two and is computed when needed.
 
+   }
+
+   __forceinline__ __device__ void print(void) const {
+      printf("frame = [%.16f, %.16f, %.16f, %.16f, %.16f, %.16f]\n", t00, t10, t01, t11, t21);
    }
 
    __forceinline__ __device__ void getCol2(double &t02, double &t12, double &t22) const {
@@ -635,11 +672,7 @@ struct Element {
 #ifdef USE_FRAMES
    __device__ void setFrame(void) {
 
-      double ar1, ar2;
-      assert(false && "setFrame: center should be a Vector3???");
-     // computeLonLat(center, ar1, ar2); XXXX
-
-      frame.update(ar1, ar2);        
+      // frame.update(ar1, ar2);        
     }
 #endif
 
@@ -680,7 +713,7 @@ struct Element {
    __device__ Vector3 interpolateVelocities(Point3 xt) const;
 
    // ------------------------------------------------------------------------------------------------
-   // These are functions that work on all nodes of the element.
+   // These are functions that work on all nodes/sides of the element.
    // They use a standard, but not well known, way of accessing the fields of the nodes.
    //
    // An example of how to use these functions is:
@@ -692,131 +725,48 @@ struct Element {
    // There are different versions of getNodalValues for each of these cases.
 
    template<typename T>
-   __device__ void getNodalValues(T Node::* field, T res[4]) const {
-      // Get the values of the field at the nodes of the element
-      res[0] = nodes[0]->*field;
-      res[1] = nodes[1]->*field;
-      res[2] = nodes[2]->*field;
-      if (isQuad()) res[3] = nodes[3]->*field;
-      else          res[3] = T();
-   }
+   __device__ __forceinline__ void getNodalValues(T Node::* field, T res[4]) const;
 
    template<typename T>
-   __device__ void getNodalValues(int level, T (Node::* field)[nvrt], T res[4]) const {
-      // Get the values of the field at the nodes of the element
-      res[0] = (nodes[0]->*field)[level];
-      res[1] = (nodes[1]->*field)[level];
-      res[2] = (nodes[2]->*field)[level];
-      if (isQuad()) res[3] = (nodes[3]->*field)[level];
-      else          res[3] = T();
-   }    
+   __device__ __forceinline__ void getNodalValues(int level, T (Node::* field)[nvrt], T res[4]) const;
+  
+   template<typename T>
+   __device__ __forceinline__ void getNodalValues(int level, T (Node::*func)(int) const, T res[4]) const;
 
    template<typename T>
-   __device__ void getNodalValues(int level, T (Node::*func)(int) const, T res[4]) const {
-      // Get the values of the func at the nodes of the element
-      res[0] = (nodes[0]->*func)(level);
-      res[1] = (nodes[1]->*func)(level);
-      res[2] = (nodes[2]->*func)(level);
-      if (isQuad()) res[3] = (nodes[3]->*func)(level);
-      else          res[3] = T();  // This is 0.0 or a zero vector
-
-   }      
+   __device__ __forceinline__ void getSideValues(T Side::* field, T res[4]) const;
 
    template<typename T>
-   __device__ void getSideValues(T Side::* field, T res[4]) const {
-      // Get the values of the field at the nodes of the element
-      res[0] = sides[0]->*field;
-      res[1] = sides[1]->*field;
-      res[2] = sides[2]->*field;
-      if (isQuad()) res[3] = sides[3]->*field;
-      else          res[3] = T();
-   }
+   __device__ __forceinline__ void getSideValues(int level, T (Side::* field)[nvrt], T res[4]) const;
 
    template<typename T>
-   __device__ void getSideValues(int level, T (Side::* field)[nvrt], T res[4]) const {
-      // Get the values of the field at the nodes of the element
-      res[0] = (sides[0]->*field)[level];
-      res[1] = (sides[1]->*field)[level];
-      res[2] = (sides[2]->*field)[level];
-      if (isQuad()) res[3] = (sides[3]->*field)[level];
-      else          res[3] = T();
-   }    
+   __device__ __forceinline__ void getSideValues(int level, T (Side::*func)(int) const, T res[4]) const;
 
-   template<typename T>
-   __device__ void getSideValues(int level, T (Side::*func)(int) const, T res[4]) const {
-      // Get the values of the func at the nodes of the element
-      res[0] = (sides[0]->*func)(level);
-      res[1] = (sides[1]->*func)(level);
-      res[2] = (sides[2]->*func)(level);
-      if (isQuad()) res[3] = (sides[3]->*func)(level);
-      else          res[3] = T();  // This is 0.0 or a zero vector
-
-   }      
-
-   template<typename T>
-   __device__ T interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const {
-      T values[4];
-      getNodalValues(level, func, values);
-
-      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
-   }
-
-   template<typename T>
-   __device__ T interpolate(const double shapeCoords[4], T Node::* field) const {
-      T values[4];
-      getNodalValues(field, values);
-      
-      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
-   }
+   
+   __forceinline__ __device__ void projectNodeVectorsToElementFrame(Vector2 *v) const;
+   __forceinline__ __device__ void projectSideVectorsToElementFrame(Vector2 *v) const;
 
 
    template<typename T>
-   __device__ T interpolate(int level, const double shapeCoords[4], T (Node::* field)[nvrt]) const {
-      T values[4];
-      getNodalValues(level, field, values);
-
-      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
-   }
+   __device__ __forceinline__ T interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const;
 
    template<typename T>
-   __device__ T mean(T Node::* field) const {
-      T values[4];
-      getNodalValues(field, values);
-
-      assert(i34 == 4 || values[3] == T() && "mean: values[3] is not zero with i34 == 4");
-
-      return (values[0] + values[1] + values[2] + values[3])/i34;
-   }
+   __device__ __forceinline__ T interpolate(const double shapeCoords[4], T Node::* field) const;
 
    template<typename T>
-   __device__ T mean(T Side::* field) const {
-      T values[4];
-      getSideValues(field, values);
-      
-      assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
-
-      return (values[0] + values[1] + values[2] + values[3])/i34;
-   }   
+   __device__ __forceinline__ T interpolate(int level, const double shapeCoords[4], T (Node::* field)[nvrt]) const;
 
    template<typename T>
-   __device__ T mean(int level, T (Node::* field)[nvrt]) const {
-      T values[4];
-      getNodalValues(level, field, values);
-
-      assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
-
-      return (values[0] + values[1] + values[2] + values[3])/i34;
-   }
+   __device__ __forceinline__ T mean(T Node::* field) const;
 
    template<typename T>
-   __device__ T mean(int level, T (Side::* field)[nvrt]) const {
-      T values[4];
-      getSideValues(level, field, values);
-      
-      // assert((i34 == 4) || (values[3] == T()) && "mean: values[3] is not zero with i34 == 4");
+   __device__ __forceinline__ T mean(T Side::* field) const;
 
-      return (values[0] + values[1] + values[2] + values[3])/i34;
-   }   
+   template<typename T>
+   __device__ __forceinline__ T mean(int level, T (Node::* field)[nvrt]) const;
+
+   template<typename T>
+   __device__ __forceinline__ T mean(int level, T (Side::* field)[nvrt]) const;
 
    // __device__ double mean(double (Node::*func)(int) const) const {
    //    double values[4];
@@ -1282,6 +1232,12 @@ struct Node {
       }
    }
 
+   #ifdef USE_FRAMES
+   __device__ void setFrame(double lat, double lon) {
+
+      frame.update(lat, lon);        
+    }
+   #endif
 
    __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
 

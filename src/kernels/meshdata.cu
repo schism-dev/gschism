@@ -115,6 +115,190 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 }
 
 
+   template<typename T>
+   __device__ __forceinline__ void Element::getNodalValues(T Node::* field, T res[4]) const {
+      // Get the values of the field at the nodes of the element
+      res[0] = nodes[0]->*field;
+      res[1] = nodes[1]->*field;
+      res[2] = nodes[2]->*field;
+      if (isQuad()) res[3] = nodes[3]->*field;
+      else          res[3] = T();
+   }
+
+   template<typename T>
+   __device__ __forceinline__ void Element::getNodalValues(int level, T (Node::* field)[nvrt], T res[4]) const {
+      // Get the values of the field at the nodes of the element
+      res[0] = (nodes[0]->*field)[level];
+      res[1] = (nodes[1]->*field)[level];
+      res[2] = (nodes[2]->*field)[level];
+      if (isQuad()) res[3] = (nodes[3]->*field)[level];
+      else          res[3] = T();
+   }    
+
+   template<typename T>
+   __device__ __forceinline__ void Element::getNodalValues(int level, T (Node::*func)(int) const, T res[4]) const {
+      // Get the values of the func at the nodes of the element
+      res[0] = (nodes[0]->*func)(level);
+      res[1] = (nodes[1]->*func)(level);
+      res[2] = (nodes[2]->*func)(level);
+      if (isQuad()) res[3] = (nodes[3]->*func)(level);
+      else          res[3] = T();  // This is 0.0 or a zero vector
+
+   }      
+
+   template<typename T>
+   __device__ __forceinline__ void Element::getSideValues(T Side::* field, T res[4]) const {
+      // Get the values of the field at the nodes of the element
+      res[0] = sides[0]->*field;
+      res[1] = sides[1]->*field;
+      res[2] = sides[2]->*field;
+      if (isQuad()) res[3] = sides[3]->*field;
+      else          res[3] = T();
+   }
+
+   template<typename T>
+   __device__ __forceinline__ void Element::getSideValues(int level, T (Side::* field)[nvrt], T res[4]) const {
+      // Get the values of the field at the nodes of the element
+      res[0] = (sides[0]->*field)[level];
+      res[1] = (sides[1]->*field)[level];
+      res[2] = (sides[2]->*field)[level];
+      if (isQuad()) res[3] = (sides[3]->*field)[level];
+      else          res[3] = T();
+   }    
+
+   template<typename T>
+   __device__ __forceinline__ void Element::getSideValues(int level, T (Side::*func)(int) const, T res[4]) const {
+      // Get the values of the func at the nodes of the element
+      res[0] = (sides[0]->*func)(level);
+      res[1] = (sides[1]->*func)(level);
+      res[2] = (sides[2]->*func)(level);
+      if (isQuad()) res[3] = (sides[3]->*func)(level);
+      else          res[3] = T();  // This is 0.0 or a zero vector
+
+   }      
+
+   
+   __forceinline__ __device__ void Element::projectNodeVectorsToElementFrame(Vector2 *v) const {
+   // Project the vectors from the node frame to the element frame
+
+      frame.print();
+      nodes[0]->frame.print();
+      nodes[1]->frame.print();
+      nodes[2]->frame.print();
+      if (isQuad()) nodes[3]->frame.print();
+
+      v[0] = nodes[0]->frame.projHorVec(v[0], frame);
+      v[1] = nodes[1]->frame.projHorVec(v[1], frame);
+      v[2] = nodes[2]->frame.projHorVec(v[2], frame);
+      if (isQuad()) v[3] = nodes[3]->frame.projHorVec(v[3], frame);
+      else          v[3] = Vector2();
+   }
+
+   __forceinline__ __device__ void Element::projectSideVectorsToElementFrame(Vector2 *v) const {
+   // Project the vectors from the side frame to the element frame
+
+      v[0] = sides[0]->frame.projHorVec(v[0], frame);
+      v[1] = sides[1]->frame.projHorVec(v[1], frame);
+      v[2] = sides[2]->frame.projHorVec(v[2], frame);
+      if (isQuad()) v[3] = sides[3]->frame.projHorVec(v[3], frame);
+      else          v[3] = Vector2();
+   }
+
+
+   template<typename T>
+   __device__ __forceinline__ T Element::interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const {
+      T values[4];
+      getNodalValues(level, func, values);
+
+      // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
+      if constexpr (IsVector2<T>::value && ics == 2) {
+         projectNodeVectorsToElementFrame(values);
+      }
+
+      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
+   }
+
+   template<typename T>
+   __device__ __forceinline__ T Element::interpolate(const double shapeCoords[4], T Node::* field) const {
+      T values[4];
+      getNodalValues(field, values);
+
+      // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
+      if constexpr (IsVector2<T>::value && ics == 2) {
+         projectNodeVectorsToElementFrame(values);
+      }
+      
+      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
+   }
+
+
+   template<typename T>
+   __device__ __forceinline__ T Element::interpolate(int level, const double shapeCoords[4], T (Node::* field)[nvrt]) const {
+      T values[4];
+      getNodalValues(level, field, values);
+      
+      // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
+      if constexpr (IsVector2<T>::value && ics == 2) {
+         projectNodeVectorsToElementFrame(values);
+      }
+
+      return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
+   }
+
+   template<typename T>
+   __device__ __forceinline__ T Element::mean(T Node::* field) const {
+      T values[4];
+      getNodalValues(field, values);
+
+      // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
+      if constexpr (IsVector2<T>::value && ics == 2) {
+         projectNodeVectorsToElementFrame(values);
+      }
+
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }
+
+   template<typename T>
+   __device__ __forceinline__ T Element::mean(T Side::* field) const {
+      T values[4];
+      getSideValues(field, values);
+      
+      // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
+      if constexpr (IsVector2<T>::value && ics == 2) {
+         projectSideVectorsToElementFrame(values);
+      }
+
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }   
+
+   template<typename T>
+   __device__ __forceinline__ T Element::mean(int level, T (Node::* field)[nvrt]) const {
+      T values[4];
+      getNodalValues(level, field, values);
+
+      // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
+      if constexpr (IsVector2<T>::value && ics == 2) {
+         projectNodeVectorsToElementFrame(values);
+      }
+
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }
+
+   template<typename T>
+   __device__ __forceinline__ T Element::mean(int level, T (Side::* field)[nvrt]) const {
+      T values[4];
+      getSideValues(level, field, values);
+
+      // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
+      if constexpr (IsVector2<T>::value && ics == 2) {
+         projectSideVectorsToElementFrame(values);
+      }
+
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }   
+
+
+
 __device__ __forceinline__ Point2 Element::getLocalHorizontalNodePosition(int idxNode) const {
 // Local horizontal node position in the element frame. idxNode = 0,1,2,3
 // "Local" here means that the coordinates are in the element frame where the element is horizontal.
@@ -832,7 +1016,9 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt) const {
 
 
    // Interpolate horizontally and vertically the velocities at the two levels L, R
-   u_int = wght1*interpolate(L, shpCoord, &Node::uvw2) + wght2*interpolate(R, shpCoord, &Node::uvw2);
+   // Remember that interpolate takes frames into account for Vector2 fields and ics==2
+   toVector2(u_int) = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
+   u_int.z          = wght1*interpolate(L, shpCoord, &Node::w2) + wght2*interpolate(R, shpCoord, &Node::w2);
 
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
@@ -1452,15 +1638,27 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    // Compute the cosine and sine of the mesh rotation angle. We use float here because memory efficiency is more important than precision in this case.
    sincosf((float)wind_rotate_angle[i], &node.sRot, &node.cRot);
 
-   node.p.x   = node_coords[i * 3];
-   node.p.y   = node_coords[i * 3 + 1];
-   node.depth = node_coords[i * 3 + 2];
+   // Fills the node coordinates. If ics == 1, the coordinates are in the local frame. If ics == 2, the coordinates are in the global frame.
+   if constexpr(ics == 1) {
+      node.p.x   = node_coords[i * 3];
+      node.p.y   = node_coords[i * 3 + 1];
+      node.gz = 0.0;
 
-   if (use_ll) {
-   node.lon = node_coords_ll[i * 2    ]*deg2rad;
-   node.lat = node_coords_ll[i * 2 + 1]*deg2rad;
+   } else {
+      const double lat = node_coords[i * 3];
+      const double lon = node_coords[i * 3 + 1];
+printf("lat = %f, lon = %f, x = %f, y = %f\n", lat, lon, node.lat, node.lon);
+      Point3 p = computeXYZfromLatLon(lat, lon);
+      node.p = toVector2(p);
+      node.gz = p.z;
+
+      node.setFrame(p.y, p.x);
+
+      node.frame.print();
+
    }
 
+   node.depth = node_coords[i * 3 + 2];
 
    node.numSides = 0;
 
@@ -1741,7 +1939,7 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
    }
 
    // Derivatives of shape functions
-   //  For ics=2, this is done inside element/ll frame XXX
+   //  For ics=2, this is done in the element frame
    //  For quads, the derivative is evaluated at centroid
    for (int j = 0; j < elem.i34; j++) {
       const double area = elem.area;
@@ -1895,7 +2093,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          Node *node3 = elem->nodes[id3];
 
          Point2 x1, x2, x3;
-         elem->getLocalHorizontalNodePositions(x1, x2, x3);
+         elem->getLocalHorizontalNodePositionsTri(x1, x2, x3);
 
          // integral of phi_i*phi_j
          const double ipp_ii = (1.0/6.0 )*area;
@@ -3631,10 +3829,9 @@ extern "C" {
 
          
          // Integrate (using a central Gauss point) the density gradient from the surface to the bottom 
-         // multiplied by -rampbc*(g/rho0)  (In ll if ics=2)
-         // CHECK INDICES!!! XXX
+         // multiplied by -rampbc*(g/rho0) 
          const double grav3 = side->grav3();
-         side->bcc[k] = side->bcc[k + 1] - (rampbc*grav3/rho0)*side->Dz(k + 1)*gradRho;
+         side->bcc[k] = side->bcc[k + 1] - (rampbc*grav3/rho0)*side->Dz(k + 1)*gradRho;  
 
       } // for
 
@@ -4092,7 +4289,7 @@ extern "C" {
             }
 
             // Reusing bcc as a temporary array to store the suru values.
-            side->bcc[k] = side->u2[k] + side->shapiro*(0.25*suru - side->u2[k]); // sframe2 if ics=2
+            side->bcc[k] = side->u2[k] + side->shapiro*(0.25*suru - side->u2[k]); // All in the side frame if ics=2
 
          }
       }
@@ -4409,7 +4606,6 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
    __global__ void computeNodalHorizontalVelocities1(void) {
 
       assert(indvel == 0 && "computeNodalVelocities only works for indvel <= 0. IMPLEMENT THIS FOR INDVEL = 1");
-      assert(ics == 1 && "computeNodalVelocities only works for ics = 1. IMPLEMENT THIS FOR other ics");
 
       ELEM(elem);
 
@@ -4440,7 +4636,18 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
                atomicAdd(&(node->tmp.i), 1);
 
                for (int k = kb; k < nvrt; k++)  {
-                  Vector2 u = s2->u2[k] + s3->u2[k] - s1->u2[k]; // u interpolated linearly at node j.   
+                  Vector2 s1u2 = s1->u2[k];
+                  Vector2 s2u2 = s2->u2[k];
+                  Vector2 s3u2 = s3->u2[k];
+
+                  // If ics == 2, project the velocity 2D vectors from the side frame to the element frame
+                  if constexpr(ics == 2) {
+                     s1u2 = s1->frame.projHorVec(s1u2, elem->frame);
+                     s2u2 = s2->frame.projHorVec(s2u2, elem->frame);
+                     s3u2 = s3->frame.projHorVec(s3u2, elem->frame);
+                  }
+
+                  Vector2 u = s2u2 + s3u2 - s1u2; // u interpolated linearly at node j.   
                   u = clampVelocity(u);
                   atomicAdd(&(node->utmp[k].x), u.x);
                   atomicAdd(&(node->utmp[k].y), u.y);
@@ -4577,12 +4784,10 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
          // elem->w[kb] += ubed.z;
       }
       else {
-         Vector2 umean;
-         if constexpr(ics == 1) {
-            u2meanBottom = elem->mean(kb, &Side::u2);
-         }
-         else {
-            assert(false && "computeVerticalVelocity: ics==1 not implemented for imm==0 or 1");
+         u2meanBottom = elem->mean(kb, &Side::u2);
+         if constexpr(ics == 2) {
+            // Project the velocity from the side frame to the element frame
+            u2meanBottom = elem->frame.projHorVec(u2meanBottom, elem->frame);
          }
 
          // Error: /=0 for 2D (but OK b/cos fluxes are 0 below for transport)
@@ -4687,17 +4892,16 @@ __device__ void computeVerticalAdvection(void) {
    const Node *node2 = side->nodes[1];
    for (int k=kbs(i); k<nvrt; k++) {
 
-      if constexpr(ics==1) {
-         sdbt(1,k,i) = side->u2[k] - dt*(node1->bcc[1][k] + node2->bcc[1][k])/2.d0 - dt*side->u2p[k]
-         sdbt(2,k,i) = side->v2[k] - dt*(node1->bcc[2][k] + node2->bcc[2][k])/2.d0 - dt*side->v2p[k]
-      } else {
-         // XXX IMPLEMENT THIS
-         // call project_hvec(bcc(1,k,n1),bcc(2,k,n1),pframe(:,:,n1),sframe2(:,:,i),vn1,vn2)
-         // call project_hvec(bcc(1,k,n2),bcc(2,k,n2),pframe(:,:,n2),sframe2(:,:,i),tt1,ss1)
-         // sdbt(1,k,i)=su2(k,i)-dt*(vn1+tt1)/2.d0-dt*swild2(k,1)
-         // sdbt(2,k,i)=sv2(k,i)-dt*(vn2+ss1)/2.d0-dt*swild2(k,2)
-      }  // if ics
+      Vector2 bcc1 = node1->bcc[k];
+      Vector2 bcc2 = node2->bcc[k];
+      if constexpr(ics == 2) {
+         // Project the velocities from the node frames to the side frame
+         bcc1 = node1->frame.projHorVec(bcc1, side->frame);
+         bcc2 = node2->frame.projHorVec(bcc2, side->frame);
+      }
 
+      sdbt(1,k,i) = side->u2[k] - dt*(bcc1.x + bcc2.x)/2.d0 - dt*side->u2p[k]
+      sdbt(2,k,i) = side->v2[k] - dt*(bcc1.y + bcc2.y)/2.d0 - dt*side->v2p[k]
 
    }
 }
@@ -4716,20 +4920,17 @@ extern "C" {
          if (nhtblocks > 0 && elem->isblock) return;
       }
 
-
-
       
-      // Warning: ghat1=elem average of \breve{G} must include all: Coriolis, atmo. pressure, 
-      // tidal potential, horizontal diffusion, and baroclinic etc
-      // Remember to update both fb and F 
-      // If ics=2, ghat1 are in eframe (ll)
+      // ghat1=elem average of \breve{G} includes: Coriolis, atmospheric pressure, tidal potential, horizontal diffusion, and baroclinic etc
       // cff1-3: coefficients for 2D/3D
+
       elem->gradEta = {0.0, 0.0};  // \nabla \eta
       elem->gradPr  = {0.0, 0.0};  // \nabla pressure
-      elem->gradETP = {0.0, 0.0};  // \nabla etp
+      elem->gradETP = {0.0, 0.0};  // \nabla Earth Tidal Potential
 
       if (elem->isDry) return;
 
+      // Average of the coefficients
       double av_cff1 = 0.0;  // av. for cff1
       double av_cff2 = 0.0;  // av. for cff2
       double av_cff3 = 0.0;  // av. for cff3
@@ -4738,7 +4939,7 @@ extern "C" {
       double av_cff3_chi = 0.0;  // av. for cff3*chi
 
       const int i34 = elem->i34;
-      const int kb = elem->kb;
+      const int kb  = elem->kb;
 
       for (int j=0; j<i34; j++) {
          // For each node and side in the element...
@@ -4753,7 +4954,7 @@ extern "C" {
          const double veg_c    = veg_c2/(1.0 + veg_c2);  // veg_c2 = \alpha*|u|*dt
 
          // Node - const in elem
-         elem->gradEta += node->eta2*elem->gradPhi[j];  // in eframe if ics=2
+         elem->gradEta += node->eta2*elem->gradPhi[j];  // gradPhi is always in the element frame
          elem->gradPr  += node->pr  *elem->gradPhi[j];
 
          if (elem->depth >= tip_dp) {
@@ -4935,8 +5136,8 @@ extern "C" {
          Vector2 Fa = {0.0, 0.0};
          Vector2 intGradRho = {0.0, 0.0};
          
-         // \sum_{l=k}^N dr*dz; whole level (and eframe if ics=2)
-         for (int k=nvrt-2; k > kb + 1; k--) { /// XXXX CHECK INDICES
+         // Computes \sum_{l=k}^N dr*dz for the k level at trhe element frame
+         for (int k=nvrt-2; k >= kb + 1; k--) { /// XXXX CHECK INDICES
             intGradRho += elem->gradRho[k+1]*elem->Dz(k+1); 
 
             // \in F [m^2/s/s]
