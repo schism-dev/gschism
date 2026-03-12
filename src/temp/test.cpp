@@ -7,27 +7,11 @@
 
     void Element::setFrame(void) {
 
-        double ar1, ar2;
-        compute_ll(xc,yc,zc,ar1,ar2)
+        double lat, lon;
+        computeLatLon(xc, yc, zc, lat, lon);
 
-        // PUT THE FOLLOWING INTO A FRAME'S FUNCTION
-        T[0,0] = -sin(ar1);
-        T[1,0] =  cos(ar1);
-        T[2,0] =  0.0;
-        T[0,1] = -cos(ar1)*sin(ar2);
-        T[1,1] = -sin(ar1)*sin(ar2);
+        frame.update(lat, lon);
 
-        T[2,1] = rearth_pole/rearth_eq*cos(ar2);
-
-        const double ar4 = sqrt(T[0,1]**2 + T[1,1]**2 + T[2,1]**2);
-        if (ar4==0.0) errorMessage('GRID: ar4=0');
-
-        T[0:2,1] = T[0:2,1]/ar4;
-
-        // The third vector is the cross product of the first two
-        cross_product(T[0,0],T[1,0],T[2,0], 
-                      T[0,1],T[1,1],T[2,1], 
-                      T[0,2],T[1,2],T[2,2]);
     }
 
 

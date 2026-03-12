@@ -105,12 +105,16 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 
 __device__ __forceinline__ double Element::centerZ(void) const { 
 // Z coordinate of the element center in the global cartesian coordinates
-   assert(!isQuad() && "centerZ only works for triangles");
 
    if constexpr(ics==1) { 
       return 0.0; 
    } else { 
-      return (1.0/3.0)*(nodes[0]->gz + nodes[1]->gz + nodes[2]->gz); 
+      if (isTri()) {
+         return (1.0/3.0)*(nodes[0]->gz + nodes[1]->gz + nodes[2]->gz); 
+      } else {
+         return (1.0/4.0)*(nodes[0]->gz + nodes[1]->gz + nodes[2]->gz + nodes[3]->gz); 
+      }
+
    } 
 }
 
@@ -181,12 +185,7 @@ __device__ __forceinline__ double Element::centerZ(void) const {
    __forceinline__ __device__ void Element::projectNodeVectorsToElementFrame(Vector2 *v) const {
    // Project the vectors from the node frame to the element frame
 
-      frame.print();
-      nodes[0]->frame.print();
-      nodes[1]->frame.print();
-      nodes[2]->frame.print();
-      if (isQuad()) nodes[3]->frame.print();
-
+ 
       v[0] = nodes[0]->frame.projHorVec(v[0], frame);
       v[1] = nodes[1]->frame.projHorVec(v[1], frame);
       v[2] = nodes[2]->frame.projHorVec(v[2], frame);
@@ -1105,6 +1104,7 @@ __inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <
 __inline__ __device__ double  Side::lon(void)     const { return 0.5*(n1->lon + n2->lon); }
 __inline__ __device__ double  Side::lat(void)     const { return 0.5*(n1->lat + n2->lat); }
 __inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
+__inline__ __device__ double  Side::centerZ(void) const { return 0.5*(n1->gz + n2->gz); }
 __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition)(const Element*)) const {
 // Computes the gradient of the field at the side center.
    Vector2 grad = {0.0, 0.0};
@@ -1645,16 +1645,17 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       node.gz = 0.0;
 
    } else {
-      const double lat = node_coords[i * 3];
-      const double lon = node_coords[i * 3 + 1];
-printf("lat = %f, lon = %f, x = %f, y = %f\n", lat, lon, node.lat, node.lon);
+      const double lat = deg2rad*node_coords[i * 3];
+      const double lon = deg2rad*node_coords[i * 3 + 1];
+// printf("lat = %f, lon = %f, x = %f, y = %f\n", lat, lon, node.lat, node.lon);
       Point3 p = computeXYZfromLatLon(lat, lon);
       node.p = toVector2(p);
       node.gz = p.z;
 
-      node.setFrame(p.y, p.x);
+      #ifdef USE_FRAMES
+      node.setFrame(lat, lon);
+      #endif
 
-      node.frame.print();
 
    }
 
@@ -1760,6 +1761,10 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
+   #ifdef USE_FRAMES
+   side.setFrame();
+   #endif
+
    // Counts the number of sides connected to each node
    side.n1->numSides++;
    side.n2->numSides++;
@@ -1842,12 +1847,12 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
 // XXXX
 if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
 constexpr double rot_per=3000.0;
-constexpr double rot_f=0.0*2.0*pi/rot_per;
+constexpr double rot_f=0.0*2.0*pi/rot_per;/// XXXX
 for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
 // XXXXX      
 #endif
    // Compute the z level at the center of the side
-   for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);
+   for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);  // XXXX substitute by computation?
    
    // Compute the length of the side
    const Vector2 vLen = side.n2->p - side.n1->p;

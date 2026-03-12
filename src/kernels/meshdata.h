@@ -259,15 +259,15 @@ __forceinline__ __device__ void crossProduct(double x1, double y1, double z1, do
 }
 
 
-__forceinline__ __device__ void computeLonLat(Point3 const &p, double &rlon, double &rlat) {
+__forceinline__ __device__ void computeLatLon(Point3 const &p, double &rlat, double &rlon) {
 // Given a 3D global point (may not be on the surface of the Earth), find its longitude and latitude in radians
 //
 
    const double radius2 = dot(p, p);
    const double radius = sqrt(radius2);
  
-   assert(radius != 0.0      && "computeLonLat: radius = 0");
-   assert(p.z*p.z <= radius2 && "computeLonLat: p.z <= radius");
+   assert(radius != 0.0      && "computeLatLon: radius = 0");
+   assert(p.z*p.z <= radius2 && "computeLatLon: p.z <= radius");
 
    rlon = atan2(p.y, p.x); // (-pi,pi]
 
@@ -318,17 +318,19 @@ struct Frame {
     double t00, t10;        // col0 (t20=0 implicit)
     double t01, t11, t21;   // col1
 
-   __device__ void update(double ar1, double ar2) { // XXX use lat, lon instead of ar1, ar2?
+   __device__ void update(double lat, double lon) { // XXX use lat, lon instead of ar1, ar2?
 
-      double sin_ar1, cos_ar1, sin_ar2, cos_ar2;
-      sincos(ar1, &sin_ar1, &cos_ar1); // These functions are faster than sin(ar1) and cos(ar1).
-      sincos(ar2, &sin_ar2, &cos_ar2);
+      double sin_lon, cos_lon, sin_lat, cos_lat;
+      sincos(lon, &sin_lon, &cos_lon); // These functions are faster than sin(ar1) and cos(ar1).
+      sincos(lat, &sin_lat, &cos_lat);
 
-      t00 = -sin_ar1;
-      t10 =  cos_ar1;
-      t01 = -cos_ar1*sin_ar2;
-      t11 = -sin_ar1*sin_ar2;
-      t21 = (rearth_pole/rearth_eq)*cos_ar2;
+      t00 = -sin_lon;
+      t10 =  cos_lon;
+      t01 = -cos_lon*sin_lat;
+      t11 = -sin_lon*sin_lat;
+      t21 = (rearth_pole/rearth_eq)*cos_lat;
+// printf("lat = %f, lon = %f, cos_lat = %f, sin_lat = %f, cos_lon = %f, sin_lon = %f\n", lat, lon, cos_lat, sin_lat, cos_lon, sin_lon);
+// printf("t00 = %f, t10 = %f, t01 = %f, t11 = %f, t21 = %f\n", t00, t10, t01, t11, t21);
 
       const double col1_norm = sqrt(t01*t01 + t11*t11 + t21*t21);
       assert (col1_norm != 0.0 && "GRID: col1_norm=0");
@@ -343,7 +345,7 @@ struct Frame {
    }
 
    __forceinline__ __device__ void print(void) const {
-      printf("frame = [%.16f, %.16f, %.16f, %.16f, %.16f, %.16f]\n", t00, t10, t01, t11, t21);
+      printf("frame = [%.16f, %.16f, %.16f, %.16f, %.16f]\n", t00, t10, t01, t11, t21);
    }
 
    __forceinline__ __device__ void getCol2(double &t02, double &t12, double &t22) const {
@@ -473,7 +475,7 @@ struct Element {
 
    bool isDry;                // True if the element is dry
 
-   Vector2 center;            // Element center coordinates
+   Point2 center;            // Element center coordinates
 
    double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
    double depth;              // Depth at element (min of all nodes)
@@ -530,7 +532,6 @@ struct Element {
       assert(res >= 0 && res < i34 && sides[res] == side && "sideLocalIdx: side not found in element");
       return res;
    }
-
 
    __inline__ __device__ int findLevel(double z1, int k) const {
       // Starting at index k, find sequentially the level that contains z
@@ -669,12 +670,17 @@ struct Element {
     }
 
 
-#ifdef USE_FRAMES
+   #ifdef USE_FRAMES
    __device__ void setFrame(void) {
+      double lat, lon;
+      const Point3 p = toPoint3(center, centerZ());
 
-      // frame.update(ar1, ar2);        
-    }
-#endif
+      // Compute the latitude and longitude of the element center
+      computeLatLon(p, lat, lon);
+
+      frame.update(lat, lon);        
+   }
+   #endif
 
    __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect);
@@ -922,7 +928,20 @@ struct Side {
    __inline__ __device__ double lat(void) const;
    __inline__ __device__ Point2 p_t(double t) const;
 
-   __inline__ __device__ Point3 center3D(int k) const { assert(k < nvrt); return {center.x, center.y, zc[k]}; }
+   #ifdef USE_FRAMES
+   __device__ void setFrame(void) {
+      double lat, lon;
+      const Point3 p = toPoint3(center, centerZ());
+
+      // Compute the latitude and longitude of the element center
+      computeLatLon(p, lat, lon);
+
+      frame.update(lat, lon);        
+   }
+   #endif
+
+   __inline__ __device__ double centerZ(void)   const;
+   __inline__ __device__ Point3 center3D(int k) const { assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
    __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
    __inline__ __device__ double area(int k)     const { assert(k < nvrt - 1); return len*Dz(k + 1); }
 
@@ -1113,13 +1132,13 @@ struct Node {
    double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
    double depth;
 
-#ifdef USE_FRAMES
+   #ifdef USE_FRAMES
    Frame frame;
-#endif
+   #endif
 
-#ifdef USE_LOCALIZED_SIGMA   
+   #ifdef USE_LOCALIZED_SIGMA   
    double localSigma[nvrt];
-#endif
+   #endif
 
    int kb;       // Bottom index of the node
 

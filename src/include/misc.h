@@ -16,6 +16,7 @@ namespace py = pybind11;
 
 const double pi = 3.14159265358979323846;
 const double deg2rad = pi / 180.0;
+const double rad2deg = 180.0 / pi;
 
 // Helper function for computing the local node index at a given offset from another.
 inline int nxq(int offset, int index, int size) {
