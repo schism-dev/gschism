@@ -1,6 +1,6 @@
 import os
 import cupy as cp
-
+import numpy as np
 import netCDF4 as nc
 import debug.monitor as monitor 
 import time
@@ -140,6 +140,12 @@ def writeOutput(it, core, opt):
         depth_var[:] = depth_cpu
         del depth_cpu
 
+        view = monitor.getNodeVar("kb")
+        kb_cpu = view.get()
+        kb_var = dataC.variables['bottom_index_node']
+        kb_var[:] = kb_cpu
+        del kb_cpu
+
         min_depth_var = dataC.variables['minimum_depth']
         min_depth_var[:] = 0.0001
 
@@ -175,6 +181,15 @@ def writeOutput(it, core, opt):
     view = monitor.getNodeVar("u")
     u_cpu = view[0,:,:].get()
     v_cpu = view[1,:,:].get()
+
+    # Mask depth layers above kb (dry/above bed) as NaN
+    kb_cpu = monitor.getNodeVar("kb").get()
+    nvrt_u = u_cpu.shape[0]
+    k_2d = np.arange(nvrt_u, dtype=kb_cpu.dtype)[:, np.newaxis]
+    mask_above_kb = k_2d < kb_cpu[np.newaxis, :]
+    u_cpu[mask_above_kb] = np.nan
+    v_cpu[mask_above_kb] = np.nan
+
     horizontalVelX_var = dataU.variables['horizontalVelX']
     horizontalVelX_var[idxTime, :, :] = u_cpu.T
 

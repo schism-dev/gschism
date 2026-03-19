@@ -100,7 +100,7 @@ class PCGSolver:
         if ensureSymmetric:
             # Make the matrix symmetric (removes small off-diagonal elements)
             self.A.data[:]   = 0.5*(self.A   + self.A.T  ).data  
-            self.A_f.data[:] = 0.5*(self.A_f + self.A_f.T).data  
+
 
         # Recreate descriptors after matrix data is populated
         self.desc_A = cusparse.SpMatDescriptor.create(self.A)

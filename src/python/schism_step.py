@@ -143,7 +143,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         monitor.debugPlotIdx[0] = 0        
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        # if it == 168:
+        # if it >= 0:
         #     monitor.plotMesh()        
 
         cp.cuda.Device().synchronize()

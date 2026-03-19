@@ -407,6 +407,9 @@ __forceinline__ __device__ Point3 computeXYZfromLatLon(double lat, double lon) {
 
    double sin_lat, cos_lat, sin_lon, cos_lon;
 
+   assert(lat >= -pi/2.0 && lat <= pi/2.0 && "computeXYZfromLatLon: lat out of range");
+   assert(lon >= -pi     && lon <= pi &&     "computeXYZfromLatLon: lon out of range");
+
    sincos(lat, &sin_lat, &cos_lat);
    sincos(lon, &sin_lon, &cos_lon);
 
@@ -436,6 +439,9 @@ struct Frame {
     double t01, t11, t21;   // col1
 
    __device__ void update(double lat, double lon) { // XXX use lat, lon instead of ar1, ar2?
+
+      assert(lat >= -pi/2.0 && lat <= pi/2.0 && "GRID: lat out of range");
+      assert(lon >= -pi     && lon <= pi     && "GRID: lon out of range");
 
       double sin_lon, cos_lon, sin_lat, cos_lat;
       sincos(lon, &sin_lon, &cos_lon); // These functions are faster than sin(ar1) and cos(ar1).
@@ -515,6 +521,7 @@ struct Frame {
       Vector3 vo;
       double t02, t12, t22;
 
+      // Compute the 3rd column of the frame tensor
       getCol2(t02, t12, t22);
 
       vo.x = vi.x*t00 + vi.y*t10;
@@ -529,6 +536,7 @@ struct Frame {
       Vector3 vo;
       double t02, t12, t22;
 
+   // Compute the 3rd column of the frame tensor
       getCol2(t02, t12, t22);
 
       // F * vi (non-transposed, so we use rows of F)
@@ -539,15 +547,7 @@ struct Frame {
       return vo;
    }
 
-   // __forceinline__ __device__ Point3 G2L(Point3 const &pi, Point3 const &origin0) const {
-   // // Tranforms a point from global to local frame     
-   //    return G2L(pi - origin0); // XXXX IS THIS CORRECT?
-   // }
 
-   // __forceinline__ __device__ Point3 L2G(Point3 const &pi, Point3 const &origin0) const {
-   // // Transforms a point from local to global frame      
-   //    return L2G(pi) + origin0;  // XXXX IS THIS CORRECT?
-   // }
 
 };
 
@@ -594,7 +594,7 @@ struct Element {
 
    Point2 center;            // Element center coordinates
 
-   double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
+
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
 
@@ -687,7 +687,7 @@ struct Element {
    // "Local" horizontal coordinates at the nodes. They are computed from the 3D global node coordinates. For ics == 1 and 2
    // Local is in quotes because for ics == 1, the coordinates are unchanged. It just means that in these coordinates, the element is horizontal.
    __device__ __forceinline__ Point2 getLocalHorizontalNodePosition(int idxNode) const;
-   __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2, int idx = 0) const;
    __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const;
 
 
@@ -742,15 +742,11 @@ struct Element {
 
    __inline__ __device__ double computeSignedArea(void) const;
 
-   __inline__ __device__ void nudgeToBarycenter(Point2 &p) const {
-      // Nudges the point (x,y) to the barycenter of the element
-
-      p = (1.0 - btrack_nudge)*p + btrack_nudge*center;
-   }
+   __inline__ __device__ void nudgeToBarycenter(Point2 &p, const Side *origSide = nullptr) const;
 
    enum EFixIf { fiNo, fiOnlyInside, fiAnywhere };
 
-   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo) const;
+   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo, const Side *origSide = nullptr) const;
    
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
@@ -790,6 +786,7 @@ struct Element {
    #ifdef USE_FRAMES
    __device__ void setFrame(void) {
       double lat, lon;
+
       const Point3 p = toPoint3(center, centerZ());
 
       // Compute the latitude and longitude of the element center
@@ -800,30 +797,11 @@ struct Element {
    #endif
 
    __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
-                                        double& tIntersect);
+                                        double& tIntersect, const Side *origSide = nullptr);
 
-   __inline__ __device__ bool containsPoint(Vector2 xt) const { 
-      // Check if the point (xt,yt) is inside the element
-      double shpCoords[4];
+   __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
 
-      bool res = computeShapeCoords(xt, shpCoords, fiNo);
-
-      return res;
-   }
-
-   __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords) const { 
-      // Check if the point (xt,yt) is inside the element.
-      // If fixCoords is true, and *the point is inside the element*, the point is nudged to be inside the element.
-      double shpCoords[4];
-
-      Vector2 tmp_xt = xt;
-      const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
-      bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords);
-
-      if (fixCoords && res) xt = tmp_xt;
-
-      return res;
-   }
+   __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords, const Side *origSide) const;
 
    __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4]) const
    {
@@ -833,7 +811,7 @@ struct Element {
       
    }
 
-   __device__ Vector3 interpolateVelocities(Point3 xt) const;
+   __device__ Vector3 interpolateVelocities(Point3 xt, const Side *origSide = nullptr) const;
 
    // ------------------------------------------------------------------------------------------------
    // These are functions that work on all nodes/sides of the element.
@@ -993,9 +971,9 @@ struct Side {
    Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
 
-#ifdef USE_FRAMES
+   #ifdef USE_FRAMES
    Frame frame;
-#endif
+   #endif
 
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
@@ -1041,9 +1019,11 @@ struct Side {
 
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
+   __inline__ __device__ double z(double t) const;
    __inline__ __device__ double lon(void) const;
    __inline__ __device__ double lat(void) const;
-   __inline__ __device__ Point2 p_t(double t) const;
+   __inline__ __device__ Point2 p2_t(double t) const;
+   __inline__ __device__ Point3 p3_t(double t) const;
 
    #ifdef USE_FRAMES
    __device__ void setFrame(void) {
@@ -1058,7 +1038,7 @@ struct Side {
    #endif
 
    __inline__ __device__ double centerZ(void)   const;
-   __inline__ __device__ Point3 center3D(int k) const { assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
+   __inline__ __device__ Point3 center3D(int k) const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
    __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
    __inline__ __device__ double area(int k)     const { assert(k < nvrt - 1); return len*Dz(k + 1); }
 
@@ -1375,7 +1355,7 @@ struct Node {
     }
    #endif
 
-   __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
+   //__device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
 
    __device__ double sigmaTransitionDepth(void) const;
 
@@ -1423,7 +1403,7 @@ struct Node {
 
    __device__ __inline__ void updateZCoordData(void);
 
-   __device__ double compZCoord(int k) const;
+   __device__ __forceinline__ double compZCoord(int k) const;
 
    __device__ void updateKb(void);
 
@@ -1630,7 +1610,7 @@ struct Mesh {
       // XXXXX REMOVE THIS FUNCTION
       printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
       for (int i = 0; i < ne; i++) {
-         auto isInside = localElemData[i].containsPoint({x, y});
+         auto isInside = localElemData[i].containsPoint({x, y}, nullptr);
 
          if (isInside) {
             printf("Point %f %f %f is inside element %d\n", x, y, z, i);
@@ -1823,7 +1803,7 @@ __device__ void unlock(int *mutex) {
     atomicExch(mutex, 0);
 }
 
-__device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF0000, char marker = 'o') {
+__device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF0000, char marker = 'o', int label = -1) {
 // return;   
    // Lock the mutex
    lock(&debugPlotMutex);
@@ -1838,6 +1818,7 @@ __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF00
       debugPlot[(*debugPlotIdx) + 3*10000] = x2.y;
       debugPlot[(*debugPlotIdx) + 4*10000] = (double)color;
       debugPlot[(*debugPlotIdx) + 5*10000] = (double)marker;
+      debugPlot[(*debugPlotIdx) + 6*10000] = (double)label;
       (*debugPlotIdx)++;
    }
 
@@ -1847,8 +1828,8 @@ __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF00
 
 }
 
-__device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xA0A0A0, char marker = 'o') {
-   addDebugPlot(toPoint3(x1, 0.0), toPoint3(x2, 0.0), color, marker);
+__device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xA0A0A0, char marker = 'o', int label = -1) {
+   addDebugPlot(toPoint3(x1, 0.0), toPoint3(x2, 0.0), color, marker, label);
 }
 
 //===============================================================================
@@ -1869,9 +1850,27 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 
 }
 
+__device__ __forceinline__ Point3 toLocalFrame(Point3 const& p, const Side* origSide) {
+// If ics == 2, convert the global point to the local frame of the original side
+   
+   if constexpr (ics == 1) {
+      return p;
+   } else {
+      const Point3 c = {origSide->center.x, origSide->center.y, origSide->centerZ()};
+      const Point3 p2 = origSide->frame.G2L(p - c);
+      return p2; // only the horizontal components
+   }
+}
+
+__device__ __forceinline__ Point2 toLocalFrame(Point2 const& p, const Side* origSide) {
+// If ics == 2, convert the global vector to the local frame of the original side
+   return toPoint2(toLocalFrame(toPoint3(p, 0.0), origSide));
+}
+
 
 __device__ __forceinline__ double Element::centerZ(void) const { 
-// Z coordinate of the element center in the global cartesian coordinates
+// Z coordinate of the element center in the global cartesian coordinates.
+// This works because we also compute the average of the x,y coordinates of the nodes to compute the 3D center.
 
    if constexpr(ics==1) { 
       return 0.0; 
@@ -1978,7 +1977,9 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
+// printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
+// printf("interpolate 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -1991,7 +1992,9 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
+// printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
+// printf("interpolate 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
       
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -2005,7 +2008,9 @@ __device__ __forceinline__ double Element::centerZ(void) const {
       
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
+// printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
+// printf("interpolate 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -2018,7 +2023,9 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
+// printf("mean 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
+// printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
@@ -2031,7 +2038,9 @@ __device__ __forceinline__ double Element::centerZ(void) const {
       
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
+// printf("mean 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectSideVectorsToElementFrame(values);
+// printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
@@ -2044,7 +2053,9 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
+// printf("mean 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
+// printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
@@ -2057,7 +2068,9 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
+// XXXXX printf("mean 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectSideVectorsToElementFrame(values);
+// printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
@@ -2072,13 +2085,15 @@ __device__ __forceinline__ Point2 Element::getLocalHorizontalNodePosition(int id
 
    assert(idxNode < i34 && idxNode >= 0 && "getLocalHorizontalNodePosition: idxNode out of range");
 
+   const Node *node = nodes[idxNode];
+
    if constexpr(ics==1) {
-      return nodes[idxNode]->p;
+      return node->p;
 
    } else {
       const Vector3 c = {center.x, center.y, centerZ()}; // Element center
 
-      const Point3 p = toPoint3(nodes[idxNode]->p, nodes[idxNode]->gz); // XXXXX use p3D or similar?
+      const Point3 p = toPoint3(node->p, node->gz); // XXXXX use p3D or similar?
 
       return toVector2(frame.G2L(p - c));  // Vectors are implicitly cast into points (in this case at the local frame centered at c)
    }
@@ -2086,26 +2101,31 @@ __device__ __forceinline__ Point2 Element::getLocalHorizontalNodePosition(int id
 }
 
 
-__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Point2 &x0, Point2 &x1, Point2 &x2) const {
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Point2 &x0, Point2 &x1, Point2 &x2, int idx) const {
 // Performs "getLocalHorizontalNodePosition" for the three nodes of the triangle.
 
-   assert(!isQuad() && "getLocalHorizontalNodePositions only works for triangles");
+   assert(isTri() && "getLocalHorizontalNodePositions only works for triangles");
+
+   const int id1 = idx;
+   const int id2 = nxq(1 + id1);
+   const int id3 = nxq(2 + id1);
 
    if constexpr(ics==1) {
-      x0 = nodes[0]->p;
-      x1 = nodes[1]->p;
-      x2 = nodes[2]->p;
+      x0 = nodes[id1]->p;
+      x1 = nodes[id2]->p;
+      x2 = nodes[id3]->p;
 
    } else {
       const Vector3 c = {center.x, center.y, centerZ()}; // Element center
 
-      const Point3 p0 = toPoint3(nodes[0]->p, nodes[0]->gz); // XXXXX use p3D or similar?
-      const Point3 p1 = toPoint3(nodes[1]->p, nodes[1]->gz);
-      const Point3 p2 = toPoint3(nodes[2]->p, nodes[2]->gz);
+      const Point3 p0 = toPoint3(nodes[id1]->p, nodes[id1]->gz); // XXXXX use p3D or similar?
+      const Point3 p1 = toPoint3(nodes[id2]->p, nodes[id2]->gz);
+      const Point3 p2 = toPoint3(nodes[id3]->p, nodes[id3]->gz);
 
       x0 = toVector2(frame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
       x1 = toVector2(frame.G2L(p1 - c));
       x2 = toVector2(frame.G2L(p2 - c));
+
    }
 
 }
@@ -2179,6 +2199,7 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
       area3D = 0.5*len;
 
       const double inv_len = 1.0/len;
+
       return {nx*inv_len, ny*inv_len, nz*inv_len};
    
    }
@@ -2242,9 +2263,11 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
 
 
 __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement,
-                                              double &t, double& tIntersect) {
-   assert( containsPoint(x1) && "Starting point is not inside the element");                                    
-   assert(!containsPoint(x2) && "Ending point is not outside the element");
+                                              double &t, double& tIntersect, const Side *origSide) {
+   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
+if (!containsPoint(x1, origSide)) printf("111: x1 = (%f, %f), origSide.center = (%f, %f)\n", x1.x, x1.y, origSide->center.x, origSide->center.y); 
+   assert( containsPoint(x1, origSide) && "Starting point is not inside the element");                                    
+   assert(!containsPoint(x2, origSide) && "Ending point is not outside the element");
 
    double closest_intersect_t = 1e10;
    bool found_intersection = false;
@@ -2307,10 +2330,40 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
    }
 
 
+if (!found_intersection) {if (idx == 15876) printf("11111: No intersection found\n"); return false;}
    assert(found_intersection && "No intersection found");
 
    // found_intersection should always be true, since we checked all the sides.  
    return found_intersection;
+}
+
+__inline__ __device__ bool Element::containsPoint(Vector2 xt, const Side *origSide) const { 
+   // Check if the point (xt,yt) is inside the element.
+   // if ics==2, origSide is used to convert the point to the starting point's frame.
+   assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa");
+
+   double shpCoords[4];
+if (origSide->idx == 15876) printf("containsPoint 1: xt = (%f, %f), elem->idx = %d, origSide->idx = %d\n", xt.x, xt.y, idx, origSide->idx);
+   bool res = computeShapeCoords(xt, shpCoords, fiNo, origSide);
+if (origSide->idx == 15876) printf("containsPoint 11: shpCoords = (%f, %f, %f, %f), origSide->idx = %d\n", shpCoords[0], shpCoords[1], shpCoords[2], shpCoords[3], origSide->idx);
+   return res;
+}
+
+__inline__ __device__ bool Element::containsPoint(Vector2 &xt, bool fixCoords, const Side *origSide) const { 
+   // Check if the point (xt,yt) is inside the element.
+   // If fixCoords is true, and *the point is inside the element*, the point is nudged to be inside the element.
+   // if ics==2, origSide is used to convert the point to the starting point's frame.
+   assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa");
+
+   double shpCoords[4];
+if (origSide->idx == 15876) printf("containsPoint 2: xt = (%f, %f), elem->idx = %d, side = %p\n", xt.x, xt.y, idx, origSide);
+   Vector2 tmp_xt = xt;
+   const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
+   bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords, origSide);
+
+   if (fixCoords && res) xt = tmp_xt;
+
+   return res;
 }
 
 
@@ -2325,7 +2378,7 @@ __device__ void Element::trackGoesOutOfWater(Side *nextSide, Element *curElem, d
    // And uses this velocity instead to continue the tracking.
 
    // computes the intersection point in cartesian coordinates
-   Point2 intersection = nextSide->p_t(tt);  // XXXX I don't think this is necessary. THE intersection is already computed in findNextIntersection.
+   Point2 intersection = nextSide->p2_t(tt);  // XXXX I don't think this is necessary. THE intersection is already computed in findNextIntersection.
 
    // Nudges the point to the barycenter of the element. 
    // This ensures that the point is inside the element and hence, we will find an intersection if the
@@ -2393,18 +2446,20 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    // First thing is to check if the target point is inside the element. If it is, there is nothing
    // else to do. This means that the full step occurred within the current element.
    assert(!isDry && "Starting element is dry");
-   assert(containsPoint(toPoint2(x0)) && "Starting point is not inside the element");
+   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
+Vector2 x0_tmp = toVector2(x0);
+if (!containsPoint(toPoint2(x0), origSide)) {if (idx == 15876) printf("1111: elem->idx = %d, origSide->idx = %d, x0_tmp = (%f, %f), x0 = (%f, %f), origSide.center = (%f, %f)\n", idx, origSide->idx, x0_tmp.x, x0_tmp.y, x0.x, x0.y, origSide->center.x, origSide->center.y); return false;}
+   assert(containsPoint(toPoint2(x0), origSide) && "Starting point is not inside the element");
 
-   if (containsPoint(toPoint2(xt), true)) {  // The "true" means that, if the point is very close to the boundary, it is nudged to be definitely inside the element.
+   if (containsPoint(toPoint2(xt), true, origSide)) {  // The "true" means that, if the point is very close to the boundary, it is nudged to be definitely inside the element.
 
-      assert(containsPoint(toPoint2(xt)) && "Target point is not inside the element");
+      assert(containsPoint(toPoint2(xt), origSide) && "Target point is not inside the element");
       assert(!isDry && "Target point is inside a dry element");
 
-      u_int = interpolateVelocities(xt);
+      u_int = interpolateVelocities(xt, origSide);
 
       nextElem = this;
 
-// if (jlev==10) addDebugPlot(x0, xt, 0x00FF00); // green
       return true;
    }
 
@@ -2420,15 +2475,16 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
-   bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect);
+   bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect, origSide);
+if (!found_intersection) {if (idx == 15876) printf("111112: No intersection found\n"); return false;}
    assert(found_intersection && "No intersection found at %d");
 
-   Point2 xtmp = nextSide->p_t(t); // moves the target point to the intersection point
+   Point2 xtmp = toPoint2(toLocalFrame(nextSide->p3_t(t), origSide)); // If needed, moves the target point to the intersection point
 
    // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
    if (nextElem != nullptr && !nextElem->isDry) {
-      assert(nextElem->containsPoint(xtmp) && "Intersection point is not inside the next element");
-      nextElem->nudgeToBarycenter(xtmp);
+      assert(nextElem->containsPoint(xtmp, origSide) && "Intersection point is not inside the next element");
+      nextElem->nudgeToBarycenter(xtmp, origSide);
    }
 
    const double zint = (1 - tIntersect)*x0.z + tIntersect*xt.z;
@@ -2440,9 +2496,9 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 
       trackGoesOutOfWater(nextSide, this, t, jlev, xt, zint, u_int);
 
-      assert(this->containsPoint(toPoint2(xt)) && "Target point is not inside the current element");
+      assert(this->containsPoint(toPoint2(xt), origSide) && "Target point is not inside the current element");
       // When this happens, the backtracking stops.
-      // dt = time_rm;  LLLLLL KKKK XXXX
+
       dt *= tIntersect;
 
       // In this case, the next element is again the current element.
@@ -2456,14 +2512,14 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    }
 
 
-   assert(nextElem->containsPoint(toPoint2(xt)) && "Target point is not inside the next element");
+   assert(nextElem->containsPoint(toPoint2(xt), origSide) && "Target point is not inside the next element");
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
 
    
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
 
-   u_int = nextElem->interpolateVelocities(xt); 
+   u_int = nextElem->interpolateVelocities(xt, origSide); 
 
    assert(nextElem != this && "Next element is the same as the current element");
 
@@ -2474,21 +2530,35 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
 __inline__ __device__ double Element::computeSignedArea(void) const {
    // Compute the area of the element
 
-   double res = signedArea(nodes[0]->p, nodes[1]->p, nodes[2]->p);
+   Point2 x0, x1, x2, x3;
+   getLocalHorizontalNodePositionsTri(x0, x1, x2);
+
+   double res = signedArea(x0, x1, x2);
 
    // In the quad case we need to add the area of the other triangle.
    if (isQuad()) {
-      double ar1 = signedArea(nodes[0]->p, nodes[2]->p, nodes[3]->p);
-      double ar2 = signedArea(nodes[0]->p, nodes[1]->p, nodes[3]->p);
-      double ar3 = signedArea(nodes[1]->p, nodes[2]->p, nodes[3]->p);
+      x3 = getLocalHorizontalNodePosition(3);
+      double ar1 = signedArea(x0, x2, x3);
+      double ar2 = signedArea(x0, x1, x3);
+      double ar3 = signedArea(x1, x2, x3);
       assert (ar1 >= 0.0 && ar2 >= 0.0 && ar3 >= 0.0 && "Negative area found in quad element");
 
-      res += ar1;
+      res += ar1 + ar2 + ar3;
    }
 
    return res;
 }
 
+
+__inline__ __device__ void Element::nudgeToBarycenter(Point2 &p, const Side *origSide) const {
+// Nudges the point (x,y) to the barycenter of the element
+
+   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
+
+   Point3 c = toLocalFrame(toPoint3(center, centerZ()), origSide); // In local frame coordinates if ics == 2
+if (origSide->idx == 15876) printf("nudgeToBarycenter 1: center = (%f, %f) p = (%f, %f) elem->idx = %d, origSide->idx = %d, c = (%f, %f)\n", center.x, center.y, p.x, p.y, idx, origSide->idx, c.x, c.y);
+   p = (1.0 - btrack_nudge)*p + btrack_nudge*toPoint2(c);
+}
 
 __inline__ __device__ bool Element::isDry2(void) const { return (nodes[0]->isDry2()) ||
                                                                 (nodes[1]->isDry2()) ||
@@ -2520,7 +2590,7 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
-__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegshpCoord) const {
+__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegshpCoord, const Side *origSide) const {
 
    // Compute the shape coordinates of the point xt in the element.
    //   If fixNegshpCoord = fiOnlyInside, only fix the shape coordinates if the point is *almost*inside the element.
@@ -2528,17 +2598,36 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
    // It's not reliable to use the area coord for ics=2 when the pt is far away
    // from the local frame, so use additional check.
 
-   if (i34==3) { // Triangular element
+   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
 
-      Point2 x0, x1, x2;
+   if (isTri()) { // Triangular element
 
-      // Horizontal local node coordinates. If ics == 2, the node coordinates are transformed to local frame.
-      getLocalHorizontalNodePositionsTri(x0, x1, x2);
+      // Horizontal local node coordinates. 
+      Point2 x0 = nodes[0]->p;
+      Point2 x1 = nodes[1]->p;
+      Point2 x2 = nodes[2]->p;
+
+      // If ics == 2, the node coordinates are transformed to local frame.
+      if constexpr(ics==2) {
+         const Point3 p0 = toPoint3(x0, nodes[0]->gz);
+         const Point3 p1 = toPoint3(x1, nodes[1]->gz);
+         const Point3 p2 = toPoint3(x2, nodes[2]->gz);
+
+         // Coordinates of the center of the original side
+         const Point3 c = {origSide->center.x, origSide->center.y, origSide->centerZ()}; 
+
+         // Convert the node coordinates to the local frame centered at the element center
+         x0 = toVector2(origSide->frame.G2L(p0 - c));
+         x1 = toVector2(origSide->frame.G2L(p1 - c));
+         x2 = toVector2(origSide->frame.G2L(p2 - c));
+      }
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       shpCoords[3] = 0.0;
+
+if (origSide->idx == 15876) printf("computeShapeCoords 1: x,y = (%f, %f), elem->idx = %d, shpCoords = (%f, %f, %f, %f)\n", xt.x, xt.y, idx, shpCoords[0], shpCoords[1], shpCoords[2], shpCoords[3]);
 
       double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
       const bool res = (tmpmin >= -small);  
@@ -2717,14 +2806,17 @@ __device__ double Element::intGradPhiGradPhi(int i1, int i2) const {
    4. Interpolate the velocities at the final position (xt,yt,zt). This is done by interpolating the velocities
       horizontally and vertically.
 **/
-__device__ Vector3 Element::interpolateVelocities(Point3 xt) const {
+__device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSide) const {
    // Interpolate the velocities at the point xt. 
    // This function works the same for triangular and quadrilateral elements.
    double shpCoord[4];
    Vector3 u_int;
 
+   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
+
    // First step is to compute the shape coordinates of (xt,yt)
-   computeShapeCoords(toVector2(xt), shpCoord, fiOnlyInside);
+// printf("interpolateVelocities 1: xt = (%f, %f, %f)\n", xt.x, xt.y, xt.z);
+   computeShapeCoords(toVector2(xt), shpCoord, fiOnlyInside, origSide);
 
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
@@ -2868,9 +2960,11 @@ __inline__ __device__ double  SideBoundary::nuth(int k) const {
 
 __inline__ __device__ double  Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
 __inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
+__inline__ __device__ double  Side::z(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->gz  + t*n2->gz; }
 __inline__ __device__ double  Side::lon(void)     const { return 0.5*(n1->lon + n2->lon); }
 __inline__ __device__ double  Side::lat(void)     const { return 0.5*(n1->lat + n2->lat); }
-__inline__ __device__ Point2  Side::p_t(double t) const { return {x(t), y(t)}; }
+__inline__ __device__ Point2  Side::p2_t(double t) const { return {x(t), y(t)}; }
+__inline__ __device__ Point3  Side::p3_t(double t) const { return {x(t), y(t), z(t)}; }
 __inline__ __device__ double  Side::centerZ(void) const { return 0.5*(n1->gz + n2->gz); }
 __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition)(const Element*)) const {
 // Computes the gradient of the field at the side center.
@@ -2885,6 +2979,7 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
 
       // For ics=2, projects the element gradient from its frame to the side frame
       if constexpr(ics == 2) elemGrad = elems[0]->frame.projHorVec(elemGrad, frame);
+
 
       grad += elemGrad;
 
@@ -2939,6 +3034,7 @@ __inline__ __device__ Vector2 Side::tau(void)    const {
       const Vector2 stau2 = n2->frame.projHorVec(n2->tau, frame);
 
       return 0.5*(stau1 + stau2);
+printf("tau = (%f, %f)\n", stau1.x, stau1.y);
    }
 }
 
@@ -2967,7 +3063,10 @@ __inline__ __device__ bool Side::btrack(
 ) const {
 
    // Start from side center
-   Point3 x0 = {center.x, center.y, zc[jlev]};
+   Point3 x0;
+
+   if constexpr(ics == 1) x0 = {center.x, center.y, zc[jlev]};
+   else                   x0 = {0.0, 0.0, zc[jlev]};
 
  
    double time_rm = dt; // Remaining time
@@ -2979,10 +3078,53 @@ __inline__ __device__ bool Side::btrack(
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards(toVector2(u_int));
    assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
+if (idx == 15876) printf("curElem->idx = %d\n", curElem->idx);
+   // If debugging backtracking, add the starting point to the debug plot and the elements for
+   // idx == 15876
+   if (idx == 15876) {
+      printf("PPP u_int = (%f, %f, %f)\n", u_int.x, u_int.y, u_int.z);
+      const Point3 orig = toPoint3(center, centerZ());
+      auto vertexInOriginalFrame = [this, orig, jlev](const Node *node) -> Point3 {
+         if constexpr(ics == 1) {
+            return toPoint3(node->p, 0.0);
+         } else {
+            const Point3 p_glob = toPoint3(node->p, node->gz);
+            const Vector3 loc = frame.G2L(p_glob - orig);
+            return Point3(loc.x, loc.y, 0.0);
+         }
+      };
+      auto elementInOriginalFrame = [this, orig, jlev](const Element *elem) -> Point3 { 
+         if constexpr(ics == 1) {
+            return toPoint3(elem->center, elem->centerZ());
+         } else {
+            const Point3 center_glob = toPoint3(elem->center, elem->centerZ());
+            const Vector3 loc = frame.G2L(center_glob - orig);
+            return Point3(loc.x, loc.y, loc.z);
+         }
+      };
+      auto plotTriangle = [&vertexInOriginalFrame, &elementInOriginalFrame](const Element *elem, unsigned int color) {
+         if (elem == nullptr || !elem->isTri()) return;
+         const Point3 v0 = vertexInOriginalFrame(elem->nodes[0]);
+         const Point3 v1 = vertexInOriginalFrame(elem->nodes[1]);
+         const Point3 v2 = vertexInOriginalFrame(elem->nodes[2]);
+         const Point3 center = elementInOriginalFrame(elem);
+         addDebugPlot(v0, v1, color, 'o', elem->nodes[0]->idx);
+         addDebugPlot(v1, v2, color, 'o', elem->nodes[1]->idx);
+         addDebugPlot(v2, v0, color, 'o', elem->nodes[2]->idx);
+         addDebugPlot(center, center, color, 'o', elem->idx);
+      };
+      plotTriangle(curElem, 0xFF0000u);  // current element in red
+      plotTriangle(curElem->nghbElems[0], 0x00A000u);
+      plotTriangle(curElem->nghbElems[1], 0x00A000u);
+      plotTriangle(curElem->nghbElems[2], 0x00A000u);
 
+      // Add the initial point (0,0) to the debug plot
+      addDebugPlot(Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0), 0x0000FFu, '+');
+   }
 
    // Nudges it towards the barycenter
-   curElem->nudgeToBarycenter(toPoint2(x0)); // XXXX Necessary?
+   curElem->nudgeToBarycenter(toPoint2(x0), this); // XXXX Necessary?
+if (idx == 15876) addDebugPlot(Point3(0.0, 0.0, 0.0), x0, 0xFF00FFu, 'o');
 
 
    const int MAX_ITERATIONS = 100; 
@@ -3004,8 +3146,10 @@ __inline__ __device__ bool Side::btrack(
 // }
         
       xt = x0 - dtb*u_int;
-
+// printf("curElem->idx = %d, x0 = (%f, %f, %f), xt = (%f, %f, %f)\n", curElem->idx, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, time_rm, this);
+if (idx == 15876) addDebugPlot(x0, xt, 0xFF00FFu, '+');
+if (!found) {if (idx == 15876) printf("1111\n"); return true;}
       assert(found && "Backtracking failed in btrack");
 
 
@@ -3035,10 +3179,10 @@ __inline__ __device__ bool Side::btrack(
    }
 
    assert(!curElem->isDry && "Final element is dry");
-   assert(curElem->containsPoint(toPoint2(xt)) && "Target point is not inside the final element"); 
+   assert(curElem->containsPoint(toPoint2(xt), this) && "Target point is not inside the final element"); 
 
    // Interpolate the velocities at the final point
-   u_int = curElem->interpolateVelocities(xt);
+   u_int = curElem->interpolateVelocities(xt, this);
 
    // if (idx == 18867) printf("iter = %d, side->idx = %d, curElem->idx = %d, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, curElem->idx, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);         
 
@@ -3189,7 +3333,7 @@ __device__ __inline__ void Node::updateZCoordData(void) {
       // Compute bottom level index
       if (!isDry) updateKb();  // Why is this call repeated? XXXXXXXX It is also called in ul0UpdateZCoords
    } 
-   else if (ivcor == 1) {  // Localized sigma
+   else {  // if (ivcor == 1) Localized sigma
       // Do nothing
    }
 
@@ -3197,20 +3341,20 @@ __device__ __inline__ void Node::updateZCoordData(void) {
 }
 
 
-__device__ double Node::compZCoord(int k) const {
+__device__ __forceinline__ double Node::compZCoord(int k) const {
    // Computes the z coordinate at level k.
    // Depending on the vertical coordinate system, the z coordinate is computed differently.
    // When ivcor=1, the z coordinate is computed using the localized sigma levels.
    // When ivcor=2, the z coordinate is computed using the zeta/sigma levels. Z levels are
    // used 
 
-   assert(k >= 0 && k < nvrt && "ZCOOR: invalid level\n");
+   assert(k >= 0 && k < nvrt && "compZCoord: invalid level\n");
    
    // NOTE: Assumes that updateZCoordData() has been called before this function.
 
-   if (isDry2()) return 0.0;  // XXXX I used to return 0.0
+   if (isDry2()) return 0.0;  
 
-   assert(htot2() > h0 && "ZCOOR: invalid depth\n");
+   assert(htot2() > h0 && "compZCoord: invalid depth\n");
 
    if constexpr(ivcor == 2) {
 
@@ -3222,7 +3366,7 @@ __device__ double Node::compZCoord(int k) const {
 
       // TODO: Here we are assuming that the bottom level, kbpl, was found in a previous step.
       // The FORTAN code computes it every time this function is called, but it should be done only 
-      // once per time step/node.
+      // once per time step/node. XXXX
       // CHECK: updateZCoordData
 
       //  To simplify comparisons, I define index versions of count variables.
@@ -3239,7 +3383,7 @@ __device__ double Node::compZCoord(int k) const {
          } 
          else if (eta2 <= - h_c - (depth - h_c)*theta_f/sinh_theta_f) {
             printf("Please choose larger h_c: %f %f\n", eta2, h_c);
-            assert(false && "ZCOOR (1): invalid h_c\n");
+            assert(false && "compZCoord: invalid h_c\n");
          } 
          else {
             return eta2*(1.0 + mesh->sigma[ksig]) + 
@@ -3247,17 +3391,18 @@ __device__ double Node::compZCoord(int k) const {
                    (hmod2 - h_c) * mesh->cs[ksig];
          }
       } else { 
-         assert(false && "ZCOOR (2): invalid level or coordinate system\n");
+         assert(false && "compZCoord: invalid level or coordinate system\n");
       }
 
    }
-   else if constexpr(ivcor == 1) {
+   else {  // if constexpr(ivcor == 1)
       if (k <= kb)        return -depth; 
       else if (k == ivrt) return eta2;
       else if (k > kb)    return (eta2 + depth)*localSigma[k] + eta2;
+
    }
    
-   assert(false && "ZCOOR (3): invalid level or coordinate system\n");
+   assert(false && "compZCoord: invalid level or coordinate system\n");
    return 0.0;
 }
 
@@ -3403,6 +3548,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    }      
 
    // Compute the cosine and sine of the mesh rotation angle. We use float here because memory efficiency is more important than precision in this case.
+   assert(wind_rotate_angle[i] >= -pi && wind_rotate_angle[i] <= pi && "wind_rotate_angle out of range");
    sincosf((float)wind_rotate_angle[i], &node.sRot, &node.cRot);
 
    // Fills the node coordinates. If ics == 1, the coordinates are in the local frame. If ics == 2, the coordinates are in the global frame.
@@ -3412,9 +3558,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       node.gz = 0.0;
 
    } else {
-      const double lat = deg2rad*node_coords[i * 3];
-      const double lon = deg2rad*node_coords[i * 3 + 1];
-// printf("lat = %f, lon = %f, x = %f, y = %f\n", lat, lon, node.lat, node.lon);
+      const double lon = deg2rad*node_coords[i * 3];
+      const double lat = deg2rad*node_coords[i * 3 + 1];
+// printf("lat = %f, lon = %f, x = %f, y = %f\n", lat, lon, node.lat, node.lon); 
       Point3 p = computeXYZfromLatLon(lat, lon);
       node.p = toVector2(p);
       node.gz = p.z;
@@ -3516,6 +3662,8 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    const double fc   = 2.0*omega_e*sin(sfea0);
    const double beta = 2.0*omega_e*cos(sfea0);
 
+   assert(sfea0 >= -pi/2.0 && sfea0 <= pi/2.0 && "GRID: sfea0 out of range");
+
    // finding the pointer to the nodes that form the side
    const int idx_n1 = isidenode[globalSideIndices[i]*2];
    const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
@@ -3528,9 +3676,6 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
-   #ifdef USE_FRAMES
-   side.setFrame();
-   #endif
 
    // Counts the number of sides connected to each node
    side.n1->numSides++;
@@ -3607,6 +3752,10 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    // Compute the center of the side
    side.center = 0.5*(side.n1->p + side.n2->p);
 
+   #ifdef USE_FRAMES
+   side.setFrame();
+   #endif
+
    assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
    side.shapiro = shapiro0;
 
@@ -3640,6 +3789,7 @@ for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.
          side.coriolis = fc + beta*(sphi - sfea0);  // First order Taylor expansion of the Coriolis coefficient around the reference latitude sfea0
       }
       else { // ics == 2
+         assert(sphi >= -pi/2.0 && sphi <= pi/2.0 && "GRID: sphi out of range");
          side.coriolis = 2.0*omega_e*sin(sphi);  
       }
 
@@ -3694,6 +3844,10 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       elem.depth  = min(elem.depth, elem.nodes[j]->depth);
    }
 
+   #ifdef USE_FRAMES
+   elem.setFrame();
+   #endif
+
    elem.area = elem.computeSignedArea(); 
    elem.radius = sqrt(elem.area)/pi; 
    
@@ -3709,6 +3863,8 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       }
 
    }
+
+  
 
    // Derivatives of shape functions
    //  For ics=2, this is done in the element frame
@@ -3731,6 +3887,7 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
          const double dPhi_j_dy = (p3.x - p2.x)/(2*area); 
 
          elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
+
       }
       else  { // Quad; evaluate at centroid
 
@@ -3865,7 +4022,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          Node *node3 = elem->nodes[id3];
 
          Point2 x1, x2, x3;
-         elem->getLocalHorizontalNodePositionsTri(x1, x2, x3);
+         elem->getLocalHorizontalNodePositionsTri(x1, x2, x3, id1);
+
 
          // integral of phi_i*phi_j
          const double ipp_ii = (1.0/6.0 )*area;
@@ -3940,6 +4098,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
          if constexpr(ics == 1) U += side->U; 
          else                   U += side->frame.projHorVec(side->U, elem->frame);  // In global coordinates, we must project the side velocity to the element frame
+
       }
       U = U/elem->i34;
 
@@ -3954,7 +4113,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       // Integral of \nabla\phi_i \cdot \pmb{E}
       const double I_4_2 = dot(gradPhi_1, elem->ghat1);
 
-     
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
 
       // Additional terms 
@@ -4182,7 +4340,7 @@ extern "C" {
   
 
       if (side->isDry) return;
-      
+     
 // addDebugPlot(side->center, side->center, 0xFF001F, 'x');    
 
       // Checks that at least one element is not dry
@@ -4206,10 +4364,8 @@ extern "C" {
       //  For ics=2, the coordinates are all in the side's local frame
       //  Caution! nnel must be initialized inside this loop as it is updated inside.
 
-
          const int iadvf = side->iadv();  // Advection flag   
          assert(nadv == 1 && "Advection flag is only implemented for nadv = 1");
-
 
          // If on land or open boundary...
          const bool ifl_bnd =  (side->sideBnd != nullptr);
@@ -4221,7 +4377,6 @@ extern "C" {
 
             side->btu[k] = side->u2[k];  // I don't think this is necessary because it has already been set to this value XXXX
 // addDebugPlot(side->center, side->center, 0x00000F, '+');     
-
 
             
          } else {  // do btrack
@@ -4266,7 +4421,7 @@ extern "C" {
 
                const Vector2 grad_u = elem->grad2(utmp); 
                const Vector2 grad_v = elem->grad2(vtmp);
-
+   
                suma += dt*sqrt(dot(grad_u, grad_u) + dot(grad_v, grad_v));
             } // for ii
 
@@ -4274,9 +4429,7 @@ extern "C" {
 
             // '4' is somewhat arbitrary
             const int ndelt = clamp(int(suma/icount)*4, ndelt_min, ndelt_max); 
-
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
-
             Vector3 u_int = {0.0, 0.0, 0.0};
 
             bool res =side->btrack(k, dt, dtbk, u_int);
@@ -6556,12 +6709,8 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
          // elem->w[kb] += ubed.z;
       }
       else {
-         u2meanBottom = elem->mean(kb, &Side::u2);
-         if constexpr(ics == 2) {
-            // Project the velocity from the side frame to the element frame
-            u2meanBottom = elem->frame.projHorVec(u2meanBottom, elem->frame);
-         }
-
+         u2meanBottom = elem->mean(kb, &Side::u2);  // The mean computation includes the projection to the element frame if ics=2
+  
          // Error: /=0 for 2D (but OK b/cos fluxes are 0 below for transport)
          elem->w[kb] = (av_bdef2 - av_bdef1)/dt - dot(gradh, u2meanBottom); // XXXX Is the dot prod always 0?
 
@@ -6806,11 +6955,10 @@ extern "C" {
             Ustar       = side->frame.projHorVec(Ustar,       elem->frame);
             Ustar_alpha = side->frame.projHorVec(Ustar_alpha, elem->frame);
          }
-         
+        
 
          // Add btrack & surface stress terms to \breve{G} first
          elem->ghat1 += cff1*Ustar - cff3*Ustar_alpha;
-
 
 
          // Both tau and ubstar are in the side frame (for both ics==1 and ics==2)
@@ -7772,10 +7920,6 @@ extern "C" __global__ void getElementVarAddr(int varCode, void **addr, int *offs
          *offset = (int)((char*)&elems[0].radius - (char*)elems);
          *sizeType = sizeof(double);
          break;
-      case (int)VarCode::lonlat:
-         *offset = (int)((char*)&elems[0].xlon - (char*)elems);
-         *sizeType = sizeof(double);
-         break;
       case (int)VarCode::ghat:
          *offset = (int)((char*)&elems[0].ghat1.x - (char*)elems);
          *sizeType = sizeof(Vector2);
@@ -7874,6 +8018,7 @@ extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset,
    }
 }
 
+
 extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset, int *sizeNode, int *sizeType) {
    Node *nodes = mesh->localNodeData;
 
@@ -7894,7 +8039,7 @@ extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset,
          *sizeType = sizeof(Vector2);
          break;
       case (int)VarCode::z:
-         *offset = (int)((char*)&nodes[0].z[0] - (char*)nodes);
+         *offset = (int)((char*)&nodes[0].gz - (char*)nodes);
          *sizeType = sizeof(double);
          break;
       case (int)VarCode::kb:
@@ -7937,7 +8082,6 @@ extern "C" __global__ void getElementVar(int varCode, bool is3D, double *var1, d
    else if (varCode == (int)VarCode::area)    { var1[idx] = elem->area;}
    else if (varCode == (int)VarCode::depth)   { var1[idx] = elem->depth;}
    else if (varCode == (int)VarCode::radius)  { var1[idx] = elem->radius;}
-   else if (varCode == (int)VarCode::lonlat)  { var1[idx] = elem->xlon;     var2[idx] = elem->ylat;}
    else if (varCode == (int)VarCode::ghat)    { var1[idx] = elem->ghat1.x;  var2[idx] = elem->ghat1.y;}
    else if (varCode == (int)VarCode::kb)      { ivar1[idx] = elem->kb;}
    else if (varCode == (int)VarCode::ssign && j > -1)  {ivar1[idx] = elem->ssign[j];}

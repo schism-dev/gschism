@@ -290,6 +290,9 @@ __forceinline__ __device__ Point3 computeXYZfromLatLon(double lat, double lon) {
 
    double sin_lat, cos_lat, sin_lon, cos_lon;
 
+   assert(lat >= -pi/2.0 && lat <= pi/2.0 && "computeXYZfromLatLon: lat out of range");
+   assert(lon >= -pi     && lon <= pi &&     "computeXYZfromLatLon: lon out of range");
+
    sincos(lat, &sin_lat, &cos_lat);
    sincos(lon, &sin_lon, &cos_lon);
 
@@ -319,6 +322,9 @@ struct Frame {
     double t01, t11, t21;   // col1
 
    __device__ void update(double lat, double lon) { // XXX use lat, lon instead of ar1, ar2?
+
+      assert(lat >= -pi/2.0 && lat <= pi/2.0 && "GRID: lat out of range");
+      assert(lon >= -pi     && lon <= pi     && "GRID: lon out of range");
 
       double sin_lon, cos_lon, sin_lat, cos_lat;
       sincos(lon, &sin_lon, &cos_lon); // These functions are faster than sin(ar1) and cos(ar1).
@@ -398,6 +404,7 @@ struct Frame {
       Vector3 vo;
       double t02, t12, t22;
 
+      // Compute the 3rd column of the frame tensor
       getCol2(t02, t12, t22);
 
       vo.x = vi.x*t00 + vi.y*t10;
@@ -412,6 +419,7 @@ struct Frame {
       Vector3 vo;
       double t02, t12, t22;
 
+   // Compute the 3rd column of the frame tensor
       getCol2(t02, t12, t22);
 
       // F * vi (non-transposed, so we use rows of F)
@@ -422,15 +430,7 @@ struct Frame {
       return vo;
    }
 
-   // __forceinline__ __device__ Point3 G2L(Point3 const &pi, Point3 const &origin0) const {
-   // // Tranforms a point from global to local frame     
-   //    return G2L(pi - origin0); // XXXX IS THIS CORRECT?
-   // }
 
-   // __forceinline__ __device__ Point3 L2G(Point3 const &pi, Point3 const &origin0) const {
-   // // Transforms a point from local to global frame      
-   //    return L2G(pi) + origin0;  // XXXX IS THIS CORRECT?
-   // }
 
 };
 
@@ -477,7 +477,7 @@ struct Element {
 
    Point2 center;            // Element center coordinates
 
-   double xlon, ylat;         // Element center lat/lon coordinates in _degrees_
+
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
 
@@ -570,7 +570,7 @@ struct Element {
    // "Local" horizontal coordinates at the nodes. They are computed from the 3D global node coordinates. For ics == 1 and 2
    // Local is in quotes because for ics == 1, the coordinates are unchanged. It just means that in these coordinates, the element is horizontal.
    __device__ __forceinline__ Point2 getLocalHorizontalNodePosition(int idxNode) const;
-   __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2, int idx = 0) const;
    __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const;
 
 
@@ -625,15 +625,11 @@ struct Element {
 
    __inline__ __device__ double computeSignedArea(void) const;
 
-   __inline__ __device__ void nudgeToBarycenter(Point2 &p) const {
-      // Nudges the point (x,y) to the barycenter of the element
-
-      p = (1.0 - btrack_nudge)*p + btrack_nudge*center;
-   }
+   __inline__ __device__ void nudgeToBarycenter(Point2 &p, const Side *origSide = nullptr) const;
 
    enum EFixIf { fiNo, fiOnlyInside, fiAnywhere };
 
-   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo) const;
+   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo, const Side *origSide = nullptr) const;
    
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
@@ -673,6 +669,7 @@ struct Element {
    #ifdef USE_FRAMES
    __device__ void setFrame(void) {
       double lat, lon;
+
       const Point3 p = toPoint3(center, centerZ());
 
       // Compute the latitude and longitude of the element center
@@ -683,30 +680,11 @@ struct Element {
    #endif
 
    __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
-                                        double& tIntersect);
+                                        double& tIntersect, const Side *origSide = nullptr);
 
-   __inline__ __device__ bool containsPoint(Vector2 xt) const { 
-      // Check if the point (xt,yt) is inside the element
-      double shpCoords[4];
+   __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
 
-      bool res = computeShapeCoords(xt, shpCoords, fiNo);
-
-      return res;
-   }
-
-   __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords) const { 
-      // Check if the point (xt,yt) is inside the element.
-      // If fixCoords is true, and *the point is inside the element*, the point is nudged to be inside the element.
-      double shpCoords[4];
-
-      Vector2 tmp_xt = xt;
-      const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
-      bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords);
-
-      if (fixCoords && res) xt = tmp_xt;
-
-      return res;
-   }
+   __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords, const Side *origSide) const;
 
    __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4]) const
    {
@@ -716,7 +694,7 @@ struct Element {
       
    }
 
-   __device__ Vector3 interpolateVelocities(Point3 xt) const;
+   __device__ Vector3 interpolateVelocities(Point3 xt, const Side *origSide = nullptr) const;
 
    // ------------------------------------------------------------------------------------------------
    // These are functions that work on all nodes/sides of the element.
@@ -876,9 +854,9 @@ struct Side {
    Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
 
-#ifdef USE_FRAMES
+   #ifdef USE_FRAMES
    Frame frame;
-#endif
+   #endif
 
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
@@ -924,9 +902,11 @@ struct Side {
 
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
+   __inline__ __device__ double z(double t) const;
    __inline__ __device__ double lon(void) const;
    __inline__ __device__ double lat(void) const;
-   __inline__ __device__ Point2 p_t(double t) const;
+   __inline__ __device__ Point2 p2_t(double t) const;
+   __inline__ __device__ Point3 p3_t(double t) const;
 
    #ifdef USE_FRAMES
    __device__ void setFrame(void) {
@@ -941,7 +921,7 @@ struct Side {
    #endif
 
    __inline__ __device__ double centerZ(void)   const;
-   __inline__ __device__ Point3 center3D(int k) const { assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
+   __inline__ __device__ Point3 center3D(int k) const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
    __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
    __inline__ __device__ double area(int k)     const { assert(k < nvrt - 1); return len*Dz(k + 1); }
 
@@ -1258,7 +1238,7 @@ struct Node {
     }
    #endif
 
-   __device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
+   //__device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
 
    __device__ double sigmaTransitionDepth(void) const;
 
@@ -1306,7 +1286,7 @@ struct Node {
 
    __device__ __inline__ void updateZCoordData(void);
 
-   __device__ double compZCoord(int k) const;
+   __device__ __forceinline__ double compZCoord(int k) const;
 
    __device__ void updateKb(void);
 
@@ -1513,7 +1493,7 @@ struct Mesh {
       // XXXXX REMOVE THIS FUNCTION
       printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
       for (int i = 0; i < ne; i++) {
-         auto isInside = localElemData[i].containsPoint({x, y});
+         auto isInside = localElemData[i].containsPoint({x, y}, nullptr);
 
          if (isInside) {
             printf("Point %f %f %f is inside element %d\n", x, y, z, i);

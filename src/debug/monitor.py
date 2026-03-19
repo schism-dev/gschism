@@ -20,9 +20,11 @@ chan = None
 continue_execution = False
 plotCreated = False
 
-debugPlot = cp.zeros([10000,6], dtype=cp.float64, order='F') 
+debugPlot = cp.zeros([10000,7], dtype=cp.float64, order='F') 
+debugPlot[:, 6] = -1.0
 debugPlotIdx = cp.zeros(1, dtype=cp.int32, order='F') 
 debugPlotIdx[0] = 0
+plot_mesh_draw_mesh = False
 
 
 fig = None
@@ -340,6 +342,8 @@ def fortranDebugPlot(it):
 
     global fig, ax, plotCreated,x, y, elem_x, elem_y,  sx, sy, continue_execution
 
+
+
     setupFortranDebugger()
 
     # Set the break condition
@@ -631,110 +635,111 @@ def plotMesh():
     # Remove all existing plots
     ax.clear()
 
-    isNodeDry = getNodeVar("isdry").get() == 1.0
-    isSegDry = getSideVar("isdry").get()
-    x = getNodeVar("x")
-    y = x[1, :].get()
-    x = x[0, :].get()
-    nu = getNodeVar("u").get()
-    nux = nu[0, 1, :]
-    nuy = nu[1, 1, :]
+    if plot_mesh_draw_mesh:
+        isNodeDry = getNodeVar("isdry").get() == 1.0
+        isSegDry = getSideVar("isdry").get()
+        x = getNodeVar("x")
+        y = x[1, :].get()
+        x = x[0, :].get()
+        nu = getNodeVar("u").get()
+        nux = nu[0, 1, :]
+        nuy = nu[1, 1, :]
 
 
 
-    # Get element center coordinates and dry status
-    elem_x = getElementVar("x")
-    elem_y = elem_x[1, :].get()
-    elem_x = elem_x[0, :].get()
-    elem_isDry = getElementVar("isdry").get() == 1.0
+        # Get element center coordinates and dry status
+        elem_x = getElementVar("x")
+        elem_y = elem_x[1, :].get()
+        elem_x = elem_x[0, :].get()
+        elem_isDry = getElementVar("isdry").get() == 1.0
 
-    # Plot element centers with different colors based on dry/wet status
-    elem_dry_mask = elem_isDry.astype(bool)
-    elem_wet_mask = ~elem_dry_mask
+        # Plot element centers with different colors based on dry/wet status
+        elem_dry_mask = elem_isDry.astype(bool)
+        elem_wet_mask = ~elem_dry_mask
+            
+            
+            # Plot all nodes
+        # plt.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
+
+
+        n1 = getSideVar("n1").astype(int).get()
+        n2 = getSideVar("n2").astype(int).get()
+        n1 = getSideVar("n1").astype(int).get()
+        n2 = getSideVar("n2").astype(int).get()
+
+        nn = (n1 - n1.min()) 
+        tmp = np.sort(np.unique(nn))
+        tmplen = tmp[1] - tmp[0]    
+        n1 = nn//tmplen
+        n2 = (n2 - n2.min())//tmplen
+        sx = getSideVar("x")
+        sy = sx[1, :].get()
+        sx = sx[0, :].get()
+        u = getSideVar("U")
+        ux = u[0, :].get()
+        uy = u[1, :].get()
+        eta = getNodeVar("eta").get()
+
+
+
+        # Build the segments array for LineCollection
+        segments = np.stack([np.column_stack([x[n1], y[n1]]), np.column_stack([x[n2], y[n2]])], axis=1)
+
+        # Plots eta at the element centers. Eta is shown as the radius of the circle.
+        # plt.scatter(x, y, color='b', s=(eta*200 + 20))
+        # Plot dry nodes in gray
+        if np.any(isNodeDry):
+            plt.plot(x[isNodeDry], y[isNodeDry], 'ro', alpha=0.93, markersize=2.3)
+            # plt.scatter(x[isNodeDry], y[isNodeDry], c='gray', s=3, alpha=0.8, label='Dry nodes')
         
+        # Plot wet nodes in blue
+        if np.any(~isNodeDry):
+            plt.plot(x[~isNodeDry], y[~isNodeDry], 'bo', alpha=0.93, markersize=2.3)
+            # plt.scatter(x[~isNodeDry], y[~isNodeDry], c='blue', s=3, alpha=0.8, label='Wet nodes')    
+
+
+        # Plot dry element centers as gray 'x'
+        if np.any(elem_dry_mask):
+            plt.scatter(elem_x[elem_dry_mask], elem_y[elem_dry_mask], 
+                    c='darkgray', marker='x', s=20, alpha=0.8, label='Dry elements')
         
-        # Plot all nodes
-    # plt.plot(x, y, 'ko', alpha=0.93, markersize=2.3)
+        # Plot wet element centers as red 'x'
+        if np.any(elem_wet_mask):
+            plt.scatter(elem_x[elem_wet_mask], elem_y[elem_wet_mask], 
+                    c='red', marker='x', s=20, alpha=0.8, label='Wet elements')        
 
+        # Create colors for segments based on dry/wet status
+        segment_colors = np.where(isSegDry, 'gray', 'r')  # gray for dry, red for wet
 
-    n1 = getSideVar("n1").astype(int).get()
-    n2 = getSideVar("n2").astype(int).get()
-    n1 = getSideVar("n1").astype(int).get()
-    n2 = getSideVar("n2").astype(int).get()
+        # Create the LineCollection
+        lc = LineCollection(segments, colors=segment_colors, alpha=0.53, linewidths=0.5)
+        ax.add_collection(lc)
 
-    nn = (n1 - n1.min()) 
-    tmp = np.sort(np.unique(nn))
-    tmplen = tmp[1] - tmp[0]    
-    n1 = nn//tmplen
-    n2 = (n2 - n2.min())//tmplen
-    sx = getSideVar("x")
-    sy = sx[1, :].get()
-    sx = sx[0, :].get()
-    u = getSideVar("U")
-    ux = u[0, :].get()
-    uy = u[1, :].get()
-    eta = getNodeVar("eta").get()
-
-
-
-    # Build the segments array for LineCollection
-    segments = np.stack([np.column_stack([x[n1], y[n1]]), np.column_stack([x[n2], y[n2]])], axis=1)
-
-    # Plots eta at the element centers. Eta is shown as the radius of the circle.
-    # plt.scatter(x, y, color='b', s=(eta*200 + 20))
-    # Plot dry nodes in gray
-    if np.any(isNodeDry):
-        plt.plot(x[isNodeDry], y[isNodeDry], 'ro', alpha=0.93, markersize=2.3)
-        # plt.scatter(x[isNodeDry], y[isNodeDry], c='gray', s=3, alpha=0.8, label='Dry nodes')
-    
-    # Plot wet nodes in blue
-    if np.any(~isNodeDry):
-        plt.plot(x[~isNodeDry], y[~isNodeDry], 'bo', alpha=0.93, markersize=2.3)
-        # plt.scatter(x[~isNodeDry], y[~isNodeDry], c='blue', s=3, alpha=0.8, label='Wet nodes')    
-
-
-    # Plot dry element centers as gray 'x'
-    if np.any(elem_dry_mask):
-        plt.scatter(elem_x[elem_dry_mask], elem_y[elem_dry_mask], 
-                   c='darkgray', marker='x', s=20, alpha=0.8, label='Dry elements')
-    
-    # Plot wet element centers as red 'x'
-    if np.any(elem_wet_mask):
-        plt.scatter(elem_x[elem_wet_mask], elem_y[elem_wet_mask], 
-                   c='red', marker='x', s=20, alpha=0.8, label='Wet elements')        
-
-    # Create colors for segments based on dry/wet status
-    segment_colors = np.where(isSegDry, 'gray', 'r')  # gray for dry, red for wet
-
-    # Create the LineCollection
-    lc = LineCollection(segments, colors=segment_colors, alpha=0.53, linewidths=0.5)
-    ax.add_collection(lc)
-
-    # Use a fixed scale factor for consistent arrow length representation
-    # Adjust this value to make arrows longer or shorter while maintaining 1 m/s = constant length
-    fixed_scale = 3.001  # Adjust this value as needed for your visualization
-    
-    # plt.quiver(sx, sy, fixed_scale*ux, fixed_scale*uy, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
-    # plt.quiver(x, y, fixed_scale*nux, fixed_scale*nuy, angles='xy', scale_units='inches', scale=1, color='r', width=0.003)
-
-    showLabels = False
-    
-    # Plot labels if requested
-    if showLabels:
-        # Get indices
-        for i in range(len(x)):
-            ax.text(x[i], y[i], f'N{i}', fontsize=6, color='black', 
-                   ha='center', va='bottom', bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+        # Use a fixed scale factor for consistent arrow length representation
+        # Adjust this value to make arrows longer or shorter while maintaining 1 m/s = constant length
+        fixed_scale = 3.001  # Adjust this value as needed for your visualization
         
-        # Plot element indices
-        for i in range(len(elem_x)):
-            ax.text(elem_x[i], elem_y[i], f'E{i}', fontsize=6, color='darkred', 
-                   ha='center', va='top', bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.5))
+        # plt.quiver(sx, sy, fixed_scale*ux, fixed_scale*uy, angles='xy', scale_units='inches', scale=1, color='b', width=0.003)
+        # plt.quiver(x, y, fixed_scale*nux, fixed_scale*nuy, angles='xy', scale_units='inches', scale=1, color='r', width=0.003)
+
+        showLabels = False
         
-        # Plot side indices (at side centers)
-        for i in range(len(sx)):
-            ax.text(sx[i], sy[i], f'S{i}', fontsize=5, color='darkblue', 
-                   ha='center', va='center', bbox=dict(boxstyle='round,pad=0.15', facecolor='cyan', alpha=0.4))
+        # Plot labels if requested
+        if showLabels:
+            # Get indices
+            for i in range(len(x)):
+                ax.text(x[i], y[i], f'N{i}', fontsize=6, color='black', 
+                    ha='center', va='bottom', bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
+            
+            # Plot element indices
+            for i in range(len(elem_x)):
+                ax.text(elem_x[i], elem_y[i], f'E{i}', fontsize=6, color='darkred', 
+                    ha='center', va='top', bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.5))
+            
+            # Plot side indices (at side centers)
+            for i in range(len(sx)):
+                ax.text(sx[i], sy[i], f'S{i}', fontsize=5, color='darkblue', 
+                    ha='center', va='center', bbox=dict(boxstyle='round,pad=0.15', facecolor='cyan', alpha=0.4))
 
     # Plot the backtracked curves.
     segments_np = cp.asnumpy(debugPlot[:debugPlotIdx, :])  # shape: (N, 4)
@@ -753,6 +758,7 @@ def plotMesh():
     y2 = segments_np[:, 3]      
     color = segments_np[:, 4]
     marker = segments_np[:, 5]
+    label = segments_np[:, 6]
     # Find the segments of length larger than 100.0     
     length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     mask = length > 100.0
@@ -778,13 +784,25 @@ def plotMesh():
     # Add to your axes (assuming ax is your matplotlib axes)
     ax.add_collection(lc)
 
+    # Attach optional integer labels to points (only if label > 0)
+    x_label = x1
+    y_label = y1
+    valid = label > 0
+    for x_lab, y_lab, lab in zip(x_label[valid], y_label[valid], label[valid].astype(int)):
+        ax.text(
+            x_lab, y_lab, f"{lab:d}",
+            fontsize=7, color="black",
+            ha="center", va="bottom",
+            bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.6),
+        )
+
 
     ax.autoscale()  # Adjust axes to fit the lines
 
 
 
-    plt.show(block=False)
-    plt.pause(0.0)
+    plt.show(block=True)
+    # plt.pause(0.1)
     fig = None
 
     return res
