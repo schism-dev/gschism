@@ -64,13 +64,14 @@ updateBedDeformation = None
 shapiroFilter1 = None
 shapiroFilter2 = None
 
-getElementVar = None
-getNodeVar = None
-getSideVar = None
+
 getSideBndVar = None
 getElementVarAddr = None
 getSideVarAddr = None
 getNodeVarAddr = None
+getElementVarFunc = None
+getNodeVarFunc = None
+getSideVarFunc = None
 
 setupCGSolvers = None
 solverCopyResult = None
@@ -131,8 +132,9 @@ def initializeCudaFunctions(sizes):
     global ul0UpdateZCoords, ul0ComputeDryElements, ul0ComputeDryNodes, ul0UpdateRewettedNodes, ul0UpdateSides, ul0UpdateSides2
     global zeroNodalVelocities, computeNodalVerticalVelocities1, computeNodalVerticalVelocities2, computeNodalHorizontalVelocities1, computeNodalHorizontalVelocities2
     global resetVelocityOpenBndNodes, setVelocityOpenBndNodes, computeVerticalVelocity
-    global getElementVar, getNodeVar, getSideVar, getSideBndVar
+    global getSideBndVar
     global getElementVarAddr, getSideVarAddr, getNodeVarAddr
+    global getElementVarFunc, getNodeVarFunc, getSideVarFunc
 
     # Get kernel functions with better error handling
     try:
@@ -193,13 +195,14 @@ def initializeCudaFunctions(sizes):
         returnMatrix                        = mod.get_function('returnMatrix',                        sizes, kernel_type='global')
         returnX                             = mod.get_function('returnX',                             sizes, kernel_type='global')
         returnB                             = mod.get_function('returnB',                             sizes, kernel_type='global')
-        getElementVar                       = mod.get_function('getElementVar',                       sizes, kernel_type='elements')
-        getNodeVar                          = mod.get_function('getNodeVar',                          sizes, kernel_type='nodes')   
-        getSideVar                          = mod.get_function('getSideVar',                          sizes, kernel_type='sides')   
+
         getSideBndVar                       = mod.get_function('getSideBndVar',                       sizes, kernel_type='sideBnd')
         getElementVarAddr                   = mod.get_function('getElementVarAddr',                   sizes, kernel_type='global')
         getSideVarAddr                      = mod.get_function('getSideVarAddr',                      sizes, kernel_type='global')
         getNodeVarAddr                      = mod.get_function('getNodeVarAddr',                      sizes, kernel_type='global')
+        getElementVarFunc                   = mod.get_function('getElementVarFunc',                   sizes, kernel_type='elements')
+        getNodeVarFunc                      = mod.get_function('getNodeVarFunc',                      sizes, kernel_type='nodes')
+        getSideVarFunc                      = mod.get_function('getSideVarFunc',                      sizes, kernel_type='sides')
 
         test = mod.get_function('test', sizes, kernel_type='global')
 

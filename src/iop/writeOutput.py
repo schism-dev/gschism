@@ -38,6 +38,9 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
     sizeSide = sideSize
 
 
+
+
+
 def writeOutput(it, core, opt):
     # Write the output files
     global dataC, dataU, dataV, dataW, dataZ, fileNum, sizeNode, outputTime
@@ -77,31 +80,20 @@ def writeOutput(it, core, opt):
 
     # Horizontal geometric variables are only written once per file
     if idxTime == 0:
-        view = monitor.getNodeVar("x")  # x is a 2D vector
-        xy_cpu = view.get()
-        SCHISM_hgrid_node_x_var = dataC.variables['SCHISM_hgrid_node_x']
-        SCHISM_hgrid_node_x_var[:] = xy_cpu[0, :]
-        
-        SCHISM_hgrid_node_y_var = dataC.variables['SCHISM_hgrid_node_y']
-        SCHISM_hgrid_node_y_var[:] = xy_cpu[1, :]
+
+        xy_cpu = monitor.getNodeVar("outputCoords").get()
+        dataC.variables['SCHISM_hgrid_node_x'][:] = xy_cpu[0, :]
+        dataC.variables['SCHISM_hgrid_node_y'][:] = xy_cpu[1, :]
         del xy_cpu
 
-        view = monitor.getSideVar("x")  # x is a 2D vector
-        xy_cpu = view.get()
-        SCHISM_hgrid_edge_x_var = dataC.variables['SCHISM_hgrid_edge_x']
-        SCHISM_hgrid_edge_x_var[:] = xy_cpu[0, :]
-        
-        SCHISM_hgrid_edge_y_var = dataC.variables['SCHISM_hgrid_edge_y']
-        SCHISM_hgrid_edge_y_var[:] = xy_cpu[1, :]
-        del xy_cpu        
+        xy_cpu = monitor.getSideVar("outputCoords").get()
+        dataC.variables['SCHISM_hgrid_edge_x'][:] = xy_cpu[0, :]
+        dataC.variables['SCHISM_hgrid_edge_y'][:] = xy_cpu[1, :]
+        del xy_cpu
 
-        view = monitor.getElementVar("x")  # x is a 2D vector
-        xy_cpu = view.get()
-        SCHISM_hgrid_face_x_var = dataC.variables['SCHISM_hgrid_face_x']
-        SCHISM_hgrid_face_x_var[:] = xy_cpu[0, :]
-        
-        SCHISM_hgrid_face_y_var = dataC.variables['SCHISM_hgrid_face_y']
-        SCHISM_hgrid_face_y_var[:] = xy_cpu[1, :]
+        xy_cpu = monitor.getElementVar("outputCoords").get()
+        dataC.variables['SCHISM_hgrid_face_x'][:] = xy_cpu[0, :]
+        dataC.variables['SCHISM_hgrid_face_y'][:] = xy_cpu[1, :]
         del xy_cpu
 
         view = monitor.getElementVar("FaceIndices")
@@ -159,6 +151,15 @@ def writeOutput(it, core, opt):
     elevation_var = dataC.variables['elevation']
     elevation_var[idxTime, :] = eta_cpu
     del eta_cpu
+
+
+    view = monitor.getNodeVar("u_air")
+    u_air_cpu = view.get()
+    windSpeedX_var = dataC.variables['windSpeedX']
+    windSpeedX_var[idxTime, :] = u_air_cpu[0, :]
+    windSpeedY_var = dataC.variables['windSpeedY']
+    windSpeedY_var[idxTime, :] = u_air_cpu[1, :]
+    del u_air_cpu
 
     view = monitor.getNodeVar("isdry")
     isdry_cpu = view.astype(cp.int32).get()
@@ -246,6 +247,8 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     filenameW = 'verticalVelocity_%i.nc' % fileNum
     filenameZ = 'zCoordinates_%i.nc' % fileNum
 
+    isGeographic = getattr(opt, "ics", 1) == 2
+
     # Create the directory if it doesn't exist
     os.makedirs(path, exist_ok=True)
 
@@ -288,6 +291,16 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
         data.createDimension('one',                         1)
         data.createDimension('two',                         2)
         data.createDimension('time',                        None)
+
+                # CF grid mapping variable for ics==2
+        if getattr(opt, "ics", 1) > 1:
+            crs_var = data.createVariable("crs", "i4", ("one",))
+            crs_var.long_name = "Coordinate reference system (CRS) definition"
+            crs_var.grid_mapping_name = "latitude_longitude"
+            crs_var.longitude_of_prime_meridian = 0.0
+            crs_var.semi_major_axis = 6378137.0
+            crs_var.inverse_flattening = 298.257223563
+            crs_var[:] = 0  # value is irrelevant; attributes carry the meaning
 
         # Add global attributes
         data.title = "GSCHISM Output File"
@@ -335,18 +348,30 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     
     # Node coordinates
     node_x_var = dataC.createVariable('SCHISM_hgrid_node_x', 'f8', ('nSCHISM_hgrid_node',))
+    node_x_var.mesh = "SCHISM_hgrid"
     node_x_var.axis = "X"
     node_x_var.location = "node"
-    node_x_var.mesh = "SCHISM_hgrid"
-    node_x_var.units = "m"
-    node_x_var.standard_name = "projection_x_coordinate"
-    
+    if isGeographic:
+        # Node coordinates are lon/lat
+        node_x_var.units = "degree_E"
+        node_x_var.standard_name = "longitude"
+
+    else:
+        # Node coordinates are projection meters
+        node_x_var.units = "m"
+        node_x_var.standard_name = "projection_x_coordinate"
+
+
     node_y_var = dataC.createVariable('SCHISM_hgrid_node_y', 'f8', ('nSCHISM_hgrid_node',))
     node_y_var.axis = "Y"
     node_y_var.location = "node"
     node_y_var.mesh = "SCHISM_hgrid"
-    node_y_var.units = "m"
-    node_y_var.standard_name = "projection_y_coordinate"
+    if isGeographic:
+        node_y_var.units = "degree_N"
+        node_y_var.standard_name = "latitude"
+    else:
+        node_y_var.units = "m"
+        node_y_var.standard_name = "projection_y_coordinate"
     
     # Depth and bottom index
     depth_var = dataC.createVariable('depth', 'f4', ('nSCHISM_hgrid_node',))
@@ -369,30 +394,50 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     face_x_var.axis = "X"
     face_x_var.location = "face"
     face_x_var.mesh = "SCHISM_hgrid"
-    face_x_var.units = "m"
-    face_x_var.standard_name = "projection_x_coordinate"
-    
+
+    if isGeographic:
+        face_x_var.units = "degree_E"
+        face_x_var.standard_name = "longitude"
+    else:
+        face_x_var.units = "m"
+        face_x_var.standard_name = "projection_x_coordinate"
+
     face_y_var = dataC.createVariable('SCHISM_hgrid_face_y', 'f8', ('nSCHISM_hgrid_face',))
     face_y_var.axis = "Y"
     face_y_var.location = "face"
     face_y_var.mesh = "SCHISM_hgrid"
-    face_y_var.units = "m"
-    face_y_var.standard_name = "projection_y_coordinate"
+
+    if isGeographic:
+        face_y_var.units = "degree_N"
+        face_y_var.standard_name = "latitude"
+    else:
+        face_y_var.units = "m"
+        face_y_var.standard_name = "projection_y_coordinate"
     
     # Edge coordinates
     edge_x_var = dataC.createVariable('SCHISM_hgrid_edge_x', 'f8', ('nSCHISM_hgrid_edge',))
     edge_x_var.axis = "X"
     edge_x_var.location = "edge"
     edge_x_var.mesh = "SCHISM_hgrid"
-    edge_x_var.units = "m"
-    edge_x_var.standard_name = "projection_x_coordinate"
-    
+
+    if isGeographic:
+        edge_x_var.units = "degree_E"
+        edge_x_var.standard_name = "longitude"
+    else:
+        edge_x_var.units = "m"
+        edge_x_var.standard_name = "projection_x_coordinate"
+
     edge_y_var = dataC.createVariable('SCHISM_hgrid_edge_y', 'f8', ('nSCHISM_hgrid_edge',))
     edge_y_var.axis = "Y"
     edge_y_var.location = "edge"
     edge_y_var.mesh = "SCHISM_hgrid"
-    edge_y_var.units = "m"
-    edge_y_var.standard_name = "projection_y_coordinate"
+
+    if isGeographic:
+        edge_y_var.units = "degree_N"
+        edge_y_var.standard_name = "latitude"
+    else:
+        edge_y_var.units = "m"
+        edge_y_var.standard_name = "projection_y_coordinate"
     
     # Connectivity arrays
     face_nodes_var = dataC.createVariable('SCHISM_hgrid_face_nodes', 'i4', ('nSCHISM_hgrid_face', 'nMaxSCHISM_hgrid_face_nodes'), fill_value=-1, **paramsCompression)

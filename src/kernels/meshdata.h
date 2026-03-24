@@ -502,6 +502,8 @@ struct Element {
    Vector2 gradRho[nvrt];     // Gradient of de-meaned density at each prism center
    
 
+   __inline__ __device__ Point2 outputCoords(void) const;
+
    __inline__ __device__ double demeanedDensity(int k) const { return rho[k] - rho_mean[k]; }   
 
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
@@ -900,6 +902,8 @@ struct Side {
    double chi;
    double chi2;
 
+   __inline__ __device__ Point2 outputCoords(void) const;
+
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
    __inline__ __device__ double z(double t) const;
@@ -1198,7 +1202,7 @@ struct Node {
       const double speed = length(u);
 
       // Rotate wind vector to the node frame
-      const Vector2 u_air = {u.x*cRot - u.y*sRot, u.x*sRot + u.y*cRot};
+      u_air = {u.x*cRot - u.y*sRot, u.x*sRot + u.y*cRot};
 
       // Sets the surface stress vector due to wind.
       if constexpr(nws == 0) {
@@ -1241,6 +1245,11 @@ struct Node {
    //__device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
 
    __device__ double sigmaTransitionDepth(void) const;
+
+   __inline__ __device__ Point2 outputCoords(void) const {
+      if constexpr(ics == 1)  return p;
+      else                    return {rad2deg*lon, rad2deg*lat};
+   }
 
    __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
    __inline__ __device__ double htot2(void) const { return eta2 + depth; }

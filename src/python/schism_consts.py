@@ -44,5 +44,7 @@ varInfoDict =  {'x':       {'is3D': False, 'type': 'Vector2'},
                 'gradEta2':{'is3D': False, 'type': 'Vector2'},
                 'gradETP': {'is3D': False, 'type': 'Vector2'},
                 'FaceIndices': {'is3D': False, 'type': 'FaceIndices'},
+                'u_air':   {'is3D': False, 'type': 'Vector2'},
+                'outputCoords': {'is3D': False, 'type': 'Vector2'},
                 }
 

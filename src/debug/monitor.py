@@ -46,6 +46,61 @@ def init(nNodes, nElements, nSides, nSideBnds, numVrt):
     nvrt = numVrt
 
 
+def getViewLayout(varType, is3D, numItems, structSize, kind):
+    # kind: "element", "side", or "node"
+
+    if varType == "double":
+        if is3D:
+            shape = (nvrt, numItems)
+            strides = (8, structSize)
+        else:
+            shape = (numItems,)
+            strides = (structSize,)
+        dtype = cp.float64
+
+    elif varType == "Vector2":
+        if is3D:
+            # Same layout pattern for node/side/element in your code
+            shape = (2, nvrt, numItems)
+            strides = (8, 16, structSize)
+        else:
+            shape = (2, numItems)
+            strides = (8, structSize)
+        dtype = cp.float64
+
+    elif varType == "int" or varType == "bool":
+        if is3D:
+            shape = (nvrt, numItems)
+            strides = (4, structSize)
+        else:
+            shape = (numItems,)
+            strides = (structSize,)
+        dtype = cp.int32
+
+    elif varType == "pointer":
+        # pointer fields in side/element are 1D in your code
+        if is3D:
+            shape = (nvrt, numItems)
+            strides = (8, structSize)
+        else:
+            shape = (numItems,)
+            strides = (structSize,)
+        dtype = cp.uint64
+
+    elif varType == "FaceIndices":
+        # element-only special case
+        if kind != "element":
+            raise ValueError("FaceIndices only valid for element views")
+        shape = (4, numItems)
+        strides = (8, structSize)  # pointer-sized fields
+        dtype = cp.uint64
+
+    else:
+        raise ValueError(f"Invalid variable type: {varType}")
+
+    return shape, strides, dtype
+
+
 
 def getElementVar(varName, k = -1):
     varInfo = varInfoDict[varName]
@@ -59,15 +114,17 @@ def getElementVar(varName, k = -1):
     if not is3D and k != -1:
         raise ValueError("k cannot be provided for 2D variables")
 
-
     offset      = cp.zeros(1, dtype=cp.uint64)   
     addr        = cp.zeros(1, dtype=cp.uint64)
     sizeElement = cp.zeros(1, dtype=cp.uint64)
     sizeType    = cp.zeros(1, dtype=cp.uint64)
+
     cufunc.getElementVarAddr(varCode, addr, offset, sizeElement, sizeType)
+
+    
     sizeElement = sizeElement.item()
 
-    if offset.get() != -1:
+    if offset.get() != cp.uint32(cp.int32(-1)):
         # If offset is not -1, then the variable is directly mapped in memory
 
         if varType == 'double':
@@ -106,9 +163,18 @@ def getElementVar(varName, k = -1):
             raise ValueError(f"Invalid variable type: {varType}")
             
         view = cp.ndarray(shape=shape, dtype=dtype, strides=strides, order='F',
-                          memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(addr.item() + offset.item(), 0, owner=None), 0)) 
+                        memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(addr.item() + offset.item(), 0, owner=None), 0)) 
 
         return view
+
+    elif varName == "outputCoords":
+        res = cp.zeros((2, numElements), dtype=cp.float64, order='F')
+        cufunc.getElementVarFunc(varCode, res)
+        return res
+
+
+    else:
+        raise ValueError(f"Variable {varName} is not mapped in memory")
 
     
 
@@ -138,7 +204,7 @@ def getSideVar(varName, k = -1):
     cufunc.getSideVarAddr(varCode, addr, offset, sizeSide, sizeType)
     sizeSide = sizeSide.item()
 
-    if offset.get() != -1:
+    if offset.get() != cp.uint32(cp.int32(-1)):
         # If offset is not -1, then the variable is directly mapped in memory
 
         if varType == 'double':
@@ -184,12 +250,13 @@ def getSideVar(varName, k = -1):
 
         return view
 
-    
+    elif varName == "outputCoords":
+        res = cp.zeros((2, numSides), dtype=cp.float64, order='F')
+        cufunc.getSideVarFunc(varCode, res)
+        return res
 
-    # var = cp.zeros(numElements, dtype=cp.float64)
-    # cufunc.getElementVar(varCode, var, k, j)
-    # return var.get()    
-    raise ValueError(f"Variable {varName} is not mapped in memory")
+    else:
+        raise ValueError(f"Variable {varName} is not mapped in memory")
 
 
 def getNodeVar(varName, k = -1):
@@ -247,8 +314,14 @@ def getNodeVar(varName, k = -1):
 
         return view
 
-  
-    raise ValueError(f"Variable {varName} is not mapped in memory")
+    elif varName == "outputCoords":
+            res = cp.zeros((2, numNodes), dtype=cp.float64, order='F')
+            cufunc.getNodeVarFunc(varCode, res)
+            return res
+    else:
+        raise ValueError(f"Variable {varName} is not mapped in memory")
+
+
 
 
 # XXXX REMOVE THESE FUNCTIONS and the corresponding ones in the kernels

@@ -3,6 +3,7 @@
 #define USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
+constexpr double rad2deg = 180.0/3.14159265358979323846;
 
 constexpr int BLOCK_SIZE = 128;
 
@@ -112,7 +113,7 @@ constexpr double dt = 120;  // Time step  XXX
 
 constexpr double h0 = 0.0001;  // Minimum water depth for wetting and drying [m]
 
-enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35, u_air=36, outputCoords=37}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 
@@ -619,6 +620,8 @@ struct Element {
    Vector2 gradRho[nvrt];     // Gradient of de-meaned density at each prism center
    
 
+   __inline__ __device__ Point2 outputCoords(void) const;
+
    __inline__ __device__ double demeanedDensity(int k) const { return rho[k] - rho_mean[k]; }   
 
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
@@ -1017,6 +1020,8 @@ struct Side {
    double chi;
    double chi2;
 
+   __inline__ __device__ Point2 outputCoords(void) const;
+
    __inline__ __device__ double x(double t) const;
    __inline__ __device__ double y(double t) const;
    __inline__ __device__ double z(double t) const;
@@ -1315,7 +1320,7 @@ struct Node {
       const double speed = length(u);
 
       // Rotate wind vector to the node frame
-      const Vector2 u_air = {u.x*cRot - u.y*sRot, u.x*sRot + u.y*cRot};
+      u_air = {u.x*cRot - u.y*sRot, u.x*sRot + u.y*cRot};
 
       // Sets the surface stress vector due to wind.
       if constexpr(nws == 0) {
@@ -1358,6 +1363,11 @@ struct Node {
    //__device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
 
    __device__ double sigmaTransitionDepth(void) const;
+
+   __inline__ __device__ Point2 outputCoords(void) const {
+      if constexpr(ics == 1)  return p;
+      else                    return {rad2deg*lon, rad2deg*lat};
+   }
 
    __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
    __inline__ __device__ double htot2(void) const { return eta2 + depth; }
@@ -1868,6 +1878,26 @@ __device__ __forceinline__ Point2 toLocalFrame(Point2 const& p, const Side* orig
 }
 
 
+__inline__ __device__ Point2 Element::outputCoords(void) const {
+   if constexpr(ics == 1)  {
+      return center;
+
+   } else {
+      const Point2 p0 = nodes[0]->outputCoords();
+      const Point2 p1 = nodes[1]->outputCoords();
+      const Point2 p2 = nodes[2]->outputCoords();
+
+      if (isTri()) {
+         return (1.0/3.0)*(p0 + p1 + p2);
+
+      } else {
+         const Point2 p3 = nodes[3]->outputCoords();
+         return (1.0/4.0)*(p0 + p1 + p2 + p3);
+      }
+
+   }
+}
+
 __device__ __forceinline__ double Element::centerZ(void) const { 
 // Z coordinate of the element center in the global cartesian coordinates.
 // This works because we also compute the average of the x,y coordinates of the nodes to compute the 3D center.
@@ -2162,6 +2192,8 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
 // Computes the *local* (element frame) 3D normal vector to the element at level k
 // Returns the normal vector and the area of the element at this level
 
+   double nx, ny, nz;
+
    if (isTri()) {
       // For triangles...
 
@@ -2172,13 +2204,13 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
 
       // Gets the element frame coordinates of the nodes at level k
       Point3 x0, x1, x2;
-      if constexpr(ics==1) {
+      if constexpr(ics==1) { // XXX/ I think that we can use always ics==2 because it is more general.
          x0 = toPoint3(nodes[0]->p, nodes[0]->z[k0]);
          x1 = toPoint3(nodes[1]->p, nodes[1]->z[k1]);
          x2 = toPoint3(nodes[2]->p, nodes[2]->z[k2]);
 
       } else {  // ics == 2
-         Vector2 h0, h1, h2;
+         Point2 h0, h1, h2;
 
          getLocalHorizontalNodePositionsTri(h0, h1, h2);
 
@@ -2191,26 +2223,35 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
       const Vector3 n10 = x1 - x0; 
 
       // Computes the cross product of vectors (n2 - n0) and (n1 - n0). 
-      const double nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
-      const double ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
-      const double nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
-
-      const double len = sqrt(nx*nx + ny*ny + nz*nz);
-      area3D = 0.5*len;
-
-      const double inv_len = 1.0/len;
-
-      return {nx*inv_len, ny*inv_len, nz*inv_len};
+      nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
+      ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
+      nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
    
    }
    else {
       // For quads...
+      Point2 h0, h1, h2, h3;
 
-      assert(false && "Element normal vector: quads not yet implemented");
-      return {0.0, 0.0, 0.0};
+      getLocalHorizontalNodePositionsQuad(h0, h1, h2, h3);
 
+      // Computes the cross product of the two diagonals (h2 - h0) and (h3 - h1). 
+      // WARNING: For the vertical coordinate we are assuming that z = 0 in the element frame coincides with the 0 level of the ellipsoid.
+      const Vector3 n20 = toVector3(h2 - h0, nodes[2]->z[k] - nodes[0]->z[k]);
+      const Vector3 n31 = toVector3(h3 - h1, nodes[3]->z[k] - nodes[1]->z[k]);
+
+      nx = n20.y*n31.z - n20.z*n31.y;
+      ny = n20.z*n31.x - n20.x*n31.z;
+      nz = n20.x*n31.y - n20.y*n31.x;
 
    }
+
+   const double len = sqrt(nx*nx + ny*ny + nz*nz);
+   area3D = 0.5*len;
+
+   const double inv_len = 1.0/len;
+
+   return {nx*inv_len, ny*inv_len, nz*inv_len};
+
 }
 
 /**
@@ -2957,6 +2998,17 @@ __inline__ __device__ double  SideBoundary::nuth(int k) const {
 }
 
 
+__inline__ __device__ Point2 Side::outputCoords(void) const {
+   if constexpr(ics == 1) {
+      return center;
+
+   } else {
+      const Point2 p0 = n1->outputCoords();
+      const Point2 p1 = n2->outputCoords();
+      return (1.0/2.0)*(p0 + p1);
+
+   }
+}
 
 __inline__ __device__ double  Side::x(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.x + t*n2->p.x; }
 __inline__ __device__ double  Side::y(double t)   const { assert(t >= 0.0 && t <= 1.0); return (1-t)*n1->p.y + t*n2->p.y; }
@@ -3564,6 +3616,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       Point3 p = computeXYZfromLatLon(lat, lon);
       node.p = toVector2(p);
       node.gz = p.z;
+      node.lon = lon;
+      node.lat = lat;
 
       #ifdef USE_FRAMES
       node.setFrame(lat, lon);
@@ -7893,6 +7947,47 @@ __global__ void initializePreconditionedResidual(void) {
 }
 
 
+extern "C" __global__ void getElementVarFunc(int varCode, double *res) {
+
+   ELEM(elem);
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords:
+         const Point2 coords = elem->outputCoords();
+         res[elem->idx*2    ] = coords.x;
+         res[elem->idx*2 + 1] = coords.y;
+         break;
+   }
+}
+
+
+extern "C" __global__ void getSideVarFunc(int varCode, double *res) {
+
+   SIDE(side);
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords:
+         const Point2 coords = side->outputCoords();
+         res[side->idx*2    ] = coords.x;
+         res[side->idx*2 + 1] = coords.y;
+         break;
+   }
+}
+
+
+extern "C" __global__ void getNodeVarFunc(int varCode, double *res) {
+
+   NODE(node);
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords:
+         const Point2 coords = node->outputCoords();
+         res[node->idx*2    ] = coords.x;
+         res[node->idx*2 + 1] = coords.y;
+         break;
+   }
+}
+
 
 extern "C" __global__ void getElementVarAddr(int varCode, void **addr, int *offset, int *sizeElement, int *sizeType) {
    Element *elems = mesh->localElemData;
@@ -8039,7 +8134,7 @@ extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset,
          *sizeType = sizeof(Vector2);
          break;
       case (int)VarCode::z:
-         *offset = (int)((char*)&nodes[0].gz - (char*)nodes);
+         *offset = (int)((char*)&nodes[0].z - (char*)nodes);
          *sizeType = sizeof(double);
          break;
       case (int)VarCode::kb:
@@ -8057,119 +8152,18 @@ extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset,
       case (int)VarCode::u:
          *offset = (int)((char*)&nodes[0].u2[0].x - (char*)nodes);
          *sizeType = sizeof(Vector2);
-         break;         
+         break;  
+      case (int)VarCode::u_air:
+         *offset = (int)((char*)&nodes[0].u_air - (char*)nodes);
+         *sizeType = sizeof(Vector2);
+         break;
       default:
          *offset = -1;    
    }  
    
 }
 
-extern "C" __global__ void getElementVar(int varCode, bool is3D, double *var1, double *var2, int *ivar1, int *ivar2, int k = -1, int j = -1) {
-   // Get the value of a variable from an element
-   // varName is the name of the variable to get
-   // var is the array to store the value
-   // k is the vertical level index of the variable to get
 
-   ELEM(elem);
-   
-   int idx = elem->idx;
-   int i = threadIdx.x + blockIdx.x * blockDim.x;
-
-   // printf("getElementVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
-   if      (varCode == (int)VarCode::w)       { var1[idx] = elem->w[k];}
-   else if (varCode == (int)VarCode::z)       { var1[idx] = elem->z[k];}
-   else if (varCode == (int)VarCode::x)       { var1[idx] = elem->center.x; var2[idx] = elem->center.x;}
-   else if (varCode == (int)VarCode::area)    { var1[idx] = elem->area;}
-   else if (varCode == (int)VarCode::depth)   { var1[idx] = elem->depth;}
-   else if (varCode == (int)VarCode::radius)  { var1[idx] = elem->radius;}
-   else if (varCode == (int)VarCode::ghat)    { var1[idx] = elem->ghat1.x;  var2[idx] = elem->ghat1.y;}
-   else if (varCode == (int)VarCode::kb)      { ivar1[idx] = elem->kb;}
-   else if (varCode == (int)VarCode::ssign && j > -1)  {ivar1[idx] = elem->ssign[j];}
-   else if (i==0) printf("getElementVar: varCode = %d, k = %d not found\n", varCode, k);
-      
-   
-}
-
-
-extern "C" __global__ void getNodeVar(int varCode, double *var, int k = -1) {
-   // Get the value of a variable from an node
-   // varName is the name of the variable to get
-   // var is the array to store the value
-   // k is the vertical level index of the variable to get
-
-   NODE(node);
-   
-   int idx = node->idx;
-   int i = threadIdx.x + blockIdx.x * blockDim.x;
-
-   // printf("getNodeVar: varCode = %d, k = %d, idx = %d, i = %d\n", varCode, k, idx, i);
-   
-   if      (varCode == (int)VarCode::z && k >= 0)       var[idx] = node->z[k];
-   else if (varCode == (int)VarCode::x && k == -1)      var[idx] = node->p.x;
-   else if (varCode == (int)VarCode::depth && k == -1)  var[idx] = node->depth;
-   else if (varCode == (int)VarCode::htot && k == -1)   var[idx] = node->htot2();
-   else if (varCode == (int)VarCode::kb && k == -1)     var[idx] = (double)(node->kb);
-   else if (varCode == (int)VarCode::elbc && k == -1)   var[idx] = node->nodeBnd!=nullptr?node->nodeBnd->elbc:0.0;
-   else if (varCode == (int)VarCode::eta && k == -1)    var[idx] = node->eta2;  
-   else if (varCode == (int)VarCode::isdry && k == -1)  var[idx] = node->isDry?1.0:0.0;
-   else if (varCode == (int)VarCode::qel && k == -1)    var[idx] = node->qel;
-   else if (varCode == (int)VarCode::u && k >= 0)       var[idx] = node->u2[k].x;
-   else if (varCode == (int)VarCode::w && k >= 0)       var[idx] = node->w2[k];
-   
-   else if (i==0) printf("getNodeVar: varCode = %d, k = %d not found\n", varCode, k);
-      
-   
-}
-
-
-extern "C" __global__ void getSideVar(int varCode, double *var, int k = -1) {
-   // Get the value of a variable from an side
-   // varName is the name of the variable to get
-   // var is the array to store the value
-   // k is the vertical level index of the variable to get
-   SIDE(side);
-   
-   int idx = side->idx;
-   int i = threadIdx.x + blockIdx.x * blockDim.x;
-
-   if      (varCode == (int)VarCode::z && k >= 0)        var[idx] = side->zc[k];
-   else if (varCode == (int)VarCode::x && k == -1)       var[idx] = side->center.x;
-   // else if (varCode == (int)VarCode::y && k == -1)       var[idx] = side->center.y;
-   else if (varCode == (int)VarCode::isdry && k == -1)   var[idx] = side->isDry?1.0:0.0;
-   else if (varCode == (int)VarCode::nx && k == -1)      var[idx] = side->n.x;
-   else if (varCode == (int)VarCode::ny && k == -1)      var[idx] = side->n.y;
-   else if (varCode == (int)VarCode::u && k >= 0)        var[idx] = side->u2[k].x;
-   // else if (varCode == (int)VarCode::v && k >= 0)        var[idx] = side->u2[k].y;
-   else if (varCode == (int)VarCode::U && k == -1)       var[idx] = side->U.x;
-   // else if (varCode == (int)VarCode::V && k == -1)       var[idx] = side->U.y;   
-   else if (varCode == (int)VarCode::depth && k == -1)   var[idx] = side->depth();
-   else if (varCode == (int)VarCode::kb && k == -1)      var[idx] = (double)(side->kb);
-   else if (varCode == (int)VarCode::n1 && k == -1)      var[idx] = side->n1->idx;
-   else if (varCode == (int)VarCode::n2 && k == -1)      var[idx] = side->n2->idx;
-   else if (varCode == (int)VarCode::eta && k == -1)     var[idx] = side->eta2();
-   else if (varCode == (int)VarCode::btu && k >= 0)      var[idx] = side->btu[k].x;
-   // else if (varCode == (int)VarCode::btv && k >= 0)      var[idx] = side->btu[k].y;
-   else if (varCode == (int)VarCode::bcc && k >= 0)      var[idx] = side->bcc[k].x;
-   // else if (varCode == (int)VarCode::bccy && k >= 0)     var[idx] = side->bcc[k].y;
-   else if (varCode == (int)VarCode::ubc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].x:0.0;
-   // else if (varCode == (int)VarCode::vbc && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->ubc[k].y:0.0;
-   else if (varCode == (int)VarCode::uth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).x:0.0;
-   // else if (varCode == (int)VarCode::vth && k >= 0)      var[idx] = side->sideBnd!=nullptr?side->sideBnd->uth(k).y:0.0;
-   else if (varCode == (int)VarCode::ifltype && k == -1) var[idx] = side->sideBnd!=nullptr?side->sideBnd->segment->ifltype:0.0;
-   else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd!=nullptr?(double)(side->sideBnd->segment->isLand):7.7;
-   // else if (varCode == (int)VarCode::island && k == -1)  var[idx] = side->sideBnd != nullptr ? (double)((unsigned long long)(side->sideBnd->segment) & 0xFFFFFFFF) : 7.7;
-   else if (varCode == (int)VarCode::hhat && k == -1)    var[idx] = side->hhat;
-   else if (varCode == (int)VarCode::chi  && k == -1)    var[idx] = side->chi;
-   // else if (varCode == (int)VarCode::gradEta1x   && k == -1)    var[idx] = side->gradEta1.x;
-   // else if (varCode == (int)VarCode::gradEta1y   && k == -1)    var[idx] = side->gradEta1.y;
-   // else if (varCode == (int)VarCode::gradEta2x   && k == -1)    var[idx] = side->gradEta2.x;
-   // else if (varCode == (int)VarCode::gradEta2y   && k == -1)    var[idx] = side->gradEta2.y;
-   // else if (varCode == (int)VarCode::gradETPx   && k == -1)    var[idx] = side->gradETP.x;
-   // else if (varCode == (int)VarCode::gradETPy   && k == -1)    var[idx] = side->gradETP.y;
-   // else if (varCode == (int)VarCode::gradPrx   && k == -1)    var[idx] = side->gradPr.x;
-   // else if (varCode == (int)VarCode::gradPry   && k == -1)    var[idx] = side->gradPr.y;
-   else if (i==0) printf("getSideVar: varCode = %d, k = %d not found\n", varCode, k);
-}
 
 
 extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
