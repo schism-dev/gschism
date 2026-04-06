@@ -177,6 +177,36 @@ __device__ double *pAp;
 
 // Simple math functions ---------------------------------------------------------------------------
 
+__device__ __forceinline__ void solveQuadratic(double A, double B, double C, double &x1, double &x2) {
+// Solves the quadratic equation A*x^2 + B*x + C = 0 and returns the two solutions in x1 and x2.
+// Outputs:
+//        x1: first solution
+//        x2: second solution
+
+   // Degenerate case: A = 0.
+   if (A == 0.0) {
+      x1 = -C / B;
+      x2 = x1;
+      return;
+   }
+
+   const double delta = B*B - 4.0*A*C;
+   assert(delta >= 0.0 && "solveQuadratic: negative discriminant");
+   const double s = sqrt(delta);
+
+   // Numerically stable quadratic roots:
+   // q = -0.5*(B + sign(B)*sqrt(delta))
+   const double q = -0.5 * (B + copysign(s, B));
+   if (q == 0.0) {
+      // Double-root / near-degenerate fallback
+      x1 = -B / (2.0*A);
+      x2 = x1;
+   } else {
+      x1 = q / A;
+      x2 = C / q;
+   }
+}
+
 template<int grade>
 __device__ __forceinline__ double pow(double x);
 
@@ -231,6 +261,12 @@ __device__ __forceinline__ double2 operator-(const double2& a, const double2& b)
     return make_double2(a.x - b.x, a.y - b.y);
 }
 
+
+__device__ __forceinline__ double2 operator-(const double2& a) {
+    return make_double2(-a.x, -a.y);
+}
+
+
 __device__ __forceinline__ double2 operator-=(double2& a, const double2& b) {
     a.x -= b.x;
     a.y -= b.y;
@@ -258,6 +294,7 @@ __device__ __forceinline__ double length(const double2& v) {
 }
 
 __device__ __forceinline__ double2 normalize(const double2& v) {
+    assert(length(v) > 0.0 && "normalize: length = 0");
     return v / length(v);
 }
 
@@ -286,6 +323,10 @@ __device__ __forceinline__ double3 operator+=(double3& a, const double3& b) {
 
 __device__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
     return make_double3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+__device__ __forceinline__ double3 operator-(const double3& a) {
+    return make_double3(-a.x, -a.y, -a.z);
 }
 
 __device__ __forceinline__ double3 operator*(const double3& v, double s) {
@@ -743,6 +784,8 @@ struct Element {
 
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
+   __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const;
+
    __inline__ __device__ double computeSignedArea(void) const;
 
    __inline__ __device__ void nudgeToBarycenter(Point2 &p, const Side *origSide = nullptr) const;
@@ -753,9 +796,9 @@ struct Element {
    
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
-   __device__ double intPhiPhi(int i1, int i2) const;
+   __device__ double intPhiPhiQuad(int i1, int i2) const;
 
-   __device__ double intGradPhiGradPhi(int i1, int i2) const;
+   __device__ double intGradPhiGradPhiQuad(int i1, int i2) const;
 
    __device__ Vector2 grad2(double *a) const
    {
@@ -867,10 +910,15 @@ struct Element {
    __device__ __forceinline__ T mean(T Side::* field) const;
 
    template<typename T>
+   __device__ __forceinline__ T mean(int level,  T (Side::*func)(int) const) const;
+
+   template<typename T>
    __device__ __forceinline__ T mean(int level, T (Node::* field)[nvrt]) const;
 
    template<typename T>
    __device__ __forceinline__ T mean(int level, T (Side::* field)[nvrt]) const;
+
+
 
    // __device__ double mean(double (Node::*func)(int) const) const {
    //    double values[4];
@@ -881,13 +929,13 @@ struct Element {
 
    __device__ bool globalToLocal(double xt, double yt, double &xlocal, double &ylocal) const {
       // Convert global coordinates to local coordinates
-      printf("NOT IMPLEMENTED: globalToLocal\n");
+      printf("NOT IMPLEMENTED: globalToLocal\n");   //XXXXXX
       return true;
    }
 
    __inline__ __device__ bool localToGlobal(double xlocal, double ylocal, double &xt, double &yt) const {
       // Convert local coordinates to global coordinates
-      printf("NOT IMPLEMENTED: localToGlobal\n");
+      printf("NOT IMPLEMENTED: localToGlobal\n");   //XXXXXX
       return true;
    }
 
@@ -1042,10 +1090,11 @@ struct Side {
    }
    #endif
 
-   __inline__ __device__ double centerZ(void)   const;
-   __inline__ __device__ Point3 center3D(int k) const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
-   __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
-   __inline__ __device__ double area(int k)     const { assert(k < nvrt - 1); return len*Dz(k + 1); }
+   __inline__ __device__ double centerZ(void)      const;
+   __inline__ __device__ Point3 center3D(int k)    const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
+   __inline__ __device__ double Dz(int k)          const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
+   __inline__ __device__ double area(int k)        const { assert(k < nvrt - 1); return len*Dz(k + 1); }
+   __inline__ __device__ double areaClamped(int k) const { assert(k < nvrt - 1); return len*(zc[max(k + 1, kb)] - zc[max(k, kb)]); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
@@ -1076,6 +1125,7 @@ struct Side {
    __inline__ __device__ double eta2(void) const;
    __inline__ __device__ double eta1(void) const;
    __inline__ __device__ double w2(int k) const;
+   __inline__ __device__ Vector2 u2Bottom(int dummy = 0) const { return u2[kb]; }  // XXXX dummy argument to satisfy the template in mean()
    __inline__ __device__ double depth(void) const;
    __inline__ __device__ double htot2(void) const { return eta2() + depth(); }
    __inline__ __device__ double htot1(void) const { return zc[nvrt - 1] - zc[kb]; }
@@ -1295,6 +1345,7 @@ struct Node {
    };
    Vector2 tau_bot; // Bottom stress vector
 
+   // XXXX REMOVE FOR IMM>0???
    double bdef1; // Bottom deformation at previous timestep
    double bdef2; // Bottom deformation at current timestep
 
@@ -1928,20 +1979,20 @@ __device__ __forceinline__ double Element::centerZ(void) const {
    template<typename T>
    __device__ __forceinline__ void Element::getNodalValues(int level, T (Node::* field)[nvrt], T res[4]) const {
       // Get the values of the field at the nodes of the element
-      res[0] = (nodes[0]->*field)[level];
-      res[1] = (nodes[1]->*field)[level];
-      res[2] = (nodes[2]->*field)[level];
-      if (isQuad()) res[3] = (nodes[3]->*field)[level];
+      res[0] = (nodes[0]->*field)[max(level, nodes[0]->kb)];
+      res[1] = (nodes[1]->*field)[max(level, nodes[1]->kb)];
+      res[2] = (nodes[2]->*field)[max(level, nodes[2]->kb)];
+      if (isQuad()) res[3] = (nodes[3]->*field)[max(level, nodes[3]->kb)];
       else          res[3] = T();
    }    
 
    template<typename T>
    __device__ __forceinline__ void Element::getNodalValues(int level, T (Node::*func)(int) const, T res[4]) const {
       // Get the values of the func at the nodes of the element
-      res[0] = (nodes[0]->*func)(level);
-      res[1] = (nodes[1]->*func)(level);
-      res[2] = (nodes[2]->*func)(level);
-      if (isQuad()) res[3] = (nodes[3]->*func)(level);
+      res[0] = (nodes[0]->*func)(max(level, nodes[0]->kb));
+      res[1] = (nodes[1]->*func)(max(level, nodes[1]->kb));
+      res[2] = (nodes[2]->*func)(max(level, nodes[2]->kb));
+      if (isQuad()) res[3] = (nodes[3]->*func)(max(level, nodes[3]->kb));
       else          res[3] = T();  // This is 0.0 or a zero vector
 
    }      
@@ -1959,20 +2010,20 @@ __device__ __forceinline__ double Element::centerZ(void) const {
    template<typename T>
    __device__ __forceinline__ void Element::getSideValues(int level, T (Side::* field)[nvrt], T res[4]) const {
       // Get the values of the field at the nodes of the element
-      res[0] = (sides[0]->*field)[level];
-      res[1] = (sides[1]->*field)[level];
-      res[2] = (sides[2]->*field)[level];
-      if (isQuad()) res[3] = (sides[3]->*field)[level];
+      res[0] = (sides[0]->*field)[max(level, sides[0]->kb)];
+      res[1] = (sides[1]->*field)[max(level, sides[1]->kb)];
+      res[2] = (sides[2]->*field)[max(level, sides[2]->kb)];
+      if (isQuad()) res[3] = (sides[3]->*field)[max(level, sides[3]->kb)];
       else          res[3] = T();
    }    
 
    template<typename T>
    __device__ __forceinline__ void Element::getSideValues(int level, T (Side::*func)(int) const, T res[4]) const {
       // Get the values of the func at the nodes of the element
-      res[0] = (sides[0]->*func)(level);
-      res[1] = (sides[1]->*func)(level);
-      res[2] = (sides[2]->*func)(level);
-      if (isQuad()) res[3] = (sides[3]->*func)(level);
+      res[0] = (sides[0]->*func)(max(level, sides[0]->kb));
+      res[1] = (sides[1]->*func)(max(level, sides[1]->kb));
+      res[2] = (sides[2]->*func)(max(level, sides[2]->kb));
+      if (isQuad()) res[3] = (sides[3]->*func)(max(level, sides[3]->kb));
       else          res[3] = T();  // This is 0.0 or a zero vector
 
    }      
@@ -2075,6 +2126,24 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
    }   
+
+   template<typename T>
+   __device__ __forceinline__ T Element::mean(int level,  T (Side::*func)(int) const) const {
+
+      T values[4];
+
+
+      values[0] = (sides[0]->*func)(max(level, sides[0]->kb));
+      values[1] = (sides[1]->*func)(max(level, sides[1]->kb));
+      values[2] = (sides[2]->*func)(max(level, sides[2]->kb));
+      if (isQuad()) values[3] = (sides[3]->*func)(max(level, sides[3]->kb));
+      else          values[3] = T();
+
+      if constexpr (IsVector2<T>::value && ics == 2) projectSideVectorsToElementFrame(values);
+
+      return (values[0] + values[1] + values[2] + values[3])/i34;
+   }
+
 
    template<typename T>
    __device__ __forceinline__ T Element::mean(int level, T (Node::* field)[nvrt]) const {
@@ -2226,7 +2295,7 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
       nx = (n10.y)*(n20.z) - (n20.y)*(n10.z);
       ny = (n20.x)*(n10.z) - (n10.x)*(n20.z);
       nz = 2.0*area; // = (n10.x)*(n20.y) - (n20.x)*(n10.y);
-   
+  
    }
    else {
       // For quads...
@@ -2370,8 +2439,7 @@ if (!containsPoint(x1, origSide)) printf("111: x1 = (%f, %f), origSide.center = 
 
    }
 
-
-if (!found_intersection) {if (idx == 15876) printf("11111: No intersection found\n"); return false;}
+   if (!found_intersection) {if (idx == 15876) printf("11111: No intersection found\n"); return false;}
    assert(found_intersection && "No intersection found");
 
    // found_intersection should always be true, since we checked all the sides.  
@@ -2384,9 +2452,8 @@ __inline__ __device__ bool Element::containsPoint(Vector2 xt, const Side *origSi
    assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa");
 
    double shpCoords[4];
-if (origSide->idx == 15876) printf("containsPoint 1: xt = (%f, %f), elem->idx = %d, origSide->idx = %d\n", xt.x, xt.y, idx, origSide->idx);
    bool res = computeShapeCoords(xt, shpCoords, fiNo, origSide);
-if (origSide->idx == 15876) printf("containsPoint 11: shpCoords = (%f, %f, %f, %f), origSide->idx = %d\n", shpCoords[0], shpCoords[1], shpCoords[2], shpCoords[3], origSide->idx);
+
    return res;
 }
 
@@ -2397,7 +2464,6 @@ __inline__ __device__ bool Element::containsPoint(Vector2 &xt, bool fixCoords, c
    assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa");
 
    double shpCoords[4];
-if (origSide->idx == 15876) printf("containsPoint 2: xt = (%f, %f), elem->idx = %d, side = %p\n", xt.x, xt.y, idx, origSide);
    Vector2 tmp_xt = xt;
    const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
    bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords, origSide);
@@ -2490,6 +2556,7 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
 Vector2 x0_tmp = toVector2(x0);
 if (!containsPoint(toPoint2(x0), origSide)) {if (idx == 15876) printf("1111: elem->idx = %d, origSide->idx = %d, x0_tmp = (%f, %f), x0 = (%f, %f), origSide.center = (%f, %f)\n", idx, origSide->idx, x0_tmp.x, x0_tmp.y, x0.x, x0.y, origSide->center.x, origSide->center.y); return false;}
+
    assert(containsPoint(toPoint2(x0), origSide) && "Starting point is not inside the element");
 
    if (containsPoint(toPoint2(xt), true, origSide)) {  // The "true" means that, if the point is very close to the boundary, it is nudged to be definitely inside the element.
@@ -2597,7 +2664,7 @@ __inline__ __device__ void Element::nudgeToBarycenter(Point2 &p, const Side *ori
    assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
 
    Point3 c = toLocalFrame(toPoint3(center, centerZ()), origSide); // In local frame coordinates if ics == 2
-if (origSide->idx == 15876) printf("nudgeToBarycenter 1: center = (%f, %f) p = (%f, %f) elem->idx = %d, origSide->idx = %d, c = (%f, %f)\n", center.x, center.y, p.x, p.y, idx, origSide->idx, c.x, c.y);
+
    p = (1.0 - btrack_nudge)*p + btrack_nudge*toPoint2(c);
 }
 
@@ -2622,7 +2689,122 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    return side->elems[1] == nullptr; 
 }
 
+__device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const {
+   // Given a point p in the quad element returns the bilinear coordinates (xi,eta) and the shape coordinates shp[4]
+   // For ics == 2, this function uses local frame coordinates.
 
+   assert(isQuad());
+
+   // In bilinear coordinates, a point of coordinates (xi,eta) is given by: 
+   // p = c + 0.25*(xi*vxi + eta*veta + xi*eta*vb)
+   // where vxi, veta, vb are vectors and c is the center of the element.
+
+   Point2 p0, p1, p2, p3;
+
+   getLocalHorizontalNodePositionsQuad(p0, p1, p2, p3);
+
+   // A point of bilinear coordinates (xi,eta) has cartesian coordinates given by:
+   // p = c + 0.25 * (xi*vxi + eta*veta + xi*eta*vb)
+   // vectors vxi and veta connect the centers of opposite sides
+   // Vector vb is the vector from actual p3 to the p3 that would complete a parallelogram
+   // vb is zero for parallelogram elements.
+   const Point2 c = 0.25*(p0 + p1 + p2 + p3); // Center of the element (in local frame coordinates if ics == 2)
+   const Vector2 vxi  = (p1 + p2) - (p0 + p3);
+   const Vector2 veta = (p2 + p3) - (p0 + p1);
+   const Vector2 vb   = (p0 + p2) - (p1 + p3);
+
+   // We need to solve the expression p = c + 0.25 * (xi*vxi + eta*veta + xi*eta*vb) for (xi,eta),
+   // For this we first rewrite it as:
+   //    4*dp = xi*vxi + eta*veta + xi*eta*vb,  where dp = p - c.
+   // Then we use the 2D "cross product" cross(a,b) = a.x*b.y - a.y*b.x, multiplying both sides by 
+   // vb to remove the xi*eta term (cross(vb, vb) == 0). This results in a scalar equation:
+   //    cross(vb, 4*dp) = xi*cross(vb, vxi) + eta*cross(vb, veta)
+   //
+   // However, if vb is very small, the whole equation is numerically unstable. Instead of
+   // vb, we can take the cross product of both sides by the unit vector nb in the direction of vb to get a more stable equation:
+   //    cross(nb, 4*dp) = xi*cross(nb, vxi) + eta*cross(nb, veta)
+   //
+   // To get a second equation, we compute the dot product of both sides by nb (any other vector would do, 
+   // this just makes the equations more symmetric).
+   //    dot(nb, 4*dp) = xi*dot(nb, vxi) + eta*dot(nb, veta) + xi*eta*dot(nb, vb)
+   //
+   // This results in two equations:
+   //    Cbp = Cbx*xi + Cbe*eta
+   //    Dbp = Dbx*xi + Dbe*eta + Dbb*xi*eta
+   //
+   // With definitions: Cbp = cross(nb, 4*dp), Cbx = cross(nb, vxi), Cbe = cross(nb, veta), Dbp = dot(nb, 4*dp), Dbx = dot(nb, vxi), Dbe = dot(nb, veta), Dbb = dot(nb, vb)
+   //
+   // xi or eta can be solved from the first equation (depending on what coefficient is larger), and
+   // then substitute in the second equation to get the other coordinate. Let's assume that |Cbx| > |Cbe|:
+   //    xi = (Cbp - Cbe*eta) / Cbx
+   //
+   // Multiply by Cbx:
+   //
+   //    Dbp*Cbx = Dbx*(Cbp - Cbe*eta) + Dbe*Cbx*eta + Dbb*(Cbp - Cbe*eta)*eta
+   //
+   // Expand and group by powers of eta:
+   //    (-Dbb*Cbe)*eta^2 + (-Dbx*Cbe + Dbe*Cbx + Dbb*Cbp)*eta + (Dbx*Cbp - Dbp*Cbx) = 0
+   //
+   // So we have a quadratic in eta:
+   //    A*eta^2 + B*eta + C = 0
+   // with:
+   //    A = -Dbb*Cbe
+   //    B = -Dbx*Cbe + Dbe*Cbx + Dbb*Cbp
+   //    C = Dbx*Cbp - Dbp*Cbx
+   
+   // Let's build the quadratic equation.
+   Vector2 nb = {1.0, 0.0};
+   if (fabs(vb.x) + fabs(vb.y) > 1e-12) nb = normalize(vb);  // XXXX magic number
+
+   const Point2 dp = p - c;
+
+   const double Cbp = cross(nb, 4*dp);
+   const double Cbx = cross(nb, vxi);
+   const double Cbe = cross(nb, veta);
+   const double Dbp = dot(nb, 4*dp);
+   const double Dbx = dot(nb, vxi);
+   const double Dbe = dot(nb, veta);
+   const double Dbb = dot(nb, vb);
+   
+   if (fabs(Cbx) > fabs(Cbe)) {
+      const double A = -Dbb*Cbe;
+      const double B = -Dbx*Cbe + Dbe*Cbx + Dbb*Cbp;
+      const double C =  Dbx*Cbp - Dbp*Cbx;
+
+      double x1, x2;
+      solveQuadratic(A, B, C, x1, x2);
+      if      (fabs(x1) <= fabs(x2)) eta = x1;
+      else                      eta = x2;
+
+      xi = (Cbp - Cbe*eta) / Cbx;
+
+   } else {
+      const double A = -Dbb*Cbx;
+      const double B =  Dbx*Cbe - Dbe*Cbx + Dbb*Cbp;
+      const double C =  Dbe*Cbp - Dbp*Cbe;
+
+      double x1, x2;
+      solveQuadratic(A, B, C, x1, x2);
+      if (fabs(x1) <= fabs(x2)) xi = x1;
+      else                      xi = x2;
+
+      eta = (Cbp - Cbx*xi) / Cbe;
+   }
+
+  
+
+   assert(fabs(xi) <= 1.0 && fabs(eta) <= 1.0 && "inverseBilinearQuad: out-of-bound local coords");  // XXXX magic number
+
+   xi  = clamp(xi,  -1.0, 1.0);
+   eta = clamp(eta, -1.0, 1.0);
+
+   shp[0] = 0.25*(1.0 - xi)*(1.0 - eta);
+   shp[1] = 0.25*(1.0 + xi)*(1.0 - eta);
+   shp[2] = 0.25*(1.0 + xi)*(1.0 + eta);
+   shp[3] = 0.25*(1.0 - xi)*(1.0 + eta);
+
+   return true;
+}
 
 /**
    Compute the shape coordinates of the point (xt,yt) in the element.
@@ -2668,7 +2850,6 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       shpCoords[3] = 0.0;
 
-if (origSide->idx == 15876) printf("computeShapeCoords 1: x,y = (%f, %f), elem->idx = %d, shpCoords = (%f, %f, %f, %f)\n", xt.x, xt.y, idx, shpCoords[0], shpCoords[1], shpCoords[2], shpCoords[3]);
 
       double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
       const bool res = (tmpmin >= -small);  
@@ -2708,21 +2889,40 @@ if (origSide->idx == 15876) printf("computeShapeCoords 1: x,y = (%f, %f), elem->
       return res;      
    }
    else {
-      Error("Not implemented yet");
-#ifdef QUADS
-      // Reproject pt in eframe of nel for ics=2
-      if constexpr(ics==1) {
-         xn2 = xt; 
-         yn2 = yt;
-      }
-      else {
-         // Transform the point coordinates to the local frame
-         frame.G2L(xt, xn2);
-         frame.G2L(yt, yn2);
-      }
+      assert(isQuad() && "computeShapeCoords");
 
-      return quad_shape(1,6,nnel,xn2,yn2,inside2,arco)
-#endif
+   //    Point2 p = xt;
+
+   //    // Reproject p the original side frame for ics=2
+   //    if constexpr(ics == 2) p = origSide->frame.G2L(toPoint3(xt, 0.0));
+
+   //    bool inside = false;
+
+
+
+   //    if(ifl==0) then
+   //      do i=1,4
+   //        in1=nxq(1,i,i34(ie))
+   //        in2=nxq(2,i,i34(ie))
+   //        swild2(i)=signa2(xel(in1,ie),xel(in2,ie),x,yel(in1,ie),yel(in2,ie),y)
+   //      enddo !i
+   //      tmp=minval(swild2(1:4))/area(ie)
+   //      if(tmp>-small2) then
+   //        inside=1
+   //        call ibilinear(itag,ie,area(ie),xel(1,ie),xel(2,ie),xel(3,ie),xel(4,ie), &
+   //   &yel(1,ie),yel(2,ie),yel(3,ie),yel(4,ie),x,y,xi,eta,shapef,icaseno)
+   //      endif !inside quad
+   //    else !ifl=1 - already inside
+   //      call ibilinear(itag,ie,area(ie),xel(1,ie),xel(2,ie),xel(3,ie),xel(4,ie), &
+   //   &yel(1,ie),yel(2,ie),yel(3,ie),yel(4,ie),x,y,xi,eta,shapef,icaseno)
+   //      !Update pt
+   //      x=dot_product(xel(1:4,ie),shapef(1:4))
+   //      y=dot_product(yel(1:4,ie),shapef(1:4))
+   //    endif !ifl
+
+
+   //    return quad_shape(1,6,nnel,xn2,yn2,inside2,arco)
+
    }
 
    assert(false && "computeShapeCoords: should never reach this point");
@@ -2734,8 +2934,9 @@ if (origSide->idx == 15876) printf("computeShapeCoords 1: x,y = (%f, %f), elem->
 __device__ void Element::shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const {
 // Convert shape coordinates to cartesian coordinates
 
-   if (i34 == 3) {
+   if (isTri()) {
       // Triangular element
+assert(false && "shapeCoordsToXY: should it use local frame coordinates?");
       double xcoords[3] = {nodes[0]->p.x, nodes[1]->p.x, nodes[2]->p.x};
       double ycoords[3] = {nodes[0]->p.y, nodes[1]->p.y, nodes[2]->p.y};
    }
@@ -2745,7 +2946,7 @@ __device__ void Element::shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const
 
 }
 
-__device__ double Element::intPhiPhi(int i1, int i2) const {
+__device__ double Element::intPhiPhiQuad(int i1, int i2) const {
    // return \int \phi_i1*\phi_i2 dA, where phi_i1 and phi_i2 are the shape functions of the nodes i1 and i2.
    // The integral is computed analytically, using the shape functions in xi and eta coordinates and the Jacobian.
    // The formula for the integral is:
@@ -2762,6 +2963,7 @@ __device__ double Element::intPhiPhi(int i1, int i2) const {
    const Vector2 p1 = n1->p;
    const Vector2 p2 = n2->p;
    const Vector2 p3 = n3->p;
+assert(false && "intPhiPhiQuad:CHECK?");
 
    double xi_term  = 1.0 + (ixi_n[i1]*ixi_n[i2])/3.0;
    double eta_term = 1.0 + (iet_n[i1]*iet_n[i2])/3.0;
@@ -2772,7 +2974,7 @@ __device__ double Element::intPhiPhi(int i1, int i2) const {
 }
    
 
-__device__ double Element::intGradPhiGradPhi(int i1, int i2) const {
+__device__ double Element::intGradPhiGradPhiQuad(int i1, int i2) const {
    // return \int (grad phi_i1).(grad phi_i2) dA, where phi_i1 and phi_i2 are the shape functions of the nodes i1 and i2.
    // The integral is computed by using the 2x2 Gauss-Legendre quadrature points in xi and eta coordinates.
    // Again, it uses the determinant of the Jacobian to compute the integral in x,y coordinates.
@@ -2781,7 +2983,7 @@ __device__ double Element::intGradPhiGradPhi(int i1, int i2) const {
    //   dPhi/dy = (1/det J) * [-(dPhi/dxi)*(dx/deta) + (dPhi/deta)*(dx/dxi)]
 
    printf("intGradPhiGradPhi: TEST\n");   
-
+assert(false && "intGradPhiGradPhi:Do ICS==2");
    assert(isQuad() && i1 >= 0 && i2 >= 0 && i1 < 4 && i2 < 4 && "intGradPhiGradPhi: not quad");
 
    const double x0 = nodes[0]->p.x;
@@ -3130,53 +3332,53 @@ __inline__ __device__ bool Side::btrack(
    // Find the element that is in the direction opposite to the velocity
    Element* curElem = findElementTowards(toVector2(u_int));
    assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
-if (idx == 15876) printf("curElem->idx = %d\n", curElem->idx);
-   // If debugging backtracking, add the starting point to the debug plot and the elements for
-   // idx == 15876
-   if (idx == 15876) {
-      printf("PPP u_int = (%f, %f, %f)\n", u_int.x, u_int.y, u_int.z);
-      const Point3 orig = toPoint3(center, centerZ());
-      auto vertexInOriginalFrame = [this, orig, jlev](const Node *node) -> Point3 {
-         if constexpr(ics == 1) {
-            return toPoint3(node->p, 0.0);
-         } else {
-            const Point3 p_glob = toPoint3(node->p, node->gz);
-            const Vector3 loc = frame.G2L(p_glob - orig);
-            return Point3(loc.x, loc.y, 0.0);
-         }
-      };
-      auto elementInOriginalFrame = [this, orig, jlev](const Element *elem) -> Point3 { 
-         if constexpr(ics == 1) {
-            return toPoint3(elem->center, elem->centerZ());
-         } else {
-            const Point3 center_glob = toPoint3(elem->center, elem->centerZ());
-            const Vector3 loc = frame.G2L(center_glob - orig);
-            return Point3(loc.x, loc.y, loc.z);
-         }
-      };
-      auto plotTriangle = [&vertexInOriginalFrame, &elementInOriginalFrame](const Element *elem, unsigned int color) {
-         if (elem == nullptr || !elem->isTri()) return;
-         const Point3 v0 = vertexInOriginalFrame(elem->nodes[0]);
-         const Point3 v1 = vertexInOriginalFrame(elem->nodes[1]);
-         const Point3 v2 = vertexInOriginalFrame(elem->nodes[2]);
-         const Point3 center = elementInOriginalFrame(elem);
-         addDebugPlot(v0, v1, color, 'o', elem->nodes[0]->idx);
-         addDebugPlot(v1, v2, color, 'o', elem->nodes[1]->idx);
-         addDebugPlot(v2, v0, color, 'o', elem->nodes[2]->idx);
-         addDebugPlot(center, center, color, 'o', elem->idx);
-      };
-      plotTriangle(curElem, 0xFF0000u);  // current element in red
-      plotTriangle(curElem->nghbElems[0], 0x00A000u);
-      plotTriangle(curElem->nghbElems[1], 0x00A000u);
-      plotTriangle(curElem->nghbElems[2], 0x00A000u);
 
-      // Add the initial point (0,0) to the debug plot
-      addDebugPlot(Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0), 0x0000FFu, '+');
-   }
+   // // If debugging backtracking, add the starting point to the debug plot and the elements for
+   // // idx == 15876
+   // if (idx == 15876) {
+   //    printf("PPP u_int = (%f, %f, %f)\n", u_int.x, u_int.y, u_int.z);
+   //    const Point3 orig = toPoint3(center, centerZ());
+   //    auto vertexInOriginalFrame = [this, orig, jlev](const Node *node) -> Point3 {
+   //       if constexpr(ics == 1) {
+   //          return toPoint3(node->p, 0.0);
+   //       } else {
+   //          const Point3 p_glob = toPoint3(node->p, node->gz);
+   //          const Vector3 loc = frame.G2L(p_glob - orig);
+   //          return Point3(loc.x, loc.y, 0.0);
+   //       }
+   //    };
+   //    auto elementInOriginalFrame = [this, orig, jlev](const Element *elem) -> Point3 { 
+   //       if constexpr(ics == 1) {
+   //          return toPoint3(elem->center, elem->centerZ());
+   //       } else {
+   //          const Point3 center_glob = toPoint3(elem->center, elem->centerZ());
+   //          const Vector3 loc = frame.G2L(center_glob - orig);
+   //          return Point3(loc.x, loc.y, loc.z);
+   //       }
+   //    };
+   //    auto plotTriangle = [&vertexInOriginalFrame, &elementInOriginalFrame](const Element *elem, unsigned int color) {
+   //       if (elem == nullptr || !elem->isTri()) return;
+   //       const Point3 v0 = vertexInOriginalFrame(elem->nodes[0]);
+   //       const Point3 v1 = vertexInOriginalFrame(elem->nodes[1]);
+   //       const Point3 v2 = vertexInOriginalFrame(elem->nodes[2]);
+   //       const Point3 center = elementInOriginalFrame(elem);
+   //       addDebugPlot(v0, v1, color, 'o', elem->nodes[0]->idx);
+   //       addDebugPlot(v1, v2, color, 'o', elem->nodes[1]->idx);
+   //       addDebugPlot(v2, v0, color, 'o', elem->nodes[2]->idx);
+   //       addDebugPlot(center, center, color, 'o', elem->idx);
+   //    };
+   //    plotTriangle(curElem, 0xFF0000u);  // current element in red
+   //    plotTriangle(curElem->nghbElems[0], 0x00A000u);
+   //    plotTriangle(curElem->nghbElems[1], 0x00A000u);
+   //    plotTriangle(curElem->nghbElems[2], 0x00A000u);
+
+   //    // Add the initial point (0,0) to the debug plot
+   //    addDebugPlot(Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0), 0x0000FFu, '+');
+   // }
 
    // Nudges it towards the barycenter
    curElem->nudgeToBarycenter(toPoint2(x0), this); // XXXX Necessary?
-if (idx == 15876) addDebugPlot(Point3(0.0, 0.0, 0.0), x0, 0xFF00FFu, 'o');
+// if (idx == 15876) addDebugPlot(Point3(0.0, 0.0, 0.0), x0, 0xFF00FFu, 'o');
 
 
    const int MAX_ITERATIONS = 100; 
@@ -3198,9 +3400,9 @@ if (idx == 15876) addDebugPlot(Point3(0.0, 0.0, 0.0), x0, 0xFF00FFu, 'o');
 // }
         
       xt = x0 - dtb*u_int;
-// printf("curElem->idx = %d, x0 = (%f, %f, %f), xt = (%f, %f, %f)\n", curElem->idx, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
+
       bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, time_rm, this);
-if (idx == 15876) addDebugPlot(x0, xt, 0xFF00FFu, '+');
+// if (idx == 15876) addDebugPlot(x0, xt, 0xFF00FFu, '+');
 if (!found) {if (idx == 15876) printf("1111\n"); return true;}
       assert(found && "Backtracking failed in btrack");
 
@@ -4103,38 +4305,38 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          // XXX IMPLEMENT THIS
          assert(false && "Quad not implemented in setupCoefficientMatrix");
 
-         // To clarify the notation in this section: 
-         //   i stands for the node under consideration (node1)
-         //   j (node2), k (node3), l (node4) are the other nodes of the quad.
-         const int id2 = elem->nxq(1 + id1);
-         const int id3 = elem->nxq(2 + id1);
-         const int id4 = elem->nxq(3 + id1);
-         Node *node2 = elem->nodes[id2];
-         Node *node3 = elem->nodes[id3];
-         Node *node4 = elem->nodes[id4];         
+         // // To clarify the notation in this section: 
+         // //   i stands for the node under consideration (node1)
+         // //   j (node2), k (node3), l (node4) are the other nodes of the quad.
+         // const int id2 = elem->nxq(1 + id1);
+         // const int id3 = elem->nxq(2 + id1);
+         // const int id4 = elem->nxq(3 + id1);
+         // Node *node2 = elem->nodes[id2];
+         // Node *node3 = elem->nodes[id3];
+         // Node *node4 = elem->nodes[id4];         
 
-         // integrals of phi_i*phi_j, phi_i*phi_k, phi_i*phi_l
-         const double ipp_ii = elem->intPhiPhi(id1, id1);
-         const double ipp_ij = elem->intPhiPhi(id1, id2);
-         const double ipp_ik = elem->intPhiPhi(id1, id3);
-         const double ipp_il = elem->intPhiPhi(id1, id4);
+         // // integrals of phi_i*phi_j, phi_i*phi_k, phi_i*phi_l
+         // const double ipp_ii = elem->intPhiPhi(id1, id1);
+         // const double ipp_ij = elem->intPhiPhi(id1, id2);
+         // const double ipp_ik = elem->intPhiPhi(id1, id3);
+         // const double ipp_il = elem->intPhiPhi(id1, id4);
 
-         // integrals of (grad phi_i) * (grad phi_j), (grad phi_i) * (grad phi_k), (grad phi_i) * (grad phi_l)
-         const double igpgp_ii = elem->intGradPhiGradPhi(id1, id1);
-         const double igpgp_ij = elem->intGradPhiGradPhi(id1, id2);
-         const double igpgp_ik = elem->intGradPhiGradPhi(id1, id3);
-         const double igpgp_il = elem->intGradPhiGradPhi(id1, id4);
+         // // integrals of (grad phi_i) * (grad phi_j), (grad phi_i) * (grad phi_k), (grad phi_i) * (grad phi_l)
+         // const double igpgp_ii = elem->intGradPhiGradPhi(id1, id1);
+         // const double igpgp_ij = elem->intGradPhiGradPhi(id1, id2);
+         // const double igpgp_ik = elem->intGradPhiGradPhi(id1, id3);
+         // const double igpgp_il = elem->intGradPhiGradPhi(id1, id4);
 
-         // Computes the different components of integral I_1 of each node with respect to node i.
-         const double I1_ii = ipp_ii + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ii;
-         const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
-         const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
-         const double I1_il = ipp_il + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_il;
+         // // Computes the different components of integral I_1 of each node with respect to node i.
+         // const double I1_ii = ipp_ii + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ii;
+         // const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
+         // const double I1_ik = ipp_ik + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ik;
+         // const double I1_il = ipp_il + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_il;
 
-         node1->addToSparseMatrix(node1, I1_ii);
-         node1->addToSparseMatrix(node2, I1_ij); 
-         node1->addToSparseMatrix(node3, I1_ik);
-         node1->addToSparseMatrix(node4, I1_il);
+         // node1->addToSparseMatrix(node1, I1_ii);
+         // node1->addToSparseMatrix(node2, I1_ij); 
+         // node1->addToSparseMatrix(node3, I1_ik);
+         // node1->addToSparseMatrix(node4, I1_il);
   
       } 
 
@@ -4189,8 +4391,10 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
             Node *node = elem->nodes[l];
 
             double fac = (node == node1) ? 2.0 : 1.0;
-            if constexpr(imm==2) node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
-            else                 node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + node->bdef2 - node->bdef1);
+   
+            if      constexpr(imm == 2) node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + dt*vnorm);
+            else if constexpr(imm == 1) node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2 + (node->bdef2 - node->bdef1)); 
+            else                        node1->qel += (1.0/12.0)*elem->area*fac*(node->eta2); 
            
          }
 
@@ -6740,13 +6944,18 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
 
       assert(kb >= 0 && "computeVerticalVelocity: wrong kb");
 
-      // Compute the average (over the element) of the bottom deformation at the previous and current timesteps
-      const double av_bdef1 = elem->mean(&Node::bdef1);
-      const double av_bdef2 = elem->mean(&Node::bdef2);
+      // Compute the bottom velocity
+      if constexpr(imm != 0) {
+         assert(false && "computeVerticalVelocity: not implemented yet for imm != 0");
+      }
 
-      Vector3 elem_n1 = elem->n(kb); // normal vector to the bottom face of the "volumetric" element (3D)
 
-      double area3D;
+      double bottomArea3D;
+      Vector3 elem_bottom_n = elem->n(kb, bottomArea3D); // normal vector to the bottom face of the "volumetric" element (3D)
+
+      assert(elem_bottom_n.z > 0.0 && "computeVerticalVelocity: elem_bottom_n.z <= 0");
+
+      double topArea3D;
 
       // Bottom face flux
       double bottomFlux = 0.0;
@@ -6758,51 +6967,75 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
          assert(false && "computeVerticalVelocity: not implemented for imm==2");
          // updateBDEF(ubed);
      
-         // const double bflux0 = dot(ubed, elem_n1);
+         // const double bflux0 = dot(ubed, elem_bottom_n);
 
          // elem->w[kb] += ubed.z;
       }
       else {
-         u2meanBottom = elem->mean(kb, &Side::u2);  // The mean computation includes the projection to the element frame if ics=2
-  
-         // Error: /=0 for 2D (but OK b/cos fluxes are 0 below for transport)
-         elem->w[kb] = (av_bdef2 - av_bdef1)/dt - dot(gradh, u2meanBottom); // XXXX Is the dot prod always 0?
 
-         bottomFlux = - dot(gradh, u2meanBottom);
+
+         u2meanBottom = elem->mean(kb, &Side::u2Bottom);  // The mean computation includes the projection to the element frame if ics=2
+  
+         // Computes the vertical velocity such that a horizontal velocity of u2meanBottom has the same slope as the bed
+         // in the direction of motion.
+         const double bottomW = - dot(gradh, u2meanBottom);  
+         // Error: /=0 for 2D (but OK b/cos fluxes are 0 below for transport)  XXXXX
+
+         // VElocity associated to the bed deformation
+         double bedVelocity = 0.0;
+         if constexpr(imm == 1) assert (false && "computeVerticalVelocity: not implemented for imm==1"); //bedVelocity = (av_bdef2 - av_bdef1)/dt;
+
+         elem->w[kb] = bedVelocity + bottomW; 
+
+         bottomFlux = 0.0;  // No flux from the bed face. XXXX
+         
       } // if imm
 
       // Compute w for kb+1 to nvrt-1
       for (int l = kb; l < nvrt - 1; l++) {
 
          // normal vector to the top face of the "volumetric" element (3D)
-         Vector3 elem_n2 = elem->n(l + 1, area3D);  // Get the normal vector and the area of the top face (as a 3D surface)
+         Vector3 elem_top_n = -elem->n(l + 1, topArea3D);  // Get the normal vector and the area of the top face (as a 3D surface)
+
+         assert(topArea3D > 0.0 && "computeVerticalVelocity: topArea3D <= 0");
+         assert(elem_top_n.z < 0.0 && "computeVerticalVelocity: elem_top_n.z >= 0");
 
          // Compute the total flux at the sides
          double sideFlux = 0.0;
 
          for (int j = 0; j < elem->i34; j++) {
             const Side *side = elem->sides[j];
+            const int kbs = side->kb;
+            const Vector2 u2_top = side->u2[max(l + 1, kbs)];
+            const Vector2 u2_bot = side->u2[max(l,     kbs)];
+            Vector2 u2c = 0.5*(u2_top + u2_bot); // velocity at the center of the side
 
-            const double sideArea = side->area(l);
-            const Vector2 u2c = 0.5*(side->u2[l] + side->u2[l + 1]); // velocity at the center of the side
+            // The area is "clamped" meaning that it takes kb into account.
+            const double sideArea = side->areaClamped(l);
+
             const double sign = elem->ssign[j]; 
 
-            sideFlux += sign*dot(u2c, side->n)*sideArea;
+            // sign is positive if the side is oriented in the direction of the normal vector to the element, negative otherwise
+            sideFlux -= sign*dot(u2c, side->n)*sideArea;
          }
          
          // Compute the horizontal velocity at the center of the top face as an average of the 
-         //velocities at the centers of the sides
-         const Vector2 u2meanTop = elem->mean(l + 1, &Side::u2);
+         // velocities at the centers of the sides (takes into account the projection to the element frame if ics=2)
+         const Vector2 u2meanTop = elem->mean(l + 1, &Side::u2); 
 
-         // The flx at the top ace can be computed from the other flows.
+         // The flux at the top ace can be computed from the other flows.
+         // All fluxes are in directions into the prism.
          const double topFlux = - sideFlux - bottomFlux;
-         const double topHorizontalFlux = dot(u2meanTop, toVector2(elem_n2))*area3D; // Part of the flux related to the horizontal velocity
 
-         elem->w[l + 1] = (-sideFlux - topHorizontalFlux - bottomFlux)/(elem_n2.z*area3D);
+         // Flux at the top face due to the horizontal velocities only
+         const double topHorizontalFlux = dot(u2meanTop, toVector2(elem_top_n))*topArea3D; // Part of the flux related to the horizontal velocity
 
-         elem_n1 = elem_n2;
+         // From the flux balance, (topVerticalFlux + topHorizontalFlux) + bottomFlux = 0, so:
+         const double topVerticalFlux = -sideFlux - topHorizontalFlux - bottomFlux;  
 
-         bottomFlux = - topFlux;
+         elem->w[l + 1] = topVerticalFlux/(elem_top_n.z*topArea3D);
+
+         bottomFlux = -topFlux;
       }
    }  
 

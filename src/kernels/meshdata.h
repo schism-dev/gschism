@@ -59,6 +59,40 @@ __device__ double *pAp;
 
 // Simple math functions ---------------------------------------------------------------------------
 
+__device__ __forceinline__ void solveQuadratic(double A, double B, double C, double &x1, double &x2) {
+// Solves the quadratic equation A*x^2 + B*x + C = 0 and returns the two solutions in x1 and x2.
+// Outputs:
+//        x1: first solution
+//        x2: second solution
+
+       // Use float-specific absolute value for speed on GPU
+    const double absA = fabs(A);
+    const double absB = fabs(B);
+
+    // 1. Near-linear case: a is effectively 0.
+    // We use a small epsilon to prevent division by zero and handle degenerate quads.
+    // This branch is almost never taken, so it won't hurt performance.
+    if (absA < 1e-14 * (absB + 1e-30)) {
+        const double x = -C / B;
+        x1 = x;
+        x2 = x;
+        return;  // Degenerate case: A = 0.
+    }
+
+   const double delta = max(0.0, B*B - 4.0*A*C);
+
+   assert(delta >= 0.0 && "solveQuadratic: negative discriminant");
+   const double s = sqrt(delta);
+
+   // Numerically stable quadratic roots:
+   // q = -0.5*(B + sign(B)*sqrt(delta))
+   const double q = -0.5 * (B + copysign(s, B));
+
+   x1 = q/A;
+   x2 = (fabs(q) > 1e-30) ? (C/q) : x1;   // Moving predicate.
+
+}
+
 template<int grade>
 __device__ __forceinline__ double pow(double x);
 
@@ -113,6 +147,12 @@ __device__ __forceinline__ double2 operator-(const double2& a, const double2& b)
     return make_double2(a.x - b.x, a.y - b.y);
 }
 
+
+__device__ __forceinline__ double2 operator-(const double2& a) {
+    return make_double2(-a.x, -a.y);
+}
+
+
 __device__ __forceinline__ double2 operator-=(double2& a, const double2& b) {
     a.x -= b.x;
     a.y -= b.y;
@@ -140,6 +180,7 @@ __device__ __forceinline__ double length(const double2& v) {
 }
 
 __device__ __forceinline__ double2 normalize(const double2& v) {
+    assert(length(v) > 0.0 && "normalize: length = 0");
     return v / length(v);
 }
 
@@ -168,6 +209,10 @@ __device__ __forceinline__ double3 operator+=(double3& a, const double3& b) {
 
 __device__ __forceinline__ double3 operator-(const double3& a, const double3& b) {
     return make_double3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+__device__ __forceinline__ double3 operator-(const double3& a) {
+    return make_double3(-a.x, -a.y, -a.z);
 }
 
 __device__ __forceinline__ double3 operator*(const double3& v, double s) {
@@ -625,6 +670,8 @@ struct Element {
 
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
+   __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const;
+
    __inline__ __device__ double computeSignedArea(void) const;
 
    __inline__ __device__ void nudgeToBarycenter(Point2 &p, const Side *origSide = nullptr) const;
@@ -635,9 +682,9 @@ struct Element {
    
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
-   __device__ double intPhiPhi(int i1, int i2) const;
+   __device__ double intPhiPhiQuad(int i1, int i2) const;
 
-   __device__ double intGradPhiGradPhi(int i1, int i2) const;
+   __device__ double intGradPhiGradPhiQuad(int i1, int i2) const;
 
    __device__ Vector2 grad2(double *a) const
    {
@@ -749,10 +796,15 @@ struct Element {
    __device__ __forceinline__ T mean(T Side::* field) const;
 
    template<typename T>
+   __device__ __forceinline__ T mean(int level,  T (Side::*func)(int) const) const;
+
+   template<typename T>
    __device__ __forceinline__ T mean(int level, T (Node::* field)[nvrt]) const;
 
    template<typename T>
    __device__ __forceinline__ T mean(int level, T (Side::* field)[nvrt]) const;
+
+
 
    // __device__ double mean(double (Node::*func)(int) const) const {
    //    double values[4];
@@ -763,13 +815,13 @@ struct Element {
 
    __device__ bool globalToLocal(double xt, double yt, double &xlocal, double &ylocal) const {
       // Convert global coordinates to local coordinates
-      printf("NOT IMPLEMENTED: globalToLocal\n");
+      printf("NOT IMPLEMENTED: globalToLocal\n");   //XXXXXX
       return true;
    }
 
    __inline__ __device__ bool localToGlobal(double xlocal, double ylocal, double &xt, double &yt) const {
       // Convert local coordinates to global coordinates
-      printf("NOT IMPLEMENTED: localToGlobal\n");
+      printf("NOT IMPLEMENTED: localToGlobal\n");   //XXXXXX
       return true;
    }
 
@@ -924,10 +976,11 @@ struct Side {
    }
    #endif
 
-   __inline__ __device__ double centerZ(void)   const;
-   __inline__ __device__ Point3 center3D(int k) const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
-   __inline__ __device__ double Dz(int k)       const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
-   __inline__ __device__ double area(int k)     const { assert(k < nvrt - 1); return len*Dz(k + 1); }
+   __inline__ __device__ double centerZ(void)      const;
+   __inline__ __device__ Point3 center3D(int k)    const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
+   __inline__ __device__ double Dz(int k)          const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
+   __inline__ __device__ double area(int k)        const { assert(k < nvrt - 1); return len*Dz(k + 1); }
+   __inline__ __device__ double areaClamped(int k) const { assert(k < nvrt - 1); return len*(zc[max(k + 1, kb)] - zc[max(k, kb)]); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
@@ -958,6 +1011,7 @@ struct Side {
    __inline__ __device__ double eta2(void) const;
    __inline__ __device__ double eta1(void) const;
    __inline__ __device__ double w2(int k) const;
+   __inline__ __device__ Vector2 u2Bottom(int dummy = 0) const { return u2[kb]; }  // XXXX dummy argument to satisfy the template in mean()
    __inline__ __device__ double depth(void) const;
    __inline__ __device__ double htot2(void) const { return eta2() + depth(); }
    __inline__ __device__ double htot1(void) const { return zc[nvrt - 1] - zc[kb]; }
@@ -1177,6 +1231,7 @@ struct Node {
    };
    Vector2 tau_bot; // Bottom stress vector
 
+   // XXXX REMOVE FOR IMM>0???
    double bdef1; // Bottom deformation at previous timestep
    double bdef2; // Bottom deformation at current timestep
 
