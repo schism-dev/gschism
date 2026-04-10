@@ -90,6 +90,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                 tide.tnf[i] = tnf
                 tide.tear[i] = tear * cp.pi / 180.0
         
+        
         # Read boundary forcing frequencies
         line = f.readline()
         tide.nbfr = read_values(line, [int])[0]

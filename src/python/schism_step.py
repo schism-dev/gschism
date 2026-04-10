@@ -111,6 +111,10 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # # Calculation of cross-section areas and length for flow b.c.
     # computeFlowBcAreas()                   # Lines 1611-1758
 
+    # Computes the cross-section areas and lengths for flow boundary conditions at each segment.
+    cufunc.resetBoundaryAreas()
+    cufunc.computeBoundaryAreas()
+
 
     # XXX I think I will combine all BCs into one function
     # Compute new vel. for flow b.c. (uth,vth)

@@ -500,6 +500,7 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
       const Vector3 n20 = toVector3(h2 - h0, nodes[2]->z[k] - nodes[0]->z[k]);
       const Vector3 n31 = toVector3(h3 - h1, nodes[3]->z[k] - nodes[1]->z[k]);
 
+      // Computes the cross product of the two diagonals (h2 - h0) and (h3 - h1). 
       nx = n20.y*n31.z - n20.z*n31.y;
       ny = n20.z*n31.x - n20.x*n31.z;
       nz = n20.x*n31.y - n20.y*n31.x;
@@ -998,7 +999,7 @@ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, 
    //    solveQuadratic(A, B, C, eta1, eta2);
 
    //    // Pick root with smaller |eta| (domain centered at 0).
-   //    // Ternary → predicated move, no branch divergence.
+   //    // Ternary-> predicated move, no branch divergence.
    //    eta = (fabs(eta1) < fabs(eta2)) ? eta1 : eta2;
 
    //    // Back-substitute: divides by |Ls| >= |Lt|, best conditioned.
@@ -1019,7 +1020,7 @@ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, 
 
    //    eta = (Lp - Ls * xi) / Lt;
    // }
-   const bool solve_s = fabs(Lt) >= fabs(Ls);   // true → quadratic gives xi
+   const bool solve_s = fabs(Lt) >= fabs(Ls);   // true-> quadratic gives xi
    const double La = solve_s ? Lt : Ls;          // larger  |L|, for back-sub
    const double Lb = solve_s ? Ls : Lt;          // smaller |L|, in quadratic
    const double Qa = solve_s ? Qt : Qs;          // Q-coeff matching La
@@ -1490,7 +1491,6 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
       // For ics=2, projects the element gradient from its frame to the side frame
       if constexpr(ics == 2) elemGrad = elems[0]->frame.projHorVec(elemGrad, frame);
 
-
       grad += elemGrad;
 
       count++;
@@ -1544,7 +1544,6 @@ __inline__ __device__ Vector2 Side::tau(void)    const {
       const Vector2 stau2 = n2->frame.projHorVec(n2->tau, frame);
 
       return 0.5*(stau1 + stau2);
-printf("tau = (%f, %f)\n", stau1.x, stau1.y);
    }
 }
 
@@ -1781,6 +1780,35 @@ if (!found) {if (idx == 15876) printf("1111\n"); return true;}
 
 
 __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
+
+__device__ double Node::computeETP(int idxComp, double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) const {
+
+   assert(lat >= -pi/2.0 && lat <= pi/2.0 && "computeETP: lat out of range");
+   assert(lon >= -pi && lon <= pi         && "computeETP: lon out of range");
+
+
+
+   const int ncyc = int(tfreq[idxComp]*time/(2.0*pi));
+   const double arg = tfreq[idxComp]*time - ncyc*(2.0*pi) + jspc[idxComp]*lon + tear[idxComp];
+
+   double fun_lat = 0.0;
+   switch (jspc[idxComp]) {
+      case 0:
+         fun_lat = 3.0*pow<2>(sin(lat)) - 1.0;
+         break;
+      case 1:
+         fun_lat = sin(2.0*lat);
+         break;
+      case 2:
+         fun_lat = pow<2>(cos(lat));
+         break;
+      default:
+         assert(false && "computeETP: invalid jspc");
+   }
+   
+   return 0.69*ramp*tamp[idxComp]*tnf[idxComp]*fun_lat*cos(arg);
+
+}
 
 
 __device__ void Node::updateKb(void) {
@@ -2070,7 +2098,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    } else {
       const double lon = deg2rad*node_coords[i * 3];
       const double lat = deg2rad*node_coords[i * 3 + 1];
-// printf("lat = %f, lon = %f, x = %f, y = %f\n", lat, lon, node.lat, node.lon); 
+
       Point3 p = computeXYZfromLatLon(lat, lon);
       node.p = toVector2(p);
       node.gz = p.z;
@@ -2121,8 +2149,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
          node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
          
-         node.nodeBnd->segment->ifltype = 3 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
-         node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
+         node.nodeBnd->segment->ifltype = 0 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
+         node.nodeBnd->segment->iettype = 0; // XXXXXXXXX
 
          // Initialize the length and area of the segment to nan to indicate that they are not yet computed
          node.nodeBnd->segment->clen  = nan("1");
@@ -2141,15 +2169,16 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    }
    
    // XXXX GAUSSIAN HILL VELOCITIES
-#ifdef GAUSSIAN_HILL_VELOCITIES
-      if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
-      constexpr double rot_per = 3000.0;
-      constexpr double rot_f = 0.0*2.0*pi/rot_per;
-      for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f}; node.w2[k] = 0.0; }
-   // XXXXX
-#endif
+   #ifdef GAUSSIAN_HILL_VELOCITIES
+         if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+         constexpr double rot_per = 3000.0;
+         constexpr double rot_f = 0.0*2.0*pi/rot_per;
+         for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f}; node.w2[k] = 0.0; }
+      // XXXXX
+   #endif
 
 }
+
 
 __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
                                     double *node_coords, double *node_coords_ll, bool use_ll,
@@ -2192,10 +2221,6 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    // Counts the number of sides connected to each node
    side.n1->numSides++;
    side.n2->numSides++;
-
-   // Normal, unitary vector to the side
-   side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
-   side.n = normalize(side.n);
 
    // Side boundary type
    NodeBoundary *n1bnd = side.n1->nodeBnd;
@@ -2268,17 +2293,37 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    side.setFrame();
    #endif
 
+   // Normal, unitary vector to the side
+   if constexpr(ics == 1) {
+      side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
+      side.n = normalize(side.n);
+   }
+   else {
+      // Unit side vector in 3D cartesian coordinates
+      Vector3 nSide = { side.n1->p.x - side.n2->p.x, side.n1->p.y - side.n2->p.y, side.n1->gz - side.n2->gz };
+      nSide = normalize(nSide);
+
+      // It cross product with the unit local z-axis vector (nUp) is the
+      // normal vector we are looking for.
+      Vector3 n3D = normalize(cross(nSide, side.frame.nUp()));  
+
+      // The 2D components can be obtained by projecting the 3D normal vector to the plane defined by the unit vectors nZonal and nMeridional
+      const Vector2 n2D = {dot(n3D, side.frame.nZonal()), dot(n3D, side.frame.nMeridional())};
+      side.n = normalize(n2D);      
+
+   }
+
    assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
    side.shapiro = shapiro0;
 
-#ifdef GAUSSIAN_HILL_VELOCITIES
-// XXXX
-if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
-constexpr double rot_per=3000.0;
-constexpr double rot_f=0.0*2.0*pi/rot_per;/// XXXX
-for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
-// XXXXX      
-#endif
+   #ifdef GAUSSIAN_HILL_VELOCITIES
+   // XXXX
+   if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+   constexpr double rot_per=3000.0;
+   constexpr double rot_f=0.0*2.0*pi/rot_per;/// XXXX
+   for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
+   // XXXXX      
+   #endif
    // Compute the z level at the center of the side
    for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);  // XXXX substitute by computation?
    
@@ -2419,10 +2464,12 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
 
 }
 
+
 __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
                                             double *emo, double *efa, 
                                             double *umo, double *ufa, 
-                                            double *vmo, double *vfa) {
+                                            double *vmo, double *vfa,
+                                            int *ifltype, int *iettype) {
 
    NODE_BND(nodeBnd);
    const int idx = idx_node_bnd;    
@@ -2447,6 +2494,9 @@ found: // Jumped here when the node was found
 
    nodeBnd->isEssentialBC = true;
    nodeBnd->elbc = 0.0;
+
+   nodeBnd->segment->ifltype = ifltype[iseg];
+   nodeBnd->segment->iettype = iettype[iseg];
 
    for (int jfr = 0; jfr < nbfr; jfr++) {
 
@@ -2632,6 +2682,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       if constexpr(imm == 2)  { // Pre-compute vnorm on the element
          Vector3 ubed = {0.0, 0.0, 0.0};
          // update_bdef(time, elem->center, elem->depth, ubed); XXX
+         assert(false && "computeVerticalVelocity: not implemented for imm==2");
 
          Vector3 gradP = {0.0, 0.0, 1.0};
          for (int m=0; m < elem->i34; m++) {
@@ -2747,6 +2798,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
                   ri3 = 0.0;
 
                   assert(polyDischarge != nullptr && "polyDischarge is not initialized. This part might not even be implemented.");
+                  assert(sideSegment->clen != 0.0 && "clen is 0.0, this means that the segment is completely wetted");
 
                   const double etam = 0.5*(node1->eta2 + node2->eta2);
 
@@ -3290,18 +3342,16 @@ extern "C" {
 
    __global__ void computeTidalPotential(double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
 
-      NODE_BND(nodeBnd);
-
-      Node *node = nodeBnd->node;
+      NODE(node);
 
       node->ETP = 0.0;
 
+      // For all tidal potential components
       for (int j=0; j<ntip; j++) {
 
-         const double ncyc = int(tfreq[j]*time/(2.0*pi));
-         const double arg = tfreq[j]*time - ncyc*2.0*pi + jspc[j]*node->lon + tear[j];
-   
-         node->ETP += 0.69*ramp*tamp[j]*tnf[j]*node->fun_lat[jspc[j]]*cos(arg);
+         const double nodeETP = node->computeETP(j, time, tfreq, tamp, tnf, tear, jspc);
+
+         node->ETP += nodeETP;
 
          if constexpr(iloadtide==1) { // loading tide
             assert(false && "Loading tide not implemented");
@@ -3309,7 +3359,8 @@ extern "C" {
          }
          
       }
-      
+
+     
    }
 
    __global__ void getBoundaryConditions(double time) {
@@ -3458,6 +3509,43 @@ extern "C" {
    //        endif
    //      enddo !k
    //    endif !nfltype2
+   }
+
+   __global__ void resetBoundaryAreas(void) {
+      // Reset boundary areas and lengths for each segment.
+
+      // This should be done per segment, not per boundary side (each segment has multiple sides),
+      // However we don't have a way to access the segments by themselves and this is simple and fast enough.
+      SIDE_BND(sideBnd);
+
+      BoundarySegment *segment = sideBnd->segment;
+
+      segment->carea = 0.0;
+      segment->clen = 0.0;
+ 
+   }
+
+   __global__ void computeBoundaryAreas(void) {
+   // Calculation of cross-section areas and lengths for flow b.c.
+
+      SIDE_BND(sideBnd);
+
+      const Side *side = sideBnd->side;
+      BoundarySegment *segment = sideBnd->segment;
+
+      if (segment->ifltype != 0) {
+
+         const Node *n1 = side->n1;
+         const Node *n2 = side->n2;
+
+         const double htot = side->htot2();
+
+         if (!side->isDry) {
+            atomicAdd(&segment->carea, htot*side->len);
+            atomicAdd(&segment->clen, side->len);
+         }
+      }
+
    }
 
 
@@ -4012,6 +4100,7 @@ extern "C" {
 
          } else { 
             assert(false && "getRhoDiffAndVec: lat/lon not implemented");
+            // Remember that elem->center is in global coordinates
             // IMPLEMENT THIS XXXXXX
             //                   call project_pt('g2l',xctr(ie),yctr(ie),zctr(ie),(/xctr(i),yctr(i),zctr(i)/), &
             //      &eframe(:,:,i),xctr2,yctr2,tmp)
@@ -4483,7 +4572,6 @@ extern "C" {
          const double coriolis = side->coriolis;
          const Vector2 *nuGradU = side->nuGradU;
 
-
          const Vector2 grad2D = grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0;
          for (int k = kb + 1; k < nvrt; k++) {
             const int kin = k - kb - 1;
@@ -4500,7 +4588,7 @@ extern "C" {
             if (k > kb + 1) dz += dz_0;
 
             // Elevation gradient, atmospheric pressure and tidal potential
-            rrhs[kin] = - 0.5*dz*dt*grad2D;
+            rrhs[kin] = - (0.5*dz)*dt*grad2D;
 
             // Coriolis, advection, wind stress, and horizontal viscosity
             if (k < nvrt - 1) {
@@ -4614,7 +4702,7 @@ extern "C" {
       if (!isLand && ifltype != 0) {
          const Vector2 *ubc = sideBnd->ubc;
   
-         for (int k = kb; k < nvrt; k++) { // YYYYYYYYY can be kb + 1
+         for (int k = kb; k < nvrt; k++) { // YYYYYYYYY can be kb + 1  XXXX
             
             assert(ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
                    && (ubc[k].x <= 98 && ubc[k].y <= 98)) && "Momentum BC: Side has no velocity boundary conditions");
@@ -4829,7 +4917,6 @@ extern "C" {
          if (elem->isQuad()) elem->z[k] += n4->z[max(k, kb4)];          
          elem->z[k] /= elem->i34;
 
-if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx1 = %d, idx2 = %d, idx3 = %d, z1[k] = %f, z2[k] = %f, z3[k] = %f, z1[k-1] = %f, z2[k-1] = %f, z3[k-1] = %f, k = %d, kb = %d, kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d, z[k] = %f, z[k-1] = %f\n", elem->isDry, n1->idx, n2->idx, n3->idx, n1->z[max(k, kb1)], n2->z[max(k, kb2)], n3->z[max(k, kb3)], n1->z[max(k-1, kb1)], n2->z[max(k-1, kb2)], n3->z[max(k-1, kb3)],  k, elem->kb, kb1, kb2, kb3, kb4, elem->z[k], elem->z[k-1]);
          assert(k == elem->kb || (elem->z[k] > elem->z[k-1]) && "ivcor = 1: z must increase monotonically");
       }
                   
@@ -5010,9 +5097,9 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
       for (int k = 0; k < nvrt; k++) {
          node->u2[k]   = {0.0, 0.0};
          node->w2[k]   = 0.0;
-         node->utmp[k] = {0.0, 0.0};
-         node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
+         node->utmp[k] = {0.0, 0.0};         
       }
+      node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
    }
  
 
@@ -5272,7 +5359,7 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
             const double sign = elem->ssign[j]; 
 
             // sign is positive if the side is oriented in the direction of the normal vector to the element, negative otherwise
-            sideFlux -= sign*dot(u2c, side->n)*sideArea;
+            sideFlux += sign*dot(u2c, side->n)*sideArea;
          }
          
          // Compute the horizontal velocity at the center of the top face as an average of the 
@@ -5417,15 +5504,15 @@ extern "C" {
          const double veg_h    = side->veg_h();
          const double veg_c    = veg_c2/(1.0 + veg_c2);  // veg_c2 = \alpha*|u|*dt
 
+         const Vector2 gradPhi = elem->gradPhi[j];
+
          // Node - const in elem
-         elem->gradEta += node->eta2*elem->gradPhi[j];  // gradPhi is always in the element frame
-         elem->gradPr  += node->pr  *elem->gradPhi[j];
+         elem->gradEta += node->eta2*gradPhi;  // gradPhi is always in the element frame
+         elem->gradPr  += node->pr  *gradPhi;
 
-         if (elem->depth >= tip_dp) {
-           elem->gradETP += node->ETP*elem->gradPhi[j];
-         }
+         if (elem->depth >= tip_dp) elem->gradETP += node->ETP*gradPhi;
 
-         
+        
          const double htot  = side->htot2();        // Total depth at the side
          const double zctr2 = side->zTopCanopy();  
 
@@ -5450,7 +5537,7 @@ extern "C" {
                // Submergent vegetation: G2 = Ustar - c*Ustar_alpha + ..., with c = \alpha*|u|*dt/(1+\alpha*|u|*dt)
                // In general, cff1*Ustar - cff3*Ustar_alpha
                if(veg_h < 0.99*htot) { // submergent vegetation
-                  cff1=1;
+                  cff1 = 1.0;
                   cff2 = 1.0 + veg_beta*veg_c;          // Term (1 + beta*c) in G2.
                   cff3 = veg_c;
 
@@ -5569,14 +5656,13 @@ extern "C" {
       } // for j (nodes and sides)
 
       elem->ghat1 = (1.0/i34)*elem->ghat1;
-         
+
+
       // Finish off terms in F, F^\alpha and f_b
       const double grav3 = elem->mean(&Node::grav2);
       const Vector2 fb = grav3*elem->gradETP - elem->gradPr/rho0; //const in each elem
-
-
       Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
-      for (int j=1; j<i34; j++) { 
+      for (int j=0; j<i34; j++) { 
          // For each side in the element...
          const Side *side = elem->sides[j];
          const double chi = side->chi;
@@ -5589,7 +5675,7 @@ extern "C" {
          tmp += dt*(av_cff1*F - av_cff2*chi*dt*fb - av_cff3*Fa);
       } // for j
 
-      //botf1 etc are already in elem frame
+      // tmp is already in elem frame
       elem->ghat1 += tmp/i34;
 
       // Baroclinic force
@@ -6131,8 +6217,9 @@ extern "C" __global__ void populateElements(int *i34, int *elnode, int *elside,
 extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
                                                 double *emo, double *efa, 
                                                 double *umo, double *ufa, 
-                                                double *vmo, double *vfa) {
-   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa);
+                                                double *vmo, double *vfa,
+                                                int *ifltype, int *iettype) {
+   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype);
 
 }
 
@@ -6492,6 +6579,10 @@ extern "C" __global__ void getElementVarAddr(int varCode, void **addr, int *offs
          *offset = (int)((char*)&elems[0].center.x - (char*)elems);
          *sizeType = sizeof(Vector2);
          break;
+      case (int)VarCode::gradETP:
+         *offset = (int)((char*)&elems[0].gradETP.x - (char*)elems);
+         *sizeType = sizeof(Vector2);
+         break;
       case (int)VarCode::area:
          *offset = (int)((char*)&elems[0].area - (char*)elems);
          *sizeType = sizeof(double);
@@ -6575,6 +6666,22 @@ extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset,
          break;          
       case (int)VarCode::U:
          *offset = (int)((char*)&sides[0].U.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::gradETP:
+         *offset = (int)((char*)&sides[0].gradETP.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::gradPr:
+         *offset = (int)((char*)&sides[0].gradPr.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::gradEta1:
+         *offset = (int)((char*)&sides[0].gradEta1.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::gradEta2:
+         *offset = (int)((char*)&sides[0].gradEta2.x - (char*)sides);
          *sizeType = sizeof(Vector2);
          break;
       // case (int)VarCode::ghat:

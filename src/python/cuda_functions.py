@@ -121,7 +121,8 @@ def initializeCudaFunctions(sizes):
     global populateMesh, populateNodes, populateSides, populateElements, populateBoundaryNodes
     global scaleGravity, computeTimeRamps, setWinds
     global computeBedDeformation, computeTidalPotential
-    global getBoundaryConditions, computeFlowBcVelocities, computeBottomDragVegetation, computeVegetationAndDragParameters
+    global getBoundaryConditions, computeFlowBcVelocities, resetBoundaryAreas, computeBoundaryAreas
+    global computeBottomDragVegetation, computeVegetationAndDragParameters
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
@@ -148,9 +149,11 @@ def initializeCudaFunctions(sizes):
         setWinds                            = mod.get_function('setWinds',                            sizes, kernel_type='nodes')
         computeTimeRamps                    = mod.get_function('computeTimeRamps',                    sizes, kernel_type='global')
         computeBedDeformation               = mod.get_function('computeBedDeformation',               sizes, kernel_type='global')
-        computeTidalPotential               = mod.get_function('computeTidalPotential',               sizes, kernel_type='nodeBnd')
+        computeTidalPotential               = mod.get_function('computeTidalPotential',               sizes, kernel_type='nodes')
         getBoundaryConditions               = mod.get_function('getBoundaryConditions',               sizes, kernel_type='nodeBnd')
         computeFlowBcVelocities             = mod.get_function('computeFlowBcVelocities',             sizes, kernel_type='sideBnd')
+        resetBoundaryAreas                  = mod.get_function('resetBoundaryAreas',                  sizes, kernel_type='sideBnd')
+        computeBoundaryAreas                = mod.get_function('computeBoundaryAreas',                sizes, kernel_type='sideBnd')
         computeBottomDragVegetation         = mod.get_function('computeBottomDragVegetation',         sizes, kernel_type='nodes')
         computeVegetationAndDragParameters  = mod.get_function('computeVegetationAndDragParameters',  sizes, kernel_type='sides')
         computeElevationBoundaryConditions  = mod.get_function('computeElevationBoundaryConditions',  sizes, kernel_type='sides')

@@ -231,8 +231,25 @@ __device__ __forceinline__ double dot(const double3& v, const double3& w) {
     return v.x*w.x + v.y*w.y + v.z*w.z;
 }
 
+__device__ __forceinline__ double3 cross(const double3& a, const double3& b) {
+    return make_double3(
+        a.y*b.z - a.z*b.y,
+        a.z*b.x - a.x*b.z,
+        a.x*b.y - a.y*b.x
+    );
+}
+
 __device__ __forceinline__ double norm2(const double3& v) {
     return v.x*v.x + v.y*v.y + v.z*v.z;
+}
+
+__device__ __forceinline__ double length(const double3& v) {
+    return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+}
+
+__device__ __forceinline__ double3 normalize(const double3& v) {
+    assert(length(v) > 0.0 && "normalize: length = 0");
+    return v / length(v);
 }
 
 __device__ __forceinline__ Vector2 toVector2(const double3& v) {
@@ -393,6 +410,7 @@ struct Frame {
 
       // The 3rd column (col2) is the cross product of the first two and is computed when needed.
 
+
    }
 
    __forceinline__ __device__ void print(void) const {
@@ -475,7 +493,19 @@ struct Frame {
       return vo;
    }
 
-
+   // Unit vectors that define the local frame
+   __forceinline__ __device__ Vector3 nUp(void) const {
+      // Column 2 = cross(column0, column1)
+      return { t10*t21, -t00*t21, t00*t11 - t10*t01 };
+   }
+   __forceinline__ __device__ Vector3 nZonal(void) const {
+      // Column 0
+      return { t00, t10, 0.0 };
+   }
+   __forceinline__ __device__ Vector3 nMeridional(void) const {
+      // Column 1
+      return { t01, t11, t21 };
+   }
 
 };
 
@@ -520,7 +550,7 @@ struct Element {
 
    bool isDry;                // True if the element is dry
 
-   Point2 center;            // Element center coordinates
+   Point2 center;            // Element center coordinates (global coordinates)
 
 
    double depth;              // Depth at element (min of all nodes)
@@ -868,7 +898,7 @@ struct BoundarySegment {
 
    BoundarySegment(void) {
       isLand = false;
-      clen = 0.0;
+      clen = 0.0; 
       carea = 0.0;
       ifltype = 0;
       iettype = 0;
@@ -1301,6 +1331,8 @@ struct Node {
 
    __device__ double sigmaTransitionDepth(void) const;
 
+   __device__ double computeETP(int idxTidalPotential, double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) const;
+
    __inline__ __device__ Point2 outputCoords(void) const {
       if constexpr(ics == 1)  return p;
       else                    return {rad2deg*lon, rad2deg*lat};
@@ -1530,7 +1562,8 @@ struct Mesh {
    __device__ void populateBoundaryNodes(int *nond, int *iond,
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
-                                          double *vmo, double *vfa);                    
+                                          double *vmo, double *vfa,
+                                          int *ifltype, int *iettype);                    
 
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *node_coords_ll, bool use_ll,

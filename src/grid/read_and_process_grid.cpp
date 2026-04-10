@@ -1183,7 +1183,7 @@ py::array_t<double> readHGridData(const std::string& filename, int nNodes, int n
  * 1. Localized sigma coordinates (ivcor = 1). In this case, the sigma coordinates are defined for each node
  * 2. SZ coordinates (ivcor = 2). In this case, the sigma coordinates are defined for each level
 */
-std::tuple<py::array_t<int32_t>,     // ivcor, nvrt
+std::tuple<py::array_t<int32_t>,     // ivcor, nvrt, nzlev, nsiglev
            py::array_t<double>,       // ztot (nvrt for ivcor=2, empty for ivcor=1)
            py::array_t<int32_t>,      // kb (nNodes for ivcor=1, empty for ivcor=2)
            py::array_t<double>,       // h_c, h_s, theta_b, theta_f (3 values for ivcor=2, empty for ivcor=1)
@@ -1375,7 +1375,7 @@ readVGrid(const std::string& filename, int nNodes) {
             dcs[k] = (1.0 - theta_b)*theta_f*cosh(theta_f*sigma[k])/sinh(theta_f) + 
                     theta_b*theta_f/2.0/tanh(theta_f*0.5)/cosh(pow(theta_f*(sigma[k] + 0.5), 2.0));
         }
-
+printf("XXXXXXXXXXXXXXXXXXXXx nz = %d, nsiglev = %d\n", kz, nsiglev);
         
         return std::make_tuple(
             toPyArray(std::vector<int>{ivcor, nvrt, kz, nsiglev}),

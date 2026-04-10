@@ -183,28 +183,32 @@ __device__ __forceinline__ void solveQuadratic(double A, double B, double C, dou
 //        x1: first solution
 //        x2: second solution
 
-   // Degenerate case: A = 0.
-   if (A == 0.0) {
-      x1 = -C / B;
-      x2 = x1;
-      return;
-   }
+       // Use float-specific absolute value for speed on GPU
+    const double absA = fabs(A);
+    const double absB = fabs(B);
 
-   const double delta = B*B - 4.0*A*C;
+    // 1. Near-linear case: a is effectively 0.
+    // We use a small epsilon to prevent division by zero and handle degenerate quads.
+    // This branch is almost never taken, so it won't hurt performance.
+    if (absA < 1e-14 * (absB + 1e-30)) {
+        const double x = -C / B;
+        x1 = x;
+        x2 = x;
+        return;  // Degenerate case: A = 0.
+    }
+
+   const double delta = max(0.0, B*B - 4.0*A*C);
+
    assert(delta >= 0.0 && "solveQuadratic: negative discriminant");
    const double s = sqrt(delta);
 
    // Numerically stable quadratic roots:
    // q = -0.5*(B + sign(B)*sqrt(delta))
    const double q = -0.5 * (B + copysign(s, B));
-   if (q == 0.0) {
-      // Double-root / near-degenerate fallback
-      x1 = -B / (2.0*A);
-      x2 = x1;
-   } else {
-      x1 = q / A;
-      x2 = C / q;
-   }
+
+   x1 = q/A;
+   x2 = (fabs(q) > 1e-30) ? (C/q) : x1;   // Moving predicate.
+
 }
 
 template<int grade>
@@ -345,8 +349,25 @@ __device__ __forceinline__ double dot(const double3& v, const double3& w) {
     return v.x*w.x + v.y*w.y + v.z*w.z;
 }
 
+__device__ __forceinline__ double3 cross(const double3& a, const double3& b) {
+    return make_double3(
+        a.y*b.z - a.z*b.y,
+        a.z*b.x - a.x*b.z,
+        a.x*b.y - a.y*b.x
+    );
+}
+
 __device__ __forceinline__ double norm2(const double3& v) {
     return v.x*v.x + v.y*v.y + v.z*v.z;
+}
+
+__device__ __forceinline__ double length(const double3& v) {
+    return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+}
+
+__device__ __forceinline__ double3 normalize(const double3& v) {
+    assert(length(v) > 0.0 && "normalize: length = 0");
+    return v / length(v);
 }
 
 __device__ __forceinline__ Vector2 toVector2(const double3& v) {
@@ -507,6 +528,7 @@ struct Frame {
 
       // The 3rd column (col2) is the cross product of the first two and is computed when needed.
 
+
    }
 
    __forceinline__ __device__ void print(void) const {
@@ -589,7 +611,19 @@ struct Frame {
       return vo;
    }
 
-
+   // Unit vectors that define the local frame
+   __forceinline__ __device__ Vector3 nUp(void) const {
+      // Column 2 = cross(column0, column1)
+      return { t10*t21, -t00*t21, t00*t11 - t10*t01 };
+   }
+   __forceinline__ __device__ Vector3 nZonal(void) const {
+      // Column 0
+      return { t00, t10, 0.0 };
+   }
+   __forceinline__ __device__ Vector3 nMeridional(void) const {
+      // Column 1
+      return { t01, t11, t21 };
+   }
 
 };
 
@@ -634,7 +668,7 @@ struct Element {
 
    bool isDry;                // True if the element is dry
 
-   Point2 center;            // Element center coordinates
+   Point2 center;            // Element center coordinates (global coordinates)
 
 
    double depth;              // Depth at element (min of all nodes)
@@ -982,7 +1016,7 @@ struct BoundarySegment {
 
    BoundarySegment(void) {
       isLand = false;
-      clen = 0.0;
+      clen = 0.0; 
       carea = 0.0;
       ifltype = 0;
       iettype = 0;
@@ -1415,6 +1449,8 @@ struct Node {
 
    __device__ double sigmaTransitionDepth(void) const;
 
+   __device__ double computeETP(int idxTidalPotential, double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) const;
+
    __inline__ __device__ Point2 outputCoords(void) const {
       if constexpr(ics == 1)  return p;
       else                    return {rad2deg*lon, rad2deg*lat};
@@ -1644,7 +1680,8 @@ struct Mesh {
    __device__ void populateBoundaryNodes(int *nond, int *iond,
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
-                                          double *vmo, double *vfa);                    
+                                          double *vmo, double *vfa,
+                                          int *ifltype, int *iettype);                    
 
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *node_coords_ll, bool use_ll,
@@ -2308,6 +2345,7 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
       const Vector3 n20 = toVector3(h2 - h0, nodes[2]->z[k] - nodes[0]->z[k]);
       const Vector3 n31 = toVector3(h3 - h1, nodes[3]->z[k] - nodes[1]->z[k]);
 
+      // Computes the cross product of the two diagonals (h2 - h0) and (h3 - h1). 
       nx = n20.y*n31.z - n20.z*n31.y;
       ny = n20.z*n31.x - n20.x*n31.z;
       nz = n20.x*n31.y - n20.y*n31.x;
@@ -2709,99 +2747,163 @@ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, 
    // Vector vb is the vector from actual p3 to the p3 that would complete a parallelogram
    // vb is zero for parallelogram elements.
    const Point2 c = 0.25*(p0 + p1 + p2 + p3); // Center of the element (in local frame coordinates if ics == 2)
-   const Vector2 vxi  = (p1 + p2) - (p0 + p3);
-   const Vector2 veta = (p2 + p3) - (p0 + p1);
-   const Vector2 vb   = (p0 + p2) - (p1 + p3);
 
-   // We need to solve the expression p = c + 0.25 * (xi*vxi + eta*veta + xi*eta*vb) for (xi,eta),
-   // For this we first rewrite it as:
-   //    4*dp = xi*vxi + eta*veta + xi*eta*vb,  where dp = p - c.
-   // Then we use the 2D "cross product" cross(a,b) = a.x*b.y - a.y*b.x, multiplying both sides by 
-   // vb to remove the xi*eta term (cross(vb, vb) == 0). This results in a scalar equation:
-   //    cross(vb, 4*dp) = xi*cross(vb, vxi) + eta*cross(vb, veta)
+   //  The bilinear mapping is:
+   //      P(s,t) = C + s*U + t*V + s*t*W
    //
-   // However, if vb is very small, the whole equation is numerically unstable. Instead of
-   // vb, we can take the cross product of both sides by the unit vector nb in the direction of vb to get a more stable equation:
-   //    cross(nb, 4*dp) = xi*cross(nb, vxi) + eta*cross(nb, veta)
+   //  where:
+   //    C = centroid (average of four vertices)
+   //    U = half-vector connecting midpoints of opposite sides (s-direction)
+   //    V = half-vector connecting midpoints of opposite sides (t-direction)
+   //    W = bilinear correction; measures deviation from parallelogram
+   //        +W at P0,P2 (where s*t=+1), -W at P1,P3 (where s*t=-1)
+   //        W = 0 for parallelogram elements.
    //
-   // To get a second equation, we compute the dot product of both sides by nb (any other vector would do, 
-   // this just makes the equations more symmetric).
-   //    dot(nb, 4*dp) = xi*dot(nb, vxi) + eta*dot(nb, veta) + xi*eta*dot(nb, vb)
+   //  Key idea: project H = P - C onto a direction nb parallel to W.
    //
-   // This results in two equations:
-   //    Cbp = Cbx*xi + Cbe*eta
-   //    Dbp = Dbx*xi + Dbe*eta + Dbb*xi*eta
+   //  cross(nb, W) = 0 because nb || W, so the cross product kills the
+   //  nonlinear s*t*W term completely, giving a PURE LINEAR equation:
    //
-   // With definitions: Cbp = cross(nb, 4*dp), Cbx = cross(nb, vxi), Cbe = cross(nb, veta), Dbp = dot(nb, 4*dp), Dbx = dot(nb, vxi), Dbe = dot(nb, veta), Dbb = dot(nb, vb)
+   //      cross(nb, H) = s * cross(nb, U) + t * cross(nb, V)      (L)
    //
-   // xi or eta can be solved from the first equation (depending on what coefficient is larger), and
-   // then substitute in the second equation to get the other coordinate. Let's assume that |Cbx| > |Cbe|:
-   //    xi = (Cbp - Cbe*eta) / Cbx
+   //  Geometrically, (L) projects everything onto the direction
+   //  perpendicular to W, where the mapping is purely affine.
    //
-   // Multiply by Cbx:
+   //  The dot product with nb retains the nonlinear term:
    //
-   //    Dbp*Cbx = Dbx*(Cbp - Cbe*eta) + Dbe*Cbx*eta + Dbb*(Cbp - Cbe*eta)*eta
+   //      dot(nb, H) = s*dot(nb,U) + t*dot(nb,V) + s*t*dot(nb,W)  (Q)
    //
-   // Expand and group by powers of eta:
-   //    (-Dbb*Cbe)*eta^2 + (-Dbx*Cbe + Dbe*Cbx + Dbb*Cbp)*eta + (Dbx*Cbp - Dbp*Cbx) = 0
+   //  Geometrically, (Q) projects onto the W direction, where
+   //  the nonlinearity lives.
    //
-   // So we have a quadratic in eta:
-   //    A*eta^2 + B*eta + C = 0
-   // with:
-   //    A = -Dbb*Cbe
-   //    B = -Dbx*Cbe + Dbe*Cbx + Dbb*Cbp
-   //    C = Dbx*Cbp - Dbp*Cbx
-   
-   // Let's build the quadratic equation.
-   Vector2 nb = {1.0, 0.0};
-   if (fabs(vb.x) + fabs(vb.y) > 1e-12) nb = normalize(vb);  // XXXX magic number
+   //  We solve (L) for whichever variable has the larger coefficient
+   //  (better conditioned back-substitution), substitute into (Q),
+   //  and get a scalar quadratic in the other variable.
+   // ================================================================
 
-   const Point2 dp = p - c;
+   // ---- Basis vectors ----
+   // U: s-direction. 2*U connects midpoint(P0,P3) to midpoint(P1,P2).
+   const Vector2 vxi  = (p1 + p2) - (p0 + p3);   // = 4*U
+   // V: t-direction. 2*V connects midpoint(P0,P1) to midpoint(P2,P3).
+   const Vector2 veta = (p2 + p3) - (p0 + p1);   // = 4*V
+   // W: nonlinear correction. Difference between quad and parallelogram.
+   // |vb|/max(|vxi|,|veta|) measures the "non-parallelogramness".
+   const Vector2 vb   = (p0 + p2) - (p1 + p3);   // = 4*W
 
-   const double Cbp = cross(nb, 4*dp);
-   const double Cbx = cross(nb, vxi);
-   const double Cbe = cross(nb, veta);
-   const double Dbp = dot(nb, 4*dp);
-   const double Dbx = dot(nb, vxi);
-   const double Dbe = dot(nb, veta);
-   const double Dbb = dot(nb, vb);
-   
-   if (fabs(Cbx) > fabs(Cbe)) {
-      const double A = -Dbb*Cbe;
-      const double B = -Dbx*Cbe + Dbe*Cbx + Dbb*Cbp;
-      const double C =  Dbx*Cbp - Dbp*Cbx;
+   // ---- H: displacement from centroid (scaled by 4 for convenience) ----
+   // Working with 4*H avoids the 0.25 multiplications on U, V, W.
+   // The equation becomes:  4*H = xi*(4*U) + eta*(4*V) + xi*eta*(4*W)
+   // which is just:  4*dp = xi*vxi + eta*veta + xi*eta*vb
+   const Vector2 dp4 = 4.0*(p - c);   // = 4*H
 
-      double x1, x2;
-      solveQuadratic(A, B, C, x1, x2);
-      if      (fabs(x1) <= fabs(x2)) eta = x1;
-      else                      eta = x2;
+   // ---- nb: direction parallel to W, L1-normalized ----
+   // We don't need a unit vector -- just a well-scaled direction parallel
+   // to W.  L1 norm avoids sqrt entirely (exact to 1 ulp, no rounding
+   // from sqrt).  When W ~ 0 (parallelogram), the quadratic coefficient
+   // Qw ~ 0 and the solver's linear branch handles it correctly.
+   //
+   // Branchless: nb = vb / (|vb.x| + |vb.y| + tiny).
+   // When vb ~ 0, nb ~ 0, all L/Q coefficients vanish proportionally,
+   // and the quadratic solver takes its linear path (a ~ 0).
+   const double wlen1 = fabs(vb.x) + fabs(vb.y) + 1e-30;
+   const double inv_wlen = 1.0 / wlen1;
+   const Vector2 nb = vb * inv_wlen;
 
-      xi = (Cbp - Cbe*eta) / Cbx;
+   // ---- Linear equation (L): Lp = Ls*xi + Lt*eta ----
+   // cross(nb, ·) projects onto the direction PERPENDICULAR to W.
+   // Since nb || W, cross(nb, vb) = 0 exactly, killing the xi*eta term.
+   // What remains is a pure affine relationship between xi and eta.
+   const double Lp = cross(nb, dp4);     // cross(nb, 4*H)
+   const double Ls = cross(nb, vxi);     // cross(nb, 4*U)
+   const double Lt = cross(nb, veta);    // cross(nb, 4*V)
 
-   } else {
-      const double A = -Dbb*Cbx;
-      const double B =  Dbx*Cbe - Dbe*Cbx + Dbb*Cbp;
-      const double C =  Dbe*Cbp - Dbp*Cbe;
+   // ---- Quadratic equation (Q): Qp = Qs*xi + Qt*eta + Qw*xi*eta ----
+   // dot(nb, ·) projects onto the W direction, where the nonlinearity lives.
+   // dot(nb, vb) = |vb|^2/(|vb.x|+|vb.y|) != 0 for non-parallelograms.
+   const double Qp = dot(nb, dp4);       // dot(nb, 4*H)
+   const double Qs = dot(nb, vxi);       // dot(nb, 4*U)
+   const double Qt = dot(nb, veta);      // dot(nb, 4*V)
+   const double Qw = dot(nb, vb);        // dot(nb, 4*W)
 
-      double x1, x2;
-      solveQuadratic(A, B, C, x1, x2);
-      if (fabs(x1) <= fabs(x2)) xi = x1;
-      else                      xi = x2;
+   // ---- Solve: pick the better-conditioned variable from (L) ----
+   // Back-substitute from (L) dividing by the LARGER coefficient,
+   // minimizing round-off amplification.
+   //
+   // Commented below is the original code. It is more clear, but is branched. Below is a faster versions
+   // that uses predicated moves.
+   //
+   // if (fabs(Ls) > fabs(Lt)) {
+   //    // Solve quadratic in eta, back-substitute for xi from (L).
+   //    // From (L):  xi = (Lp - Lt*eta) / Ls
+   //    // Substitute into (Q), multiply by Ls, group by eta:
+   //    const double A = -Qw * Lt;
+   //    const double B = -Qs * Lt + Qt * Ls + Qw * Lp;
+   //    const double C =  Qs * Lp - Qp * Ls;
 
-      eta = (Cbp - Cbx*xi) / Cbe;
-   }
+   //    double eta1, eta2;
+   //    solveQuadratic(A, B, C, eta1, eta2);
 
-  
+   //    // Pick root with smaller |eta| (domain centered at 0).
+   //    // Ternary-> predicated move, no branch divergence.
+   //    eta = (fabs(eta1) < fabs(eta2)) ? eta1 : eta2;
 
-   assert(fabs(xi) <= 1.0 && fabs(eta) <= 1.0 && "inverseBilinearQuad: out-of-bound local coords");  // XXXX magic number
+   //    // Back-substitute: divides by |Ls| >= |Lt|, best conditioned.
+   //    xi = (Lp - Lt * eta) / Ls;
 
-   xi  = clamp(xi,  -1.0, 1.0);
-   eta = clamp(eta, -1.0, 1.0);
+   // } else {
+   //    // Solve quadratic in xi, back-substitute for eta from (L).
+   //    // From (L):  eta = (Lp - Ls*xi) / Lt
+   //    // Substitute into (Q), multiply by Lt, group by xi:
+   //    const double A = -Qw * Ls;
+   //    const double B =  Qs * Lt - Qt * Ls + Qw * Lp;
+   //    const double C =  Qt * Lp - Qp * Lt;
 
-   shp[0] = 0.25*(1.0 - xi)*(1.0 - eta);
-   shp[1] = 0.25*(1.0 + xi)*(1.0 - eta);
-   shp[2] = 0.25*(1.0 + xi)*(1.0 + eta);
-   shp[3] = 0.25*(1.0 - xi)*(1.0 + eta);
+   //    double xi1, xi2;
+   //    solveQuadratic(A, B, C, xi1, xi2);
+
+   //    xi = (fabs(xi1) < fabs(xi2)) ? xi1 : xi2;
+
+   //    eta = (Lp - Ls * xi) / Lt;
+   // }
+   const bool solve_s = fabs(Lt) >= fabs(Ls);   // true-> quadratic gives xi
+   const double La = solve_s ? Lt : Ls;          // larger  |L|, for back-sub
+   const double Lb = solve_s ? Ls : Lt;          // smaller |L|, in quadratic
+   const double Qa = solve_s ? Qt : Qs;          // Q-coeff matching La
+   const double Qb = solve_s ? Qs : Qt;          // Q-coeff matching Lb
+
+   // Quadratic:  A*r^2 + B*r + C = 0
+   // (same formula for both cases, just with swapped coefficients)
+   const double A = -Qw * Lb;
+   const double B = -Qa * Lb + Qb * La + Qw * Lp;
+   const double C =  Qa * Lp - Qp * La;
+
+   double r1, r2;
+   solveQuadratic(A, B, C, r1, r2);
+
+   // Pick root closer to 0 (domain is [-1,1] centered at origin)
+   const double r = (fabs(r1) < fabs(r2)) ? r1 : r2;
+
+   // Back-substitute into (L): other = (Lp - Lb*r) / La
+   const double other = (Lp - Lb * r) / La;
+
+   // Assign to (xi, eta) depending on which variable the quadratic solved
+   xi  = solve_s ? r     : other;
+   eta = solve_s ? other : r;
+
+
+   // ---- Clamp to [-1, 1] (safety net for points slightly outside) ----
+   xi  = fmin(1.0, fmax(xi,  -1.0));
+   eta = fmin(1.0, fmax(eta, -1.0));
+
+   // ---- Shape functions ----
+   // N0 = (1-xi)(1-eta)/4  at P0 (xi=-1, eta=-1)
+   // N1 = (1+xi)(1-eta)/4  at P1 (xi=+1, eta=-1)
+   // N2 = (1+xi)(1+eta)/4  at P2 (xi=+1, eta=+1)
+   // N3 = (1-xi)(1+eta)/4  at P3 (xi=-1, eta=+1)
+   shp[0] = (1.0 - xi) * (1.0 - eta) * 0.25;
+   shp[1] = (1.0 + xi) * (1.0 - eta) * 0.25;
+   shp[2] = (1.0 + xi) * (1.0 + eta) * 0.25;
+   shp[3] = (1.0 - xi) * (1.0 + eta) * 0.25;
 
    return true;
 }
@@ -3234,7 +3336,6 @@ __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition
       // For ics=2, projects the element gradient from its frame to the side frame
       if constexpr(ics == 2) elemGrad = elems[0]->frame.projHorVec(elemGrad, frame);
 
-
       grad += elemGrad;
 
       count++;
@@ -3288,7 +3389,6 @@ __inline__ __device__ Vector2 Side::tau(void)    const {
       const Vector2 stau2 = n2->frame.projHorVec(n2->tau, frame);
 
       return 0.5*(stau1 + stau2);
-printf("tau = (%f, %f)\n", stau1.x, stau1.y);
    }
 }
 
@@ -3525,6 +3625,35 @@ if (!found) {if (idx == 15876) printf("1111\n"); return true;}
 
 
 __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
+
+__device__ double Node::computeETP(int idxComp, double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) const {
+
+   assert(lat >= -pi/2.0 && lat <= pi/2.0 && "computeETP: lat out of range");
+   assert(lon >= -pi && lon <= pi         && "computeETP: lon out of range");
+
+
+
+   const int ncyc = int(tfreq[idxComp]*time/(2.0*pi));
+   const double arg = tfreq[idxComp]*time - ncyc*(2.0*pi) + jspc[idxComp]*lon + tear[idxComp];
+
+   double fun_lat = 0.0;
+   switch (jspc[idxComp]) {
+      case 0:
+         fun_lat = 3.0*pow<2>(sin(lat)) - 1.0;
+         break;
+      case 1:
+         fun_lat = sin(2.0*lat);
+         break;
+      case 2:
+         fun_lat = pow<2>(cos(lat));
+         break;
+      default:
+         assert(false && "computeETP: invalid jspc");
+   }
+   
+   return 0.69*ramp*tamp[idxComp]*tnf[idxComp]*fun_lat*cos(arg);
+
+}
 
 
 __device__ void Node::updateKb(void) {
@@ -3814,7 +3943,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    } else {
       const double lon = deg2rad*node_coords[i * 3];
       const double lat = deg2rad*node_coords[i * 3 + 1];
-// printf("lat = %f, lon = %f, x = %f, y = %f\n", lat, lon, node.lat, node.lon); 
+
       Point3 p = computeXYZfromLatLon(lat, lon);
       node.p = toVector2(p);
       node.gz = p.z;
@@ -3865,8 +3994,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
          node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
          
-         node.nodeBnd->segment->ifltype = 3 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
-         node.nodeBnd->segment->iettype = 3; // XXXXXXXXX
+         node.nodeBnd->segment->ifltype = 0 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
+         node.nodeBnd->segment->iettype = 0; // XXXXXXXXX
 
          // Initialize the length and area of the segment to nan to indicate that they are not yet computed
          node.nodeBnd->segment->clen  = nan("1");
@@ -3885,15 +4014,16 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    }
    
    // XXXX GAUSSIAN HILL VELOCITIES
-#ifdef GAUSSIAN_HILL_VELOCITIES
-      if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
-      constexpr double rot_per = 3000.0;
-      constexpr double rot_f = 0.0*2.0*pi/rot_per;
-      for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f}; node.w2[k] = 0.0; }
-   // XXXXX
-#endif
+   #ifdef GAUSSIAN_HILL_VELOCITIES
+         if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+         constexpr double rot_per = 3000.0;
+         constexpr double rot_f = 0.0*2.0*pi/rot_per;
+         for (int k = 0; k < nvrt; k++) { node.u2[k] = {-node.p.y*rot_f, node.p.x*rot_f}; node.w2[k] = 0.0; }
+      // XXXXX
+   #endif
 
 }
+
 
 __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
                                     double *node_coords, double *node_coords_ll, bool use_ll,
@@ -3936,10 +4066,6 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    // Counts the number of sides connected to each node
    side.n1->numSides++;
    side.n2->numSides++;
-
-   // Normal, unitary vector to the side
-   side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
-   side.n = normalize(side.n);
 
    // Side boundary type
    NodeBoundary *n1bnd = side.n1->nodeBnd;
@@ -4012,17 +4138,37 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    side.setFrame();
    #endif
 
+   // Normal, unitary vector to the side
+   if constexpr(ics == 1) {
+      side.n = { -(side.n1->p.y - side.n2->p.y), (side.n1->p.x - side.n2->p.x)};
+      side.n = normalize(side.n);
+   }
+   else {
+      // Unit side vector in 3D cartesian coordinates
+      Vector3 nSide = { side.n1->p.x - side.n2->p.x, side.n1->p.y - side.n2->p.y, side.n1->gz - side.n2->gz };
+      nSide = normalize(nSide);
+
+      // It cross product with the unit local z-axis vector (nUp) is the
+      // normal vector we are looking for.
+      Vector3 n3D = normalize(cross(nSide, side.frame.nUp()));  
+
+      // The 2D components can be obtained by projecting the 3D normal vector to the plane defined by the unit vectors nZonal and nMeridional
+      const Vector2 n2D = {dot(n3D, side.frame.nZonal()), dot(n3D, side.frame.nMeridional())};
+      side.n = normalize(n2D);      
+
+   }
+
    assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
    side.shapiro = shapiro0;
 
-#ifdef GAUSSIAN_HILL_VELOCITIES
-// XXXX
-if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
-constexpr double rot_per=3000.0;
-constexpr double rot_f=0.0*2.0*pi/rot_per;/// XXXX
-for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
-// XXXXX      
-#endif
+   #ifdef GAUSSIAN_HILL_VELOCITIES
+   // XXXX
+   if (i == 0) printf("GAUSSIAN HILL VELOCITIES!!!\n");
+   constexpr double rot_per=3000.0;
+   constexpr double rot_f=0.0*2.0*pi/rot_per;/// XXXX
+   for (int k = 0; k < nvrt; k++) side.u2[k] = {-side.center.y*rot_f , side.center.x*rot_f};
+   // XXXXX      
+   #endif
    // Compute the z level at the center of the side
    for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);  // XXXX substitute by computation?
    
@@ -4163,10 +4309,12 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
 
 }
 
+
 __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
                                             double *emo, double *efa, 
                                             double *umo, double *ufa, 
-                                            double *vmo, double *vfa) {
+                                            double *vmo, double *vfa,
+                                            int *ifltype, int *iettype) {
 
    NODE_BND(nodeBnd);
    const int idx = idx_node_bnd;    
@@ -4191,6 +4339,9 @@ found: // Jumped here when the node was found
 
    nodeBnd->isEssentialBC = true;
    nodeBnd->elbc = 0.0;
+
+   nodeBnd->segment->ifltype = ifltype[iseg];
+   nodeBnd->segment->iettype = iettype[iseg];
 
    for (int jfr = 0; jfr < nbfr; jfr++) {
 
@@ -4376,6 +4527,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
       if constexpr(imm == 2)  { // Pre-compute vnorm on the element
          Vector3 ubed = {0.0, 0.0, 0.0};
          // update_bdef(time, elem->center, elem->depth, ubed); XXX
+         assert(false && "computeVerticalVelocity: not implemented for imm==2");
 
          Vector3 gradP = {0.0, 0.0, 1.0};
          for (int m=0; m < elem->i34; m++) {
@@ -4491,6 +4643,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
                   ri3 = 0.0;
 
                   assert(polyDischarge != nullptr && "polyDischarge is not initialized. This part might not even be implemented.");
+                  assert(sideSegment->clen != 0.0 && "clen is 0.0, this means that the segment is completely wetted");
 
                   const double etam = 0.5*(node1->eta2 + node2->eta2);
 
@@ -5034,18 +5187,16 @@ extern "C" {
 
    __global__ void computeTidalPotential(double time, double* tfreq, double* tamp, double* tnf, double* tear, int* jspc) {
 
-      NODE_BND(nodeBnd);
-
-      Node *node = nodeBnd->node;
+      NODE(node);
 
       node->ETP = 0.0;
 
+      // For all tidal potential components
       for (int j=0; j<ntip; j++) {
 
-         const double ncyc = int(tfreq[j]*time/(2.0*pi));
-         const double arg = tfreq[j]*time - ncyc*2.0*pi + jspc[j]*node->lon + tear[j];
-   
-         node->ETP += 0.69*ramp*tamp[j]*tnf[j]*node->fun_lat[jspc[j]]*cos(arg);
+         const double nodeETP = node->computeETP(j, time, tfreq, tamp, tnf, tear, jspc);
+
+         node->ETP += nodeETP;
 
          if constexpr(iloadtide==1) { // loading tide
             assert(false && "Loading tide not implemented");
@@ -5053,7 +5204,8 @@ extern "C" {
          }
          
       }
-      
+
+     
    }
 
    __global__ void getBoundaryConditions(double time) {
@@ -5202,6 +5354,43 @@ extern "C" {
    //        endif
    //      enddo !k
    //    endif !nfltype2
+   }
+
+   __global__ void resetBoundaryAreas(void) {
+      // Reset boundary areas and lengths for each segment.
+
+      // This should be done per segment, not per boundary side (each segment has multiple sides),
+      // However we don't have a way to access the segments by themselves and this is simple and fast enough.
+      SIDE_BND(sideBnd);
+
+      BoundarySegment *segment = sideBnd->segment;
+
+      segment->carea = 0.0;
+      segment->clen = 0.0;
+ 
+   }
+
+   __global__ void computeBoundaryAreas(void) {
+   // Calculation of cross-section areas and lengths for flow b.c.
+
+      SIDE_BND(sideBnd);
+
+      const Side *side = sideBnd->side;
+      BoundarySegment *segment = sideBnd->segment;
+
+      if (segment->ifltype != 0) {
+
+         const Node *n1 = side->n1;
+         const Node *n2 = side->n2;
+
+         const double htot = side->htot2();
+
+         if (!side->isDry) {
+            atomicAdd(&segment->carea, htot*side->len);
+            atomicAdd(&segment->clen, side->len);
+         }
+      }
+
    }
 
 
@@ -5756,6 +5945,7 @@ extern "C" {
 
          } else { 
             assert(false && "getRhoDiffAndVec: lat/lon not implemented");
+            // Remember that elem->center is in global coordinates
             // IMPLEMENT THIS XXXXXX
             //                   call project_pt('g2l',xctr(ie),yctr(ie),zctr(ie),(/xctr(i),yctr(i),zctr(i)/), &
             //      &eframe(:,:,i),xctr2,yctr2,tmp)
@@ -6227,7 +6417,6 @@ extern "C" {
          const double coriolis = side->coriolis;
          const Vector2 *nuGradU = side->nuGradU;
 
-
          const Vector2 grad2D = grav3*(thetai*gradEta2 + (1.0-thetai)*gradEta1 - gradETP) + gradPr/rho0;
          for (int k = kb + 1; k < nvrt; k++) {
             const int kin = k - kb - 1;
@@ -6244,7 +6433,7 @@ extern "C" {
             if (k > kb + 1) dz += dz_0;
 
             // Elevation gradient, atmospheric pressure and tidal potential
-            rrhs[kin] = - 0.5*dz*dt*grad2D;
+            rrhs[kin] = - (0.5*dz)*dt*grad2D;
 
             // Coriolis, advection, wind stress, and horizontal viscosity
             if (k < nvrt - 1) {
@@ -6358,7 +6547,7 @@ extern "C" {
       if (!isLand && ifltype != 0) {
          const Vector2 *ubc = sideBnd->ubc;
   
-         for (int k = kb; k < nvrt; k++) { // YYYYYYYYY can be kb + 1
+         for (int k = kb; k < nvrt; k++) { // YYYYYYYYY can be kb + 1  XXXX
             
             assert(ifltype == -2 || ((ubc[k].x >= -98 && ubc[k].y >= -98) 
                    && (ubc[k].x <= 98 && ubc[k].y <= 98)) && "Momentum BC: Side has no velocity boundary conditions");
@@ -6573,7 +6762,6 @@ extern "C" {
          if (elem->isQuad()) elem->z[k] += n4->z[max(k, kb4)];          
          elem->z[k] /= elem->i34;
 
-if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx1 = %d, idx2 = %d, idx3 = %d, z1[k] = %f, z2[k] = %f, z3[k] = %f, z1[k-1] = %f, z2[k-1] = %f, z3[k-1] = %f, k = %d, kb = %d, kb1 = %d, kb2 = %d, kb3 = %d, kb4 = %d, z[k] = %f, z[k-1] = %f\n", elem->isDry, n1->idx, n2->idx, n3->idx, n1->z[max(k, kb1)], n2->z[max(k, kb2)], n3->z[max(k, kb3)], n1->z[max(k-1, kb1)], n2->z[max(k-1, kb2)], n3->z[max(k-1, kb3)],  k, elem->kb, kb1, kb2, kb3, kb4, elem->z[k], elem->z[k-1]);
          assert(k == elem->kb || (elem->z[k] > elem->z[k-1]) && "ivcor = 1: z must increase monotonically");
       }
                   
@@ -6754,9 +6942,9 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
       for (int k = 0; k < nvrt; k++) {
          node->u2[k]   = {0.0, 0.0};
          node->w2[k]   = 0.0;
-         node->utmp[k] = {0.0, 0.0};
-         node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
+         node->utmp[k] = {0.0, 0.0};         
       }
+      node->tmp.d = 0.0;  // reset the temporary real value. It will be used to compute the area-averaged vertical velocity
    }
  
 
@@ -7016,7 +7204,7 @@ if (k>elem->kb && elem->z[k] <= elem->z[k-1]) printf("EEEE elem->isDry = %d, idx
             const double sign = elem->ssign[j]; 
 
             // sign is positive if the side is oriented in the direction of the normal vector to the element, negative otherwise
-            sideFlux -= sign*dot(u2c, side->n)*sideArea;
+            sideFlux += sign*dot(u2c, side->n)*sideArea;
          }
          
          // Compute the horizontal velocity at the center of the top face as an average of the 
@@ -7161,15 +7349,15 @@ extern "C" {
          const double veg_h    = side->veg_h();
          const double veg_c    = veg_c2/(1.0 + veg_c2);  // veg_c2 = \alpha*|u|*dt
 
+         const Vector2 gradPhi = elem->gradPhi[j];
+
          // Node - const in elem
-         elem->gradEta += node->eta2*elem->gradPhi[j];  // gradPhi is always in the element frame
-         elem->gradPr  += node->pr  *elem->gradPhi[j];
+         elem->gradEta += node->eta2*gradPhi;  // gradPhi is always in the element frame
+         elem->gradPr  += node->pr  *gradPhi;
 
-         if (elem->depth >= tip_dp) {
-           elem->gradETP += node->ETP*elem->gradPhi[j];
-         }
+         if (elem->depth >= tip_dp) elem->gradETP += node->ETP*gradPhi;
 
-         
+        
          const double htot  = side->htot2();        // Total depth at the side
          const double zctr2 = side->zTopCanopy();  
 
@@ -7194,7 +7382,7 @@ extern "C" {
                // Submergent vegetation: G2 = Ustar - c*Ustar_alpha + ..., with c = \alpha*|u|*dt/(1+\alpha*|u|*dt)
                // In general, cff1*Ustar - cff3*Ustar_alpha
                if(veg_h < 0.99*htot) { // submergent vegetation
-                  cff1=1;
+                  cff1 = 1.0;
                   cff2 = 1.0 + veg_beta*veg_c;          // Term (1 + beta*c) in G2.
                   cff3 = veg_c;
 
@@ -7313,14 +7501,13 @@ extern "C" {
       } // for j (nodes and sides)
 
       elem->ghat1 = (1.0/i34)*elem->ghat1;
-         
+
+
       // Finish off terms in F, F^\alpha and f_b
       const double grav3 = elem->mean(&Node::grav2);
       const Vector2 fb = grav3*elem->gradETP - elem->gradPr/rho0; //const in each elem
-
-
       Vector2 tmp = {0.0, 0.0}; //elem average of all terms; into ghat1
-      for (int j=1; j<i34; j++) { 
+      for (int j=0; j<i34; j++) { 
          // For each side in the element...
          const Side *side = elem->sides[j];
          const double chi = side->chi;
@@ -7333,7 +7520,7 @@ extern "C" {
          tmp += dt*(av_cff1*F - av_cff2*chi*dt*fb - av_cff3*Fa);
       } // for j
 
-      //botf1 etc are already in elem frame
+      // tmp is already in elem frame
       elem->ghat1 += tmp/i34;
 
       // Baroclinic force
@@ -7875,8 +8062,9 @@ extern "C" __global__ void populateElements(int *i34, int *elnode, int *elside,
 extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
                                                 double *emo, double *efa, 
                                                 double *umo, double *ufa, 
-                                                double *vmo, double *vfa) {
-   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa);
+                                                double *vmo, double *vfa,
+                                                int *ifltype, int *iettype) {
+   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype);
 
 }
 
@@ -8236,6 +8424,10 @@ extern "C" __global__ void getElementVarAddr(int varCode, void **addr, int *offs
          *offset = (int)((char*)&elems[0].center.x - (char*)elems);
          *sizeType = sizeof(Vector2);
          break;
+      case (int)VarCode::gradETP:
+         *offset = (int)((char*)&elems[0].gradETP.x - (char*)elems);
+         *sizeType = sizeof(Vector2);
+         break;
       case (int)VarCode::area:
          *offset = (int)((char*)&elems[0].area - (char*)elems);
          *sizeType = sizeof(double);
@@ -8319,6 +8511,22 @@ extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset,
          break;          
       case (int)VarCode::U:
          *offset = (int)((char*)&sides[0].U.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::gradETP:
+         *offset = (int)((char*)&sides[0].gradETP.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::gradPr:
+         *offset = (int)((char*)&sides[0].gradPr.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::gradEta1:
+         *offset = (int)((char*)&sides[0].gradEta1.x - (char*)sides);
+         *sizeType = sizeof(Vector2);
+         break;
+      case (int)VarCode::gradEta2:
+         *offset = (int)((char*)&sides[0].gradEta2.x - (char*)sides);
          *sizeType = sizeof(Vector2);
          break;
       // case (int)VarCode::ghat:
