@@ -6,7 +6,9 @@ from setuptools.command.build_ext import build_ext
 import sys
 import cupy as cp
 import debug.monitor as monitor
+import debug.newmonitor as newmonitor
 import time
+import pybind11
 from python.pcgsolver import PCGSolver
 from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
@@ -19,22 +21,24 @@ from line_profiler import LineProfiler
 
 
 
+
+
 # Enable verbose output
 os.environ['DISTUTILS_DEBUG'] = '1'
 os.environ['VERBOSE'] = '1'
 
 
-# Print diagnostic information
-print("Python version:", sys.version)
-print("Include paths:")
-for path in [
-    r'C:\Users\jmgonzalez\AppData\Local\miniconda3\envs\gschism\Lib\site-packages\pybind11\include',
-    r'C:\Users\jmgonzalez\apps\vcpkg\installed\x64-windows\include',
-    'src/include'
-]:
-    print(f"  {path} exists: {os.path.exists(path)}")
+# # Print diagnostic information
+# print("Python version:", sys.version)
+# print("Include paths:")
+# for path in [
+#     r'C:\Users\jmgonzalez\AppData\Local\miniconda3\envs\gschism\Lib\site-packages\pybind11\include',
+#     r'C:\Users\jmgonzalez\apps\vcpkg\installed\x64-windows\include',
+#     'src/include'
+# ]:
+#     print(f"  {path} exists: {os.path.exists(path)}")
 
-import pybind11
+
 import numpy as np
 import timeit
 
@@ -45,7 +49,7 @@ from matplotlib.collections import LineCollection
 
 
 
-# sys.path.append(r'/home/jo.gonzalez/src/gschism/src')  
+
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'src'))
 
 from iop.cudamodule import CudaSourceManager
@@ -70,6 +74,9 @@ if WINDOWS:
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
     in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02h'
     out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02h\gpuoutput'
+    # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2'
+    # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\gpuoutput'
+
     # out_dir = r'c:\Users\jmgonzalez\src\temp'
 elif VISTA:
     in_dir = r'/scratch/10922/jmglez/tests/RUN02e'
@@ -220,6 +227,7 @@ if __name__ == "__main__":
     print("Looking for file at:", os.path.abspath(cpp_file))
     module = compile_and_import("test", cpp_file)
 
+   
 
     from iop.readTides import read_bctides
 
@@ -509,6 +517,7 @@ if __name__ == "__main__":
 
 
     monitor.init(numNodes, numElements, numSides, numPartBoundarySides, nvrt) # XXX not valid for multiGPU
+    
        
     nodesMemList = []
     elemsMemList = []
@@ -653,6 +662,7 @@ if __name__ == "__main__":
     sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
              'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
     cufunc.initializeCudaFunctions(sizes)
+
 
     for ipart in range(n_gpus):
         with cp.cuda.Device(ipart):

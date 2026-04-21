@@ -167,11 +167,13 @@ def initializeCudaFunctions(sizes):
         updateElevation                     = mod.get_function('updateElevation',                     sizes, kernel_type='nodes')
         setupCoefficientMatrixAndRHS        = mod.get_function('setupCoefficientMatrixAndRHS',        sizes, kernel_type='nodes')
         rollUpElevation                     = mod.get_function('rollUpElevation',                     sizes, kernel_type='nodes')
-        computeMatrixProductAndDotProducts  = mod.get_function('computeMatrixProductAndDotProducts',  sizes, kernel_type='nodes')
-        updateSolutionAndDotProducts        = mod.get_function('updateSolutionAndDotProducts',        sizes, kernel_type='nodes')
-        updateSearchDirection               = mod.get_function('updateSearchDirection',               sizes, kernel_type='nodes')
-        initializeScalars                   = mod.get_function('initializeScalars',                   sizes, kernel_type='global')
-        initializePreconditionedResidual    = mod.get_function('initializePreconditionedResidual',    sizes, kernel_type='nodes')
+
+        # computeMatrixProductAndDotProducts  = mod.get_function('computeMatrixProductAndDotProducts',  sizes, kernel_type='nodes')
+        # updateSolutionAndDotProducts        = mod.get_function('updateSolutionAndDotProducts',        sizes, kernel_type='nodes')
+        # updateSearchDirection               = mod.get_function('updateSearchDirection',               sizes, kernel_type='nodes')
+        # initializeScalars                   = mod.get_function('initializeScalars',                   sizes, kernel_type='global')
+        # initializePreconditionedResidual    = mod.get_function('initializePreconditionedResidual',    sizes, kernel_type='nodes')
+
         computeHorGradientAtSide            = mod.get_function('computeHorGradientAtSide',            sizes, kernel_type='sides')
         solveMomentumEquations              = mod.get_function('solveMomentumEquations',              sizes, kernel_type='sides')
         applyMomentumBC                     = mod.get_function('applyMomentumBC',                     sizes, kernel_type='sideBnd')

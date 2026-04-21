@@ -154,7 +154,7 @@ class CudaSourceManager:
         # Create the module
         try:
             if not DEBUG:
-                options += ("-DNDEBUG",)
+                options += ("-DNDEBUG", "-g", "-G", "-lineinfo")
                 
             mod = cp.RawModule(code=processed_source, options = options)
             

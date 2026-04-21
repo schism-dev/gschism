@@ -144,8 +144,13 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     # Backtracking/upwind for momentum
     try:
-        monitor.debugPlotIdx[0] = 0        
+        monitor.debugPlotIdx[0] = 0   
+             
         cufunc.backtrackAllNodes()              # Lines 4161-5029
+
+        if it >= 1118:
+            import debug.newmonitor as newmonitor
+            newmonitor.show()
 
         # if it >= 0:
         #     monitor.plotMesh()        

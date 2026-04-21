@@ -18,6 +18,18 @@ constexpr double iet_n[4] = {-1,-1, 1, 1}; // Local eta-coordinate of the vertic
 
 #define INT_MAX 2147483647
 
+#ifdef DEBUG
+  #define assertFmt(cond, fmt, ...)                                      \
+    do {                                                                   \
+      if (!(cond)) {                                                       \
+        printf("ASSERT FAILED: " fmt "\n", ##__VA_ARGS__);                \
+        asm("trap;");                                                      \
+      }                                                                    \
+    } while (0)
+#else
+  #define assertFmt(cond, fmt, ...) do { (void)sizeof(cond); } while (0)
+#endif
+
 // Time ramps ---------------------------------------------------------------------------
 
 __device__ double rampbc;
@@ -112,7 +124,6 @@ __device__ __forceinline__ double clamp(double x, double min, double max) {
 }
 
 
-__device__ __forceinline__ double clampVelocity(double x, double min, double max);
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
@@ -120,9 +131,6 @@ using Vector2 = double2;
 using Vector3 = double3;
 using Point2  = double2;
 using Point3  = double3;
-
-using Vector2 = double2; 
-using Vector3 = double3;
 
 
 template<typename T>
@@ -318,6 +326,7 @@ __forceinline__ __device__ void crossProduct(double x1, double y1, double z1, do
    x3 = y1*z2 - y2*z1;
    y3 = x2*z1 - x1*z2;
    z3 = x1*y2 - x2*y1;
+// XXXXXX IS THIS REPEATED????
 }
 
 
@@ -498,10 +507,12 @@ struct Frame {
       // Column 2 = cross(column0, column1)
       return { t10*t21, -t00*t21, t00*t11 - t10*t01 };
    }
+
    __forceinline__ __device__ Vector3 nZonal(void) const {
       // Column 0
       return { t00, t10, 0.0 };
    }
+
    __forceinline__ __device__ Vector3 nMeridional(void) const {
       // Column 1
       return { t01, t11, t21 };
@@ -552,7 +563,6 @@ struct Element {
 
    Point2 center;            // Element center coordinates (global coordinates)
 
-
    double depth;              // Depth at element (min of all nodes)
    double z[nvrt];            // z-coord  (local frame - vertical up)
 
@@ -579,7 +589,19 @@ struct Element {
 
    __inline__ __device__ Point2 outputCoords(void) const;
 
-   __inline__ __device__ double demeanedDensity(int k) const { return rho[k] - rho_mean[k]; }   
+   __inline__ __device__ double demeanedDensity(int k) const { return rho[k] - rho_mean[k]; }  
+
+   __device__ __forceinline__ Point3 toLocalFrame(Point3 const& p) const {
+   // If ics == 2, convert the global point to the local frame of the element
+      
+      if constexpr (ics == 1) {
+         return p;
+      } else {
+         const Point3 c = {center.x, center.y, centerZ()};
+         const Point3 local = frame.G2L(p - c);
+         return local;
+      }
+   }
 
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
@@ -843,19 +865,9 @@ struct Element {
    // }
    // ------------------------------------------------------------------------------------------------
 
-   __device__ bool globalToLocal(double xt, double yt, double &xlocal, double &ylocal) const {
-      // Convert global coordinates to local coordinates
-      printf("NOT IMPLEMENTED: globalToLocal\n");   //XXXXXX
-      return true;
-   }
 
-   __inline__ __device__ bool localToGlobal(double xlocal, double ylocal, double &xt, double &yt) const {
-      // Convert local coordinates to global coordinates
-      printf("NOT IMPLEMENTED: localToGlobal\n");   //XXXXXX
-      return true;
-   }
 
-   __device__ void trackGoesOutOfWater(Side *nextSide, Element *curElem, double tt, int jlev,
+   __device__ void trackGoesOutOfWater(const Side *nextSide, const Side *origSide, Element *curElem, double tt, int jlev,
                                        Point3 &xt, double zint, Vector3 &u_int);
     
    __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
@@ -1005,6 +1017,18 @@ struct Side {
       frame.update(lat, lon);        
    }
    #endif
+
+   __device__ __forceinline__ Point3 toLocalFrame(Point3 const& p) const {
+   // If ics == 2, convert the global point to the local frame of the original side
+      
+      if constexpr (ics == 1) {
+         return p;
+      } else {
+         const Point3 c = {center.x, center.y, centerZ()};
+         const Point3 local = frame.G2L(p - c);
+         return local;
+      }
+   }
 
    __inline__ __device__ double centerZ(void)      const;
    __inline__ __device__ Point3 center3D(int k)    const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
@@ -1269,10 +1293,12 @@ struct Node {
    double coeffDiag; // Diagonal coefficient of the matrix
    double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
 
-   double mP; // Search direction for conjugate gradient method
-   double mR; // Residual for conjugate gradient method
-   double mAp; // Product of matrix and search direction for conjugate gradient method
-   double mX; // Solution for conjugate gradient method
+   // This was used by a previous version of the conjugate gradient method
+   // double mP; // Search direction for conjugate gradient method
+   // double mR; // Residual for conjugate gradient method
+   // double mAp; // Product of matrix and search direction for conjugate gradient method
+
+   double mX; // Solution of the FEM system
 
    // Meteorological forcing
    Vector2 u_air;
@@ -1336,6 +1362,18 @@ struct Node {
    __inline__ __device__ Point2 outputCoords(void) const {
       if constexpr(ics == 1)  return p;
       else                    return {rad2deg*lon, rad2deg*lat};
+   }
+
+   __device__ __forceinline__ Point3 toLocalFrame(Point3 const& p) const {
+   // If ics == 2, convert the global point to the local frame
+      
+      if constexpr (ics == 1) {
+         return p;
+      } else {
+         const Point3 c = {p.x, p.y, gz};
+         const Point3 local = frame.G2L(p - c);
+         return local;
+      }
    }
 
    __inline__ __device__ double Dz(int k) const { return z[k] - z[k-1]; }
@@ -1452,38 +1490,7 @@ struct Mesh {
    double *cs;
    double *dcs;
 
-   // // Get's the pointer to the node using the array of global pointers to nodes
-   // __device__ const Node *getGlobalNode(int jn) {
-   //    const int idx = jn / max_np; // Get the index of the partition that contains the node
-   //    return nodes[idx] + idx;
-   // }
 
-   // // Get's the pointer to the element using the array of global pointers to elements
-   // __device__ const Element *getGlobalElem(int je) {
-   //    const int idx = je / max_ne; // Get the index of the partition that contains the element
-   //    return elems[idx] + idx;
-   // }
-
-   // // Get's the pointer to the side using the array of global pointers to sides
-   // __device__ const Side *getGlobalSide(int js) {
-   //    const int idx = js / max_ns; // Get the index of the partition that contains the side
-   //    return sides[idx] + idx;
-   // }
-
-   // // Get's the global index of local node idx
-   // __device__ int getGlobalNodeIndex(int idx) {
-   //    return idx + partNum * max_np;
-   // }
-
-   // // Get's the global index of local element idx
-   // __device__ int getGlobalElemIndex(int idx) {
-   //    return idx + partNum * max_ne;
-   // }
-
-   // // Get's the global index of local side idx
-   // __device__ int getGlobalSideIndex(int idx) {
-   //    return idx + partNum * max_ns;
-   // }  
 
    __device__ Mesh(int partNum,
                    int npgb, int negb, int nsgb, 
@@ -1705,6 +1712,7 @@ extern "C" {
 
    }
 
+#ifdef OLD_PCG_SOLVER
    __global__ void initializeScalars(double *scalars);
  
    __global__ void initializePreconditionedResidual(void);
@@ -1721,7 +1729,7 @@ extern "C" {
    __global__ void setupCGSolvers(double* data_d, double* b_d, 
                                   int* indices, int* indptr);
 
-
+#endif
 
 }
 
