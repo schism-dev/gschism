@@ -778,7 +778,7 @@ struct Element {
 
       frame.update(lat, lon);        
    }
-   #endif
+   #endif 
 
    __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect, const Side *origSide = nullptr);
