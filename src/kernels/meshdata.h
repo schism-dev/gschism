@@ -123,7 +123,17 @@ __device__ __forceinline__ double clamp(double x, double min, double max) {
     return fmin(fmax(x, min), max);
 }
 
+// Shape coordiates 
 
+struct ShapeCoords {
+    double coords[4];
+    __device__ double& operator[](int i) { return coords[i]; }
+    __device__ const double& operator[](int i) const { return coords[i]; }
+
+    __device__ operator double*() { return coords; }
+    __device__ operator const double*() const { return coords; }
+
+};
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
@@ -406,8 +416,6 @@ struct Frame {
       t01 = -cos_lon*sin_lat;
       t11 = -sin_lon*sin_lat;
       t21 = (rearth_pole/rearth_eq)*cos_lat;
-// printf("lat = %f, lon = %f, cos_lat = %f, sin_lat = %f, cos_lon = %f, sin_lon = %f\n", lat, lon, cos_lat, sin_lat, cos_lon, sin_lon);
-// printf("t00 = %f, t10 = %f, t01 = %f, t11 = %f, t21 = %f\n", t00, t10, t01, t11, t21);
 
       const double col1_norm = sqrt(t01*t01 + t11*t11 + t21*t21);
       assert (col1_norm != 0.0 && "GRID: col1_norm=0");
@@ -567,7 +575,7 @@ struct Element {
    double z[nvrt];            // z-coord  (local frame - vertical up)
 
    // Physical information
-   Tracers tracers[nvrt];     // Tracer values at each vertical level  
+   // Tracers tracers[nvrt];     // Tracer values at each vertical level  
 
    static const bool isblock = false;              // Always false
 
@@ -597,9 +605,13 @@ struct Element {
       if constexpr (ics == 1) {
          return p;
       } else {
+#ifdef USE_FRAMES
          const Point3 c = {center.x, center.y, centerZ()};
          const Point3 local = frame.G2L(p - c);
          return local;
+#else
+         return p;
+#endif
       }
    }
 
@@ -722,7 +734,7 @@ struct Element {
 
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
-   __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const;
+   __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, ShapeCoords &shp) const;
 
    __inline__ __device__ double computeSignedArea(void) const;
 
@@ -730,9 +742,11 @@ struct Element {
 
    enum EFixIf { fiNo, fiOnlyInside, fiAnywhere };
 
-   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo, const Side *origSide = nullptr) const;
+   __device__ bool computeShapeCoords(Point2 &xt, ShapeCoords &shpCoords, EFixIf fixNegShapeCoords = fiNo, const Side *origSide = nullptr) const;
+
+   __device__ ShapeCoords computeShapeCoordsForSides(Point2 &xt, const Side *origSide) const;
    
-   __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
+   __device__ void shapeCoordsToXY(const ShapeCoords &shpCoords, Vector2 &xt) const;
 
    __device__ double intPhiPhiQuad(int i1, int i2) const;
 
@@ -780,14 +794,27 @@ struct Element {
    }
    #endif 
 
-   __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
+   __device__ void findNextIntersection(Point2 x1, Point2 x2, 
+                                        ShapeCoords &shpXt, Point2 &xt, const int jlev,
+                                        Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect, const Side *origSide = nullptr);
+
+   __inline__ __device__ bool containsPoint(const ShapeCoords &shpCoords) const
+   {
+      bool res = shpCoords[0] >= 0.0 && shpCoords[0] <= 1.0 &&
+                 shpCoords[1] >= 0.0 && shpCoords[1] <= 1.0 &&
+                 shpCoords[2] >= 0.0 && shpCoords[2] <= 1.0;
+      if (isQuad()) {
+         res = res && shpCoords[3] >= 0.0 && shpCoords[3] <= 1.0;
+      }
+      return res;
+   }
 
    __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
 
    __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords, const Side *origSide) const;
 
-   __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4]) const
+   __device__ double interpolate(const ShapeCoords &shapeCoords, const double zAtNodes[4]) const
    {
       // Interpolate the value at the point (xt,yt) using the shape coordinates and the values at the nodes
       // This function works for both triangular and quadrilateral elements, since shapeCoords[3] is always 0.0 for triangular elements
@@ -796,6 +823,8 @@ struct Element {
    }
 
    __device__ Vector3 interpolateVelocities(Point3 xt, const Side *origSide = nullptr) const;
+
+   __device__ Vector3 interpolateVelocities(const ShapeCoords &shpCoord, double z) const;
 
    // ------------------------------------------------------------------------------------------------
    // These are functions that work on all nodes/sides of the element.
@@ -833,13 +862,13 @@ struct Element {
 
 
    template<typename T>
-   __device__ __forceinline__ T interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const;
+   __device__ __forceinline__ T interpolate(int level, const ShapeCoords &shapeCoords, T (Node::*func)(int) const) const;
 
    template<typename T>
-   __device__ __forceinline__ T interpolate(const double shapeCoords[4], T Node::* field) const;
+   __device__ __forceinline__ T interpolate(const ShapeCoords &shapeCoords, T Node::* field) const;
 
    template<typename T>
-   __device__ __forceinline__ T interpolate(int level, const double shapeCoords[4], T (Node::* field)[nvrt]) const;
+   __device__ __forceinline__ T interpolate(int level, const ShapeCoords &shapeCoords, T (Node::* field)[nvrt]) const;
 
    template<typename T>
    __device__ __forceinline__ T mean(T Node::* field) const;
@@ -870,7 +899,9 @@ struct Element {
    __device__ void trackGoesOutOfWater(const Side *nextSide, const Side *origSide, Element *curElem, double tt, int jlev,
                                        Point3 &xt, double zint, Vector3 &u_int);
     
-   __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
+   __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, 
+                                                 const ShapeCoords &shpX0, ShapeCoords &shpXt, 
+                                                 Vector3 &u_int, 
                                                  Element *&nextElem, int &jlev, double &dt, double time_rm,
                                                  const Side *origSide);
 
@@ -1024,9 +1055,13 @@ struct Side {
       if constexpr (ics == 1) {
          return p;
       } else {
+#ifdef USE_FRAMES
          const Point3 c = {center.x, center.y, centerZ()};
-         const Point3 local = frame.G2L(p - c);
-         return local;
+            const Point3 local = frame.G2L(p - c);
+            return local;
+#else
+         return p;
+#endif
       }
    }
 
@@ -1370,9 +1405,13 @@ struct Node {
       if constexpr (ics == 1) {
          return p;
       } else {
+#ifdef USE_FRAMES
          const Point3 c = {p.x, p.y, gz};
-         const Point3 local = frame.G2L(p - c);
-         return local;
+            const Point3 local = frame.G2L(p - c);
+            return local;
+#else
+         return p;
+#endif
       }
    }
 

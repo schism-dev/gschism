@@ -241,7 +241,17 @@ __device__ __forceinline__ double clamp(double x, double min, double max) {
     return fmin(fmax(x, min), max);
 }
 
+// Shape coordiates 
 
+struct ShapeCoords {
+    double coords[4];
+    __device__ double& operator[](int i) { return coords[i]; }
+    __device__ const double& operator[](int i) const { return coords[i]; }
+
+    __device__ operator double*() { return coords; }
+    __device__ operator const double*() const { return coords; }
+
+};
 
 // VECTOR/POINT operations ---------------------------------------------------------------------------
 
@@ -524,8 +534,6 @@ struct Frame {
       t01 = -cos_lon*sin_lat;
       t11 = -sin_lon*sin_lat;
       t21 = (rearth_pole/rearth_eq)*cos_lat;
-// printf("lat = %f, lon = %f, cos_lat = %f, sin_lat = %f, cos_lon = %f, sin_lon = %f\n", lat, lon, cos_lat, sin_lat, cos_lon, sin_lon);
-// printf("t00 = %f, t10 = %f, t01 = %f, t11 = %f, t21 = %f\n", t00, t10, t01, t11, t21);
 
       const double col1_norm = sqrt(t01*t01 + t11*t11 + t21*t21);
       assert (col1_norm != 0.0 && "GRID: col1_norm=0");
@@ -685,7 +693,7 @@ struct Element {
    double z[nvrt];            // z-coord  (local frame - vertical up)
 
    // Physical information
-   Tracers tracers[nvrt];     // Tracer values at each vertical level  
+   // Tracers tracers[nvrt];     // Tracer values at each vertical level  
 
    static const bool isblock = false;              // Always false
 
@@ -715,9 +723,13 @@ struct Element {
       if constexpr (ics == 1) {
          return p;
       } else {
+#ifdef USE_FRAMES
          const Point3 c = {center.x, center.y, centerZ()};
          const Point3 local = frame.G2L(p - c);
          return local;
+#else
+         return p;
+#endif
       }
    }
 
@@ -840,7 +852,7 @@ struct Element {
 
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
-   __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const;
+   __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, ShapeCoords &shp) const;
 
    __inline__ __device__ double computeSignedArea(void) const;
 
@@ -848,9 +860,11 @@ struct Element {
 
    enum EFixIf { fiNo, fiOnlyInside, fiAnywhere };
 
-   __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo, const Side *origSide = nullptr) const;
+   __device__ bool computeShapeCoords(Point2 &xt, ShapeCoords &shpCoords, EFixIf fixNegShapeCoords = fiNo, const Side *origSide = nullptr) const;
+
+   __device__ ShapeCoords computeShapeCoordsForSides(Point2 &xt, const Side *origSide) const;
    
-   __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
+   __device__ void shapeCoordsToXY(const ShapeCoords &shpCoords, Vector2 &xt) const;
 
    __device__ double intPhiPhiQuad(int i1, int i2) const;
 
@@ -896,16 +910,29 @@ struct Element {
 
       frame.update(lat, lon);        
    }
-   #endif
+   #endif 
 
-   __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
+   __device__ void findNextIntersection(Point2 x1, Point2 x2, 
+                                        ShapeCoords &shpXt, Point2 &xt, const int jlev,
+                                        Side *&side, Element *&nextElement, double &t, 
                                         double& tIntersect, const Side *origSide = nullptr);
+
+   __inline__ __device__ bool containsPoint(const ShapeCoords &shpCoords) const
+   {
+      bool res = shpCoords[0] >= 0.0 && shpCoords[0] <= 1.0 &&
+                 shpCoords[1] >= 0.0 && shpCoords[1] <= 1.0 &&
+                 shpCoords[2] >= 0.0 && shpCoords[2] <= 1.0;
+      if (isQuad()) {
+         res = res && shpCoords[3] >= 0.0 && shpCoords[3] <= 1.0;
+      }
+      return res;
+   }
 
    __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
 
    __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords, const Side *origSide) const;
 
-   __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4]) const
+   __device__ double interpolate(const ShapeCoords &shapeCoords, const double zAtNodes[4]) const
    {
       // Interpolate the value at the point (xt,yt) using the shape coordinates and the values at the nodes
       // This function works for both triangular and quadrilateral elements, since shapeCoords[3] is always 0.0 for triangular elements
@@ -914,6 +941,8 @@ struct Element {
    }
 
    __device__ Vector3 interpolateVelocities(Point3 xt, const Side *origSide = nullptr) const;
+
+   __device__ Vector3 interpolateVelocities(const ShapeCoords &shpCoord, double z) const;
 
    // ------------------------------------------------------------------------------------------------
    // These are functions that work on all nodes/sides of the element.
@@ -951,13 +980,13 @@ struct Element {
 
 
    template<typename T>
-   __device__ __forceinline__ T interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const;
+   __device__ __forceinline__ T interpolate(int level, const ShapeCoords &shapeCoords, T (Node::*func)(int) const) const;
 
    template<typename T>
-   __device__ __forceinline__ T interpolate(const double shapeCoords[4], T Node::* field) const;
+   __device__ __forceinline__ T interpolate(const ShapeCoords &shapeCoords, T Node::* field) const;
 
    template<typename T>
-   __device__ __forceinline__ T interpolate(int level, const double shapeCoords[4], T (Node::* field)[nvrt]) const;
+   __device__ __forceinline__ T interpolate(int level, const ShapeCoords &shapeCoords, T (Node::* field)[nvrt]) const;
 
    template<typename T>
    __device__ __forceinline__ T mean(T Node::* field) const;
@@ -988,7 +1017,9 @@ struct Element {
    __device__ void trackGoesOutOfWater(const Side *nextSide, const Side *origSide, Element *curElem, double tt, int jlev,
                                        Point3 &xt, double zint, Vector3 &u_int);
     
-   __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
+   __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, 
+                                                 const ShapeCoords &shpX0, ShapeCoords &shpXt, 
+                                                 Vector3 &u_int, 
                                                  Element *&nextElem, int &jlev, double &dt, double time_rm,
                                                  const Side *origSide);
 
@@ -1142,9 +1173,13 @@ struct Side {
       if constexpr (ics == 1) {
          return p;
       } else {
+#ifdef USE_FRAMES
          const Point3 c = {center.x, center.y, centerZ()};
-         const Point3 local = frame.G2L(p - c);
-         return local;
+            const Point3 local = frame.G2L(p - c);
+            return local;
+#else
+         return p;
+#endif
       }
    }
 
@@ -1488,9 +1523,13 @@ struct Node {
       if constexpr (ics == 1) {
          return p;
       } else {
+#ifdef USE_FRAMES
          const Point3 c = {p.x, p.y, gz};
-         const Point3 local = frame.G2L(p - c);
-         return local;
+            const Point3 local = frame.G2L(p - c);
+            return local;
+#else
+         return p;
+#endif
       }
    }
 
@@ -1856,6 +1895,9 @@ extern "C" {
 #include <cuda_runtime.h>
 
 
+const int ORIG_SIDE_IDX = 732816; //4276701;
+const int ORIG_SIDE_JLEV = 47;
+
 __device__ double *debugPlot = nullptr;
 __device__ int *debugPlotIdx = nullptr;
 __device__ int debugPlotMutex = 0;
@@ -1946,8 +1988,9 @@ __device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xA0A0
 
 void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned int color = 0x0000FFu, char marker = 'o', int width = 1, int dashLen = 0, int label = -1) {
    // if ((origSide->idx == 1276362 || origSide->idx == 1276363 || origSide->idx == 1276361 || origSide->idx == 0 || origSide->idx == 9) && jlev == 48) {
-   if ((origSide->idx == 1276362) && jlev == 48) {
+   // if ((origSide->idx == 1276362) && jlev == 48) {
       // Convert points back to original frame
+printf(">>> showPoints: x1 = (%.17f, %.17f, %.17f), x2 = (%.17f, %.17f, %.17f)\n", x1.x, x1.y, x1.z, x2.x, x2.y, x2.z);
       x1.z = 0.0;
       x2.z = 0.0;
       Point3 X1 = origSide->frame.L2G(x1) + toPoint3(origSide->center, origSide->centerZ());// + origSide->center3D(jlev);
@@ -1955,7 +1998,7 @@ void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned i
 // printf("wwwwww origSide->idx = %d, marker = %c, width = %d, dashLen = %d, x1 = (%.17f, %.17f, %.17f), x2 = (%.17f, %.17f, %.17f)\n", origSide->idx, marker, width, dashLen, x1.x, x1.y, x1.z, x2.x, x2.y, x2.z);
 
       addDebugPlot(X1, X2, color, marker, width, dashLen);
-   }
+   // }
 }
 
 //===============================================================================
@@ -2112,7 +2155,7 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
 
    template<typename T>
-   __device__ __forceinline__ T Element::interpolate(int level, const double shapeCoords[4], T (Node::*func)(int) const) const {
+   __device__ __forceinline__ T Element::interpolate(int level, const ShapeCoords &shapeCoords, T (Node::*func)(int) const) const {
       T values[4];
       getNodalValues(level, func, values);
 
@@ -2127,7 +2170,7 @@ printf("interpolate 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", value
    }
 
    template<typename T>
-   __device__ __forceinline__ T Element::interpolate(const double shapeCoords[4], T Node::* field) const {
+   __device__ __forceinline__ T Element::interpolate(const ShapeCoords &shapeCoords, T Node::* field) const {
       T values[4];
       getNodalValues(field, values);
 
@@ -2143,7 +2186,7 @@ printf("interpolate 3: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", value
 
 
    template<typename T>
-   __device__ __forceinline__ T Element::interpolate(int level, const double shapeCoords[4], T (Node::* field)[nvrt]) const {
+   __device__ __forceinline__ T Element::interpolate(int level, const ShapeCoords &shapeCoords, T (Node::* field)[nvrt]) const {
       T values[4];
       getNodalValues(level, field, values);
       
@@ -2433,15 +2476,17 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
 **/
 
 
-__device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement,
+__device__ void Element::findNextIntersection(Point2 x1, Point2 x2, 
+                                              ShapeCoords &shpXt, Point2 &xt, const int jlev,
+                                              Side *&side, Element *&nextElement,
                                               double &t, double& tIntersect, const Side *origSide) {
-   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
 
-   assert( containsPoint(x1, origSide) && "Starting point is not inside the element");                                    
-   assert(!containsPoint(x2, origSide) && "Ending point is not outside the element");
+   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1");
+
+   assert(isTri() && "findNextIntersection may be only implemented for triangular elements");
 
    double closest_intersect_t = 1e10;
-   bool found_intersection = false;
+   int idxSide = -1;
 
    for (int i = 0; i < i34; i++) {
 
@@ -2453,13 +2498,25 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
 
       if constexpr(ics==2) {
          
-         x3 = toPoint2(origSide->toLocalFrame(toPoint3(x3, side2->n1->gz))); // XXXX?????
-         x4 = toPoint2(origSide->toLocalFrame(toPoint3(x4, side2->n2->gz)));  // XXXX?????
+         x3 = toPoint2(origSide->toLocalFrame(toPoint3(x3, side2->n1->gz))); 
+         x4 = toPoint2(origSide->toLocalFrame(toPoint3(x4, side2->n2->gz))); 
 
       }
 
-      // delta is 0 if the two lines are parallel. In this case, they do not intersect.
+      // delta is 0 if the two lines are parallel. In this case, they do not intersect unless they are colinear.
       const double delta = cross(x2 - x1, x3 - x4);
+
+
+const double deltaW = cross(x2 - x1, x3 - x1);
+
+if (origSide->idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) printf(">> 1.1 findNextIntersection: deltaW = %.17f, delta = %.17f\n", deltaW, delta);
+// const Vector2 v0 = rot90(x2 - x1);
+// const Vector2 v1 = x3 - x1;
+// const Vector2 v2 = x4 - x1;
+// const double dot01 = dot(v0, v1);
+// const double dot02 = dot(v0, v2);
+
+// if (abs(delta) < 1e-6) printf("XXX >> 1.25 findNextIntersection: idx = %d, jlev = %d, dot01 = %.17f, dot02 = %.17f\n", this->idx, jlev, dot01, dot02);
 
       if (abs(delta) > 0) {
 
@@ -2467,18 +2524,31 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
          const double delta2 = cross(x2 - x1, x3 - x1); 
 
          // Solves the two linear equations for tt1 and tt2
-         const double tt1 = delta1/delta; // delta is not zero, so we can divide
-         const double tt2 = delta2/delta;
-
-         if (tt1 >= -small && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
-            closest_intersect_t = min(closest_intersect_t, tt1);
+         double tt1 = delta1/delta; // delta is not zero, so we can divide
+         double tt2 = delta2/delta;
+if (abs(delta2)<1e-8 && abs(delta)<1e-8) { tt1 = 1.0; tt2 = length(x2 - x3)/length(x4 - x3); }
+if (origSide->idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) 
+   printf(">> 1.2 findNextIntersection: delta = %.17f, delta1 = %.17f, delta2 = %.17f, tt1 = %.17f, tt2 = %.17f, x3 = (%.17f, %.17f), x4 = (%.17f, %.17f), this->idx = %d\n", delta, delta1, delta2, tt1, tt2, x3.x, x3.y, x4.x, x4.y, this->idx);
+         if (tt1 >= -small && tt1 < closest_intersect_t) { //} && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
+            closest_intersect_t = tt1;
             side = side2;
             nextElement = side->otherElem(this);
 
-            t =          clamp(tt2, small, 1.0-small);
-            tIntersect = clamp(tt1, small, 1.0-small);
-            found_intersection = true;
+            // If the element at the other side is null or dry, we stay in the same element.
+            // The situation will be dealt with in trackGoesOutOfWater.
+            if (nextElement == nullptr || nextElement->isDry) nextElement = this;
 
+            t =          clamp(tt2, small, 1.0-small);
+
+// if (tt1>1.0) {
+//    tt1 = 1.0;
+//    t = length(x2 - x3)/length(x4 - x3);
+
+// printf(">> 1.3 findNextIntersection: idx = %d, jlev = %d, delta = %.17f, t = %.17f, tt1 = %.17f\n", this->idx, jlev, delta, t, tt1);
+// }
+            tIntersect = clamp(tt1, small, 1.0-small);
+            idxSide = i;
+            xt = x3 + t*(x4 - x3);
          }
 
       
@@ -2497,31 +2567,54 @@ __device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side,
             const double len = dot(x2 - x1, unitarySide);
             t = t + len;
             t = max(0.0, min(t, 1.0));
-// printf("BEEEEEBB t = %.17e, dist = %.17e, len = %.17e, x1 = (%e,%e), x2 = (%e,%e), x3 = (%e,%e), x4 = (%e,%e)\n", t, dist, len, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y, x4.x, x4.y);
+            xt = x1 + t*(x2 - x1);  // REMEMBER!!! 
 
-
-            // tIntersect = max(small, min(tt1, 1.0-small));
-            // t = tt2;
-            found_intersection = true;
          }
       }
 
 
    }
+if (origSide->idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) printf(">> 1.5 findNextIntersection: t = %.17f, tIntersect = %.17f, shpXt = (%.17f, %.17f, %.17f), x1 = (%.17f, %.17f), x2 = (%.17f, %.17f), origSide->idx = %i\n", t, tIntersect, shpXt[0], shpXt[1], shpXt[2], x1.x, x1.y, x2.x, x2.y, origSide->idx);
+if (idxSide == -1) {
+for (int i = 0; i < i34; i++) {
 
+      Side *side2 = sides[i];
 
-if (!found_intersection) {
-   atomicAdd(&stopBlock, 1);
-   // printf("idx = %d\n", origSide->idx);
+      // (x3,y3)-(x4,y4) is the element side line
+      Point2 x3 = side2->n1->p;
+      Point2 x4 = side2->n2->p;
+
+      if constexpr(ics==2) {
+         
+         x3 = toPoint2(origSide->toLocalFrame(toPoint3(x3, side2->n1->gz))); 
+         x4 = toPoint2(origSide->toLocalFrame(toPoint3(x4, side2->n2->gz))); 
+
+      }
+      const double delta = cross(x2 - x1, x3 - x4);
+      const double delta1 = cross(x3 - x1, x3 - x4);
+      const double delta2 = cross(x2 - x1, x3 - x1); 
+printf("findNextIntersection: sided %d, tIntersect = %.17f, delta = %.17f, delta1 = %.17f, delta2 = %.17f, shpXt = (%.17f, %.17f, %.17f), x1 = (%.17f, %.17f), x2 = (%.17f, %.17f), x3 = (%.17f, %.17f), x4 = (%.17f, %.17f), origSide->idx = %i\n", i, tIntersect, delta, delta1, delta2, shpXt[0], shpXt[1], shpXt[2], x1.x, x1.y, x2.x, x2.y, x3.x, x3.y, x4.x, x4.y, origSide->idx);
 }
+}
+   assert(idxSide != -1 && "No intersection found");
 
-if (stopBlock > 0)  return false;
+   if (isTri()) {
+      // XXXXXX Check if there is a better way to do this.
+      const int n0 = nextElement->nodeLocalIdx(side->n1);
+      const int n1 = nextElement->nodeLocalIdx(side->n2);
+      const int n2 = 3 - n0 - n1;
 
-   // if (!found_intersection) {if (idx == 15876) printf("11111: No intersection found\n"); return false;}
-   assert(found_intersection && "No intersection found");
+      // In this function, since shpXt is always along a side, and sine t was computed from
+      // coordinates in the original side's frame, we can use these simplified formulas.
+      shpXt[n0] = t;
+      shpXt[n1] = 1.0 - t;
+      shpXt[n2] = 0.0;
 
-   // found_intersection should always be true, since we checked all the sides.  
-   return found_intersection;
+   }
+   else {
+      assert(false && "findNextIntersection may be only implemented for triangular elements");
+   }
+
 }
 
 __inline__ __device__ bool Element::containsPoint(Vector2 xt, const Side *origSide) const { 
@@ -2529,7 +2622,7 @@ __inline__ __device__ bool Element::containsPoint(Vector2 xt, const Side *origSi
    // if ics==2, origSide is used to convert the point to the starting point's frame.
    assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa");
 
-   double shpCoords[4];
+   ShapeCoords shpCoords;
    bool res = computeShapeCoords(xt, shpCoords, fiNo, origSide);
 
    return res;
@@ -2541,7 +2634,7 @@ __inline__ __device__ bool Element::containsPoint(Vector2 &xt, bool fixCoords, c
    // if ics==2, origSide is used to convert the point to the starting point's frame.
    assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa");
 
-   double shpCoords[4];
+   ShapeCoords shpCoords;
    Vector2 tmp_xt = xt;
    const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
    bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords, origSide);
@@ -2625,7 +2718,9 @@ __device__ void Element::trackGoesOutOfWater(const Side *nextSide, const Side *o
  *   was found.
  * - Notice that curElement is the current element, while this is the element for which the first call to this function was made.
  */
-__device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
+__device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, 
+                                                       const ShapeCoords &shpX0, ShapeCoords &shpXt, 
+                                                       Vector3 &u_int, 
                                                        Element *&nextElem, int &jlev, double &dt, double time_rm,
                                                        const Side *origSide) {
                                                             
@@ -2634,17 +2729,13 @@ __device__ bool Element::trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Ve
    assert(!isDry && "Starting element is dry");
    assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
 
-Vector3 x0_local = x0;
-   assert(containsPoint(toPoint2(x0), origSide) && "Starting point is not inside the element");
+   // The assumption in this algorith, is that the shape coordintates are exact in the sense that 
+   // one of them being not in [0,1] means that the point is not inside the element.
+   if (containsPoint(shpXt)) { 
 
-
-
-   if (containsPoint(toPoint2(xt), true, origSide)) {  // The "true" means that, if the point is very close to the boundary, it is nudged to be definitely inside the element.
-
-      assert(containsPoint(toPoint2(xt), origSide) && "Target point is not inside the element 1");
       assert(!isDry && "Target point is inside a dry element");
 
-      u_int = interpolateVelocities(xt, origSide);
+      u_int = interpolateVelocities(shpXt, xt.z);
 
       nextElem = this;
 
@@ -2652,63 +2743,38 @@ Vector3 x0_local = x0;
    }
 
 
-   
-
+if(norm2(toVector2(xt - x0)) < 1.0e-10) printf("trackThroughElementsAndLevels: zero length track, idx = %i, jlev = %d, dtb = %.17f, xt = (%.17f, %.17f), x0 = (%.17f, %.17f), shpX0 = (%.17f, %.17f, %.17f), shpXt = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", origSide->idx, jlev, dt, xt.x, xt.y, x0.x, x0.y, shpX0[0], shpX0[1], shpX0[2], shpXt[0], shpXt[1], shpXt[2], u_int.x, u_int.y, u_int.z);
    assert(norm2(toVector2(xt - x0)) > 0.0 && "Zero length track"); 
    
    double t;
    Side *nextSide = nullptr;
    double tIntersect = 1e10;
+   Point2 xtmp;
 
-showPoints(x0_local, xt, jlev, origSide, 0xFFFFFFu, '+', 2, 0);
    // Finds the first intersection with the element sides. It is guaranteed to exist because
    // (x0,y0) is inside the element but the target point is not.
-   bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect, origSide);
+if (origSide->idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) printf(">> 1 trackThroughElementsAndLevels: idx = %i, jlev = %d, dt = %.17f, xt = (%.17f, %.17f), x0 = (%.17f, %.17f), shpX0 = (%.17f, %.17f, %.17f), shpXt = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", origSide->idx, jlev, dt, xt.x, xt.y, x0.x, x0.y, shpX0[0], shpX0[1], shpX0[2], shpXt[0], shpXt[1], shpXt[2], u_int.x, u_int.y, u_int.z);
+   findNextIntersection(toPoint2(x0), toPoint2(xt), shpXt, xtmp, jlev, nextSide, nextElem, t, tIntersect, origSide);
 
+if (origSide->idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) printf(">> 2 trackThroughElementsAndLevels: idx = %i, jlev = %d, dt = %.17f, xt = (%.17f, %.17f), x0 = (%.17f, %.17f), shpX0 = (%.17f, %.17f, %.17f), shpXt = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", origSide->idx, jlev, dt, xt.x, xt.y, x0.x, x0.y, shpX0[0], shpX0[1], shpX0[2], shpXt[0], shpXt[1], shpXt[2], u_int.x, u_int.y, u_int.z);
 
-showPoints(x0, xt, jlev, origSide, 0x0000FFu, 'o', 1, 5);
+   // At this point, nextElem is the next element and shpXt contains the shape coordinates 
+   // of the intersection point with respect to that element. xt contains the intersection point in cartesian coordinates.
 
-const Node *n1 = nodes[0];
-const Node *n2 = nodes[1];
-const Node *n3 = nodes[2];
-
-Point3 p1 = toPoint3(n1->p, n1->gz);
-Point3 p2 = toPoint3(n2->p, n2->gz);
-Point3 p3 = toPoint3(n3->p, n3->gz);
-p1 = origSide->toLocalFrame(p1);
-p2 = origSide->toLocalFrame(p2);
-p3 = origSide->toLocalFrame(p3);
-int s1 = sides[0]->idx;
-int s2 = sides[1]->idx;
-int s3 = sides[2]->idx;
-
-if (!found_intersection) { return false;}
-// if (!found_intersection) {if (idx == 15876) printf("111112: No intersection found\n"); return false;}
-   assert(found_intersection && "No intersection found at %d");
-
-   Point2 xtmp = toPoint2(origSide->toLocalFrame(nextSide->p3_t(t))); // If needed, moves the target point to the intersection point
-
-   // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
-   if (nextElem != nullptr && !nextElem->isDry) {
-      assert(nextElem->containsPoint(xtmp, origSide) && "Intersection point is not inside the next element");
-Vector3 xtmp_Before = origSide->toLocalFrame(nextSide->p3_t(t));
-      nextElem->nudgeToBarycenter(xtmp, origSide);
-Vector3 xtmp_After = {xtmp.x, xtmp.y, (1 - tIntersect)*x0.z + tIntersect*xt.z};
-showPoints(xtmp_Before, xtmp_After, jlev, origSide, 0x00FFFFu, '+', 2, 10);
-   }
-
-// printf("x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f), tIntersect = %.17f\n", x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, tIntersect);
+   // Computes the z-coordinate of the intersection point.
    const double zint = (1 - tIntersect)*x0.z + tIntersect*xt.z;
    xt = {xtmp.x, xtmp.y, zint};
 
-   // if the tracking segment goes out of water (either dry or edge boundary)
-   if (isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
+   // if the tracking segment goes out of water (either dry or edge boundary).
+   // Since nextElem from findNextIntersection is always a valid element (non-nullptr and 
+   // not dry), otherElem will be null or dry when the tracking segment goes out of water.
+   Element *otherElem = nextSide->otherElem(nextElem);
+   if (isEdgeBoundary(nextSide) || (otherElem == nullptr || otherElem->isDry)) {
+      dt = time_rm;
 
-      
-Vector3 xt_Before = xt;
+if (origSide->idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) printf("trackThroughElementsAndLevels: goes out of water, nextSide = %p, otherElem = %p\n", nextSide, otherElem);      
       trackGoesOutOfWater(nextSide, origSide, this, t, jlev, xt, zint, u_int);
-showPoints(xt_Before, xt, jlev, origSide, 0x00FF00u, '+', 14, 5);
-
+return true;
       assert(this->containsPoint(toPoint2(xt), origSide) && "Target point is not inside the current element 2");
       // When this happens, the backtracking stops.
 
@@ -2717,22 +2783,18 @@ showPoints(xt_Before, xt, jlev, origSide, 0x00FF00u, '+', 14, 5);
       // In this case, the next element is again the current element.
       nextElem = this;
 
-// printf("trackGoesOutOfWater: side->idx = %d, dt = %.17f, time_rm = %.17f, u_int = (%.17f, %.17f, %.17f)\n", nextSide->idx, dt, time_rm, u_int.x, u_int.y, u_int.z);
-
       // Returns "early", meaning that we stopped before we were able to reach the target point.
       // In this case, the caller (btrack) needs to take into account the remaining time.
       return true;    
    }
 
-
-   assert(nextElem->containsPoint(toPoint2(xt), origSide) && "Target point is not inside the next element 3");
    // Interpolate velocities at the final position. This is a conceptually simple step,
    // but the function is not simple, because it has to search for the vertical level containing zt.
 
    
    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
 
-   u_int = nextElem->interpolateVelocities(xt, origSide); 
+   u_int = nextElem->interpolateVelocities(shpXt, xt.z); 
 
    assert(nextElem != this && "Next element is the same as the current element");
 
@@ -2794,8 +2856,8 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    return side->elems[1] == nullptr; 
 }
 
-__device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const {
-   // Given a point p in the quad element returns the bilinear coordinates (xi,eta) and the shape coordinates shp[4]
+__device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, ShapeCoords &shp) const {
+   // Given a point p in the quad element returns the bilinear coordinates (xi,eta) and the shape coordinates shp
    // For ics == 2, this function uses local frame coordinates.
 
    assert(isQuad());
@@ -2982,7 +3044,7 @@ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, 
    @param fixNegshpCoord (input): if true, fix negative shape coordinates
    @return true if the point is inside the element, false otherwise
 **/
-__device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegshpCoord, const Side *origSide) const {
+__device__ bool Element::computeShapeCoords(Point2 &xt, ShapeCoords &shpCoords, EFixIf fixNegshpCoord, const Side *origSide) const {
 
    // Compute the shape coordinates of the point xt in the element.
    //   If fixNegshpCoord = fiOnlyInside, only fix the shape coordinates if the point is *almost*inside the element.
@@ -3043,7 +3105,7 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
 
          assert(!(shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
                   shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) &&
-                "Negative shape coordinates in computeShapeCoords, when fixNegshpCoord is true");
+                "computeShapeCoords: Negative shape coordinates in computeShapeCoords, when fixNegshpCoord is true");
 
          // Update the point coordinates for the new shape coordinates
          double xcoords[3] = {x0.x, x1.x, x2.x};
@@ -3098,7 +3160,113 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
 }
 
 
-__device__ void Element::shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const {
+__device__ ShapeCoords Element::computeShapeCoordsForSides(Point2 &xt, const Side *origSide) const {
+
+   // Compute the shape coordinates of the point xt in the element.
+   // Assumes that the point is along a side of the element (including nodes). 
+   // Ensures that the zero shape coordinates are strictly 0.0.
+   //   @param xt : x-coordinate of the point. Is updated to the cartesian coordinates of the returned point (this is like a nudge).
+   //   @param origSide : original side of the element
+   //   @return shpCoords: shape coordinates of the point
+
+   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
+
+   ShapeCoords shpCoords;
+
+   if (isTri()) { // Triangular element
+
+      // Horizontal local node coordinates. 
+      Point2 x0 = nodes[0]->p;
+      Point2 x1 = nodes[1]->p;
+      Point2 x2 = nodes[2]->p;
+
+      // If ics == 2, the node coordinates are transformed to local frame.
+      if constexpr(ics==2) {
+         const Point3 p0 = toPoint3(x0, nodes[0]->gz);
+         const Point3 p1 = toPoint3(x1, nodes[1]->gz);
+         const Point3 p2 = toPoint3(x2, nodes[2]->gz);
+
+         // Convert the node coordinates to the local frame centered at the element center
+         x0 = toPoint2(origSide->toLocalFrame(p0));
+         x1 = toPoint2(origSide->toLocalFrame(p1));
+         x2 = toPoint2(origSide->toLocalFrame(p2));
+      }
+
+      shpCoords[0] = signedArea(xt,x1,x2)/area;
+      shpCoords[1] = signedArea(x0,xt,x2)/area; 
+      shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
+      shpCoords[3] = 0.0;
+
+      // Smallest coordinate or "small", whichever is larger.
+      double tmpmin = max(min3(shpCoords[0], shpCoords[1], shpCoords[2]), small);
+
+      // Ensure that at least one of the shape coordinates is strictly 0.0.
+      if (shpCoords[0] <= tmpmin) shpCoords[0] = 0.0;
+      if (shpCoords[1] <= tmpmin) shpCoords[1] = 0.0;
+      if (shpCoords[2] <= tmpmin) shpCoords[2] = 0.0;
+
+
+      // Normalization factor
+      const double norm = 1.0/(shpCoords[0] + shpCoords[1] + shpCoords[2]);
+ 
+      shpCoords[0] = shpCoords[0]*norm;
+      shpCoords[1] = shpCoords[1]*norm;
+      shpCoords[2] = shpCoords[2]*norm;          
+
+
+      assert(!(shpCoords[0] < 0.0 || shpCoords[1] < 0.0 || shpCoords[2] < 0.0 ||
+               shpCoords[0] > 1.0 || shpCoords[1] > 1.0 || shpCoords[2] > 1.0) &&
+               "computeShapeCoordsForSides: Invalid shape coordinates in computeShapeCoords, when fixNegshpCoord is true");
+
+      // Update the point coordinates for the new shape coordinates
+      double xcoords[3] = {x0.x, x1.x, x2.x};
+      double ycoords[3] = {x0.y, x1.y, x2.y};
+      xt = {dotprod3(xcoords, shpCoords), dotprod3(ycoords, shpCoords)};
+
+   }
+   else {
+      assert(isQuad() && "computeShapeCoords");
+
+   //    Point2 p = xt;
+
+   //    // Reproject p the original side frame for ics=2
+   //    if constexpr(ics == 2) p = origSide->frame.G2L(toPoint3(xt, 0.0));
+
+   //    bool inside = false;
+
+
+
+   //    if(ifl==0) then
+   //      do i=1,4
+   //        in1=nxq(1,i,i34(ie))
+   //        in2=nxq(2,i,i34(ie))
+   //        swild2(i)=signa2(xel(in1,ie),xel(in2,ie),x,yel(in1,ie),yel(in2,ie),y)
+   //      enddo !i
+   //      tmp=minval(swild2(1:4))/area(ie)
+   //      if(tmp>-small2) then
+   //        inside=1
+   //        call ibilinear(itag,ie,area(ie),xel(1,ie),xel(2,ie),xel(3,ie),xel(4,ie), &
+   //   &yel(1,ie),yel(2,ie),yel(3,ie),yel(4,ie),x,y,xi,eta,shapef,icaseno)
+   //      endif !inside quad
+   //    else !ifl=1 - already inside
+   //      call ibilinear(itag,ie,area(ie),xel(1,ie),xel(2,ie),xel(3,ie),xel(4,ie), &
+   //   &yel(1,ie),yel(2,ie),yel(3,ie),yel(4,ie),x,y,xi,eta,shapef,icaseno)
+   //      !Update pt
+   //      x=dot_product(xel(1:4,ie),shapef(1:4))
+   //      y=dot_product(yel(1:4,ie),shapef(1:4))
+   //    endif !ifl
+
+
+   //    return quad_shape(1,6,nnel,xn2,yn2,inside2,arco)
+
+   }
+
+   return shpCoords;  // Never reached
+
+}
+
+
+__device__ void Element::shapeCoordsToXY(const ShapeCoords &shpCoords, Vector2 &xt) const {
 // Convert shape coordinates to cartesian coordinates
 
    if (isTri()) {
@@ -3219,8 +3387,7 @@ assert(false && "intGradPhiGradPhi:Do ICS==2");
 __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSide) const {
    // Interpolate the velocities at the point xt. 
    // This function works the same for triangular and quadrilateral elements.
-   double shpCoord[4];
-   Vector3 u_int;
+   ShapeCoords shpCoord;
 
    assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
 
@@ -3228,9 +3395,17 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
 // printf("interpolateVelocities 1: xt = (%f, %f, %f)\n", xt.x, xt.y, xt.z);
    computeShapeCoords(toVector2(xt), shpCoord, fiOnlyInside, origSide);
 
+   return interpolateVelocities(shpCoord, xt.z);
+
+}
+
+__device__ Vector3 Element::interpolateVelocities(const ShapeCoords &shpCoord, double z) const {
+
    assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
-   // Second step is to find the level that contains zt
+      Vector3 u_int;
+
+   // Find the level that contains zt
    // Uses a binary search to find the level
    // Note that z coordinates are interpolated from their values at the nodes of the element.
    int L = kb;   // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
@@ -3246,15 +3421,15 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
    
    // Interpolates vertically the velocities
    double wght1, wght2;
-   if (xt.z<=zL) {
+   if (z<=zL) {
       wght1 = 1.0;
       wght2 = 0.0;
-      xt.z = zL;
+      z = zL;
    }
-   else if (xt.z>=zR) {
+   else if (z>=zR) {
       wght1 = 0.0;
       wght2 = 1.0;
-      xt.z = zR;
+      z = zR;
    }
    else {
       // Perform a binary search to find the levels between L and R that contain xt.z
@@ -3263,7 +3438,7 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
 
          getNodalValues(M, &Node::compZCoord, zMAtNodes);
          double zM = interpolate(shpCoord, zMAtNodes);
-         if (zM < xt.z) 
+         if (zM < z) 
          {
             L = M;
             zL = zM;
@@ -3277,12 +3452,12 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
       assert(L == R - 1 && "Binary search failed to find the levels containing zt");
       // At this point, L and R are the two levels that contain zt, and zL and zR are the z coordinates at the nodes of the element at these levels
 
-      wght2 = (xt.z - zL)/(zR - zL);
+      wght2 = (z - zL)/(zR - zL);
       wght1 = 1.0 - wght2;
 
    }
 
-if (R< 0 || R>49) printf("KKKK R = %d, L = %d, wght1 = %.17f, wght2 = %.17f\n", R, L, wght1, wght2);
+
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    // Remember that interpolate takes frames into account for Vector2 fields and ics==2
    toVector2(u_int) = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
@@ -3483,153 +3658,79 @@ __inline__ __device__ bool Side::btrack(
 
    // Start from side center
    Point3 x0;
+   ShapeCoords shpX0;  // x0 in shape coordinates of the current element
 
    if constexpr(ics == 1) x0 = {center.x, center.y, zc[jlev]};
    else                   x0 = {0.0, 0.0, zc[jlev]};  // for ics == 2, the origin is the side centern which is (0,0) at the local frame
 
- 
+
    double time_rm = dt; // Remaining time
 
 
-   // Initial velocities
+   // Initial velocity.
    u_int = {u2[jlev].x, u2[jlev].y, w2(jlev)};
 
-   // Find the element that is in the direction opposite to the velocity
+   // Find the element that is in the direction opposite to the velocity (or the other element if the opposite element is dry)
    Element* curElem = findElementTowards(toVector2(u_int));
-   assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
+   assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or null");
 
-   // // If debugging backtracking, add the starting point to the debug plot and the elements for
-   // // idx == 15876
-   // if (idx == 15876) {
-   //    printf("PPP u_int = (%f, %f, %f)\n", u_int.x, u_int.y, u_int.z);
-   //    const Point3 orig = toPoint3(center, centerZ());
-   //    auto vertexInOriginalFrame = [this, orig, jlev](const Node *node) -> Point3 {
-   //       if constexpr(ics == 1) {
-   //          return toPoint3(node->p, 0.0);
-   //       } else {
-   //          const Point3 p_glob = toPoint3(node->p, node->gz);
-   //          const Vector3 loc = frame.G2L(p_glob - orig);
-   //          return Point3(loc.x, loc.y, 0.0);
-   //       }
-   //    };
-   //    auto elementInOriginalFrame = [this, orig, jlev](const Element *elem) -> Point3 { 
-   //       if constexpr(ics == 1) {
-   //          return toPoint3(elem->center, elem->centerZ());
-   //       } else {
-   //          const Point3 center_glob = toPoint3(elem->center, elem->centerZ());
-   //          const Vector3 loc = frame.G2L(center_glob - orig);
-   //          return Point3(loc.x, loc.y, loc.z);
-   //       }
-   //    };
-   //    auto plotTriangle = [&vertexInOriginalFrame, &elementInOriginalFrame](const Element *elem, unsigned int color) {
-   //       if (elem == nullptr || !elem->isTri()) return;
-   //       const Point3 v0 = vertexInOriginalFrame(elem->nodes[0]);
-   //       const Point3 v1 = vertexInOriginalFrame(elem->nodes[1]);
-   //       const Point3 v2 = vertexInOriginalFrame(elem->nodes[2]);
-   //       const Point3 center = elementInOriginalFrame(elem);
-   //       addDebugPlot(v0, v1, color, 'o', elem->nodes[0]->idx);
-   //       addDebugPlot(v1, v2, color, 'o', elem->nodes[1]->idx);
-   //       addDebugPlot(v2, v0, color, 'o', elem->nodes[2]->idx);
-   //       addDebugPlot(center, center, color, 'o', elem->idx);
-   //    };
-   //    plotTriangle(curElem, 0xFF0000u);  // current element in red
-   //    plotTriangle(curElem->nghbElems[0], 0x00A000u);
-   //    plotTriangle(curElem->nghbElems[1], 0x00A000u);
-   //    plotTriangle(curElem->nghbElems[2], 0x00A000u);
-
-   //    // Add the initial point (0,0) to the debug plot
-   //    addDebugPlot(Point3(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0), 0x0000FFu, '+');
-   // }
-
-   // Nudges it towards the barycenter
-const Point3 origX0 = x0;
-
-   curElem->nudgeToBarycenter(toPoint2(x0), this); // XXXX Necessary?
-
-showPoints(origX0, x0, jlev, this, 0xFF0000u, 'x', 1, 0, 0);
-
-// if (idx == 15876) addDebugPlot(Point3(0.0, 0.0, 0.0), x0, 0xFF00FFu, 'o');
-
+   // Compute the shape coordinates of the starting point in the current element knowing it is at a side. This ensures that the zero shape coordinates are strictly 0.0.
+   shpX0 = curElem->computeShapeCoordsForSides(toPoint2(x0), this);
 
    const int MAX_ITERATIONS = 200; 
    Element* nextElem = nullptr;
    int iter = 0;
-   // assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
    Point3 xt = {-1.0e25, -1.0e25, -1.0e25};
-   while(true) {
 
-      // Calculate timestep
-      double dtb = min(dtbk, time_rm);
-
-// if (idx == 18867) printf("iter = %d, side->idx = %d, curElem->idx = %d, dtb = %.17f, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, curElem->idx, dtb, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);      
-
-      // Next point in the backtracking curve
-// if (iter >= MAX_ITERATIONS - 50)  {
-//    printf("iter = %d, side->idx = %d, dtb = %.17f, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, dtb, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);
-//    addDebugPlot(x0, x0 - dtb*u_int, 0xFF00FF, '+');        
-// }
-        
-      xt = x0 - dtb*u_int;
-
-showPoints(x0, xt, jlev, this, 0xFF00FFu, 'o', 1, 15, iter);
-
-// if (curElem->isDry) return true;
-      bool found = curElem->trackThroughElementsAndLevels(x0, xt, u_int, nextElem, jlev, dtb, time_rm, this);
-// if (nextElem == nullptr) printf("RRRRR found = %d, nextElem = %p\n", found, nextElem);
-// if (idx == 15876) addDebugPlot(x0, xt, 0xFF00FFu, '+');
-// if (!found) printf("1111: found = %d\n", idx);
-
-if (!found) {
-   atomicAdd(&stopBlock, 1);
-   // printf("idx = %d, curElem->idx = %d, jlev = %d\n", idx, curElem->idx, jlev);
+if (idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) {
+   // showPoints(x0, xt, jlev, this);
+   showPoints(x0, x0 - dtbk*u_int, jlev, this, 0x00FF00, 'x');
 }
-__syncthreads();
-if (stopBlock > 0) return false;
-      assert(found && "Backtracking failed in btrack");
 
-
-      time_rm -= dtb; // if trackThroughElementsAndLevels terminates early (if it intersects a boundary or a dry element),
-                      // then time_rm needs to be increased by the unused time.
-
-      if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0                      
+   while(true) {
 
       // If the velocity is too small, we stop the backtracking
       const double vmag = length(toVector2(u_int));
-      if (vmag <= velmin_btrack) break;
+      if (vmag <= velmin_btrack) return true;
 
+      // Calculate timestep
+      double dtb = min(dtbk, time_rm);
+        
+      xt = x0 - dtb*u_int;
+if (idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) showPoints(x0, xt, jlev, this);
+      ShapeCoords shpXt;
+      curElem->computeShapeCoords(toPoint2(xt), shpXt, Element::EFixIf::fiNo, this);
+
+      bool found = curElem->trackThroughElementsAndLevels(x0, xt, shpX0, shpXt, u_int, nextElem, jlev, dtb, time_rm, this);
+
+
+      time_rm -= dtb; // time_rm needs to be decreased by the time advanced.
+
+      // Exit if the remaining time is too small.
+      if (time_rm <= 1.0e-3) break;
+      
+if (idx == ORIG_SIDE_IDX && jlev == ORIG_SIDE_JLEV) showPoints(x0, xt, jlev, this);
       // The current point becomes the next segment's starting point.
       x0 = xt;
- 
+      shpX0 = shpXt; 
       curElem = nextElem;
 
       iter++;
 
-
-// if (iter >= MAX_ITERATIONS - 50) {
-//    addDebugPlot(center, center, 0xFF001F, 'x');  
-//    printf("iter = %d, side->idx = %d, elems[0]->idx = %d, elems[1]->idx = %d, curElem->idx = %d, time_rm = %.17f, dtb = %.17f, u_int = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f)\n", iter, idx, elems[0]->idx, elems[1]->idx, curElem->idx, time_rm, dtb, u_int.x, u_int.y, u_int.z, xt.x, xt.y, xt.z);      
-//    }
+if (iter > 100) printf("btrack: idx = %i, jlev = %d, dtb = %.17f, iter = %d, x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f), shpX0 = (%.17f, %.17f, %.17f), shpXt = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", idx, jlev, dtb, iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, shpX0[0], shpX0[1], shpX0[2], shpXt[0], shpXt[1], shpXt[2], u_int.x, u_int.y, u_int.z);
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
+if (iter==110) break; //XXXXX
+
+
    }
+
 
    assert(curElem != nullptr && "Final element is nullptr");
    assert(!curElem->isDry && "Final element is dry");
 
-const Point3 p0 = toLocalFrame(toPoint3(curElem->nodes[0]->p, curElem->nodes[0]->gz));
-const Point3 p1 = toLocalFrame(toPoint3(curElem->nodes[1]->p, curElem->nodes[1]->gz));
-const Point3 p2 = toLocalFrame(toPoint3(curElem->nodes[2]->p, curElem->nodes[2]->gz));
-Vector3 xt_Before = xt;
-curElem->nudgeToBarycenter(toPoint2(xt), this);
-Vector3 xt_After = xt;
-showPoints(xt_Before, xt_After, jlev, this, 0x00006Fu, '+', 2, 10, iter);
-// if (!curElem->containsPoint(toPoint2(xt), this)) printf("side->idx = %d, (%.16f,%.16f),(%.16f,%.16f),(%.16f,%.16f)  xt = (%.17f, %.17f, %.17f)\n", idx, p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, xt.x, xt.y, xt.z);
-   assert(curElem->containsPoint(toPoint2(xt), this) && "Target point is not inside the final element 4"); 
-
 
    // Interpolate the velocities at the final point
-   u_int = curElem->interpolateVelocities(xt, this);
-
-   // if (idx == 18867) printf("iter = %d, side->idx = %d, curElem->idx = %d, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, curElem->idx, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);         
+   u_int = curElem->interpolateVelocities(shpX0, x0.z);
 
 
 }

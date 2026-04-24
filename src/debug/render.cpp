@@ -308,7 +308,7 @@ void drawMesh(
 
         if (g_font_ready) {
             // Push labels farther as i grows (modulo cycle) and connect to midpoint.
-            const double offset = 10.0 + 4.0 * static_cast<double>(i % 11);
+            const double offset = 10.0 + 10.0 * static_cast<double>(i % 11);
             const double tangentShift = 3.0 * static_cast<double>((i % 5) - 2);
             const double lx = mx + px * offset + ux * tangentShift;
             const double ly = my + py * offset + uy * tangentShift;

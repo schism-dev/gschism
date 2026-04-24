@@ -150,9 +150,10 @@ def compile_and_import(module_name: str, cpp_file: str):
 
 
 class MeshWidget(QtWidgets.QWidget):
-    def __init__(self, module, parent=None):
+    def __init__(self, module, coord_label=None, parent=None):
         super().__init__(parent)
         self.module = module
+        self.coord_label = coord_label
         self.frame = None
         self.last_ms = 0.0
         self.zoom = 10.0
@@ -248,6 +249,11 @@ class MeshWidget(QtWidgets.QWidget):
     def _update_mouse_world(self, pos: QtCore.QPointF):
         self._mouse_screen_pos = pos
         self._mouse_world_pos = self._screen_to_world(pos.x(), pos.y())
+        if self.coord_label is not None:
+            wx, wy = self._mouse_world_pos
+            self.coord_label.setText(
+                f"mouse(mesh)=({wx:.3f},{wy:.3f}) screen=({pos.x():.1f},{pos.y():.1f})"
+            )
 
     def zoom_to(self, target_kind: str, target_index: int) -> bool:
         if not self.mesh_ready:
@@ -345,12 +351,6 @@ class MeshWidget(QtWidgets.QWidget):
             10, 20,
             f"{self.last_ms:.1f} ms | zoom={self.zoom:.3f} pan=({self.pan_x:.1f},{self.pan_y:.1f})"
         )
-        wx, wy = self._mouse_world_pos
-        painter.drawText(
-            10, 38,
-            f"mouse(mesh)=({wx:.3f},{wy:.3f}) screen=({self._mouse_screen_pos.x():.1f},{self._mouse_screen_pos.y():.1f})"
-        )
-
         # Draw side index labels only when zoomed in enough and visible on screen.
         if self.zoom > 0.05 and self.side_cx is not None and self.side_cy is not None:
             scale = self.zoom / 1000.0
@@ -368,6 +368,7 @@ class MeshWidget(QtWidgets.QWidget):
         painter.end()
 
     def mousePressEvent(self, event):
+        self._update_mouse_world(event.position())
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self._panning = True
             self._last_mouse_pos = event.position()
@@ -390,6 +391,7 @@ class MeshWidget(QtWidgets.QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        self._update_mouse_world(event.position())
         if event.button() == QtCore.Qt.MouseButton.LeftButton and self._panning:
             self._panning = False
             self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
@@ -405,7 +407,7 @@ class MeshWidget(QtWidgets.QWidget):
             return
 
         # Zoom around the cursor position (screen-space pivot).
-        zoom_factor = 1.25 if angle > 0 else (1.0 / 1.25)
+        zoom_factor = 1.5 if angle > 0 else (1.0 / 1.5)
         old_zoom = self.zoom
         new_zoom = old_zoom * zoom_factor
         if new_zoom <= 0.0 or not np.isfinite(new_zoom):
@@ -431,7 +433,10 @@ def show_window(module):
     dialog.setWindowFlag(QtCore.Qt.WindowType.WindowMaximizeButtonHint, True)
     layout = QtWidgets.QVBoxLayout(dialog)
 
-    canvas = MeshWidget(module)
+    mouse_pos_label = QtWidgets.QLabel("mouse(mesh)=(0.000,0.000) screen=(0.0,0.0)")
+    layout.addWidget(mouse_pos_label, 0)
+
+    canvas = MeshWidget(module, coord_label=mouse_pos_label)
     layout.addWidget(canvas, 1)
 
     controls_widget = QtWidgets.QWidget()
@@ -463,8 +468,9 @@ def show_window(module):
     controls.addWidget(zoom_btn)
     controls.addWidget(status, 1)
     layout.addWidget(controls_widget, 0)
-    layout.setStretch(0, 1)
-    layout.setStretch(1, 0)
+    layout.setStretch(0, 0)  # mouse label
+    layout.setStretch(1, 1)  # canvas
+    layout.setStretch(2, 0)  # controls
 
     dialog.resize(900, 600)
     dialog.show()

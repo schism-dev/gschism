@@ -148,7 +148,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
              
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        if it >= 1118:
+        if it ==2:
             import debug.newmonitor as newmonitor
             newmonitor.show()
 
@@ -166,7 +166,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Vertical advection 
     # computeVerticalAdvection()        # Lines 5030-5122
 
-    # if it >= 55:
+    # if it == 0:
     #     monitor.fortranDebugPlot(it)
 
     cufunc.computeElevationBoundaryConditions(time)
