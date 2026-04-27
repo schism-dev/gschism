@@ -725,11 +725,21 @@ printf("findNextIntersection: sided %d, tIntersect = %.17f, delta = %.17f, delta
 
 }
 
+__inline__ __device__ bool Element::containsPoint(Point2 &p, const Side *origSide) const { 
+   // Check if the point (xt,yt) is inside the element.
+   // if ics==2, origSide is used to convert the point to the starting point's frame.
+   // This function guarantees that if:
+   // - point p is inside the mesh.
+   // - origSide is the same (or nullptr)
+   // Then, a point can either be found in only one element or in exactly
+
+}
+
 __inline__ __device__ bool Element::containsPoint(Vector2 xt, const Side *origSide) const { 
    // Check if the point (xt,yt) is inside the element.
    // if ics==2, origSide is used to convert the point to the starting point's frame.
    assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa");
-
+printf ("DO NOT USE\n");
    ShapeCoords shpCoords;
    bool res = computeShapeCoords(xt, shpCoords, fiNo, origSide);
 
@@ -741,7 +751,7 @@ __inline__ __device__ bool Element::containsPoint(Vector2 &xt, bool fixCoords, c
    // If fixCoords is true, and *the point is inside the element*, the point is nudged to be inside the element.
    // if ics==2, origSide is used to convert the point to the starting point's frame.
    assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa");
-
+printf ("DO NOT USE\n");
    ShapeCoords shpCoords;
    Vector2 tmp_xt = xt;
    const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;

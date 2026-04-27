@@ -800,6 +800,7 @@ struct Element {
                                         double& tIntersect, const Side *origSide = nullptr);
 
    __inline__ __device__ bool containsPoint(const ShapeCoords &shpCoords) const
+   // This function is rather trivial and it might not be even necessary to have it.
    {
       bool res = shpCoords[0] >= 0.0 && shpCoords[0] <= 1.0 &&
                  shpCoords[1] >= 0.0 && shpCoords[1] <= 1.0 &&
