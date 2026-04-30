@@ -34,7 +34,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
 
     if namelist.opt.ics == 1:
         useFrames = 'DO_NOT_USE_FRAMES'
-    if namelist.opt.ics == 2:
+    elif namelist.opt.ics == 2:
         useFrames = 'USE_FRAMES'
     else:
         raise ValueError(f"Invalid ics = {namelist.opt.ics}, not in [1, 2]")

@@ -921,19 +921,24 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
         // Read number of nodes in this segment
         std::getline(file, line);
         std::istringstream iss(line);
-        int nn;
-        iss >> nn;
+        int nn, islandFlag;
+        iss >> nn >> islandFlag;
         mnlnd = std::max(mnlnd, nn);
         nt += nn;
 
         // Read and store node indices
-        std::vector<int> nodes(nn);
+        std::vector<int> nodes(nn + islandFlag);
         for (int i = 0; i < nn; i++) {
             std::getline(file, line);
             std::istringstream iss(line);
             iss >> nodes[i];
             nodes[i]--;  // Convert to 0-based indexing
         }
+
+        if (islandFlag == 1) {
+            nodes[nn] = nodes[0];
+        }
+
         segmentNodes.push_back(nodes);
 
  

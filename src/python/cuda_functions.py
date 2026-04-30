@@ -16,6 +16,7 @@ populateNodes = None
 populateSides = None
 populateElements = None
 populateBoundaryNodes = None
+populateBoundarySideLinks = None
 getStructSizes = None
 initTidalHarmonicConstituents = None
 printMatrix = None
@@ -118,7 +119,7 @@ def initializeCudaKernelManager(_project_root):
 
 def initializeCudaFunctions(sizes):
     global mod
-    global populateMesh, populateNodes, populateSides, populateElements, populateBoundaryNodes
+    global populateMesh, populateNodes, populateSides, populateElements, populateBoundaryNodes, populateBoundarySideLinks
     global scaleGravity, computeTimeRamps, setWinds
     global computeBedDeformation, computeTidalPotential
     global getBoundaryConditions, computeFlowBcVelocities, resetBoundaryAreas, computeBoundaryAreas
@@ -144,6 +145,7 @@ def initializeCudaFunctions(sizes):
         populateSides                       = mod.get_function('populateSides',                       sizes, kernel_type='sides')
         populateElements                    = mod.get_function('populateElements',                    sizes, kernel_type='elements')
         populateBoundaryNodes               = mod.get_function('populateBoundaryNodes',               sizes, kernel_type='nodeBnd')
+        populateBoundarySideLinks           = mod.get_function('populateBoundarySideLinks',           sizes, kernel_type='sideBnd')
 
         scaleGravity                        = mod.get_function('scaleGravity',                        sizes, kernel_type='nodes')
         setWinds                            = mod.get_function('setWinds',                            sizes, kernel_type='nodes')

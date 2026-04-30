@@ -1,4 +1,5 @@
-
+#define USE_LOCALIZED_SIGMA
+#define USE_FRAMES  // XXXXXXXXXXXXXXX
 constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
@@ -44,6 +45,25 @@ __device__ double ramp;
 __device__ double *amig; // Frequency of the harmonic constituent
 __device__ double *face; // Nodal factor of the harmonic constituent
 __device__ double *ff;   // Earth equilibrium argument of the harmonic constituent
+
+
+
+struct Bool4 {
+   unsigned int m; // bit i = lane i
+
+   __device__ __forceinline__ bool get(int i) const { return (m >> i) & 1u; }
+   __device__ __forceinline__ void set(int i, bool v) {m = (m & ~(1u << i)) | ((unsigned int)(v) << i); }
+
+   __device__ __forceinline__ bool all(void) const { return m == 0x0F; }
+   __device__ __forceinline__ bool any(void) const { return m != 0; }
+   __device__ __forceinline__ bool none(void) const { return m == 0; }
+   __device__ __forceinline__ int firstOne(void) const { return __ffs(m) - 1; }
+
+};
+
+__device__ __forceinline__ Bool4 operator!(Bool4 x) { x.m = (~x.m) & 0x0F; return x; }
+__device__ __forceinline__ Bool4 operator&(Bool4 a, Bool4 b) { return Bool4{(unsigned int)(a.m & b.m)}; }
+__device__ __forceinline__ Bool4 operator|(Bool4 a, Bool4 b) { return Bool4{(unsigned int)(a.m | b.m)}; }
 
 
 // Union to store different types of variables in the same memory location. This is used to define temporary 
@@ -528,6 +548,11 @@ struct Node;
 struct Mesh;
 struct NodeBoundary;
 
+void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned int color = 0x0000FFu, char marker = 'o', int width = 1, int dashLen = 0, int label = -1);
+
+__device__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Side *origSide, Side *& lastCrossSide);
+
+
 struct CubicSpline { 
    double *x   = nullptr;
    double *y   = nullptr;
@@ -869,10 +894,14 @@ struct Element {
 
    __device__ void trackGoesOutOfWater(const Side *nextSide, const Side *origSide, Element *curElem, double tt, int jlev,
                                        Point3 &xt, double zint, Vector3 &u_int);
+
+   __device__ __forceinline__ Point2 getLocalNodePosition(int idx, const Side* origSide) const;
+
+   __device__ __forceinline__ Node *getNodeInOrder(int idx) const;
+
+   __device__ __forceinline__ void computePredicates(const Point2& xt, const Side* origSide,
+                                                    Bool4& isLeft, Bool4& isObtuse, Bool4& isBisector) const;
     
-   __device__ bool trackThroughElementsAndLevels(Point3 x0, Point3 &xt, Vector3 &u_int, 
-                                                 Element *&nextElem, int &jlev, double &dt, double time_rm,
-                                                 const Side *origSide);
 
 };
 
@@ -924,6 +953,8 @@ struct BoundarySegment {
 struct SideBoundary {
    Side *side; // Pointer to the side that this boundary segment belongs to
    BoundarySegment *segment; // Pointer to the boundary segment
+
+   Side *leftSide, *rightSide; // Pointers to the left and right sides of the boundary segment
 
    Vector2 ubc[nvrt]; // velocity boundary condition
    
@@ -1019,7 +1050,7 @@ struct Side {
    #endif
 
    __device__ __forceinline__ Point3 toLocalFrame(Point3 const& p) const {
-   // If ics == 2, convert the global point to the local frame of the original side
+   // If ics == 2, convert the global point to the local frame of the side
       
       if constexpr (ics == 1) {
          return p;
@@ -1028,6 +1059,12 @@ struct Side {
          const Point3 local = frame.G2L(p - c);
          return local;
       }
+   }
+
+
+   __device__ __forceinline__ Vector2 projectToLocalFrame(Vector2 const& v, Frame const& v_frame) const {
+      if constexpr(ics == 1) return v;
+      else return v_frame.projHorVec(v, frame);
    }
 
    __inline__ __device__ double centerZ(void)      const;
@@ -1100,35 +1137,7 @@ struct Side {
       return elems[0] ? elems[0] : elems[1];
    }
 
-   __inline__ __device__ Element* findElementTowards(Vector2 u) const {
-      // From the elements that share this side, find the one that is in the direction opposite to the velocity vector
-      // (unless it is a boundary side or a dry element, in which case we return the only wet element)
-
-      assert(elems[0] != nullptr && "elems[0] is nullptr in findElementTowards");
-
-      // Dot product of the negative velocity vector with the side normal vector
-      const double dot_prod1 = -dot(u, n);
-
-      // Vector from side center to element 0 centroid
-      const Vector2 v2 = elems[0]->center - center;
-
-      // Dot product of the vector with the side normal vector
-      const double dot_prod2 = dot(v2, n);
-
-      // If the dot product is positive, returns the element whose vector to the centroid is in the same direction as the target point
-      // Otherwise, returns the other element (otherwise includes dot_prod1 == 0)
-
-      const bool isDry0 = elems[0]==nullptr || elems[0]->isDry;
-      const bool isDry1 = elems[1]==nullptr || elems[1]->isDry;
-
-      assert(!isDry0 || !isDry1 && "Both elements are dry in findElementTowards");
-
-      if (dot_prod1*dot_prod2 > 0.0) return !isDry0 ? elems[0] : elems[1];
-      else                           return !isDry1 ? elems[1] : elems[0];
-
- 
-   }
-
+   
    __forceinline__ __device__ Element* otherElem(const Element* elem) const {
       // Given an element, returns the other element that shares this side
       return (elems[0] == elem) ? elems[1] : elems[0];
@@ -1570,7 +1579,9 @@ struct Mesh {
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa,
-                                          int *ifltype, int *iettype);                    
+                                          int *ifltype, int *iettype); 
+
+   __device__ void populateBoundarySideLinks(void);
 
    __device__ void populateMesh(int *i34, int *elnode, int *elside,
                    double *node_coords, double *node_coords_ll, bool use_ll,
