@@ -76,7 +76,7 @@ getSideVarFunc = None
 
 setupCGSolvers = None
 solverCopyResult = None
-test = None
+# test = None
 
 
 def initializeCudaKernelManager(_project_root):
@@ -211,7 +211,7 @@ def initializeCudaFunctions(sizes):
         getNodeVarFunc                      = mod.get_function('getNodeVarFunc',                      sizes, kernel_type='nodes')
         getSideVarFunc                      = mod.get_function('getSideVarFunc',                      sizes, kernel_type='sides')
 
-        test = mod.get_function('test', sizes, kernel_type='global')
+        # test = mod.get_function('test', sizes, kernel_type='global')
 
         setupCGSolvers = mod.get_function('setupCGSolvers', sizes, kernel_type='nodes')
         solverCopyResult = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')

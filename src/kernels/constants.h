@@ -100,6 +100,7 @@ constexpr double rho0 = 1000; // [kg/m^3]
 constexpr double dtb_min = 10; //XXXX
 constexpr double dtb_max = 30; //XXXX
 constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
+constexpr double velmin_btrack_sq = velmin_btrack*velmin_btrack;
 constexpr double btrack_nudge = 0.009013;   // Nudging factor for backtracking
 
 constexpr int nadv = 1; // Advection flag

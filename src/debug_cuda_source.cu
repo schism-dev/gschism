@@ -101,6 +101,7 @@ constexpr double rho0 = 1000; // [kg/m^3]
 constexpr double dtb_min = 10; //XXXX
 constexpr double dtb_max = 30; //XXXX
 constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
+constexpr double velmin_btrack_sq = velmin_btrack*velmin_btrack;
 constexpr double btrack_nudge = 0.009013;   // Nudging factor for backtracking
 
 constexpr int nadv = 1; // Advection flag
@@ -668,7 +669,7 @@ struct NodeBoundary;
 
 void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned int color = 0x0000FFu, char marker = 'o', int width = 1, int dashLen = 0, int label = -1);
 
-__device__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Side *origSide, Side *& lastCrossSide);
+__device__ __forceinline__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Side *origSide, Side *& lastCrossSide, int jlev);
 
 
 struct CubicSpline { 
@@ -741,8 +742,7 @@ struct Element {
          return p;
       } else {
          const Point3 c = {center.x, center.y, centerZ()};
-         const Point3 local = frame.G2L(p - c);
-         return local;
+         return frame.G2L(p - c);
       }
    }
 
@@ -869,7 +869,6 @@ struct Element {
 
    __inline__ __device__ double computeSignedArea(void) const;
 
-   __inline__ __device__ void nudgeToBarycenter(Point2 &p, const Side *origSide = nullptr) const;
 
    enum EFixIf { fiNo, fiOnlyInside, fiAnywhere };
 
@@ -1017,7 +1016,7 @@ struct Element {
 
    __device__ __forceinline__ Node *getNodeInOrder(int idx) const;
 
-   __device__ __forceinline__ void computePredicates(const Point2& xt, const Side* origSide,
+   __device__ __forceinline__ void computePredicates(const Point2 x0, const Point2& xt, const Side* origSide,
                                                     Bool4& isLeft, Bool4& isObtuse, Bool4& isBisector) const;
     
 
@@ -1266,7 +1265,7 @@ struct Side {
       return (n1 == node) ? n2 : n1;
    }
  
-   __inline__ __device__ bool btrack(int jlev, double dt, double dtbk, Vector3 &u_int) const;
+   __inline__ __device__ void btrack(int jlev, double dt, double dtbk, Vector3 &u_int) const;
 
 
 
@@ -1721,30 +1720,7 @@ struct Mesh {
    {
    }
 
-   __device__ void test(double x, double y, double z)
-   {
-      // XXXXX REMOVE THIS FUNCTION
-      printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
-      for (int i = 0; i < ne; i++) {
-         auto isInside = localElemData[i].containsPoint({x, y}, nullptr);
-
-         if (isInside) {
-            printf("Point %f %f %f is inside element %d\n", x, y, z, i);
-            Element *elem = &localElemData[i];
-            
-            Vector3 u_int;
-
-            // Choose the first side
-            Side *side = elem->sides[0];
-            int jlev = 5;  
-            // RECORDAR:
-            // - con y=0 no encuentra el triangulo
-            // - jlev = 5, z = 0.1...
-            side->btrack(5, 3000.0, 3.1, u_int);
-
-         }
-      }
-   } 
+ 
 
 }; // End of Mesh class
 
@@ -1758,6 +1734,10 @@ __device__ __inline__ double dotprod4(double* vec1, double* vec2) {
 
 __device__ __inline__ double min3(double a, double b, double c) {
    return min(a, min(b, c));
+}
+
+__device__ __inline__ double max3(double a, double b, double c) {
+   return max(a, max(b, c));
 }
 
 __device__ __inline__ double min4(double a, double b, double c, double d) {
@@ -1872,6 +1852,7 @@ __device__ int *debugPlotIdx = nullptr;
 __device__ int debugPlotMutex = 0;
 
 
+
 #define IDX(ptr) (ptr == nullptr ? -1 : (ptr->idx))
 
 // Each device has a global mesh object
@@ -1923,25 +1904,29 @@ Polynomial<4> *polyDischarge; // XXX read from file
  * 
  * @return Status code of type trackExitCodes
  * 
- * Uses the Celestial Walk algorithm to find the element that contains the target point.
+ * Uses the Leaded Celestial Walk algorithm to find the element that contains the target point.
+ * This is a variant of the Celestial Walk algorithm that goes from element A containing the starting 
+ * point x0 (in one side) to element B containing the target point xt. To enforce that the next element is
+ * as close the the segment AB as possible, the next point at each iteration is computed
+ * along segment AB, but just after the current element.
  */
 int stackSize = 0;
 
-__device__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Side *origSide, Side *&lastCrossSide) {
+__device__ __forceinline__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Side *origSide, Side *&lastCrossSide, int jlev) {
 
    constexpr int MAX_ITERATIONS = 200;
 
    int iter = 0;
    while (iter < MAX_ITERATIONS) {
       iter++;
-
+if (iter > 20) printf("XXX iter = %d, x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f)\n", iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
       Bool4 isLeft, isObtuse, isBisector;
-      curElem->computePredicates(toPoint2(xt), origSide, isLeft, isObtuse, isBisector);
-// showPoints(x0, xt, jlev, origSide, 0xFF0000u, 'x', 1, 0, 0);
+      curElem->computePredicates(toPoint2(x0), toPoint2(xt), origSide, isLeft, isObtuse, isBisector);
+showPoints(x0, xt, jlev, origSide, 0xFF0000u, 'x', 1, 0, 0);
       Bool4 isValid = !isLeft & (!isObtuse | isBisector); // bitwise operation are overloaded
 
       if (isValid.none()) 
-      // Inside the element
+      // Inside the element if none of the edges is a valid continuation
       {
          // Just returns true and the element (curElem) is unchanged).
          return true;
@@ -1950,121 +1935,25 @@ __device__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Si
 
          // Outside this element. Pick the first valid exit side and cross.
          lastCrossSide = curElem->sides[isValid.firstOne()];
+         Element *prevElem = curElem;
          curElem = lastCrossSide->otherElem(curElem);
+const Point3 p1 = origSide->toLocalFrame(toPoint3(lastCrossSide->n1->p, lastCrossSide->n1->gz));
+const Point3 p2 = origSide->toLocalFrame(toPoint3(lastCrossSide->n2->p, lastCrossSide->n2->gz));
+showPoints(p1, p2, jlev, origSide, 0x0000FFu, 'o', 1, 0, 0);         
 
          // If it crosses into a dry element or a boundary element, return false. This means that the track will now move 
          // along the boundary.
-         if (curElem == nullptr || curElem->isDry) return false;
+         if (curElem == nullptr || curElem->isDry) {
+         
+            curElem = prevElem;
+            return false;
+         }
          
       }
 
    }
 
-   // // First thing is to check if the target point is inside the element. If it is, there is nothing
-   // // else to do. This means that the full step occurred within the current element.
-   // assert(!isDry && "Starting element is dry");
-   // assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa");
-
-   // assert(containsPoint(toPoint2(x0), origSide) && "Starting point is not inside the element");
-
-   // if (containsPoint(toPoint2(xt), true, origSide)) {  // The "true" means that, if the point is very close to the boundary, it is nudged to be definitely inside the element.
-
-   //    assert(containsPoint(toPoint2(xt), origSide) && "Target point is not inside the element 1");
-   //    assert(!isDry && "Target point is inside a dry element");
-
-   //    u_int = interpolateVelocities(xt, origSide);
-
-   //    nextElem = this;
-
-   //    return true;
-   // }
-
-
-   
-
-//    assert(norm2(toVector2(xt - x0)) > 0.0 && "Zero length track"); 
-   
-//    double t;
-//    Side *nextSide = nullptr;
-//    double tIntersect = 1e10;
-
-// // showPoints(x0_local, xt, jlev, origSide, 0xFFFFFFu, '+', 2, 0);
-//    // Finds the first intersection with the element sides. It is guaranteed to exist because
-//    // (x0,y0) is inside the element but the target point is not.
-//    bool found_intersection = findNextIntersection(toPoint2(x0), toPoint2(xt), nextSide, nextElem, t, tIntersect, origSide);
-
-
-// showPoints(x0, xt, jlev, origSide, 0x0000FFu, 'o', 1, 5);
-
-// const Node *n1 = nodes[0];
-// const Node *n2 = nodes[1];
-// const Node *n3 = nodes[2];
-
-// Point3 p1 = toPoint3(n1->p, n1->gz);
-// Point3 p2 = toPoint3(n2->p, n2->gz);
-// Point3 p3 = toPoint3(n3->p, n3->gz);
-// p1 = origSide->toLocalFrame(p1);
-// p2 = origSide->toLocalFrame(p2);
-// p3 = origSide->toLocalFrame(p3);
-// int s1 = sides[0]->idx;
-// int s2 = sides[1]->idx;
-// int s3 = sides[2]->idx;
-
-// if (!found_intersection) { return false;}
-// // if (!found_intersection) {if (idx == 15876) printf("111112: No intersection found\n"); return false;}
-//    assert(found_intersection && "No intersection found at %d");
-
-//    Point2 xtmp = toPoint2(origSide->toLocalFrame(nextSide->p3_t(t))); // If needed, moves the target point to the intersection point
-
-//    // If the next element is not dry, nudge it to the barycenter to ensure that the point is inside the element.
-//    if (nextElem != nullptr && !nextElem->isDry) {
-//       assert(nextElem->containsPoint(xtmp, origSide) && "Intersection point is not inside the next element");
-// Vector3 xtmp_Before = origSide->toLocalFrame(nextSide->p3_t(t));
-//       nextElem->nudgeToBarycenter(xtmp, origSide);
-// Vector3 xtmp_After = {xtmp.x, xtmp.y, (1 - tIntersect)*x0.z + tIntersect*xt.z};
-// showPoints(xtmp_Before, xtmp_After, jlev, origSide, 0x00FFFFu, '+', 2, 10);
-//    }
-
-// // printf("x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f), tIntersect = %.17f\n", x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, tIntersect);
-//    const double zint = (1 - tIntersect)*x0.z + tIntersect*xt.z;
-//    xt = {xtmp.x, xtmp.y, zint};
-
-//    // if the tracking segment goes out of water (either dry or edge boundary)
-//    if (isEdgeBoundary(nextSide) || (nextElem == nullptr || nextElem->isDry)) {
-
-      
-// Vector3 xt_Before = xt;
-//       trackGoesOutOfWater(nextSide, origSide, this, t, jlev, xt, zint, u_int);
-// showPoints(xt_Before, xt, jlev, origSide, 0x00FF00u, '+', 14, 5);
-
-//       assert(this->containsPoint(toPoint2(xt), origSide) && "Target point is not inside the current element 2");
-//       // When this happens, the backtracking stops.
-
-//       dt *= tIntersect;
-
-//       // In this case, the next element is again the current element.
-//       nextElem = this;
-
-// // printf("trackGoesOutOfWater: side->idx = %d, dt = %.17f, time_rm = %.17f, u_int = (%.17f, %.17f, %.17f)\n", nextSide->idx, dt, time_rm, u_int.x, u_int.y, u_int.z);
-
-//       // Returns "early", meaning that we stopped before we were able to reach the target point.
-//       // In this case, the caller (btrack) needs to take into account the remaining time.
-//       return true;    
-//    }
-
-
-//    assert(nextElem->containsPoint(toPoint2(xt), origSide) && "Target point is not inside the next element 3");
-//    // Interpolate velocities at the final position. This is a conceptually simple step,
-//    // but the function is not simple, because it has to search for the vertical level containing zt.
-
-   
-//    dt *= tIntersect; // reduces the time step to the time it takes to reach the intersection
-
-//    u_int = nextElem->interpolateVelocities(xt, origSide); 
-
-//    assert(nextElem != this && "Next element is the same as the current element");
-
-   return true;
+   assert(false && "Leaded Celestial Walk algorithm did not find the target point in the allowed number of iterations");
 }
 
 
@@ -2112,7 +2001,8 @@ __device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xA0A0
 
 void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned int color, char marker, int width, int dashLen, int label) {
    // if ((origSide->idx == 1276362 || origSide->idx == 1276363 || origSide->idx == 1276361 || origSide->idx == 0 || origSide->idx == 9) && jlev == 48) {
-   if (origSide->idx == 64501 && jlev >= 28) {
+   return;
+   if (origSide->idx == 3572077 && jlev == 48) {
       // Convert points back to original frame
       x1.z = 0.0;
       x2.z = 0.0;
@@ -2314,11 +2204,13 @@ printf("interpolate 3: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", value
       T values[4];
       getNodalValues(level, field, values);
       
+if (shapeCoords[0] > 1.1 || shapeCoords[1] > 1.1 || shapeCoords[2] > 1.1 || 
+    shapeCoords[0] < -0.1 || shapeCoords[1] < -0.1 || shapeCoords[2] < -0.1) printf("XXX shapeCoords = (%.17f, %.17f, %.17f, %.17f)\n", shapeCoords[0], shapeCoords[1], shapeCoords[2], shapeCoords[3]);
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
-// printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+// if (idx <2077 ) printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
-// printf("interpolate 4: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+// if (idx<2077 ) printf("interpolate 4: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -2705,6 +2597,7 @@ __inline__ __device__ bool Element::containsPoint(Vector2 &xt, bool fixCoords, c
    double shpCoords[4];
    Vector2 tmp_xt = xt;
    const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
+printf("HEREEEEEE\n");
    bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords, origSide);
 
    if (fixCoords && res) xt = tmp_xt;
@@ -2770,7 +2663,7 @@ __device__ __forceinline__ Node *Element::getNodeInOrder(int idx) const {
    return (ssign[idx] > 0) ? sides[idx]->n1 : sides[idx]->n2;
 }
 
-__device__ __forceinline__ void Element::computePredicates(const Point2& xt, const Side* origSide,
+__device__ __forceinline__ void Element::computePredicates(const Point2 x0, const Point2& xt, const Side* origSide,
                                 Bool4& isLeft, Bool4& isObtuse, Bool4& isBisector) const
 // Computes the three per-side predicates needed for the celestial walk
 // (Kuijper, Ermolaev, Devillers, JCGT 7(3), 2018, arXiv:1710.01620).
@@ -2789,6 +2682,18 @@ __device__ __forceinline__ void Element::computePredicates(const Point2& xt, con
                         getLocalNodePosition(1, origSide), 
                         getLocalNodePosition(2, origSide), 
                         getLocalNodePosition(3, origSide)};
+
+   // Computes the maximum distance from the starting point to the farthest element node projected on the segment x0xt.
+   // This has nothing to do with the original celestial walk. It is used in the Leaded Celestial 
+   //Walk algorithm to find a point on the segment x0xt that is as close as possible to the starting point,
+   // But still farther towards the target point from the current point.
+   const Vector2 vt0 = xt - x0;
+   double maxProjDist = max(dot(vt0, C[0] - x0), dot(vt0, C[1] - x0));
+   maxProjDist = max(maxProjDist, dot(vt0, C[2] - x0)); 
+   maxProjDist = isQuad() ? max(maxProjDist, dot(vt0, C[3] - x0)) : maxProjDist;
+
+   const double fac = sqrt(max(0.0000001, min(1.0, (maxProjDist/dot(vt0, vt0))*1.00001)));
+   const Vector2 ixt = x0 + (xt - x0)*fac;
 
    // Side I goes from corners[I] to corners[nxq(I+1)] in CCW perimeter order.
    // (Note: with corners built from getNode in CCW order, no ssign factor is needed
@@ -2809,10 +2714,10 @@ __device__ __forceinline__ void Element::computePredicates(const Point2& xt, con
    //
    // The four side direction vectors. For triangles, s3 == (0, 0) since
    // C[i3] == C[0] (the perimeter has already closed by side 2).
-   isLeft.set(0,  cross(s0, xt - C[ 0]) > -small);
-   isLeft.set(1,  cross(s1, xt - C[ 1]) > -small);
-   isLeft.set(2,  cross(s2, xt - C[ 2]) > -small);
-   isLeft.set(3, (cross(s3, xt - C[i3]) > -small) || isTri());  
+   isLeft.set(0,  cross(s0, ixt - C[ 0]) > -small);
+   isLeft.set(1,  cross(s1, ixt - C[ 1]) > -small);
+   isLeft.set(2,  cross(s2, ixt - C[ 2]) > -small);
+   isLeft.set(3, (cross(s3, ixt - C[i3]) > -small) || isTri());  
 
 // printf("idx = %d, cross(s0, xt - C[ 0] ) = %.17f, cross(s1, xt - C[ 1] ) = %.17f, cross(s2, xt - C[ 2] ) = %.17f, cross(s3, xt - C[i3] ) = %.17f\n", idx, cross(s0, xt - C[ 0] ), cross(s1, xt - C[ 1] ), cross(s2, xt - C[ 2] ), cross(s3, xt - C[i3] ));
 
@@ -2842,10 +2747,10 @@ __device__ __forceinline__ void Element::computePredicates(const Point2& xt, con
    // isBisector.b[3] is always masked out by isLeft.b[3] = true for triangles
    // (the validity rule sets valid_3 = false), so its computed value for
    // triangles doesn't matter. No sentinel needed.
-   isBisector.set(0, dot(xt - C[ 1], s0 + s1) < 0.0);
-   isBisector.set(1, dot(xt - C[ 2], s1 + s2) < 0.0);
-   isBisector.set(2, dot(xt - C[i3], s2 + s3_tri) < 0.0);
-   isBisector.set(3, dot(xt - C[ 0], s3 + s0) < 0.0);   
+   isBisector.set(0, dot(ixt - C[ 1], s0 + s1) < 0.0);
+   isBisector.set(1, dot(ixt - C[ 2], s1 + s2) < 0.0);
+   isBisector.set(2, dot(ixt - C[i3], s2 + s3_tri) < 0.0);
+   isBisector.set(3, dot(ixt - C[ 0], s3 + s0) < 0.0);   
 
 }
 
@@ -2872,16 +2777,6 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
    return res;
 }
 
-
-__inline__ __device__ void Element::nudgeToBarycenter(Point2 &p, const Side *origSide) const {
-// Nudges the local-frame point, p, to the barycenter of the element. 
-
-   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa (4)");
-
-   Point3 c = origSide->toLocalFrame(toPoint3(center, centerZ())); // In local frame coordinates if ics == 2
-
-   p = (1.0 - btrack_nudge)*p + btrack_nudge*toPoint2(c);
-}
 
 __inline__ __device__ bool Element::isDry2(void) const { return (nodes[0]->isDry2()) ||
                                                                 (nodes[1]->isDry2()) ||
@@ -3134,6 +3029,9 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       // If the point is not inside the element (with a small tolerance), we do not need to fix the negative shape coordinates.
       const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
+double tmpmax = max3(shpCoords[0], shpCoords[1], shpCoords[2]);
+if (tmpmin < -0.1) printf("XXX element %d, tmpmin = %.17f\n", idx, tmpmin);
+if (tmpmax > 1.1) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
       
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
@@ -3336,10 +3234,10 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
 
    // First step is to compute the shape coordinates of (xt,yt)
 // printf("interpolateVelocities 1: xt = (%f, %f, %f)\n", xt.x, xt.y, xt.z);
-   computeShapeCoords(toVector2(xt), shpCoord, fiOnlyInside, origSide);
+   computeShapeCoords(toVector2(xt), shpCoord, fiAnywhere, origSide);
 
-if ((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) < -small)) printf("idx = %d, shpCoord = (%.16f, %.16f, %.16f, %.16f)\n", idx, shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
-   assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -1e-4) && "Invalid shape coordinates");
+
+   assert((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) >= -small) && "Invalid shape coordinates");
 
    // Second step is to find the level that contains zt
    // Uses a binary search to find the level
@@ -3393,11 +3291,15 @@ if ((min4(shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]) < -small)) printf(
 
    }
 
-if (R< 0 || R>49) printf("KKKK R = %d, L = %d, wght1 = %.17f, wght2 = %.17f\n", R, L, wght1, wght2);
+// printf("HEREEEEEE 3, wght1 = %.17f, wght2 = %.17f, shpCoord = (%.17f, %.17f, %.17f, %.17f)\n", wght1, wght2, shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    // Remember that interpolate takes frames into account for Vector2 fields and ics==2
-   toVector2(u_int) = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
-   u_int.z          = wght1*interpolate(L, shpCoord, &Node::w2) + wght2*interpolate(R, shpCoord, &Node::w2);
+   Vector2 uv = wght1*interpolate(L, shpCoord, &Node::u2) + wght2*interpolate(R, shpCoord, &Node::u2);
+   double w   = wght1*interpolate(L, shpCoord, &Node::w2) + wght2*interpolate(R, shpCoord, &Node::w2);
+
+   // Project the velocity from the local frame to the origSide frame
+   if constexpr(ics == 2) uv = frame.projHorVec(uv, origSide->frame);
+   u_int = {uv.x, uv.y, w};
 
    // Neither of the interpolated velocities should be NaN
    assert(!isnan(u_int.x) && !isnan(u_int.y) && !isnan(u_int.z) && "NaN velocities in interpolateVelocities");
@@ -3583,9 +3485,8 @@ __inline__ __device__ Vector2 Side::tau(void)    const {
  * @param uuint, vvint, wwint: Velocities at the final point
  * @param jlev: Level at which the backtracking is performed
  * @param dt, dtbk: Tracking timesteps
- * @return: True if the backtracking was successful, false otherwise
- */
-__inline__ __device__ bool Side::btrack(
+  */
+__inline__ __device__ void Side::btrack(
       int jlev,             // Level at which the backtracking is performed XXX rename to k???
       double dt,            // Tracking time
       double dtbk,          // Tracking timestep
@@ -3607,20 +3508,19 @@ __inline__ __device__ bool Side::btrack(
 
    // Find a non dry element for starting the backtracking. At this point there should be at least one.
    Element* curElem = (!elems[0]->isDry) ? elems[0] : elems[1];  // elems[0] is always non-null 
-
+return;
    assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
 
 // showPoints(x0, x0, jlev, this, 0xFF0000u, 'x', 1, 0, 0);
 
 
-   const int MAX_ITERATIONS = 200; 
-   Element* nextElem = nullptr;
+   constexpr int MAX_ITERATIONS = 200; 
    int iter = 0;
    Point3 xt = {-1.0e25, -1.0e25, -1.0e25};
    while(true) {
 
       // Calculate timestep
-      double dtb = min(dtbk, time_rm);
+      const double dtb = min(dtbk, time_rm);
 
       // Next point in the backtracking curve
       xt = x0 - dtb*u_int;
@@ -3628,38 +3528,74 @@ __inline__ __device__ bool Side::btrack(
 // showPoints(x0, xt, jlev, this, 0xFF00FFu, 'o', 1, 15, iter);
 
       Side *lastCrossSide = nullptr;
-      const bool found = celestialWalk(curElem, x0, xt, this, lastCrossSide);
+      const bool found = celestialWalk(curElem, x0, xt, this, lastCrossSide, jlev);
 
       // This means that the walk reached a boundary or a dry element.
-      // This case is addressed at the end of the loop.
       if (!found) {
+assert(lastCrossSide!=nullptr && "lastCrossSide is nullptr");
+         // Check that the crossing point is not too far from the segment x0xt.
+         const Point2 p1 = toPoint2(toLocalFrame(toPoint3(lastCrossSide->n1->p, lastCrossSide->n1->gz)));
+         const Point2 p2 = toPoint2(toLocalFrame(toPoint3(lastCrossSide->n2->p, lastCrossSide->n2->gz)));
+         const Vector2 v1 = toPoint2(xt) - toPoint2(x0);
+         const Vector2 v2 = p1 - p2;
+         const Point2  p0 = toPoint2(x0);
+         const Point2  pt = toPoint2(xt);
+
+
+         const double denom = cross(v2, v1);
+         double t = clamp(cross(p1 - p0, v1) / denom, 0.0, 1.0);
+
+         if (abs(denom) < small) t = (norm2(p1 - p0) < norm2(p2 - p0)) ? 0.0 : 1.0;
+         // else printf("AAAAAAA idx = %d, jlev = %d, t = %.17f, denom = %.17f\n", idx, jlev, t, denom);
+assert(curElem!=nullptr && !curElem->isDry && "curElem is nullptr or dry");
+         const double fac = clamp(length(p1 + t*v2 - p0)/length(v1), 0.0, 1.0);
+         time_rm = (1.0 - fac)*dtb;
+         xt = x0 + fac*(xt - x0);
+         Vector2 tangent = normalize(v2);
+         const Vector3 u = curElem->interpolateVelocities(xt, this);
+
+         const Vector2 u2D = make_double2(u.x, u.y);
+         u_int = toVector3(dot(u2D, tangent)*tangent, u.z);
+
+
+   
+
 
          // FIND CROSSING POINT xtp ON BOUNDARY SEGMENT
          // COMPUTE DISTANCE dtb = distance(x0, xtp) / length(u_int).
+         // COMPUTE U along the boundary segment.
+         // If the velocity is too small, we stop the backtracking
          // time_rm -= dtb;
          // MOVE time_rm along the boundary.
-         time_rm = 0.0;
-         u_int = {0.0, 0.0, 0.0};
-         return true;
+         // X0 = XT
+         // time_rm = 0.0;
+
+         // u_int = {u2[jlev].x, u2[jlev].y, w2(jlev)};//{0.0, 0.0, 0.0}; XXXXX put 0,0,0 back?
+
+
+      } else {
+
+         assert(curElem!=nullptr && !curElem->isDry && "Final element is dry or boundary side");
+
+         time_rm -= dtb; 
+
+         assert(curElem->containsPoint(toPoint2(xt), this) && "Target point is not inside the current element");
+// printf("HEREEEEEE 4, xt = (%.17f, %.17f, %.17f)\n", xt.x, xt.y, xt.z);
+         u_int = curElem->interpolateVelocities(xt, this);
       }
 
-      time_rm -= dtb; // if celestialWalk terminates early (if it intersects a boundary or a dry element),
-                      // then time_rm needs to be increased by the unused time.
-
-      u_int = nextElem->interpolateVelocities(xt, this);
-
+if (iter>20) printf("iter = %d, time_rm = %.17f, dtb = %.17f, dtbk = %.17f, u_int = (%.17f, %.17f, %.17f)\n", iter, time_rm, dtb, dtbk, u_int.x, u_int.y, u_int.z);
       if (time_rm == 0.0) break; // from the definition of dtb, time_rm will reach exactly 0.0                      
 
       // If the velocity is too small, we stop the backtracking
-      const double vmag = length(toVector2(u_int));
-      if (vmag <= velmin_btrack) break;
+      const double vmag2 = norm2(toVector2(u_int));
+      if (vmag2 <= velmin_btrack_sq) break;
 
       // The current point becomes the next segment's starting point.
       x0 = xt;
  
-      curElem = nextElem;
-
       iter++;
+
 
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
    }
@@ -3680,8 +3616,6 @@ __inline__ __device__ bool Side::btrack(
 
    // Interpolate the velocities at the final point
    u_int = curElem->interpolateVelocities(xt, this);
-
-   // if (idx == 18867) printf("iter = %d, side->idx = %d, curElem->idx = %d, x0 = (%.17f, %.17f, %.17f), u_int = (%.17f, %.17f, %.17f)\n", iter, idx, curElem->idx, x0.x, x0.y, x0.z, u_int.x, u_int.y, u_int.z);         
 
 
 }
@@ -4915,7 +4849,6 @@ extern "C" {
       const int ndelt_max = (int)max(1.0, dt/dtb_min);
       const int ndelt_min = (int)max(1.0, dt/dtb_max); 
 
-
       SIDE(side);
 
       const int kb = side->kb;
@@ -4953,12 +4886,9 @@ extern "C" {
          const int iadvf = side->iadv();  // Advection flag   
          assert(nadv == 1 && "Advection flag is only implemented for nadv = 1");
 
-         // If on land or open boundary...
-         const bool ifl_bnd =  (side->sideBnd != nullptr);
-         
-         const double vmag = length(side->u2[k]);
+         const double vmag2 = norm2(side->u2[k]);
 
-         if (vmag <= velmin_btrack) {
+         if (vmag2 <= velmin_btrack_sq) {  // XXXXXX REPEATED?
             // No activity 
 
             side->btu[k] = side->u2[k];  // I don't think this is necessary because it has already been set to this value XXXX
@@ -5015,12 +4945,14 @@ extern "C" {
 
             // '4' is somewhat arbitrary
             const int ndelt = clamp(int(suma/icount)*4, ndelt_min, ndelt_max); 
+
             const double dtbk = dt/ndelt; // Target btrack step; may be smaller sometimes
             Vector3 u_int = {0.0, 0.0, 0.0};
 
-            bool res =side->btrack(k, dt, dtbk, u_int);
+            side->btrack(k, dt, dtbk, u_int);
 
-            side->btu[k] = toVector2(u_int);
+
+            side->btu[k] = {u_int.x, u_int.y};
                
          } // if vmag (do backtrack)
 
@@ -7010,7 +6942,7 @@ extern "C" {
             if (icount > 0) {
                const double inv_icount = 1.0/icount;
                utmp = inv_icount*utmp;
-               node->u2[k]     = toVector2(utmp);
+               node->u2[k]     = {utmp.x, utmp.y};
                node->w2[k]     = utmp.z;
                node->tracers[k].tracer[0]   = inv_icount*ttmp;
                node->tracers[k].tracer[1]   = inv_icount*stmp;
@@ -8260,9 +8192,6 @@ extern "C"  __global__ void destroyMeshCPU(void) {
 }
 
 
-extern "C" __global__ void test(double x, double y, double z) {
-   mesh->test(x, y, z);
-}
 
 
 __global__ void getStructSizes(int* sizes)  {

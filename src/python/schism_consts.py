@@ -4,7 +4,7 @@ mntracers = 30  # Maximum number of tracers, used only for dimensioning btrack a
 
 blockSize = 128
 
-DEBUG = True
+DEBUG = False
 VISTA = False
 WINDOWS = not VISTA
 

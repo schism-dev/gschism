@@ -153,9 +153,11 @@ class CudaSourceManager:
         
         # Create the module
         try:
-            if not DEBUG:
-                options += ("-DNDEBUG", "-g", "-G", "-lineinfo")
-                
+            if DEBUG:
+                options += ("-G", "-lineinfo")
+            else:
+                options += ("-DNDEBUG",)  
+              
             mod = cp.RawModule(code=processed_source, options = options)
             
             # Return a wrapped module that handles function lookup errors

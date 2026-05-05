@@ -100,6 +100,7 @@ constexpr double rho0 = __RHO0__; // [kg/m^3]
 constexpr double dtb_min = __DTB_MIN__; //XXXX
 constexpr double dtb_max = __DTB_MAX__; //XXXX
 constexpr double velmin_btrack = __VELMIN_BTRACK__; // Minimum velocity for backtracking (m/s)
+constexpr double velmin_btrack_sq = velmin_btrack*velmin_btrack;
 constexpr double btrack_nudge = __BTRACK_NUDGE__;   // Nudging factor for backtracking
 
 constexpr int nadv = __NADV__; // Advection flag

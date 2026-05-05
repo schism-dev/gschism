@@ -148,7 +148,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
              
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        if it >= 111:
+        if it >= 14111:
             import debug.newmonitor as newmonitor
             newmonitor.show()
 

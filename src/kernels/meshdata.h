@@ -550,7 +550,7 @@ struct NodeBoundary;
 
 void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned int color = 0x0000FFu, char marker = 'o', int width = 1, int dashLen = 0, int label = -1);
 
-__device__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Side *origSide, Side *& lastCrossSide);
+__device__ __forceinline__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Side *origSide, Side *& lastCrossSide, int jlev);
 
 
 struct CubicSpline { 
@@ -623,8 +623,7 @@ struct Element {
          return p;
       } else {
          const Point3 c = {center.x, center.y, centerZ()};
-         const Point3 local = frame.G2L(p - c);
-         return local;
+         return frame.G2L(p - c);
       }
    }
 
@@ -751,7 +750,6 @@ struct Element {
 
    __inline__ __device__ double computeSignedArea(void) const;
 
-   __inline__ __device__ void nudgeToBarycenter(Point2 &p, const Side *origSide = nullptr) const;
 
    enum EFixIf { fiNo, fiOnlyInside, fiAnywhere };
 
@@ -899,7 +897,7 @@ struct Element {
 
    __device__ __forceinline__ Node *getNodeInOrder(int idx) const;
 
-   __device__ __forceinline__ void computePredicates(const Point2& xt, const Side* origSide,
+   __device__ __forceinline__ void computePredicates(const Point2 x0, const Point2& xt, const Side* origSide,
                                                     Bool4& isLeft, Bool4& isObtuse, Bool4& isBisector) const;
     
 
@@ -1148,7 +1146,7 @@ struct Side {
       return (n1 == node) ? n2 : n1;
    }
  
-   __inline__ __device__ bool btrack(int jlev, double dt, double dtbk, Vector3 &u_int) const;
+   __inline__ __device__ void btrack(int jlev, double dt, double dtbk, Vector3 &u_int) const;
 
 
 
@@ -1603,30 +1601,7 @@ struct Mesh {
    {
    }
 
-   __device__ void test(double x, double y, double z)
-   {
-      // XXXXX REMOVE THIS FUNCTION
-      printf("Testing mesh for partition %d, x=%f, y=%f\n", partNum, x, y);
-      for (int i = 0; i < ne; i++) {
-         auto isInside = localElemData[i].containsPoint({x, y}, nullptr);
-
-         if (isInside) {
-            printf("Point %f %f %f is inside element %d\n", x, y, z, i);
-            Element *elem = &localElemData[i];
-            
-            Vector3 u_int;
-
-            // Choose the first side
-            Side *side = elem->sides[0];
-            int jlev = 5;  
-            // RECORDAR:
-            // - con y=0 no encuentra el triangulo
-            // - jlev = 5, z = 0.1...
-            side->btrack(5, 3000.0, 3.1, u_int);
-
-         }
-      }
-   } 
+ 
 
 }; // End of Mesh class
 
@@ -1640,6 +1615,10 @@ __device__ __inline__ double dotprod4(double* vec1, double* vec2) {
 
 __device__ __inline__ double min3(double a, double b, double c) {
    return min(a, min(b, c));
+}
+
+__device__ __inline__ double max3(double a, double b, double c) {
+   return max(a, max(b, c));
 }
 
 __device__ __inline__ double min4(double a, double b, double c, double d) {

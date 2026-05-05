@@ -21,7 +21,7 @@
       "name": "CUDA Memcheck: main.py (terminal)",
       "type": "node-terminal",
       "request": "launch",
-      "command": "\"C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin\\compute-sanitizer.bat\" --tool memcheck --show-backtrace yes --target-processes all --log-file \"${workspaceFolder}\\sanitizer.log\" \"C:\\Users\\jmgonzalez\\AppData\\Local\\miniconda3\\envs\\gschism\\python.exe\" \"${workspaceFolder}\\python\\main.py\"",
+      "command": "& \"C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.9\\bin\\compute-sanitizer.bat\" --tool memcheck --show-backtrace yes --target-processes all --log-file \"${workspaceFolder}\\sanitizer.log\" \"C:\\Users\\jmgonzalez\\AppData\\Local\\miniconda3\\envs\\gschism\\python.exe\" \"${workspaceFolder}\\python\\main.py\"",
       "cwd": "${workspaceFolder}",
       "env": {
         "PYTHONPATH": "${workspaceFolder}",
