@@ -20,7 +20,7 @@ chan = None
 continue_execution = False
 plotCreated = False
 
-debugPlot = cp.zeros([10000,7], dtype=cp.float64, order='F') 
+debugPlot = cp.zeros([1000000,7], dtype=cp.float64, order='F') 
 debugPlot[:, 6] = -1.0
 debugPlotIdx = cp.zeros(1, dtype=cp.int32, order='F') 
 debugPlotIdx[0] = 0

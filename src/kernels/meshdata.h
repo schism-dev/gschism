@@ -793,7 +793,6 @@ struct Element {
    #ifdef USE_FRAMES
    __device__ void setFrame(void) {
       double lat, lon;
-
       const Point3 p = toPoint3(center, centerZ());
 
       // Compute the latitude and longitude of the element center
@@ -1033,7 +1032,6 @@ struct Side {
    __inline__ __device__ double lon(void) const;
    __inline__ __device__ double lat(void) const;
    __inline__ __device__ Point2 p2_t(double t) const;
-   __inline__ __device__ Point3 p3_t(double t) const;
 
    #ifdef USE_FRAMES
    __device__ void setFrame(void) {
@@ -1293,8 +1291,8 @@ struct Node {
    Vector2 tau_bot; // Bottom stress vector
 
    // XXXX REMOVE FOR IMM>0???
-   double bdef1; // Bottom deformation at previous timestep
-   double bdef2; // Bottom deformation at current timestep
+   double bdef1 = 0.0; // Bottom deformation at previous timestep
+   double bdef2 = 0.0; // Bottom deformation at current timestep
 
    double qel; // RHS
    double coeffDiag; // Diagonal coefficient of the matrix

@@ -470,7 +470,10 @@ def show_window(module):
     dialog.show()
     app.exec()
 
-
+module = None
 def show():
-    module = compile_and_import("render_cpp", str(Path(__file__).with_name("render.cpp")))
+    global module
+
+    if module is None:
+        module = compile_and_import("render_cpp", str(Path(__file__).with_name("render.cpp")))
     show_window(module)

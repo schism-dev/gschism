@@ -439,7 +439,8 @@ void drawMesh(
         if (drawU) {
             const double ux = U_ptr[i*2];
             const double uy = U_ptr[i*2+1];
-
+            ctx.setStrokeStyle(BLRgba32(0, 255, 0, 181));
+            ctx.setStrokeWidth(1.0);
             if (std::abs(ux) < 10.0 && std::abs(uy) < 10.0) {
                 ctx.strokeLine(BLLine(cx, cy, cx + 10 * ux, cy + 10 * uy));
             }
@@ -455,6 +456,8 @@ void drawMesh(
             edges.lineTo(sx1, sy1);
         }
     }
+    ctx.setStrokeStyle(sideColor);                  // sides
+    ctx.setStrokeWidth(1.0);
     ctx.strokePath(edges);
 
 

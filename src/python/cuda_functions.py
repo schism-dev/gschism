@@ -158,7 +158,7 @@ def initializeCudaFunctions(sizes):
         computeBoundaryAreas                = mod.get_function('computeBoundaryAreas',                sizes, kernel_type='sideBnd')
         computeBottomDragVegetation         = mod.get_function('computeBottomDragVegetation',         sizes, kernel_type='nodes')
         computeVegetationAndDragParameters  = mod.get_function('computeVegetationAndDragParameters',  sizes, kernel_type='sides')
-        computeElevationBoundaryConditions  = mod.get_function('computeElevationBoundaryConditions',  sizes, kernel_type='sides')
+        computeElevationBoundaryConditions  = mod.get_function('computeElevationBoundaryConditions',  sizes, kernel_type='nodeBnd')
         computeHorizontalViscosity          = mod.get_function('computeHorizontalViscosity',          sizes, kernel_type='sides')
         computeVerticallyIntegratedVelocity = mod.get_function('computeVerticallyIntegratedVelocity', sizes, kernel_type='sides')
         computeDensityCubicSplines          = mod.get_function('computeDensityCubicSplines',          sizes, kernel_type='elements')

@@ -72,10 +72,10 @@ import python.cuda_functions as cufunc
 if WINDOWS:
     # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b'
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
-    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02h'
-    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02h\gpuoutput'
-    # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2'
-    # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\gpuoutput'
+    # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02h'
+    # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02h\gpuoutput'
+    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2'
+    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\gpuoutput'
 
     # out_dir = r'c:\Users\jmgonzalez\src\temp'
 elif VISTA:

@@ -17,24 +17,24 @@ constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1:
 constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = 0; // Option of including hydraulics
 constexpr int nhtblocks = 0;                 // Number of hydraulic structures (zero for the moment)
-constexpr int ibc = 1;                 // Option to include baroclinic term (0 means yes)
-constexpr int itur = 0;               // Turbulence closure model
+constexpr int ibc = 0;                 // Option to include baroclinic term (0 means yes)
+constexpr int itur = 3;               // Turbulence closure model
 constexpr int islip = 0;             // Option to include slip horizontal boundary conditions
-constexpr int ihorcon = 0;         // Option to include horizontal viscosity
+constexpr int ihorcon = 2;         // Option to include horizontal viscosity
 constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
 constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
 constexpr int ncor = 1;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
+constexpr double sfea0 = 46.25*deg2rad; // Reference latitude for Coriolis force
 constexpr int nws = 2;               // Option to include wind forcing
-constexpr double wtiminc = 3600;    // Time increment for wind forcing
-constexpr int iwind_form = 1; // Option to include wind forcing
+constexpr double wtiminc = 90;    // Time increment for wind forcing
+constexpr int iwind_form = 0; // Option to include wind forcing
 constexpr int iwindoff = 0;     // Option to include wind forcing
 constexpr double drampwind = 1; // Option to include wind forcing
 
-constexpr int ihconsv = 0;     // Option to include conservative wind forcing
+constexpr int ihconsv = 1;     // Option to include conservative wind forcing
 constexpr int isconsv = 0;     // Option to include conservative wind forcing
 
 
@@ -52,21 +52,21 @@ constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometri
 constexpr double veg_lai = 1; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 8;            // Number of tidal potential components
-constexpr double tip_dp = 50;   // cut-off depth for applying tidal potential
+constexpr int ntip = 0;            // Number of tidal potential components
+constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
 
 // Boundary forcing frequencies
 constexpr int nbfr = 8;            // Number of boundary forcing frequencies
 
 // Boundary condition types
 constexpr int nettype = 0;      // Total number of type I elevation boundaries
-constexpr int nfltype = 0;      // Total number of type I flow boundaries
-constexpr int nettype2 = 0;    // Total number of type IV elevation boundaries
-constexpr int nfltype2 = 0;    // Total number of type IV flow boundaries
+constexpr int nfltype = 1;      // Total number of type I flow boundaries
+constexpr int nettype2 = 2;    // Total number of type IV elevation boundaries
+constexpr int nfltype2 = 2;    // Total number of type IV flow boundaries
 
 // Boundary nodes
-constexpr int nnode_et = 0;    // Number of nodes requiring elev2D.th.nc
-constexpr int nnode_fl = 0;    // Number of nodes requiring flow2D.th.nc
+constexpr int nnode_et = 91;    // Number of nodes requiring elev2D.th.nc
+constexpr int nnode_fl = 91;    // Number of nodes requiring flow2D.th.nc
 
 constexpr int iunder_deep = 0;     // Option of under-deep methods
 constexpr double h1_bcc   = 50;  // Parameters for under-deep methods
@@ -74,31 +74,31 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 50; // Number of vertical levels
+constexpr int nvrt    = 46; // Number of vertical levels
 constexpr int nzlev   = 0; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 50; // Number of sigma levels (in contrast to z levels)
+constexpr int nsiglev = 46; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;
 constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
-constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 43; // Number of land boundary segments
-constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
+constexpr int nope  = 4; // Number of open boundary segments
+constexpr int mnond = 88; // Maximum number of nodes per open boundary segment
+constexpr int nland = 19; // Number of land boundary segments
+constexpr int mnlnd = 875; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
 
-constexpr double thetai = 1;
+constexpr double thetai = 0.502;
 
-constexpr double rmaxvel = 4; // Maximum velocity for the x-component
+constexpr double rmaxvel = 10; // Maximum velocity for the x-component
 constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
 constexpr double rho0 = 1000; // [kg/m^3]
-constexpr double dtb_min = 10; //XXXX
+constexpr double dtb_min = 15; //XXXX
 constexpr double dtb_max = 30; //XXXX
 constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
 constexpr double velmin_btrack_sq = velmin_btrack*velmin_btrack;
@@ -110,9 +110,9 @@ constexpr double dfv0 = 0.01;
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 120;  // Time step  XXX 
+constexpr double dt = 90;  // Time step  XXX 
 
-constexpr double h0 = 0.0001;  // Minimum water depth for wetting and drying [m]
+constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
 enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35, u_air=36, outputCoords=37}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
@@ -912,7 +912,6 @@ struct Element {
    #ifdef USE_FRAMES
    __device__ void setFrame(void) {
       double lat, lon;
-
       const Point3 p = toPoint3(center, centerZ());
 
       // Compute the latitude and longitude of the element center
@@ -1152,7 +1151,6 @@ struct Side {
    __inline__ __device__ double lon(void) const;
    __inline__ __device__ double lat(void) const;
    __inline__ __device__ Point2 p2_t(double t) const;
-   __inline__ __device__ Point3 p3_t(double t) const;
 
    #ifdef USE_FRAMES
    __device__ void setFrame(void) {
@@ -1412,8 +1410,8 @@ struct Node {
    Vector2 tau_bot; // Bottom stress vector
 
    // XXXX REMOVE FOR IMM>0???
-   double bdef1; // Bottom deformation at previous timestep
-   double bdef2; // Bottom deformation at current timestep
+   double bdef1 = 0.0; // Bottom deformation at previous timestep
+   double bdef2 = 0.0; // Bottom deformation at current timestep
 
    double qel; // RHS
    double coeffDiag; // Diagonal coefficient of the matrix
@@ -1914,7 +1912,7 @@ int stackSize = 0;
 
 __device__ __forceinline__ bool celestialWalk(Element *&curElem, Point3 x0, Point3 &xt, const Side *origSide, Side *&lastCrossSide, int jlev) {
 
-   constexpr int MAX_ITERATIONS = 200;
+   constexpr int MAX_ITERATIONS = 10;
 
    int iter = 0;
    while (iter < MAX_ITERATIONS) {
@@ -1922,7 +1920,7 @@ __device__ __forceinline__ bool celestialWalk(Element *&curElem, Point3 x0, Poin
 if (iter > 20) printf("XXX iter = %d, x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f)\n", iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
       Bool4 isLeft, isObtuse, isBisector;
       curElem->computePredicates(toPoint2(x0), toPoint2(xt), origSide, isLeft, isObtuse, isBisector);
-showPoints(x0, xt, jlev, origSide, 0xFF0000u, 'x', 1, 0, 0);
+// showPoints(x0, xt, jlev, origSide, 0xFF0000u, 'x', 1, 0, 0);
       Bool4 isValid = !isLeft & (!isObtuse | isBisector); // bitwise operation are overloaded
 
       if (isValid.none()) 
@@ -1937,9 +1935,9 @@ showPoints(x0, xt, jlev, origSide, 0xFF0000u, 'x', 1, 0, 0);
          lastCrossSide = curElem->sides[isValid.firstOne()];
          Element *prevElem = curElem;
          curElem = lastCrossSide->otherElem(curElem);
-const Point3 p1 = origSide->toLocalFrame(toPoint3(lastCrossSide->n1->p, lastCrossSide->n1->gz));
-const Point3 p2 = origSide->toLocalFrame(toPoint3(lastCrossSide->n2->p, lastCrossSide->n2->gz));
-showPoints(p1, p2, jlev, origSide, 0x0000FFu, 'o', 1, 0, 0);         
+// const Point3 p1 = origSide->toLocalFrame(toPoint3(lastCrossSide->n1->p, lastCrossSide->n1->gz));
+// const Point3 p2 = origSide->toLocalFrame(toPoint3(lastCrossSide->n2->p, lastCrossSide->n2->gz));
+// showPoints(p1, p2, jlev, origSide, 0x0000FFu, 'o', 1, 0, 0);         
 
          // If it crosses into a dry element or a boundary element, return false. This means that the track will now move 
          // along the boundary.
@@ -1975,15 +1973,15 @@ __device__ void addDebugPlot(Vector3 x1, Vector3 x2, unsigned int color = 0xFF00
  
    bool ok = true;
    if (debugPlotIdx == nullptr) ok = false;
-   if (*debugPlotIdx >= 10000) ok = false;
+   if (*debugPlotIdx >= 1000000) ok = false;
    if (ok) {
-      debugPlot[(*debugPlotIdx) + 0*10000] = x1.x;
-      debugPlot[(*debugPlotIdx) + 1*10000] = x1.y;
-      debugPlot[(*debugPlotIdx) + 2*10000] = x2.x;
-      debugPlot[(*debugPlotIdx) + 3*10000] = x2.y;
-      debugPlot[(*debugPlotIdx) + 4*10000] = (double)color;
-      debugPlot[(*debugPlotIdx) + 5*10000] = (double)(((int)(unsigned char)marker & 0xFF) | ((dashLen & 0xFF) << 8) | ((width & 0xFF) << 16));
-      debugPlot[(*debugPlotIdx) + 6*10000] = (double)label;
+      debugPlot[(*debugPlotIdx) + 0*1000000] = x1.x;
+      debugPlot[(*debugPlotIdx) + 1*1000000] = x1.y;
+      debugPlot[(*debugPlotIdx) + 2*1000000] = x2.x;
+      debugPlot[(*debugPlotIdx) + 3*1000000] = x2.y;
+      debugPlot[(*debugPlotIdx) + 4*1000000] = (double)color;
+      debugPlot[(*debugPlotIdx) + 5*1000000] = (double)(((int)(unsigned char)marker & 0xFF) | ((dashLen & 0xFF) << 8) | ((width & 0xFF) << 16));
+      debugPlot[(*debugPlotIdx) + 6*1000000] = (double)label;
       (*debugPlotIdx)++;
    }
 
@@ -2002,7 +2000,7 @@ __device__ void addDebugPlot(Vector2 x1, Vector2 x2, unsigned int color = 0xA0A0
 void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned int color, char marker, int width, int dashLen, int label) {
    // if ((origSide->idx == 1276362 || origSide->idx == 1276363 || origSide->idx == 1276361 || origSide->idx == 0 || origSide->idx == 9) && jlev == 48) {
    return;
-   if (origSide->idx == 3572077 && jlev == 48) {
+   if (true) {
       // Convert points back to original frame
       x1.z = 0.0;
       x2.z = 0.0;
@@ -2617,32 +2615,32 @@ __device__ void Element::trackGoesOutOfWater(const Side *nextSide, const Side *o
    // And uses this velocity instead to continue the tracking.
 
    // computes the intersection point in local cartesian coordinates
-   Point3 intersection = origSide->toLocalFrame(nextSide->p3_t(tt));  // XXXX I don't think this is necessary. The intersection is already computed in findNextIntersection.
+//    Point3 intersection = origSide->toLocalFrame(nextSide->p3_t(tt));  // XXXX I don't think this is necessary. The intersection is already computed in findNextIntersection.
 
-   // Nudges the point to the barycenter of the element. 
-   // This ensures that the point is inside the element and hence, we will find an intersection if the
-   // next segment intersects the element sides. 
-   // TODO: curElem->nudgeToBarycenter(intersection);  REMEMBER!!! RECOVER??? XXX KKKKK
+//    // Nudges the point to the barycenter of the element. 
+//    // This ensures that the point is inside the element and hence, we will find an intersection if the
+//    // next segment intersects the element sides. 
+//    // TODO: curElem->nudgeToBarycenter(intersection);  REMEMBER!!! RECOVER??? XXX KKKKK
 
 
-   // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
-   // of the intersection point. We are approximating it by the velocity at the side center at jlev.
-   // NOTE: With the new code it will be easy to compute the tangential velocity at the intersection point.
-   double vtan = dot(nextSide->t(), nextSide->u2[jlev]);
+//    // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
+//    // of the intersection point. We are approximating it by the velocity at the side center at jlev.
+//    // NOTE: With the new code it will be easy to compute the tangential velocity at the intersection point.
+//    double vtan = dot(nextSide->t(), nextSide->u2[jlev]);
 
-   // If the side is an open boundary, the tangential velocity is set to zero.
-   if (nextSide->isBnd()) vtan = 0.0;
+//    // If the side is an open boundary, the tangential velocity is set to zero.
+//    if (nextSide->isBnd()) vtan = 0.0;
 
-   // The new velocity components are computed from the tangential velocity and the tangent vector.
-   const double us = vtan*nextSide->t().x;
-   const double vs = vtan*nextSide->t().y;
-   const double ws = nextSide->w2(jlev); 
+//    // The new velocity components are computed from the tangential velocity and the tangent vector.
+//    const double us = vtan*nextSide->t().x;
+//    const double vs = vtan*nextSide->t().y;
+//    const double ws = nextSide->w2(jlev); 
 
-   u_int = {us, vs, ws};
+//    u_int = {us, vs, ws};
 
-   // The end of this tracking segment is now the intersection point.
-   xt = {intersection.x, intersection.y, zint};
-// printf("trackGoesOutOfWater: intersection = (%.17f, %.17f, %.17f), zint = %.17f, u_int = (%.17f, %.17f, %.17f)\n", intersection.x, intersection.y, zint, u_int.x, u_int.y, u_int.z);
+//    // The end of this tracking segment is now the intersection point.
+//    xt = {intersection.x, intersection.y, zint};
+// // printf("trackGoesOutOfWater: intersection = (%.17f, %.17f, %.17f), zint = %.17f, u_int = (%.17f, %.17f, %.17f)\n", intersection.x, intersection.y, zint, u_int.x, u_int.y, u_int.z);
    
 }
 
@@ -2692,7 +2690,7 @@ __device__ __forceinline__ void Element::computePredicates(const Point2 x0, cons
    maxProjDist = max(maxProjDist, dot(vt0, C[2] - x0)); 
    maxProjDist = isQuad() ? max(maxProjDist, dot(vt0, C[3] - x0)) : maxProjDist;
 
-   const double fac = sqrt(max(0.0000001, min(1.0, (maxProjDist/dot(vt0, vt0))*1.00001)));
+   const double fac = max(0.0000001, min(1.0, (maxProjDist/dot(vt0, vt0))*1.00001));
    const Vector2 ixt = x0 + (xt - x0)*fac;
 
    // Side I goes from corners[I] to corners[nxq(I+1)] in CCW perimeter order.
@@ -3044,7 +3042,7 @@ if (tmpmax > 1.1) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
          // The new algorithm should be faster since it is branchless.
          const double a = - tmpmin + 1.0e-8;  // XXX Is 1.0e-8 the best value?
          const double b = 1.0/(shpCoords[0] + shpCoords[1] + shpCoords[2] + 3.0*a);
-         
+
          shpCoords[0] = (shpCoords[0] + a)*b;
          shpCoords[1] = (shpCoords[1] + a)*b;
          shpCoords[2] = (shpCoords[2] + a)*b;          
@@ -3056,6 +3054,7 @@ if (tmpmax > 1.1) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
          // Update the point coordinates for the new shape coordinates
          double xcoords[3] = {x0.x, x1.x, x2.x};
          double ycoords[3] = {x0.y, x1.y, x2.y};
+
          xt = {dotprod3(xcoords, shpCoords), dotprod3(ycoords, shpCoords)};
 
       }
@@ -3250,9 +3249,10 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
    getNodalValues(L, &Node::compZCoord, zLAtNodes);
    getNodalValues(R, &Node::compZCoord, zRAtNodes);
 
+
    double zL = interpolate(shpCoord, zLAtNodes);
    double zR = interpolate(shpCoord, zRAtNodes);
-   
+
    // Interpolates vertically the velocities
    double wght1, wght2;
    if (xt.z<=zL) {
@@ -3290,7 +3290,7 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
       wght1 = 1.0 - wght2;
 
    }
-
+// printf("XXYYX element %d, L = %d, R = %d, zL = %.17f, zR = %.17f, xt.z = %.17f, wght1 = %.17f, wght2 = %.17f\n", idx, L, R, zL, zR, xt.z, wght1, wght2);
 // printf("HEREEEEEE 3, wght1 = %.17f, wght2 = %.17f, shpCoord = (%.17f, %.17f, %.17f, %.17f)\n", wght1, wght2, shpCoord[0], shpCoord[1], shpCoord[2], shpCoord[3]);
    // Interpolate horizontally and vertically the velocities at the two levels L, R
    // Remember that interpolate takes frames into account for Vector2 fields and ics==2
@@ -3398,7 +3398,6 @@ __inline__ __device__ double  Side::z(double t)   const { assert(t >= 0.0 && t <
 __inline__ __device__ double  Side::lon(void)     const { return 0.5*(n1->lon + n2->lon); }
 __inline__ __device__ double  Side::lat(void)     const { return 0.5*(n1->lat + n2->lat); }
 __inline__ __device__ Point2  Side::p2_t(double t) const { return {x(t), y(t)}; }
-__inline__ __device__ Point3  Side::p3_t(double t) const { return {x(t), y(t), z(t)}; }
 __inline__ __device__ double  Side::centerZ(void) const { return 0.5*(n1->gz + n2->gz); }
 __inline__ __device__ Vector2 Side::grad2(double Node::* field, bool (*condition)(const Element*)) const {
 // Computes the gradient of the field at the side center.
@@ -3506,15 +3505,16 @@ __inline__ __device__ void Side::btrack(
    // Initial velocities
    u_int = {u2[jlev].x, u2[jlev].y, w2(jlev)};
 
+return;
    // Find a non dry element for starting the backtracking. At this point there should be at least one.
    Element* curElem = (!elems[0]->isDry) ? elems[0] : elems[1];  // elems[0] is always non-null 
-return;
+
    assert(curElem != nullptr && !curElem->isDry && "Starting element is dry or boundary side");
 
 // showPoints(x0, x0, jlev, this, 0xFF0000u, 'x', 1, 0, 0);
 
 
-   constexpr int MAX_ITERATIONS = 200; 
+   constexpr int MAX_ITERATIONS = 10; 
    int iter = 0;
    Point3 xt = {-1.0e25, -1.0e25, -1.0e25};
    while(true) {
@@ -3526,12 +3526,27 @@ return;
       xt = x0 - dtb*u_int;
 
 // showPoints(x0, xt, jlev, this, 0xFF00FFu, 'o', 1, 15, iter);
-
+// if ((jlev==45)) printf("jlev = %d, iter = %d, x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f)\n", jlev, iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
+if ((jlev==45))
+{
+// const Point3 p1 = toLocalFrame(x0);
+// const Point3 p2 = toLocalFrame(xt);
+// printf("jlev = %d, iter = %d, p1 = (%.17f, %.17f, %.17f), p2 = (%.17f, %.17f, %.17f)\n", jlev, iter, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+showPoints(x0, xt, jlev, this, 0x0000FFu, 'o', 1, 0, 0); 
+    
+}
       Side *lastCrossSide = nullptr;
       const bool found = celestialWalk(curElem, x0, xt, this, lastCrossSide, jlev);
 
+if (idx == 26505 && jlev==45) printf("time_rm = %.17f, dtb = %.17f, dtbk = %.17f, jlev = %d, iter = %d, x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f), found = %d\n", time_rm, dtb, dtbk, jlev, iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, found);
+
       // This means that the walk reached a boundary or a dry element.
       if (!found) {
+
+u_int = {0.0, 0.0, 0.0};
+time_rm = 0.0;
+return;
+
 assert(lastCrossSide!=nullptr && "lastCrossSide is nullptr");
          // Check that the crossing point is not too far from the segment x0xt.
          const Point2 p1 = toPoint2(toLocalFrame(toPoint3(lastCrossSide->n1->p, lastCrossSide->n1->gz)));
@@ -3582,6 +3597,7 @@ assert(curElem!=nullptr && !curElem->isDry && "curElem is nullptr or dry");
          assert(curElem->containsPoint(toPoint2(xt), this) && "Target point is not inside the current element");
 // printf("HEREEEEEE 4, xt = (%.17f, %.17f, %.17f)\n", xt.x, xt.y, xt.z);
          u_int = curElem->interpolateVelocities(xt, this);
+if (idx == 26505 && jlev==45) printf("u_int = (%.17f, %.17f, %.17f), {u2[jlev].x, u2[jlev].y, w2(jlev)} = (%.17f, %.17f, %.17f)\n", u_int.x, u_int.y, u_int.z, u2[jlev].x, u2[jlev].y, w2(jlev));
       }
 
 if (iter>20) printf("iter = %d, time_rm = %.17f, dtb = %.17f, dtbk = %.17f, u_int = (%.17f, %.17f, %.17f)\n", iter, time_rm, dtb, dtbk, u_int.x, u_int.y, u_int.z);
@@ -3589,7 +3605,7 @@ if (iter>20) printf("iter = %d, time_rm = %.17f, dtb = %.17f, dtbk = %.17f, u_in
 
       // If the velocity is too small, we stop the backtracking
       const double vmag2 = norm2(toVector2(u_int));
-      if (vmag2 <= velmin_btrack_sq) break;
+      if (vmag2 <= velmin_btrack_sq) { u_int = {0.0, 0.0, 0.0}; time_rm = 0.0; return; };
 
       // The current point becomes the next segment's starting point.
       x0 = xt;
@@ -3614,9 +3630,9 @@ if (iter>20) printf("iter = %d, time_rm = %.17f, dtb = %.17f, dtbk = %.17f, u_in
 
 
 
-   // Interpolate the velocities at the final point
+   // Interpolate the velocities at the final point with respect to the current side frame
    u_int = curElem->interpolateVelocities(xt, this);
-
+if (idx == 26505 && jlev==45) printf("AFTER curElem->interpolateVelocities(xt, this), u_int = (%.17f, %.17f, %.17f), {u2[jlev].x, u2[jlev].y, w2(jlev)} = (%.17f, %.17f, %.17f)\n", u_int.x, u_int.y, u_int.z, u2[jlev].x, u2[jlev].y, w2(jlev));
 
 }
 
@@ -4235,15 +4251,16 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    else {
       // Unit side vector in 3D cartesian coordinates
       Vector3 nSide = { side.n1->p.x - side.n2->p.x, side.n1->p.y - side.n2->p.y, side.n1->gz - side.n2->gz };
+
       nSide = normalize(nSide);
 
-      // It cross product with the unit local z-axis vector (nUp) is the
+      // Its cross product with the unit local z-axis vector (nUp) is the
       // normal vector we are looking for.
       Vector3 n3D = normalize(cross(nSide, side.frame.nUp()));  
 
       // The 2D components can be obtained by projecting the 3D normal vector to the plane defined by the unit vectors nZonal and nMeridional
       const Vector2 n2D = {dot(n3D, side.frame.nZonal()), dot(n3D, side.frame.nMeridional())};
-      side.n = normalize(n2D);      
+      side.n = -normalize(n2D); 
 
    }
 
@@ -4262,8 +4279,7 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    for (int k = 0; k < nvrt; k++) side.zc[k] = 0.5*(side.n1->z[k] + side.n2->z[k]);  // XXXX substitute by computation?
    
    // Compute the length of the side
-   const Vector2 vLen = side.n2->p - side.n1->p;
-   side.len = sqrt(dot(vLen, vLen));
+   side.len = length(side.n2->p - side.n1->p);
 
 
    // Compute the Coriolis coefficient
@@ -4448,9 +4464,8 @@ found: // Jumped here when the node was found
 __device__ void Mesh::populateBoundarySideLinks(void) {
 
    SIDE_BND(sideBnd);
-   const int idx = idx_side_bnd;    
 
-   Side *side = sideBnd->side;
+   const Side *side = sideBnd->side;
 
    // We assume that the leftSide is the side s that has s->n2 == side->n1
    // and the rightSide is the side s that has s->n1 == side->n2
@@ -5588,7 +5603,7 @@ extern "C" {
 
       // Elevation initial condition at boundary nodes. It is ramped down to zero
       double eic = 0.0;
-      if (nramp_elev == 1) eic = nodeBnd->etaic;
+      if (nramp_elev == 1) eic = nodeBnd->etaic;  // XXXX is etaic ever set?  
       else                 eic = 0.0;
 
       const double r_eic = (1.0 - ramp)*eic;   // r_ stands for ramp
@@ -6732,7 +6747,8 @@ extern "C" {
       } // if (side segment type...
 
    
-
+// EEEEEEE
+for (int k = kb; k < nvrt; k++) side->u2[k] = {0.0, 0.0};
    }
 
 
@@ -7334,6 +7350,8 @@ extern "C" {
 
          bottomFlux = -topFlux;
       }
+// EEEEEEEEEEEEEEEE
+for (int l = kb; l < nvrt; l++)  elem->w[l] = 0.0;
    }  
 
 
