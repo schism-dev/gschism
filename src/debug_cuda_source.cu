@@ -2085,10 +2085,10 @@ __device__ __forceinline__ double Element::centerZ(void) const {
 
       assert(level >= 0 && level < nvrt && "Level is out of range");
       // Get the values of the field at the nodes of the element
-      res[0] = (nodes[0]->*field)[max(level, nodes[0]->kb)];
-      res[1] = (nodes[1]->*field)[max(level, nodes[1]->kb)];
-      res[2] = (nodes[2]->*field)[max(level, nodes[2]->kb)];
-      if (isQuad()) res[3] = (nodes[3]->*field)[max(level, nodes[3]->kb)];
+      res[0] = (nodes[0]->*field)[level];
+      res[1] = (nodes[1]->*field)[level];
+      res[2] = (nodes[2]->*field)[level];
+      if (isQuad()) res[3] = (nodes[3]->*field)[level];
       else          res[3] = T();
    }    
 
@@ -2098,10 +2098,10 @@ __device__ __forceinline__ double Element::centerZ(void) const {
       assert(level >= 0 && level < nvrt && "Level is out of range");
 
       // Get the values of the func at the nodes of the element
-      res[0] = (nodes[0]->*func)(max(level, nodes[0]->kb));
-      res[1] = (nodes[1]->*func)(max(level, nodes[1]->kb));
-      res[2] = (nodes[2]->*func)(max(level, nodes[2]->kb));
-      if (isQuad()) res[3] = (nodes[3]->*func)(max(level, nodes[3]->kb));
+      res[0] = (nodes[0]->*func)(level);
+      res[1] = (nodes[1]->*func)(level);
+      res[2] = (nodes[2]->*func)(level);
+      if (isQuad()) res[3] = (nodes[3]->*func)(level);
       else          res[3] = T();  // This is 0.0 or a zero vector
 
    }      
@@ -2122,10 +2122,10 @@ __device__ __forceinline__ double Element::centerZ(void) const {
       assert(level >= 0 && level < nvrt && "Level is out of range");
 
       // Get the values of the field at the nodes of the element
-      res[0] = (sides[0]->*field)[max(level, sides[0]->kb)];
-      res[1] = (sides[1]->*field)[max(level, sides[1]->kb)];
-      res[2] = (sides[2]->*field)[max(level, sides[2]->kb)];
-      if (isQuad()) res[3] = (sides[3]->*field)[max(level, sides[3]->kb)];
+      res[0] = (sides[0]->*field)[level];
+      res[1] = (sides[1]->*field)[level];
+      res[2] = (sides[2]->*field)[level];
+      if (isQuad()) res[3] = (sides[3]->*field)[level];
       else          res[3] = T();
    }    
 
@@ -2135,10 +2135,10 @@ __device__ __forceinline__ double Element::centerZ(void) const {
       assert(level >= 0 && level < nvrt && "Level is out of range");
 
       // Get the values of the func at the nodes of the element
-      res[0] = (sides[0]->*func)(max(level, sides[0]->kb));
-      res[1] = (sides[1]->*func)(max(level, sides[1]->kb));
-      res[2] = (sides[2]->*func)(max(level, sides[2]->kb));
-      if (isQuad()) res[3] = (sides[3]->*func)(max(level, sides[3]->kb));
+      res[0] = (sides[0]->*func)(level);
+      res[1] = (sides[1]->*func)(level);
+      res[2] = (sides[2]->*func)(level);
+      if (isQuad()) res[3] = (sides[3]->*func)(level);
       else          res[3] = T();  // This is 0.0 or a zero vector
 
    }      
@@ -2250,10 +2250,10 @@ printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x,
       T values[4];
 
 
-      values[0] = (sides[0]->*func)(max(level, sides[0]->kb));
-      values[1] = (sides[1]->*func)(max(level, sides[1]->kb));
-      values[2] = (sides[2]->*func)(max(level, sides[2]->kb));
-      if (isQuad()) values[3] = (sides[3]->*func)(max(level, sides[3]->kb));
+      values[0] = (sides[0]->*func)(level);
+      values[1] = (sides[1]->*func)(level);
+      values[2] = (sides[2]->*func)(level);
+      if (isQuad()) values[3] = (sides[3]->*func)(level);
       else          values[3] = T();
 
       if constexpr (IsVector2<T>::value && ics == 2) projectSideVectorsToElementFrame(values);
@@ -7349,7 +7349,7 @@ extern "C" {
 
          bottomFlux = -topFlux;
       }
-for (int l = kb; l < nvrt ; l++) elem->w[l] = 0.0; //EEEEEEE
+
    }  
 
 

@@ -2085,10 +2085,10 @@
  2085: 
  2086:       assert(level >= 0 && level < nvrt && "Level is out of range");
  2087:       // Get the values of the field at the nodes of the element
- 2088:       res[0] = (nodes[0]->*field)[max(level, nodes[0]->kb)];
- 2089:       res[1] = (nodes[1]->*field)[max(level, nodes[1]->kb)];
- 2090:       res[2] = (nodes[2]->*field)[max(level, nodes[2]->kb)];
- 2091:       if (isQuad()) res[3] = (nodes[3]->*field)[max(level, nodes[3]->kb)];
+ 2088:       res[0] = (nodes[0]->*field)[level];
+ 2089:       res[1] = (nodes[1]->*field)[level];
+ 2090:       res[2] = (nodes[2]->*field)[level];
+ 2091:       if (isQuad()) res[3] = (nodes[3]->*field)[level];
  2092:       else          res[3] = T();
  2093:    }    
  2094: 
@@ -2098,10 +2098,10 @@
  2098:       assert(level >= 0 && level < nvrt && "Level is out of range");
  2099: 
  2100:       // Get the values of the func at the nodes of the element
- 2101:       res[0] = (nodes[0]->*func)(max(level, nodes[0]->kb));
- 2102:       res[1] = (nodes[1]->*func)(max(level, nodes[1]->kb));
- 2103:       res[2] = (nodes[2]->*func)(max(level, nodes[2]->kb));
- 2104:       if (isQuad()) res[3] = (nodes[3]->*func)(max(level, nodes[3]->kb));
+ 2101:       res[0] = (nodes[0]->*func)(level);
+ 2102:       res[1] = (nodes[1]->*func)(level);
+ 2103:       res[2] = (nodes[2]->*func)(level);
+ 2104:       if (isQuad()) res[3] = (nodes[3]->*func)(level);
  2105:       else          res[3] = T();  // This is 0.0 or a zero vector
  2106: 
  2107:    }      
@@ -2122,10 +2122,10 @@
  2122:       assert(level >= 0 && level < nvrt && "Level is out of range");
  2123: 
  2124:       // Get the values of the field at the nodes of the element
- 2125:       res[0] = (sides[0]->*field)[max(level, sides[0]->kb)];
- 2126:       res[1] = (sides[1]->*field)[max(level, sides[1]->kb)];
- 2127:       res[2] = (sides[2]->*field)[max(level, sides[2]->kb)];
- 2128:       if (isQuad()) res[3] = (sides[3]->*field)[max(level, sides[3]->kb)];
+ 2125:       res[0] = (sides[0]->*field)[level];
+ 2126:       res[1] = (sides[1]->*field)[level];
+ 2127:       res[2] = (sides[2]->*field)[level];
+ 2128:       if (isQuad()) res[3] = (sides[3]->*field)[level];
  2129:       else          res[3] = T();
  2130:    }    
  2131: 
@@ -2135,10 +2135,10 @@
  2135:       assert(level >= 0 && level < nvrt && "Level is out of range");
  2136: 
  2137:       // Get the values of the func at the nodes of the element
- 2138:       res[0] = (sides[0]->*func)(max(level, sides[0]->kb));
- 2139:       res[1] = (sides[1]->*func)(max(level, sides[1]->kb));
- 2140:       res[2] = (sides[2]->*func)(max(level, sides[2]->kb));
- 2141:       if (isQuad()) res[3] = (sides[3]->*func)(max(level, sides[3]->kb));
+ 2138:       res[0] = (sides[0]->*func)(level);
+ 2139:       res[1] = (sides[1]->*func)(level);
+ 2140:       res[2] = (sides[2]->*func)(level);
+ 2141:       if (isQuad()) res[3] = (sides[3]->*func)(level);
  2142:       else          res[3] = T();  // This is 0.0 or a zero vector
  2143: 
  2144:    }      
@@ -2250,10 +2250,10 @@
  2250:       T values[4];
  2251: 
  2252: 
- 2253:       values[0] = (sides[0]->*func)(max(level, sides[0]->kb));
- 2254:       values[1] = (sides[1]->*func)(max(level, sides[1]->kb));
- 2255:       values[2] = (sides[2]->*func)(max(level, sides[2]->kb));
- 2256:       if (isQuad()) values[3] = (sides[3]->*func)(max(level, sides[3]->kb));
+ 2253:       values[0] = (sides[0]->*func)(level);
+ 2254:       values[1] = (sides[1]->*func)(level);
+ 2255:       values[2] = (sides[2]->*func)(level);
+ 2256:       if (isQuad()) values[3] = (sides[3]->*func)(level);
  2257:       else          values[3] = T();
  2258: 
  2259:       if constexpr (IsVector2<T>::value && ics == 2) projectSideVectorsToElementFrame(values);
@@ -7349,7 +7349,7 @@
  7349: 
  7350:          bottomFlux = -topFlux;
  7351:       }
- 7352: for (int l = kb; l < nvrt ; l++) elem->w[l] = 0.0; //EEEEEEE
+ 7352: 
  7353:    }  
  7354: 
  7355: 
