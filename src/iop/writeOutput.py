@@ -61,7 +61,7 @@ def writeOutput(it, core, opt):
             dataU.close()
             dataV.close()
             dataZ.close()
-            dataW.close()
+            dataW.close()   
             pass
 
         fileNum += 1

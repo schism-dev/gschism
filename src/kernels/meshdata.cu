@@ -1663,7 +1663,7 @@ __inline__ __device__ void Side::btrack(
    // Initial velocities
    u_int = {u2[jlev].x, u2[jlev].y, w2(jlev)};
 
-return;
+
    // Find a non dry element for starting the backtracking. At this point there should be at least one.
    Element* curElem = (!elems[0]->isDry) ? elems[0] : elems[1];  // elems[0] is always non-null 
 
@@ -2939,7 +2939,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
                } // if Flather or Discharge
 
-               node1->qel -= thetai*dt*ri3;
+               node1->qel -= thetai*dt*ri3;  
 
 
             } // I_3
@@ -2949,7 +2949,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
             if(!side->isDry) {
 
                const double Unbar = dot(side->U, side->n);
-               node1->qel -= 0.5*(1.0 - thetai)*dt*side->len*Unbar;
+               node1->qel -= 0.5*(1.0 - thetai)*dt*side->len*Unbar; 
 
             } // I_5
 
@@ -3030,7 +3030,6 @@ extern "C" {
       // Initialize btrack velocities to the actual velocities at the side 
       for (int k = 0; k < nvrt; k++) side->btu[k] = side->u2[k];
   
-
       if (side->isDry) return;
      
 // addDebugPlot(side->center, side->center, 0xFF001F, 'x');    
@@ -3872,6 +3871,7 @@ extern "C" {
 
 
    __global__ void setEssentialBC(void) {  // XXXXXXX CONVERT TO NODE_BND????????
+
       // Set essential boundary conditions 
       NODE(node); // Each boundary node
       NodeBoundary *nodeBnd = node->nodeBnd;
@@ -4333,6 +4333,7 @@ __device__ double interpolateDensityAtHalfLevel(const Element *elem, const Eleme
 extern "C" {
    __global__ void computeDensityGradient(void) {
 
+      assert(ibc == 0 && "baroclinic formulation is not implemented yet: ibc != 0");
       if constexpr(ibc != 0) return;
 
          // Compute the horizontal density gradient at each element.
@@ -4904,9 +4905,6 @@ extern "C" {
          }
       } // if (side segment type...
 
-   
-// EEEEEEE
-for (int k = kb; k < nvrt; k++) side->u2[k] = {0.0, 0.0};
    }
 
 
@@ -5251,6 +5249,7 @@ for (int k = kb; k < nvrt; k++) side->u2[k] = {0.0, 0.0};
    // Divides by the total area of the elements sharing the    node.
       NODE(node);
 
+      const double invArea = 1.0 / node->tmp.d;
       for (int k = node->kb; k < nvrt; k++) node->w2[k] = node->w2[k] / node->tmp.d;  // node->tmp.d contains the total area of the elements sharing the node
 
       node->tmp.i = 0; // Reset the temporary integer value. It will be used to compute the number of elements sharing the node.
@@ -5508,8 +5507,7 @@ for (int k = kb; k < nvrt; k++) side->u2[k] = {0.0, 0.0};
 
          bottomFlux = -topFlux;
       }
-// EEEEEEEEEEEEEEEE
-for (int l = kb; l < nvrt; l++)  elem->w[l] = 0.0;
+
    }  
 
 
