@@ -19,6 +19,7 @@ dataU = None
 dataV = None
 dataW = None
 dataZ = None
+dataWElem = None
 fileNum = 0
 outputTime = 0.0
 
@@ -43,7 +44,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 
 def writeOutput(it, core, opt):
     # Write the output files
-    global dataC, dataU, dataV, dataW, dataZ, fileNum, sizeNode, outputTime
+    global dataC, dataU, dataV, dataW, dataZ, dataWElem, fileNum, sizeNode, outputTime
     
 
     ihfskip = core.ihfskip
@@ -61,13 +62,14 @@ def writeOutput(it, core, opt):
             dataU.close()
             dataV.close()
             dataZ.close()
-            dataW.close()   
+            dataW.close() 
+            dataWElem.close()
             pass
 
         fileNum += 1
 
         ifile=(it-1)/ihfskip+1
-        dataC, dataU, dataV, dataW, dataZ = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataC, dataU, dataV, dataW, dataZ, dataWElem = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
 
 
     if dataC is None:
@@ -209,6 +211,13 @@ def writeOutput(it, core, opt):
     verticalVel_var = dataW.variables['verticalVelocity']
     verticalVel_var[idxTime, :, :] = w_cpu.T
     del w_cpu
+
+
+    view = monitor.getElementVar("w")
+    w_cpu = view.get()
+    verticalVelElem_var = dataWElem.variables['verticalVelAtElement']
+    verticalVelElem_var[idxTime, :, :] = w_cpu.T
+    del w_cpu
    
 
     time_var = dataC.variables['time']
@@ -226,6 +235,9 @@ def writeOutput(it, core, opt):
     time_var = dataZ.variables['time']
     time_var[idxTime] = it*dt
 
+    time_var = dataWElem.variables['time']
+    time_var[idxTime] = it*dt
+
     outputTime += time.perf_counter()
 
 
@@ -239,13 +251,14 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     The data variable is stored in the global variable data.
     """
 
-    global dataC, dataU, dataV, dataW, dataZ
+    global dataC, dataU, dataV, dataW, dataZ, dataWElem
     
     filename = 'out2d_%i.nc' % fileNum
     filenameU = 'horizontalVelX_%i.nc' % fileNum
     filenameV = 'horizontalVelY_%i.nc' % fileNum
     filenameW = 'verticalVelocity_%i.nc' % fileNum
     filenameZ = 'zCoordinates_%i.nc' % fileNum
+    filenameWElem = 'verticalVelAtElement_%i.nc' % fileNum
 
     isGeographic = getattr(opt, "ics", 1) == 2
 
@@ -273,16 +286,20 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     if os.path.exists(filepathZ):
         os.remove(filepathZ)
 
+    filepathWElem = os.path.join(path, filenameWElem)
+    if os.path.exists(filepathWElem):
+        os.remove(filepathWElem)
+
     # Create the NetCDF files
     dataC = nc.Dataset(filepath,  "w", format="NETCDF4")
     dataU = nc.Dataset(filepathU, "w", format="NETCDF4")
     dataV = nc.Dataset(filepathV, "w", format="NETCDF4")
     dataW = nc.Dataset(filepathW, "w", format="NETCDF4")
     dataZ = nc.Dataset(filepathZ, "w", format="NETCDF4")
-    
+    dataWElem = nc.Dataset(filepathWElem, "w", format="NETCDF4")
     
     # Add dimensions to the file
-    for data in [dataC, dataU, dataV, dataW, dataZ]:
+    for data in [dataC, dataU, dataV, dataW, dataZ, dataWElem]:
         data.createDimension('nSCHISM_hgrid_node',          nNodes)
         data.createDimension('nSCHISM_hgrid_face',          nElements)
         data.createDimension('nSCHISM_hgrid_edge',          nSides)
@@ -513,6 +530,20 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     verticalVel.grid_mapping = "crs"
     verticalVel.mesh = "SCHISM_hgrid" 
 
+
+    verticalVelAtElement = dataWElem.createVariable(
+        'verticalVelAtElement', 'f4',
+        ('time', 'nSCHISM_hgrid_face', 'nSCHISM_vgrid_layers'),
+        chunksizes=(1, nElements, nLayers),
+        **paramsCompression,
+    )
+    verticalVelAtElement.i23d = cp.int32(5)   # face, 3D (your spec)
+    verticalVelAtElement.coordinates = "SCHISM_hgrid_face_x SCHISM_hgrid_face_y"
+    verticalVelAtElement.location = "face"
+    verticalVelAtElement.grid_mapping = "crs"
+    verticalVelAtElement.mesh = "SCHISM_hgrid"
+    verticalVelAtElement.missing_value = cp.float32(9.96921e36)
+
     # Add zCoordinates variable to dataZ file
     zCoordinates = dataZ.createVariable('zCoordinates', 'f4', ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'))
     zCoordinates.i23d = cp.int32(2)
@@ -523,7 +554,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     zCoordinates.mesh = "SCHISM_hgrid"
 
     
-    return dataC, dataU, dataV, dataW, dataZ
+    return dataC, dataU, dataV, dataW, dataZ, dataWElem
 
     
 

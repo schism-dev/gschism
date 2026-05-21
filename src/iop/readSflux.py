@@ -301,7 +301,9 @@ class DatasetInfo:
 
     def interpGrid(self, data_in: np.ndarray):
 
-        # XXX CHECK -1 indices!!!
+        if self.interp_indices.min() < 0:
+            raise ValueError("Invalid indices found in interpGrid")
+
         return (data_in[self.interp_indices]*self.interp_weights).sum(axis=0)
 
 
@@ -310,7 +312,7 @@ class DatasetInfo:
         Convert Gregorian date to Julian day.
         Example: julian_day(1970,1,1) = 2440588
         """
-        return datetime(year, month, day).toordinal() + 1721423
+        return datetime(year, month, day).toordinal() + 1721425
     
     
     def getFileTimes(self, file_name, file_idx):

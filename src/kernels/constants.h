@@ -19,6 +19,7 @@ constexpr int nhtblocks = 0;                 // Number of hydraulic structures (
 constexpr int ibc = 1;                 // Option to include baroclinic term (0 means yes)
 constexpr int itur = 0;               // Turbulence closure model
 constexpr int islip = 0;             // Option to include slip horizontal boundary conditions
+constexpr int iupwind_mom = 0; // Option on how to include upwind momentum advection
 constexpr int ihorcon = 0;         // Option to include horizontal viscosity
 constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
 constexpr int ishapiro = 1;       // Option to include Shapiro filter

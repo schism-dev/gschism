@@ -154,7 +154,7 @@ class CudaSourceManager:
         # Create the module
         try:
             if DEBUG:
-                options += ("-G", "-lineinfo")
+                options += ("-lineinfo",) # "-G" for debug information, breakpoints, etc.    
             else:
                 options += ("-DNDEBUG",)  
               

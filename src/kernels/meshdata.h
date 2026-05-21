@@ -24,7 +24,7 @@ constexpr double iet_n[4] = {-1,-1, 1, 1}; // Local eta-coordinate of the vertic
     do {                                                                   \
       if (!(cond)) {                                                       \
         printf("ASSERT FAILED: " fmt "\n", ##__VA_ARGS__);                \
-        asm("trap;");                                                      \
+        assert(false && "ASSERT FAILED"); \
       }                                                                    \
     } while (0)
 #else
@@ -896,8 +896,8 @@ struct Element {
 
    __device__ __forceinline__ Node *getNodeInOrder(int idx) const;
 
-   __device__ __forceinline__ void computePredicates(const Point2 x0, const Point2& xt, const Side* origSide,
-                                                    Bool4& isLeft, Bool4& isObtuse, Bool4& isBisector) const;
+   __device__ __forceinline__ void computePredicates(const Point2 x0, const Point2& xt, double &fac, const Side* origSide,
+                                                    Bool4& isLeft, Bool4& isObtuse, Bool4& isBisector, int jlev) const;
     
 
 };
@@ -1090,6 +1090,7 @@ struct Side {
    __forceinline__ __device__ Vector2 t(void) const { return {-n.y, n.x}; } // Tangent vector
 
    __inline__ __device__ bool isBnd(void) const { return sideBnd != nullptr; } // True if the side is a boundary side
+   __inline__ __device__ bool isOpenBnd(void) const { return isBnd() && sideBnd->segment->ifltype == 0; } // True if the side is an open boundary side
    __inline__ __device__ bool isInternal(void) const { return elems[1] != nullptr; } // Internal side
    __inline__ __device__ int iadv(void) const;
 
@@ -1342,6 +1343,7 @@ struct Node {
             if (speed <= 35.0) dragcoef = 1.00e-4 * (-0.016*speed*speed + 0.967*speed + 8.058);
             else               dragcoef = 2.23e-3 * 35.0/speed;
 
+            dragcoef = max(dragcoef, 4.0e-4);
             const double cff = 0.001293*dragcoef*speed*rampwind;
             tau = cff*u_air;
 

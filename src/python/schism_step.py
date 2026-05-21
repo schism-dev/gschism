@@ -44,7 +44,7 @@ def computeMeteorologicalForcing(opt, time, sflux):
         return
 
     jd_midnight = sflux.dataset1.julianDay(opt.start_year, opt.start_month, opt.start_day)
-    julian_day = jd_midnight + opt.start_hour / 24.0 + time / 86400.0
+    julian_day = jd_midnight + opt.start_hour / 24.0 + time / 86400.0 + opt.utc_start/24.0
 
     u_air_node, v_air_node, p_air_node, t_air_node, q_air_node = sflux.getWinds(julian_day)
 
@@ -148,7 +148,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
              
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        if it >= 21111:
+        if it >= 11160:
             import debug.newmonitor as newmonitor
             newmonitor.show()
 
@@ -164,6 +164,8 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         print(f"Error in backtrackAllNodes: {e}")
 
     # Vertical advection 
+    if opt.iupwind_mom != 0:
+        raise ValueError("iupwind_mom != 0 is not implemented yet")
     # computeVerticalAdvection()        # Lines 5030-5122
 
     # if it >= 55:

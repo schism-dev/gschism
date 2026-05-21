@@ -1428,7 +1428,7 @@ readWindRotationAngle(const std::string& filename, int nElements) {
 
         file >> node_number >> xtmp >> ytmp >> angle;
 
-        wind_rotate_angle[i] = angle*deg2rad;
+        wind_rotate_angle[i] = angle*pi/180.0;
     }
 
     print("");
