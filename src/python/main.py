@@ -72,8 +72,8 @@ import python.cuda_functions as cufunc
 if WINDOWS:
     # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b'
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
-    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02h'
-    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02h\gpuoutput'
+    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02e'
+    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02e\gpuoutput'
     # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\GPU'
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\GPU\gpuoutput'
 

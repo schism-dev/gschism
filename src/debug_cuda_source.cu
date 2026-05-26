@@ -1,6 +1,6 @@
 // BEGIN INCLUDE: constants.h
 #define USE_LOCALIZED_SIGMA
-#define USE_FRAMES
+#define DO_NOT_USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 constexpr double rad2deg = 180.0/3.14159265358979323846;
@@ -10,7 +10,7 @@ constexpr int BLOCK_SIZE = 128;
 constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 1;              // Vertical coordinate system
-constexpr int ics = 2;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
+constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
@@ -922,8 +922,6 @@ struct Element {
    }
    #endif
 
-   __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
-                                        double& tIntersect, const Side *origSide = nullptr);
 
    __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
 
@@ -2444,139 +2442,7 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
 
 }
 
-/**
-   For a point on a side of an element and a line segment starting at that point and ending at (x2,y2), 
-   find the intersection point (given by parameter tIntersect) and the side (intersectingSide) that it intersects.
-   If the segment is completely inside the element, then it returns true.
 
-   This function assumes:
-   - The initial point is on a side of the element. 
-   - Its position is given by parameter t in the range [0,1].
-   - The line segment starting at that point and ending at (x2,y2) is either completely inside the element or it 
-      intersects the element (elements are convex).
-
-   To find the intersection point, this function does the following:
-   - it finds the intersection of the line segment with all the element side lines,
-      except for the one that contains the initial point.
-   - Because we do the interection with the lines (not the segments), the t parameter is not ncessearily in the range [0,1].
-   - let's call t1i the t parameter for the track segment and t2i the t parameter for the element side line.
-   - We want the closest intersection point, for which t1i > 0 and t2i in [0,1].
-   - From construction, we know that this intersection point *must* exist, even in extreme cases, like when the
-      track segment is almost parallel to the element side line.
-
-   Inputs:
-   @param t: t*side.n1 + (1-t)*side.n2 is the point on the side
-   @param x2, y2: other end of the line segment
-
-   Outputs:
-   @param side:  side that intersects the line segment (input and output)
-   @param nextElement (output): element that contains the intersection point
-   @param tIntersect (output): New intersection point tIntersect*side.n1 + (1-tIntersect)*side.n2
-   @param zint (input/output): Vertical coordinate of the intersection point
-
-   The equations for the two segments (the one we are considering and one of the sides of the element) are:
-   P1(tt1) = (x1,y1) + tt1*(x2-x1, y2-y1)  where 0 <= tt1 <= 1
-   P2(tt2) = (x3,y3) + tt2*(x4-x3, y4-y3)  where 0 <= tt2 <= 1
-
-   If the two segments are parallel, they do not intersect. This is checked by the determinant of the two vectors
-   (Delta) being zero.
-
-   The intersection2 point happens when:
-   tt1(x2-x1) - tt2(x4-x3) = x3-x1
-   tt1(y2-y1) - tt2(y4-y3) = y3-y1
-   
-   Assumption: the 4 points (including those of the side segment) are different.
-   The eqs. for the 2 lines are: X=X1+(X2-X1)*tt1 and X=X3+(X4-X3)*tt2.	
-   Output: false: no intersection or colinear; true: exactly 1 intersection.	
-   If true, (xIntersect,yIntersect) is the intersection.				
-   Modified to only check tt2, assuming 0<=tt1<=1 is already assured. 
-**/
-
-
-__device__ bool Element::findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement,
-                                              double &t, double& tIntersect, const Side *origSide) {
-   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa (1)");
-// REMOVE!!!!
-//    assert( containsPoint(x1, origSide) && "Starting point is not inside the element");                                    
-//    assert(!containsPoint(x2, origSide) && "Ending point is not outside the element");
-
-//    double closest_intersect_t = 1e10;
-//    bool found_intersection = false;
-
-//    for (int i = 0; i < i34; i++) {
-
-//       Side *side2 = sides[i];
-
-//       // (x3,y3)-(x4,y4) is the element side line
-//       Point2 x3 = side2->n1->p;
-//       Point2 x4 = side2->n2->p;
-
-//       if constexpr(ics==2) {
-         
-//          x3 = toPoint2(origSide->toLocalFrame(toPoint3(x3, side2->n1->gz))); // XXXX?????
-//          x4 = toPoint2(origSide->toLocalFrame(toPoint3(x4, side2->n2->gz)));  // XXXX?????
-
-//       }
-
-//       // delta is 0 if the two lines are parallel. In this case, they do not intersect.
-//       const double delta = cross(x2 - x1, x3 - x4);
-
-//       if (abs(delta) > 0) {
-
-//          const double delta1 = cross(x3 - x1, x3 - x4);
-//          const double delta2 = cross(x2 - x1, x3 - x1); 
-
-//          // Solves the two linear equations for tt1 and tt2
-//          const double tt1 = delta1/delta; // delta is not zero, so we can divide
-//          const double tt2 = delta2/delta;
-
-//          if (tt1 >= -small && tt2 >= -small && tt2 <= 1.0 + small && tt1 <= 1.0 + small) {
-//             closest_intersect_t = min(closest_intersect_t, tt1);
-//             side = side2;
-//             nextElement = side->otherElem(this);
-
-//             t =          clamp(tt2, small, 1.0-small);
-//             tIntersect = clamp(tt1, small, 1.0-small);
-//             found_intersection = true;
-
-//          }
-
-      
-//       }
-//       else {  // parallel segments
-
-//          // continue; 
-//          assert(false && "Parallel segments should not happen under the new code");
-//          // In this case, we check if they are colinear. if they are, we compute the intersection point as:
-//          // tt2 += length(x1 - x2) * sign(dot(x1 - x2, x3 - x4)) in {0, 1}
-
-//          // Check if the segments are colinear. It is enough to check if x1 is on the line of the side segment.
-//          const double dist = dot(x1 - x3, side2->n);
-//          if (abs(dist) < small*length(x3 - x4)) {
-//             const double2 unitarySide = normalize(x4 - x3);
-//             const double len = dot(x2 - x1, unitarySide);
-//             t = t + len;
-//             t = max(0.0, min(t, 1.0));
-// // printf("BEEEEEBB t = %.17e, dist = %.17e, len = %.17e, x1 = (%e,%e), x2 = (%e,%e), x3 = (%e,%e), x4 = (%e,%e)\n", t, dist, len, x1.x, x1.y, x2.x, x2.y, x3.x, x3.y, x4.x, x4.y);
-
-
-//             // tIntersect = max(small, min(tt1, 1.0-small));
-//             // t = tt2;
-//             found_intersection = true;
-//          }
-//       }
-
-
-//    }
-
-
-
-//    // if (!found_intersection) {if (idx == 15876) printf("11111: No intersection found\n"); return false;}
-//    assert(found_intersection && "No intersection found");
-
-//    // found_intersection should always be true, since we checked all the sides.  
-//    return found_intersection;
-}
 
 __inline__ __device__ bool Element::containsPoint(Vector2 xt, const Side *origSide) const { 
    // Check if the point (xt,yt) is inside the element.
@@ -3002,7 +2868,6 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
    // It's not reliable to use the area coord for ics=2 when the pt is far away
    // from the local frame, so use additional check.
 
-   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa (5)");
 
    if (isTri()) { // Triangular element
 
@@ -3238,7 +3103,6 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
    double shpCoord[4];
    Vector3 u_int;
 
-   assert((origSide == nullptr || ics == 2) && "origSide must be nullptr if ics == 1 and vice versa (6)");
 
    // First step is to compute the shape coordinates of (xt,yt)
 // printf("interpolateVelocities 1: xt = (%f, %f, %f)\n", xt.x, xt.y, xt.z);
@@ -3549,7 +3413,7 @@ __inline__ __device__ void Side::btrack(
     
 // }
 
-
+      double t, s; // parameters for the line segments p0pt and p1p2
       Side *lastCrossSide = nullptr;
       const bool found = celestialWalk(curElem, x0, xt, this, lastCrossSide, jlev);
 
@@ -3593,7 +3457,7 @@ __inline__ __device__ void Side::btrack(
          // We are assuming intersection, so we clamp t to the range [0,1].
          const double denom = cross(v2, v1);
          
-         double t, s; // parameters for the line segments p0pt and p1p2
+
 
 
          if (abs(denom) < small) {
@@ -3672,7 +3536,7 @@ __inline__ __device__ void Side::btrack(
 if (iter>39) break;
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
-
+if (time_rm_3 <= time_rm ) printf("s = %.17f, time_rm_3 = %.17f, time_rm = %.17f\n", s, time_rm_3, time_rm);
       assert(time_rm_3 > time_rm && "time_rm is not decreasing");
       time_rm_3 = time_rm_2;
       time_rm_2 = time_rm_1;
@@ -4429,8 +4293,8 @@ found: // Jumped here when the node was found
 
    for (int jfr = 0; jfr < nbfr; jfr++) {
 
-      const int idx2 = iseg + i*nope + jfr*nope*mnond; //XXXXX CHECK
-printf("populateBoundaryNodes: nodeBnd->node->idx = %d, mnond = %d, nbfr = %d, nodeBnd->segment = %p, jfr = %d, idx2 = %d, efa = %.17f, emo = %.17f, umo = (%.17f, %.17f), ufa = (%.17f, %.17f)\n", nodeBnd->node->idx, mnond, nbfr, nodeBnd->segment, jfr, idx2, efa[idx2], emo[idx2], umo[idx2], vmo[idx2], ufa[idx2], vfa[idx2]);
+      const int idx2 = iseg + i*nope + jfr*nope*mnond; 
+
       nodeBnd->efa[jfr] = efa[idx2];
       nodeBnd->emo[jfr] = emo[idx2];
       nodeBnd->umo[jfr] = {umo[idx2], vmo[idx2]};
@@ -5318,7 +5182,7 @@ extern "C" {
 
 
       NODE_BND(nodeBnd);
-// printf("getBoundaryConditions: nodeBnd->node->idx = %d, nfltype = %d, nettype = %d\n", nodeBnd->node->idx, nfltype, nettype);
+
       assert(nfltype <= 0 && nettype <= 0 && "getBoundaryConditions: Not implemented");
       return;
 

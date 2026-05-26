@@ -802,8 +802,6 @@ struct Element {
    }
    #endif
 
-   __device__ bool findNextIntersection(Point2 x1, Point2 x2, Side *&side, Element *&nextElement, double &t, 
-                                        double& tIntersect, const Side *origSide = nullptr);
 
    __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
 
