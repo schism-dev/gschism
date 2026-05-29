@@ -1463,7 +1463,7 @@ struct Node {
 
             dragcoef = max(dragcoef, 4.0e-4);
             const double cff = 0.001293*dragcoef*speed*rampwind;
-            tau = 0.0*cff*u_air;
+            tau = cff*u_air;
 
          } else {
             tau = {0.0, 0.0};
@@ -6940,7 +6940,7 @@ extern "C" {
 
 
       const double invArea = 1.0 / node->tmp.d;
-      for (int k = node->kb; k < nvrt; k++) node->w2[k] = invArea*node->w2[k];  // node->tmp.d contains the total area of the elements sharing the node
+      for (int k = node->kb; k < nvrt; k++) node->w2[k] = 0.0; // EEEEEEE invArea*node->w2[k];  // node->tmp.d contains the total area of the elements sharing the node
 
       node->tmp.i = 0; // Reset the temporary integer value. It will be used to compute the number of elements sharing the node.
    }

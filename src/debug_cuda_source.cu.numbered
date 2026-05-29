@@ -1463,7 +1463,7 @@
  1463: 
  1464:             dragcoef = max(dragcoef, 4.0e-4);
  1465:             const double cff = 0.001293*dragcoef*speed*rampwind;
- 1466:             tau = 0.0*cff*u_air;
+ 1466:             tau = cff*u_air;
  1467: 
  1468:          } else {
  1469:             tau = {0.0, 0.0};
@@ -6940,7 +6940,7 @@
  6940: 
  6941: 
  6942:       const double invArea = 1.0 / node->tmp.d;
- 6943:       for (int k = node->kb; k < nvrt; k++) node->w2[k] = invArea*node->w2[k];  // node->tmp.d contains the total area of the elements sharing the node
+ 6943:       for (int k = node->kb; k < nvrt; k++) node->w2[k] = 0.0; // EEEEEEE invArea*node->w2[k];  // node->tmp.d contains the total area of the elements sharing the node
  6944: 
  6945:       node->tmp.i = 0; // Reset the temporary integer value. It will be used to compute the number of elements sharing the node.
  6946:    }
