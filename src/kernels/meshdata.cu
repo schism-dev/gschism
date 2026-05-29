@@ -240,7 +240,7 @@ __device__ __forceinline__ double Element::centerZ(void) const {
    template<typename T>
    __device__ __forceinline__ void Element::getNodalValues(int level, T (Node::* field)[nvrt], T res[4]) const {
 
-      assert(level >= 0 && level < nvrt && "Level is out of range");
+      assert(level < nvrt && "Level is out of range");
       // Get the values of the field at the nodes of the element
       res[0] = (nodes[0]->*field)[max(level, nodes[0]->kb)];
       res[1] = (nodes[1]->*field)[max(level, nodes[1]->kb)];
@@ -252,7 +252,7 @@ __device__ __forceinline__ double Element::centerZ(void) const {
    template<typename T>
    __device__ __forceinline__ void Element::getNodalValues(int level, T (Node::*func)(int) const, T res[4]) const {
 
-      assert(level >= 0 && level < nvrt && "Level is out of range");
+      assert(level < nvrt && "Level is out of range");
 
       // Get the values of the func at the nodes of the element
       res[0] = (nodes[0]->*func)(max(level, nodes[0]->kb));
@@ -276,7 +276,7 @@ __device__ __forceinline__ double Element::centerZ(void) const {
    template<typename T>
    __device__ __forceinline__ void Element::getSideValues(int level, T (Side::* field)[nvrt], T res[4]) const {
 
-      assert(level >= 0 && level < nvrt && "Level is out of range");
+      assert(level < nvrt && "Level is out of range");
 
       // Get the values of the field at the nodes of the element
       res[0] = (sides[0]->*field)[max(level, sides[0]->kb)];
@@ -289,7 +289,7 @@ __device__ __forceinline__ double Element::centerZ(void) const {
    template<typename T>
    __device__ __forceinline__ void Element::getSideValues(int level, T (Side::*func)(int) const, T res[4]) const {
 
-      assert(level >= 0 && level < nvrt && "Level is out of range");
+      assert(level < nvrt && "Level is out of range");
 
       // Get the values of the func at the nodes of the element
       res[0] = (sides[0]->*func)(max(level, sides[0]->kb));
@@ -363,9 +363,9 @@ if (shapeCoords[0] > 1.1 || shapeCoords[1] > 1.1 || shapeCoords[2] > 1.1 ||
     shapeCoords[0] < -0.1 || shapeCoords[1] < -0.1 || shapeCoords[2] < -0.1) printf("XXX shapeCoords = (%.17f, %.17f, %.17f, %.17f)\n", shapeCoords[0], shapeCoords[1], shapeCoords[2], shapeCoords[3]);
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
-// if (idx <2077 ) printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
-// if (idx<2077 ) printf("interpolate 4: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+printf("interpolate 4: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -1270,7 +1270,8 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
    // Second step is to find the level that contains zt
    // Uses a binary search to find the level
    // Note that z coordinates are interpolated from their values at the nodes of the element.
-   int L = kb;   // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
+   // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
+   int L = kb - 1; // In some cases, the bottom level of the element is 1 more than the bottom level of the node
    int R = nvrt - 1;
 
    // Get the z coordinates at the nodes of the element at the levels L and R
@@ -1284,12 +1285,12 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
 
    // Interpolates vertically the velocities
    double wght1, wght2;
-   if (xt.z<=zL) {
+   if (xt.z <= zL) {
       wght1 = 1.0;
       wght2 = 0.0;
       xt.z = zL;
    }
-   else if (xt.z>=zR) {
+   else if (xt.z >= zR) {
       wght1 = 0.0;
       wght2 = 1.0;
       xt.z = zR;
@@ -1537,7 +1538,7 @@ __inline__ __device__ void Side::btrack(
    // Initial velocities
    u_int = {u2[jlev].x, u2[jlev].y, w2(jlev)};
 
-
+return;
    // Find a non dry element for starting the backtracking. At this point there should be at least one.
    Element* curElem = (!elems[0]->isDry) ? elems[0] : elems[1];  // elems[0] is always non-null 
 
@@ -1626,7 +1627,7 @@ __inline__ __device__ void Side::btrack(
             t = clamp(dot(pt - p1, v2) / dot(v2, v2), 0.0, 1.0);
 
             // s = clamp(dot(pt - p1, v2) / dot(v2, v2), 0.0, 1.0);
-            clamp(dot(p1 + t*v2 - p0, v1)/dot(v1, v1), 0.0, 1.0);
+            s = clamp(dot(p1 + t*v2 - p0, v1)/dot(v1, v1), 0.0, 1.0);
 
          }
          else {
@@ -1690,7 +1691,7 @@ __inline__ __device__ void Side::btrack(
       x0 = xt;
  
       iter++;
-if (iter>39) break;
+if (iter>39) break; //XXXXXXX
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
 if (time_rm_3 <= time_rm ) printf("s = %.17f, time_rm_3 = %.17f, time_rm = %.17f\n", s, time_rm_3, time_rm);
@@ -2087,8 +2088,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
          node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
          
-         node.nodeBnd->segment->ifltype = 0 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
-         node.nodeBnd->segment->iettype = 0; // XXXXXXXXX
+         node.nodeBnd->segment->ifltype = 7777 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
+         node.nodeBnd->segment->iettype = 7777; // XXXXXXXXX
 
          // Initialize the length and area of the segment to nan to indicate that they are not yet computed
          node.nodeBnd->segment->clen  = nan("1");
