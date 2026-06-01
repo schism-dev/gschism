@@ -727,7 +727,7 @@ __device__ __forceinline__ void Element::computePredicates(const Point2 x0, cons
 // }
    // Side I goes from corners[I] to corners[nxq(I+1)] in CCW perimeter order.
    // (Note: with corners built from getNode in CCW order, no ssign factor is needed
-   //  here — the orientation is baked into the corners array.)
+   //  here the orientation is baked into the corners array.)
    const int i3 = nxq(3);
    const Vector2 s0 = C[ 1] - C[ 0];
    const Vector2 s1 = C[ 2] - C[ 1];

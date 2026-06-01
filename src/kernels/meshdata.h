@@ -406,9 +406,9 @@ struct Tracers {
 
 
 struct Frame {
-   // Column 0 (East):  (-sin_lon, cos_lon, 0)              — store 2 values, t20=0 implicit
-   // Column 1 (North): Normalized oblate ellipsoid vector  — store 3 values
-   // Column 2 (Up):    cross(col0, col1)                   — recomputed on demand
+   // Column 0 (East):  (-sin_lon, cos_lon, 0)              - store 2 values, t20=0 implicit
+   // Column 1 (North): Normalized oblate ellipsoid vector  - store 3 values
+   // Column 2 (Up):    cross(col0, col1)                   - recomputed on demand
     double t00, t10;        // col0 (t20=0 implicit)
     double t01, t11, t21;   // col1
 
