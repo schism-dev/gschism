@@ -2902,8 +2902,8 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
 double tmpmax = max3(shpCoords[0], shpCoords[1], shpCoords[2]);
-if (tmpmin < -0.1) printf("XXX element %d, tmpmin = %.17f\n", idx, tmpmin);
-if (tmpmax > 1.1) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
+if (tmpmin < -0.01) printf("XXX element %d, tmpmin = %.17f\n", idx, tmpmin);
+if (tmpmax > 1.01) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
       
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
@@ -3114,7 +3114,7 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
    // Uses a binary search to find the level
    // Note that z coordinates are interpolated from their values at the nodes of the element.
    // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
-   int L = kb - 1; // In some cases, the bottom level of the element is 1 more than the bottom level of the node
+   int L = kb - 1; // In some cases, the bottom level of the element is 1 more than the bottom level of the node XXXX (Check)
    int R = nvrt - 1;
 
    // Get the z coordinates at the nodes of the element at the levels L and R
@@ -3533,6 +3533,7 @@ __inline__ __device__ void Side::btrack(
       x0 = xt;
  
       iter++;
+if (iter>39) printf("XXXXX iter = %d, time_rm = %.17f\n", iter, time_rm);
 if (iter>39) break; //XXXXXXX
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
@@ -4324,7 +4325,7 @@ __device__ void Mesh::populateBoundarySideLinks(void) {
 
       if (s == side) continue;  // Do not link the side to itself
    
-      if (s->n1 == side->n2) sideBnd->leftSide = s;
+      if (s->n1 == side->n2) sideBnd->leftSide  = s;
       if (s->n2 == side->n1) sideBnd->rightSide = s;
    }
    
