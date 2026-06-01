@@ -9,8 +9,8 @@ import matplotlib
 if not VISTA:
     import paramiko
     import re
+    matplotlib.use('TkAgg') 
 
-matplotlib.use('TkAgg') 
 x, y, elem_x, elem_y,  sx, sy = None, None, None, None, None, None
 nodesInfo = [40798, 41152, 41486, 40796, 41150, 41484, 40797, 41151, 41485]
 sidesInfo = [120390, 121448, 121447, 121450, 122462, 121446, 121452]
