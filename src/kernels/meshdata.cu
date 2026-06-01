@@ -912,7 +912,7 @@ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, 
    const Vector2 nb = vb * inv_wlen;
 
    // ---- Linear equation (L): Lp = Ls*xi + Lt*eta ----
-   // cross(nb, ·) projects onto the direction PERPENDICULAR to W.
+   // cross(nb, .) projects onto the direction PERPENDICULAR to W.
    // Since nb || W, cross(nb, vb) = 0 exactly, killing the xi*eta term.
    // What remains is a pure affine relationship between xi and eta.
    const double Lp = cross(nb, dp4);     // cross(nb, 4*H)
@@ -920,7 +920,7 @@ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, 
    const double Lt = cross(nb, veta);    // cross(nb, 4*V)
 
    // ---- Quadratic equation (Q): Qp = Qs*xi + Qt*eta + Qw*xi*eta ----
-   // dot(nb, ·) projects onto the W direction, where the nonlinearity lives.
+   // dot(nb, .) projects onto the W direction, where the nonlinearity lives.
    // dot(nb, vb) = |vb|^2/(|vb.x|+|vb.y|) != 0 for non-parallelograms.
    const double Qp = dot(nb, dp4);       // dot(nb, 4*H)
    const double Qs = dot(nb, vxi);       // dot(nb, 4*U)
