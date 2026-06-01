@@ -6,7 +6,6 @@ from setuptools.command.build_ext import build_ext
 import sys
 import cupy as cp
 import debug.monitor as monitor
-import debug.newmonitor as newmonitor
 import time
 import pybind11
 from python.pcgsolver import PCGSolver

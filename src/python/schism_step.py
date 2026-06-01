@@ -7,6 +7,7 @@ import debug.monitor as monitor
 from cupyx.scipy.sparse.linalg import cg, gmres, minres, LinearOperator
 
 from python.pcgsolver import PCGSolver
+from python.schism_consts import VISTA
 # from cupy import cudaMemcpyFromSymbol
 
 
@@ -148,7 +149,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
              
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        if it >= 11160:
+        if it >= 11160 and not VISTA:
             import debug.newmonitor as newmonitor
             newmonitor.show()
 
