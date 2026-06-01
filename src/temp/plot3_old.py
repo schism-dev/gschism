@@ -187,7 +187,8 @@ for case_idx, case_name in enumerate(case_names):
     outdir = r'C:\Users\jmgonzalez\src\temp\%s' % case_name
 
     # ------------------------------- CONFIG -------------------------------
-    # Runs to compare (name + folder with out2d_*.nc)
+    # Runs to compare (name + fol
+der with out2d_*.nc)
     path = r"C:\Users\jmgonzalez\src\schism_test_suit\%s" % case_name
     runs = [
         # {"name": "GPU", "dir": r"/sciclone/home/jgonzalezondin/scr10/RUN01b"},

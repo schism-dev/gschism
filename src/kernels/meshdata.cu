@@ -363,9 +363,9 @@ if (shapeCoords[0] > 1.1 || shapeCoords[1] > 1.1 || shapeCoords[2] > 1.1 ||
     shapeCoords[0] < -0.1 || shapeCoords[1] < -0.1 || shapeCoords[2] < -0.1) printf("XXX shapeCoords = (%.17f, %.17f, %.17f, %.17f)\n", shapeCoords[0], shapeCoords[1], shapeCoords[2], shapeCoords[3]);
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
-printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+// printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
-printf("interpolate 4: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+// printf("interpolate 4: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -1059,8 +1059,8 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
 double tmpmax = max3(shpCoords[0], shpCoords[1], shpCoords[2]);
-if (tmpmin < -0.1) printf("XXX element %d, tmpmin = %.17f\n", idx, tmpmin);
-if (tmpmax > 1.1) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
+if (tmpmin < -0.01) printf("XXX element %d, tmpmin = %.17f\n", idx, tmpmin);
+if (tmpmax > 1.01) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
       
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
@@ -1271,7 +1271,7 @@ __device__ Vector3 Element::interpolateVelocities(Point3 xt, const Side *origSid
    // Uses a binary search to find the level
    // Note that z coordinates are interpolated from their values at the nodes of the element.
    // I use L(eft) and R(ight) as usual, but here L is the bottom level and R is the top level
-   int L = kb - 1; // In some cases, the bottom level of the element is 1 more than the bottom level of the node
+   int L = kb - 1; // In some cases, the bottom level of the element is 1 more than the bottom level of the node XXXX (Check)
    int R = nvrt - 1;
 
    // Get the z coordinates at the nodes of the element at the levels L and R
@@ -1538,7 +1538,6 @@ __inline__ __device__ void Side::btrack(
    // Initial velocities
    u_int = {u2[jlev].x, u2[jlev].y, w2(jlev)};
 
-return;
    // Find a non dry element for starting the backtracking. At this point there should be at least one.
    Element* curElem = (!elems[0]->isDry) ? elems[0] : elems[1];  // elems[0] is always non-null 
 
@@ -1691,6 +1690,7 @@ return;
       x0 = xt;
  
       iter++;
+if (iter>39) printf("XXXXX iter = %d, time_rm = %.17f\n", iter, time_rm);
 if (iter>39) break; //XXXXXXX
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
@@ -2033,6 +2033,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       node.p.x   = node_coords[i * 3];
       node.p.y   = node_coords[i * 3 + 1];
       node.gz = 0.0;
+
+      if (use_ll) {                                    // <-- add
+         node.lon = node_coords_ll[i * 2    ]*deg2rad; // <-- add
+         node.lat = node_coords_ll[i * 2 + 1]*deg2rad; // <-- add
+      }  
 
    } else {
       const double lon = deg2rad*node_coords[i * 3];
@@ -2477,7 +2482,7 @@ __device__ void Mesh::populateBoundarySideLinks(void) {
 
       if (s == side) continue;  // Do not link the side to itself
    
-      if (s->n1 == side->n2) sideBnd->leftSide = s;
+      if (s->n1 == side->n2) sideBnd->leftSide  = s;
       if (s->n2 == side->n1) sideBnd->rightSide = s;
    }
    

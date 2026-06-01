@@ -1,6 +1,6 @@
 // BEGIN INCLUDE: constants.h
 #define USE_LOCALIZED_SIGMA
-#define DO_NOT_USE_FRAMES
+#define USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 constexpr double rad2deg = 180.0/3.14159265358979323846;
@@ -10,7 +10,7 @@ constexpr int BLOCK_SIZE = 128;
 constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 1;              // Vertical coordinate system
-constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
+constexpr int ics = 2;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
@@ -1463,7 +1463,7 @@ struct Node {
 
             dragcoef = max(dragcoef, 4.0e-4);
             const double cff = 0.001293*dragcoef*speed*rampwind;
-            tau = 0.0*cff*u_air;
+            tau = cff*u_air;
 
          } else {
             tau = {0.0, 0.0};
@@ -2206,9 +2206,9 @@ if (shapeCoords[0] > 1.1 || shapeCoords[1] > 1.1 || shapeCoords[2] > 1.1 ||
     shapeCoords[0] < -0.1 || shapeCoords[1] < -0.1 || shapeCoords[2] < -0.1) printf("XXX shapeCoords = (%.17f, %.17f, %.17f, %.17f)\n", shapeCoords[0], shapeCoords[1], shapeCoords[2], shapeCoords[3]);
       // If the field is a horizontal vector and the ics is 2, project the vector from the node frame to the element frame
       if constexpr (IsVector2<T>::value && ics == 2) {
-printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+// printf("interpolate 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
-printf("interpolate 4: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+// printf("interpolate 4: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return shapeCoords[0]*values[0] + shapeCoords[1]*values[1] + shapeCoords[2]*values[2] + shapeCoords[3]*values[3];
@@ -3381,7 +3381,6 @@ __inline__ __device__ void Side::btrack(
    // Initial velocities
    u_int = {u2[jlev].x, u2[jlev].y, w2(jlev)};
 
-return;
    // Find a non dry element for starting the backtracking. At this point there should be at least one.
    Element* curElem = (!elems[0]->isDry) ? elems[0] : elems[1];  // elems[0] is always non-null 
 
@@ -3876,6 +3875,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       node.p.x   = node_coords[i * 3];
       node.p.y   = node_coords[i * 3 + 1];
       node.gz = 0.0;
+
+      if (use_ll) {                                    // <-- add
+         node.lon = node_coords_ll[i * 2    ]*deg2rad; // <-- add
+         node.lat = node_coords_ll[i * 2 + 1]*deg2rad; // <-- add
+      }  
 
    } else {
       const double lon = deg2rad*node_coords[i * 3];
