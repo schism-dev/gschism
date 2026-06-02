@@ -76,11 +76,12 @@ __device__ __forceinline__ bool celestialWalk(Element *&curElem, Point3 x0, Poin
    double fac = 0.00001;
    while (iter < MAX_ITERATIONS) {
       iter++;
-if (iter > 30) printf("XX>>X iter = %d, jlev = %d, curElem->idx = %d, origSide->idx = %d, x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f)\n", iter, jlev, curElem->idx, origSide->idx, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
+
       Bool4 isLeft, isObtuse, isBisector;
       curElem->computePredicates(toPoint2(x0), toPoint2(xt), fac, origSide, isLeft, isObtuse, isBisector, jlev);
 // showPoints(x0, xt, jlev, origSide, 0xFF0000u, 'x', 1, 0, 0);
       Bool4 isValid = !isLeft & (!isObtuse | isBisector); // bitwise operation are overloaded
+
 
       if (isValid.none()) 
       // Inside the element if none of the edges is a valid continuation
@@ -1584,9 +1585,8 @@ __inline__ __device__ void Side::btrack(
       }
 
 
-      // This means that the walk reached a boundary or a dry element.
       if (!found) {
-
+      // This means that the walk reached a boundary or a dry element.
 
          assert(lastCrossSide!=nullptr && "lastCrossSide is nullptr");
 
@@ -1605,11 +1605,13 @@ __inline__ __device__ void Side::btrack(
          const Point2 p1 = toPoint2(toLocalFrame(toPoint3(lastCrossSide->n1->p, lastCrossSide->n1->gz)));
          const Point2 p2 = toPoint2(toLocalFrame(toPoint3(lastCrossSide->n2->p, lastCrossSide->n2->gz)));
 
-         const Vector2 v1 = toPoint2(xt) - toPoint2(x0);
-         const Vector2 v2 = p2 - p1;
-
          Point2  p0 = {x0.x, x0.y};
          Point2  pt = {xt.x, xt.y};
+
+         const Vector2 v1 = pt - p0;
+         const Vector2 v2 = p2 - p1;
+
+
 
          // We are assuming intersection, so we clamp t to the range [0,1].
          const double denom = cross(v2, v1);
@@ -1624,6 +1626,8 @@ __inline__ __device__ void Side::btrack(
             // In this case, we simply assume that the two lines are very close to each other
             // and simply compute the closest point to xt (s = 1.0) on the boundary segment (clamped to p1p2)
             t = clamp(dot(pt - p1, v2) / dot(v2, v2), 0.0, 1.0);
+            if (t<0.0000000001) t = 0.0;
+            if (t>0.9999999999) t = 1.0;
 
             // s = clamp(dot(pt - p1, v2) / dot(v2, v2), 0.0, 1.0);
             s = clamp(dot(p1 + t*v2 - p0, v1)/dot(v1, v1), 0.0, 1.0);
@@ -1632,12 +1636,16 @@ __inline__ __device__ void Side::btrack(
          else {
             
             t = clamp(cross(p0 - p1, v1) / denom, 0.0, 1.0);
-
+            if (t<0.0000000001) t = 0.0; // XXXXX use constants
+            if (t>0.9999999999) t = 1.0;
             // From the originaL equation we can solve for s:
             // p1 + t*v2 = p0 + s*v1    =>   s*v1 = p1 + t*v2 - p0 
             // Computing the dot product by v1, we get:
             // s = dot((p1 + t*v2 - p0), v1) / dot(v1, v1)
             s = clamp(dot(p1 + t*v2 - p0, v1)/dot(v1, v1), 0.0, 1.0);
+            if (s<0.0000000001) s = 0.0; // XXXXX use constants
+if (iter > 35) printf("XXXXX found=0 side=%d s=%.17f t=%.17f |v1|=%.17f denom=%.17f time_rm=%.17f elem=%d\n",
+    lastCrossSide->idx, s, t, length(v1), denom, time_rm, curElem->idx);
          }
 
          
@@ -1649,7 +1657,7 @@ __inline__ __device__ void Side::btrack(
          // We update the new target point to be right at the intersection point,
          // and the remaining time must include the time we haven't "used".
          time_rm -= s*dtb;
-         xt = toPoint3(p1 + t*v2, x0.z + s*(xt.z-x0.z)); // I use p1,p2 to compute the intersection point to ensure that it is on the boundary, but the z-coordinate is the same as x0.z
+         xt = toPoint3(p1 + t*v2, x0.z + s*(xt.z - x0.z)); // I use p1,p2 to compute the intersection point to ensure that it is on the boundary, but the z-coordinate is the same as x0.z
 
 // Point3 xct = {curElem->center.x, curElem->center.y, curElem->centerZ()};
 // xct = toLocalFrame(xct);
@@ -1690,7 +1698,8 @@ __inline__ __device__ void Side::btrack(
       x0 = xt;
  
       iter++;
-if (iter>39) printf("XXXXX iter = %d, time_rm = %.17f\n", iter, time_rm);
+
+
 if (iter>39) break; //XXXXXXX
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
