@@ -82,7 +82,7 @@ class DatasetInfo:
         # Data cache
         self.data_cache = collections.OrderedDict()
         self.cache_bytes = 0
-        self.cache_max_bytes = 4 * 1024 * 1024 * 1024  # 4GB
+        self.cache_max_bytes = 10 * 1024 * 1024 * 1024  # 4GB
 
         # Obtain information from the first file of the dataset
         # -----------------------------------------------------

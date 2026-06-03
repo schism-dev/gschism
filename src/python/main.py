@@ -54,7 +54,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__f
 from iop.cudamodule import CudaSourceManager
 from iop.processConstantsHeader import processConstants
 from python.schism_init import readNamelist, schism_init
-from python.schism_step import schism_step, solveWaveEquation
+from python.schism_step import schism_step, solveWaveEquation, computeMeteorologicalForcing
 from python.schism_consts import *
 import python.cuda_functions as cufunc
 
@@ -737,17 +737,19 @@ if __name__ == "__main__":
     schism_step_wrapped = profiler(schism_step)
     profiler.add_function(solveWaveEquation)
     profiler.add_function(solver.solve)
-    
+
+    profiler.add_function(computeMeteorologicalForcing)
+    profiler.add_function(SFlux.getWinds)
 
 
     start_time = time.time()
     time1 = time.time()
-    for it in range(1, ntime + 1, 1):
-    # for it in range(1, 55, 1):
+    # for it in range(1, ntime + 1, 1):
+    for it in range(1, 55, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
-        # schism_step_wrapped(it, namelist, bctides, sflux, solver)
+        schism_step_wrapped(it, namelist, bctides, sflux, solver)
 
-        schism_step(it, namelist, bctides, sflux, solver)
+        # schism_step(it, namelist, bctides, sflux, solver)
 
         writeOutput(it, namelist.core, namelist.opt)
         # if it % 100 == 0:
