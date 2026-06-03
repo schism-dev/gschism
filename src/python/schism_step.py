@@ -149,9 +149,9 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
              
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        if it >= 11160 and not VISTA:
-            import debug.newmonitor as newmonitor
-            newmonitor.show()
+        # if it >= 11160 and not VISTA:
+        #     import debug.newmonitor as newmonitor
+        #     newmonitor.show()
 
         # if it >= 0:
         #     monitor.plotMesh()        

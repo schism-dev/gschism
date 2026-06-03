@@ -1644,8 +1644,7 @@ __inline__ __device__ void Side::btrack(
             // s = dot((p1 + t*v2 - p0), v1) / dot(v1, v1)
             s = clamp(dot(p1 + t*v2 - p0, v1)/dot(v1, v1), 0.0, 1.0);
             if (s<0.0000000001) s = 0.0; // XXXXX use constants
-if (iter > 35) printf("XXXXX found=0 side=%d s=%.17f t=%.17f |v1|=%.17f denom=%.17f time_rm=%.17f elem=%d\n",
-    lastCrossSide->idx, s, t, length(v1), denom, time_rm, curElem->idx);
+
          }
 
          
@@ -1700,10 +1699,8 @@ if (iter > 35) printf("XXXXX found=0 side=%d s=%.17f t=%.17f |v1|=%.17f denom=%.
       iter++;
 
 
-if (iter>39) break; //XXXXXXX
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
-if (time_rm_3 <= time_rm ) printf("s = %.17f, time_rm_3 = %.17f, time_rm = %.17f\n", s, time_rm_3, time_rm);
       assert(time_rm_3 > time_rm && "time_rm is not decreasing");
       time_rm_3 = time_rm_2;
       time_rm_2 = time_rm_1;

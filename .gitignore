@@ -29,3 +29,6 @@
 build/
 src/temp/build/
 
+src/debug_cuda_source.cu
+src/debug_cuda_source.cu
+src/debug_cuda_source.cu.numbered
