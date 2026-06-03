@@ -1,4 +1,5 @@
 from os import path
+import collections
 import numpy as np
 import cupy as cp
 from netCDF4 import Dataset
@@ -78,6 +79,11 @@ class DatasetInfo:
         self.interp_weights = None
         self.interp_indices = None
 
+        # Data cache
+        self.data_cache = collections.OrderedDict()
+        self.cache_bytes = 0
+        self.cache_max_bytes = 4 * 1024 * 1024 * 1024  # 4GB
+
         # Obtain information from the first file of the dataset
         # -----------------------------------------------------
 
@@ -123,6 +129,33 @@ class DatasetInfo:
         
         ds.close()
             
+
+    def cachePut(self, file_num, data_name, time_idx, arr):
+    # Put data into the cache
+        key = (file_num, data_name, time_idx)
+
+        if key in self.data_cache:
+            old = self.data_cache.pop(key)
+            self.cache_bytes -= old.nbytes
+
+        need = arr.nbytes
+        max_b = self.cache_max_bytes
+
+        while self.cache_bytes + need > max_b and self.data_cache:
+            _, evicted = self.data_cache.popitem(last=False)  # FIFO: oldest first
+            self.cache_bytes -= evicted.nbytes
+
+        self.data_cache[key] = arr
+        self.cache_bytes += need
+
+    def cacheGet(self, file_num, data_name, time_idx):
+
+        key = (file_num, data_name, time_idx)
+        arr = self.data_cache.get(key)
+        if arr is None:
+            return None
+        return arr  # strict FIFO: do not move_to_end(key)
+
 
     def getFileName(self, num: int) -> str:
         """
@@ -476,7 +509,14 @@ class DatasetInfo:
         Returns:
             data: numpy array of shape (nx, ny)
         """
+
+        
         try:
+            # First, checks if the data is cached
+            hit = self.cacheGet(file_num, data_name, time_idx)
+            if hit is not None:
+                return hit
+
             # Open netCDF file in read-only mode
             file_name = self.getFileName(file_num + 1)
             with Dataset(path.join(self.in_dir, file_name), 'r') as nc:
@@ -489,7 +529,10 @@ class DatasetInfo:
                     raise ValueError(f"Data shape mismatch: expected ({self.nx}, {self.ny}), got {data_tmp.shape}")
                 
                 # Convert to double precision and return
-                return data_tmp.astype(np.float64)
+                res = data_tmp.astype(np.float64)
+
+                self.cachePut(file_num, data_name, time_idx, res)
+                return res
                 
         except Exception as e:
             print(f"Error reading variable {data_name} from netCDF file: {file_name}\n{e}")
