@@ -91,7 +91,11 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
 
     # Meteorological forcing
+    import time as time_module
+    time1 = time_module.time()
     computeMeteorologicalForcing(opt, time, sflux)  # Lines 458-1014
+    time2 = time_module.time()
+    print(f"Time to compute meteorological forcing: {time2 - time1:.3f}")
 
 
     # computeTracerStuff()            # Lines 1015-1145

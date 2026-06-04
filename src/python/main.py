@@ -740,16 +740,19 @@ if __name__ == "__main__":
 
     profiler.add_function(computeMeteorologicalForcing)
     profiler.add_function(SFlux.getWinds)
+    profiler.add_function(SFlux.getCombinedData)
+    # profiler.add_function(SFlux.cacheGet)
+    # profiler.add_function(SFlux.cachePut)
 
 
     start_time = time.time()
     time1 = time.time()
-    # for it in range(1, ntime + 1, 1):
-    for it in range(1, 55, 1):
+    for it in range(1, ntime + 1, 1):
+    # for it in range(1, 55, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
-        schism_step_wrapped(it, namelist, bctides, sflux, solver)
+        # schism_step_wrapped(it, namelist, bctides, sflux, solver)
 
-        # schism_step(it, namelist, bctides, sflux, solver)
+        schism_step(it, namelist, bctides, sflux, solver)
 
         writeOutput(it, namelist.core, namelist.opt)
         # if it % 100 == 0:
