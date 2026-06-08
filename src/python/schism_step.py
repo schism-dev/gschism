@@ -15,6 +15,16 @@ from python.schism_consts import VISTA
 
 import time
 
+_starts = {}
+_times = {}
+def tic(name):
+    cp.cuda.Device().synchronize()
+    _starts[name] = time.perf_counter()
+def toc(name):
+    cp.cuda.Device().synchronize()
+    _times[name] = _times.get(name, 0.0) + (time.perf_counter() - _starts[name])
+
+
 
 def solveWaveEquation(solver, maxIter=1000, tol=1e-12, ): 
     """
@@ -90,12 +100,9 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
                                  bctides.tear, bctides.jspc)
 
 
-    # Meteorological forcing
-    import time as time_module
-    time1 = time_module.time()
+    tic("computeMeteorologicalForcing")
     computeMeteorologicalForcing(opt, time, sflux)  # Lines 458-1014
-    time2 = time_module.time()
-    print(f"Time to compute meteorological forcing: {time2 - time1:.3f}")
+    toc("computeMeteorologicalForcing")
 
 
     # computeTracerStuff()            # Lines 1015-1145
@@ -148,6 +155,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
 
     # Backtracking/upwind for momentum
+    tic("backtrackAllNodes")
     try:
         monitor.debugPlotIdx[0] = 0   
              
@@ -167,6 +175,8 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         #         raise ValueError("Mesh is not valid")
     except Exception as e:
         print(f"Error in backtrackAllNodes: {e}")
+    toc("backtrackAllNodes")
+    print(_times)
 
     # Vertical advection 
     if opt.iupwind_mom != 0:
