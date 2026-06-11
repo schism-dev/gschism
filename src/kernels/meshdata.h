@@ -1,5 +1,4 @@
-#define USE_LOCALIZED_SIGMA
-#define USE_FRAMES  // XXXXXXXXXXXXXXX
+ 
 constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
@@ -403,9 +402,45 @@ struct Tracers {
     double tracer[N_TRACERS];
 };
 
+// ------------------------------LocalSigma------------------------------
+
+template<int IVCOR>
+struct LocalSigma {};   
+
+template<>
+struct LocalSigma<2> {
+   __device__ double operator[](int k) const { return 0.0; }
+   __device__ double& operator[](int k) { return (double &)*((double *)nullptr); }
+};
+
+template<>
+struct LocalSigma<1> {
+   double localSigma[nvrt];
+   __device__ double operator[](int k) const { return localSigma[k]; }
+   __device__ double& operator[](int k) { return localSigma[k]; }
+};
 
 
-struct Frame {
+// ----------------------------- Frames -----------------------------
+
+// Frames are used to transform vectors between different coordinate systems.
+// They are templated in such a way that when ics==1, they have (most likely) no overhead.
+template<int ICS>
+struct Frame {};
+
+template<>
+struct Frame<1> {
+   __forceinline__ __device__ void update(double, double) {}
+   __forceinline__ __device__ Vector3 G2L(Vector3 vi) const { return vi; }
+   __forceinline__ __device__ Vector3 L2G(Vector3 vi) const { return vi; }
+   __forceinline__ __device__ Vector2 projHorVec(Vector2 v, const Frame<1>&) const { return v; }
+   __forceinline__ __device__ Vector3 nUp(void)         const { return {0.0, 0.0, 0.0}; }
+   __forceinline__ __device__ Vector3 nZonal(void)      const { return {0.0, 0.0, 0.0}; }
+   __forceinline__ __device__ Vector3 nMeridional(void) const { return {0.0, 0.0, 0.0}; }
+};
+
+template<>
+struct Frame<2> {
    // Column 0 (East):  (-sin_lon, cos_lon, 0)              - store 2 values, t20=0 implicit
    // Column 1 (North): Normalized oblate ellipsoid vector  - store 3 values
    // Column 2 (Up):    cross(col0, col1)                   - recomputed on demand
@@ -426,8 +461,6 @@ struct Frame {
       t01 = -cos_lon*sin_lat;
       t11 = -sin_lon*sin_lat;
       t21 = (rearth_pole/rearth_eq)*cos_lat;
-// printf("lat = %f, lon = %f, cos_lat = %f, sin_lat = %f, cos_lon = %f, sin_lon = %f\n", lat, lon, cos_lat, sin_lat, cos_lon, sin_lon);
-// printf("t00 = %f, t10 = %f, t01 = %f, t11 = %f, t21 = %f\n", t00, t10, t01, t11, t21);
 
       const double col1_norm = sqrt(t01*t01 + t11*t11 + t21*t21);
       assert (col1_norm != 0.0 && "GRID: col1_norm=0");
@@ -457,7 +490,7 @@ struct Frame {
    }
 
 
-   __forceinline__ __device__ Vector2 projHorVec(Vector2 const &vec0, Frame const &frameout) const {
+   __forceinline__ __device__ Vector2 projHorVec(Vector2 const &vec0, Frame<2> const &frameout) const {
    // Transforms a horizontal vector from one frame to another and projects it to the new local horizontal plane.
    // Inputs:
    //        vec0: vel. in this frame;
@@ -575,9 +608,7 @@ struct Element {
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
 
-   #ifdef USE_FRAMES
-   Frame frame;
-   #endif
+   Frame<ics> frame;
 
    Vector2 gradPhi[4];        // Derivatives of shape functions
    Vector2 gradEta;           // Gradient of free surface elevation
@@ -694,7 +725,7 @@ struct Element {
    // Local is in quotes because for ics == 1, the coordinates are unchanged. It just means that in these coordinates, the element is horizontal.
    __device__ __forceinline__ Point2 getLocalHorizontalNodePosition(int idxNode) const;
    __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2, int idx = 0) const;
-   __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3, int idx = 0) const;
 
 
    // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idxNode = 0,1,2,3)
@@ -735,11 +766,12 @@ struct Element {
       return 0.25*(1.0 + p.y*xiSign(idxNode))*etaSign(idxNode);
    }      
    
-   __inline__ __device__ double detJ_eta(void) const;
+   __inline__ __device__ double detJ_eta_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
 
-   __inline__ __device__ double detJ_xi(void) const;
+   __inline__ __device__ double detJ_xi_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
 
-   __inline__ __device__ double jacobianDet(Point2 p) const { return area/4.0 + detJ_eta()*p.x + detJ_xi()*p.y; }
+   __inline__ __device__ double jacobianDetQuad(Point2 p, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const 
+         { return area/4.0 + detJ_eta_quad(x0, x1, x2, x3)*p.x + detJ_xi_quad(x0, x1, x2, x3)*p.y; }
 
    // Check if the element is dry using the more up-to-date elevation.
    __inline__ __device__ bool isDry2(void) const;
@@ -757,9 +789,13 @@ struct Element {
    
    __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
-   __device__ double intPhiPhiQuad(int i1, int i2) const;
 
-   __device__ double intGradPhiGradPhiQuad(int i1, int i2) const;
+   __device__ double intPhiPhiTri(int i, int j) const;
+
+   __device__ double intPhiPhiQuad(int i, int j, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
+
+
+   __device__ double intGradPhiGradPhiQuad(int i1, int i2, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
 
    __device__ Vector2 grad2(double *a) const
    {
@@ -790,8 +826,10 @@ struct Element {
     }
 
 
-   #ifdef USE_FRAMES
+
    __device__ void setFrame(void) {
+      if constexpr(ics == 1) return;
+
       double lat, lon;
       const Point3 p = toPoint3(center, centerZ());
 
@@ -800,7 +838,7 @@ struct Element {
 
       frame.update(lat, lon);        
    }
-   #endif
+
 
 
    __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
@@ -976,10 +1014,8 @@ struct Side {
    Vector2 center;        // Location of side center. 
    double zc[nvrt];       // Side center z-coord at each vertical level
 
-   #ifdef USE_FRAMES
-   Frame frame;
-   #endif
-
+   Frame<ics> frame;
+   
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
    
@@ -1031,8 +1067,9 @@ struct Side {
    __inline__ __device__ double lat(void) const;
    __inline__ __device__ Point2 p2_t(double t) const;
 
-   #ifdef USE_FRAMES
    __device__ void setFrame(void) {
+      if constexpr(ics == 1) return;
+
       double lat, lon;
       const Point3 p = toPoint3(center, centerZ());
 
@@ -1041,7 +1078,7 @@ struct Side {
 
       frame.update(lat, lon);        
    }
-   #endif
+   
 
    __device__ __forceinline__ Point3 toLocalFrame(Point3 const& p) const {
    // If ics == 2, convert the global point to the local frame of the side
@@ -1056,7 +1093,7 @@ struct Side {
    }
 
 
-   __device__ __forceinline__ Vector2 projectToLocalFrame(Vector2 const& v, Frame const& v_frame) const {
+   __device__ __forceinline__ Vector2 projectToLocalFrame(Vector2 const& v, Frame<ics> const& v_frame) const {
       if constexpr(ics == 1) return v;
       else return v_frame.projHorVec(v, frame);
    }
@@ -1225,16 +1262,11 @@ struct Node {
    Vector2 utmp[nvrt];  // Temporary array to store velocities
    double z[nvrt];      // Local vertical coordinate at each vertical level. 
    double lon, lat;
-   double fun_lat[ntip + 1]; // XXXXX CHECK IF THIS MAKES SENSE. Also, the +1 is only to avoid erros when ntip ==1
    double depth;
 
-   #ifdef USE_FRAMES
-   Frame frame;
-   #endif
+   Frame<ics> frame;
 
-   #ifdef USE_LOCALIZED_SIGMA   
-   double localSigma[nvrt];
-   #endif
+   LocalSigma<ivcor> localSigma;  
 
    int kb;       // Bottom index of the node
 
@@ -1351,12 +1383,12 @@ struct Node {
       }
    }
 
-   #ifdef USE_FRAMES
+
    __device__ void setFrame(double lat, double lon) {
+      if constexpr(ics == 1) return;
 
       frame.update(lat, lon);        
     }
-   #endif
 
    //__device__ Point3 p3D(int k) const { return {p.x, p.y, z[k]}; }   // XXXX can this be confused with 3D as in ics=2???
 

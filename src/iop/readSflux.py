@@ -49,9 +49,9 @@ class DatasetInfo:
         self.name = name
         self.in_dir = in_dir
 
-
-        self.out_x = nodes[0, :]
-        self.out_y = nodes[1, :]
+        if nodes.size > 0:
+            self.out_x = nodes[0, :]
+            self.out_y = nodes[1, :]
 
         self.max_file_times = 1000 # max. # of time records with each file
         self.max_files = 9999   # max. # of files. XXX Are these really needed in Python?
@@ -112,7 +112,11 @@ class DatasetInfo:
             
 
         # read in lon and lat from the first file
-        ds = Dataset(path.join(self.in_dir, file_name), 'r')
+        try:
+            ds = Dataset(path.join(self.in_dir, file_name), 'r')
+        except:
+            return
+
         try:
             self.lat = ds.variables['lat'][:,:].astype(np.float64)
             self.lon = ds.variables['lon'][:,:].astype(np.float64)

@@ -274,6 +274,10 @@ def readParam(pathNamelist):
     # Verify all mandatory parameters are present in CORE section
     if 'CORE' not in param_dict:
         raise ValueError("CORE section missing from param.nml")
+
+    # Default value for wtiminc is dt
+    if 'wtiminc' not in param_dict['OPT']:
+        param_dict['OPT']['wtiminc'] = param_dict['CORE']['dt']
         
     missing_params = mandatory_params - set(param_dict['CORE'].keys())
     if missing_params:

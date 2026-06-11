@@ -222,8 +222,8 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0)
 
 
-    # cufunc.printMatrix()   
-    # if it >= 71:
+    # # cufunc.printMatrix(True)   
+    # if it >= 2:
     #     N = 592
     #     A = cp.zeros((N, N))
     #     cufunc.returnMatrix(A)
