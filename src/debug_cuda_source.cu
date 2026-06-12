@@ -1,5 +1,5 @@
 // BEGIN INCLUDE: constants.h
-#define USE_LOCALIZED_SIGMA
+#define DO_NOT_USE_LOCALIZED_SIGMA
 #define DO_NOT_USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
@@ -9,7 +9,7 @@ constexpr int BLOCK_SIZE = 128;
 
 constexpr int N_TRACERS = 2;
 
-constexpr int ivcor = 1;              // Vertical coordinate system
+constexpr int ivcor = 2;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
@@ -26,11 +26,11 @@ constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
 constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
-constexpr int ncor = 1;               // Option to include Coriolis force
+constexpr int ncor = 0;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
-constexpr int nws = 2;               // Option to include wind forcing
-constexpr double wtiminc = 3600;    // Time increment for wind forcing
+constexpr double sfea0 = 45*deg2rad; // Reference latitude for Coriolis force
+constexpr int nws = 0;               // Option to include wind forcing
+constexpr double wtiminc = 300;    // Time increment for wind forcing
 constexpr int iwind_form = 1; // Option to include wind forcing
 constexpr int iwindoff = 0;     // Option to include wind forcing
 constexpr double drampwind = 1; // Option to include wind forcing
@@ -53,11 +53,11 @@ constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometri
 constexpr double veg_lai = 1; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 8;            // Number of tidal potential components
-constexpr double tip_dp = 50;   // cut-off depth for applying tidal potential
+constexpr int ntip = 0;            // Number of tidal potential components
+constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
 
 // Boundary forcing frequencies
-constexpr int nbfr = 8;            // Number of boundary forcing frequencies
+constexpr int nbfr = 1;            // Number of boundary forcing frequencies
 
 // Boundary condition types
 constexpr int nettype = 0;      // Total number of type I elevation boundaries
@@ -75,9 +75,9 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 50; // Number of vertical levels
-constexpr int nzlev   = 0; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 50; // Number of sigma levels (in contrast to z levels)
+constexpr int nvrt    = 2; // Number of vertical levels
+constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = 2; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;
@@ -85,16 +85,16 @@ constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 43; // Number of land boundary segments
-constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
+constexpr int mnond = 13; // Maximum number of nodes per open boundary segment
+constexpr int nland = 1; // Number of land boundary segments
+constexpr int mnlnd = 31; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
 
-constexpr double thetai = 1;
+constexpr double thetai = 0.6;
 
-constexpr double rmaxvel = 4; // Maximum velocity for the x-component
+constexpr double rmaxvel = 10; // Maximum velocity for the x-component
 constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
@@ -107,13 +107,13 @@ constexpr double btrack_nudge = 0.009013;   // Nudging factor for backtracking
 
 constexpr int nadv = 1; // Advection flag
 
-constexpr double dfv0 = 0.01; 
+constexpr double dfv0 = 0; 
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 120;  // Time step  XXX 
+constexpr double dt = 300;  // Time step  XXX 
 
-constexpr double h0 = 0.0001;  // Minimum water depth for wetting and drying [m]
+constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
 enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35, u_air=36, outputCoords=37}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
@@ -133,8 +133,20 @@ constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
 
-constexpr double ixi_n[4] = {-1, 1, 1,-1}; // Local  xi-coordinate of the vertices of a quad 
-constexpr double iet_n[4] = {-1,-1, 1, 1}; // Local eta-coordinate of the vertices of a quad
+// eta coordinates of the nodes (idxNode = 0,1,2,3)
+__device__ __forceinline__ double eta_n(int idxNode) {
+   // bit1: 0 -> -1, 1 -> +1
+   assert(idxNode >= 0 && idxNode < 4 && "etaSign: idxNode out of range");
+   return (idxNode & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
+}
+
+// xi coordinates of the nodes (idxNode = 0,1,2,3)
+__device__ __forceinline__ double xi_n(int idxNode) {
+   // +1 if (bit0 XOR bit1), else -1
+   assert(idxNode >= 0 && idxNode < 4 && "xiSign: idxNode out of range");
+   return ((idxNode & 1) ^ (idxNode >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
+
+}
 
 #define INT_MAX 2147483647
 
@@ -258,9 +270,14 @@ __device__ __forceinline__ double pow<3>(double x) {
 }
 
 
-__device__ __forceinline__ double clamp(double x, double min, double max) {
-    return fmin(fmax(x, min), max);
+__device__ __forceinline__ double clamp(double x, double minval, double maxval) {
+    return fmin(fmax(x, minval), maxval);
 }
+
+__device__ __forceinline__ int clamp(int x, int minval, int maxval) {
+    return max(minval, min(x, maxval));
+}
+
 
 
 
@@ -857,33 +874,21 @@ struct Element {
        return {eta, xi};
    }  
 
-   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
-   __device__ __forceinline__ double etaSign(int idxNode) const {
-      // bit1: 0 -> -1, 1 -> +1
-      assert(idxNode >= 0 && idxNode < 4 && "etaSign: idxNode out of range");
-      return (idxNode & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
-   }
 
-   __device__ __forceinline__ double xiSign(int idxNode) const {
-      // +1 if (bit0 XOR bit1), else -1
-      assert(idxNode >= 0 && idxNode < 4 && "xiSign: idxNode out of range");
-      return ((idxNode & 1) ^ (idxNode >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
-
-   }
 
    // Shape function Phi at a given point p = (eta,xi), idxNode = node index 0,1,2,3
    __device__ __forceinline__ double Phi(int idxNode, Point2 p) const {
-      return 0.25*(1.0 + p.x*etaSign(idxNode))*(1.0 + p.y*xiSign(idxNode));
+      return 0.25*(1.0 + p.x*eta_n(idxNode))*(1.0 + p.y*xi_n(idxNode));
    }
 
    // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi)
    __device__ __forceinline__ double dPhi_dxi(int idxNode, Point2 p) const {
-      return 0.25*xiSign(idxNode)*(1.0 + p.x*etaSign(idxNode));
+      return 0.25*xi_n(idxNode)*(1.0 + p.x*eta_n(idxNode));
    }   
 
    // Derivative of shape function Phi_idx/deta at a given point p = (eta,xi) 
    __device__ __forceinline__ double dPhi_deta(int idxNode, Point2 p) const {
-      return 0.25*(1.0 + p.y*xiSign(idxNode))*etaSign(idxNode);
+      return 0.25*(1.0 + p.y*xi_n(idxNode))*eta_n(idxNode);
    }      
    
    __inline__ __device__ double detJ_eta_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
@@ -907,17 +912,18 @@ struct Element {
 
    __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo, const Side *origSide = nullptr) const;
    
-   __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
+   __device__ __forceinline__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
 
-   __device__ double intPhiPhiTri(int i, int j) const;
+   __device__ __forceinline__ double intPhiPhiTri(int i, int j) const;
 
-   __device__ double intPhiPhiQuad(int i, int j, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
+   __device__ __forceinline__ double intGradPhiGradPhiTri(int i, int j) const;
 
+   __device__ __forceinline__ double intPhiPhiQuad(int i, int j, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
 
-   __device__ double intGradPhiGradPhiQuad(int i1, int i2, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
+   __device__ __forceinline__ double intGradPhiGradPhiQuad(int i1, int i2, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
 
-   __device__ Vector2 grad2(double *a) const
+   __device__ __forceinline__ Vector2 grad2(double *a) const
    {
       double gx = a[0]*gradPhi[0].x + a[1]*gradPhi[1].x + a[2]*gradPhi[2].x;
       double gy = a[0]*gradPhi[0].y + a[1]*gradPhi[1].y + a[2]*gradPhi[2].y;
@@ -928,7 +934,7 @@ struct Element {
       return {gx, gy};
    }
 
-   __device__ Vector2 grad2(double Node::* field) const
+   __device__ __forceinline__ Vector2 grad2(double Node::* field) const
    {
       double gx = (nodes[0]->*field)*gradPhi[0].x + (nodes[1]->*field)*gradPhi[1].x + (nodes[2]->*field)*gradPhi[2].x;
       double gy = (nodes[0]->*field)*gradPhi[0].y + (nodes[1]->*field)*gradPhi[1].y + (nodes[2]->*field)*gradPhi[2].y;
@@ -2936,9 +2942,7 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       // If the point is not inside the element (with a small tolerance), we do not need to fix the negative shape coordinates.
       const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
-double tmpmax = max3(shpCoords[0], shpCoords[1], shpCoords[2]);
-if (tmpmin < -0.01) printf("XXX element %d, tmpmin = %.17f\n", idx, tmpmin);
-if (tmpmax > 1.01) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
+
       
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
@@ -2974,16 +2978,14 @@ if (tmpmax > 1.01) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
    else {
       assert(isQuad() && "computeShapeCoords");
 
-   //    Point2 p = xt;
 
-   //    // Reproject p the original side frame for ics=2
-   //    if constexpr(ics == 2) p = origSide->frame.G2L(toPoint3(xt, 0.0));
-
-   //    bool inside = false;
+      bool inside = false;
+printf("computeShapeCoords: quad element not implemented\n");
+      return true;
 
 
 
-   //    if(ifl==0) then
+   //    if (ifl==0) then
    //      do i=1,4
    //        in1=nxq(1,i,i34(ie))
    //        in2=nxq(2,i,i34(ie))
@@ -2996,7 +2998,9 @@ if (tmpmax > 1.01) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
    //   &yel(1,ie),yel(2,ie),yel(3,ie),yel(4,ie),x,y,xi,eta,shapef,icaseno)
    //      endif !inside quad
    //    else !ifl=1 - already inside
-   //      call ibilinear(itag,ie,area(ie),xel(1,ie),xel(2,ie),xel(3,ie),xel(4,ie), &
+
+
+   //    call ibilinear(itag,ie,area(ie),xel(1,ie),xel(2,ie),xel(3,ie),xel(4,ie), &
    //   &yel(1,ie),yel(2,ie),yel(3,ie),yel(4,ie),x,y,xi,eta,shapef,icaseno)
    //      !Update pt
    //      x=dot_product(xel(1:4,ie),shapef(1:4))
@@ -3014,7 +3018,7 @@ if (tmpmax > 1.01) printf("XXX element %d, tmpmax = %.17f\n", idx, tmpmax);
 }
 
 
-__device__ void Element::shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const {
+__device__ __forceinline__ void Element::shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const {
 // Convert shape coordinates to cartesian coordinates
 
    if (isTri()) {
@@ -3031,22 +3035,29 @@ assert(false && "shapeCoordsToXY: should it use local frame coordinates?");
 
 
 
-__device__ double Element::intPhiPhiTri(int i, int j) const {
+__device__ __forceinline__ double Element::intPhiPhiTri(int i, int j) const {
    // return \int \phi_i*\phi_j dA for tris, where phi_i and phi_j are the shape functions of the nodes i and j.
    
    return ((i == j) ? (2.0/12.0) : (1.0/12.0))*area;
 }
 
-__device__ double Element::intPhiPhiQuad(int i, int j, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const {
+__device__ __forceinline__ double Element::intGradPhiGradPhiTri(int i, int j) const {
+   // return \int (grad phi_i).(grad phi_j) dA for tris, where phi_i and phi_j are the shape functions of the nodes i and j.
+   // gradPhi[i] is constant over a linear triangle, so the integral is area * dot(gradPhi[i], gradPhi[j]).
+   assert(isTri() && i >= 0 && j >= 0 && i < 3 && j < 3);
+   return area * dot(gradPhi[i], gradPhi[j]);
+}
+
+__device__ __forceinline__ double Element::intPhiPhiQuad(int i, int j, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const {
    // return \int \phi_i*\phi_j dA for quads, where phi_i and phi_j are the shape functions of the nodes i and j.
    // The integral can be computed analytically, using the shape functions in xi and eta coordinates and the Jacobian.
    // The formula for the integral is:
    // (area/16)(1+\xi_i\xi_j/3)(1+\eta_i\eta_j/3) + (detJ_xi/12)(1+\eta_i\eta_j/3)(\xi_i+\xi_j) + (detJ_eta/12)(1+\xi_i\xi_j/3)(\eta_i+\eta_j)\]
    
-   const double xi_term  = 1.0 + (ixi_n[i]*ixi_n[j])/3.0;
-   const double eta_term = 1.0 + (iet_n[i]*iet_n[j])/3.0;
-   const double eta_sum  = iet_n[i] + iet_n[j];
-   const double xi_sum   = ixi_n[i] + ixi_n[j];
+   const double xi_term  = 1.0 + (xi_n(i) * xi_n(j))/3.0;
+   const double eta_term = 1.0 + (eta_n(i)*eta_n(j))/3.0;
+   const double eta_sum  = eta_n(i) + eta_n(j);
+   const double xi_sum   = xi_n(i)  + xi_n(j);
 
    const double detJ_xi  = detJ_xi_quad (x0, x1, x2, x3);  // xi derivative of the Jacobian determinant
    const double detJ_eta = detJ_eta_quad(x0, x1, x2, x3);  // eta derivative of the Jacobian determinant
@@ -3055,7 +3066,7 @@ __device__ double Element::intPhiPhiQuad(int i, int j, Point2 const &x0, Point2 
 }
    
 
-__device__ double Element::intGradPhiGradPhiQuad(int i1, int i2, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const {
+__device__ __forceinline__ double Element::intGradPhiGradPhiQuad(int i1, int i2, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const {
    // return \int (grad phi_i1).(grad phi_i2) dA, where phi_i1 and phi_i2 are the shape functions of the nodes i1 and i2.
    // The integral is computed by using the 2x2 Gauss-Legendre quadrature points in xi and eta coordinates.
    // Again, it uses the determinant of the Jacobian to compute the integral in x,y coordinates.
@@ -3964,8 +3975,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
          node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
          
-         node.nodeBnd->segment->ifltype = 7777 ; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
-         node.nodeBnd->segment->iettype = 7777; // XXXXXXXXX
+         node.nodeBnd->segment->ifltype = 0; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
+         node.nodeBnd->segment->iettype = 0; // XXXXXXXXX
 
          // Initialize the length and area of the segment to nan to indicate that they are not yet computed
          node.nodeBnd->segment->clen  = nan("1");
@@ -4441,8 +4452,9 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
       node1->qel += dt*area*((1 - thetai)*I_4_1 + thetai*I_4_2);      
 
-      // Additional terms 
-      double vnorm = 0.0;
+
+      // Normal component of the bed velocity
+      double ubedNormalComp = 0.0;
       if constexpr(imm == 2)  { // Pre-compute vnorm on the element
          Vector3 ubed = {0.0, 0.0, 0.0};
          // update_bdef(time, elem->center, elem->depth, ubed); XXX
@@ -4453,10 +4465,10 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          const Vector3 N = normalize(toVector3(gradDepth, 1.0));
 
          // Computes the normal component of the bed velocity
-         vnorm = dot(ubed, N);
+         ubedNormalComp = dot(ubed, N);
       } // imm==2
 
-         
+      const double fricCoeff = grav3*thetai*(1.0 - thetai)*dt*dt*hhatb;
 
       if (elem->isTri()) {
 
@@ -4499,26 +4511,28 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
             // Additional variation in eta due to bed deformation or vertical velocity
             double extraEta = 0.0;
-            if      constexpr(imm == 2) extraEta = dt*vnorm;
+            if      constexpr(imm == 2) extraEta = dt*ubedNormalComp;
             else if constexpr(imm == 1) extraEta = node->bdef2 - node->bdef1;
 
 
-            node1->qel += elem->intPhiPhiTri(l, j)*(node->eta2 + extraEta);
+            const double ipp   = elem->intPhiPhiTri(id1, l);
+            const double igpgp = elem->intGradPhiGradPhiTri(id1, l);
+
+            const double isElemWet = elem->isDry ? 0.0 : 1.0;  // XXXXX I added this to replicate Fortran's code, but Joseph is going to check if it is needed.
+
+            node1->qel += (node->eta2 + extraEta)*ipp - node->eta2*fricCoeff*igpgp*isElemWet;
            
          }
 
 
-         if (!elem->isDry) {
-           const Vector2 gradEta = elem->grad2(&Node::eta2);
+         // if (!elem->isDry) {
+         //   const Vector2 gradEta = elem->grad2(&Node::eta2);
 
-           node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
+         //   node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
 
-         }
+         // }
 
-            // const double ipp   = elem->intPhiPhiTri(id1, l);
-            // const double igpgp = elem->intGradPhiGradPhiTri(id1, l);
 
-            // node1->qel += (node->eta2 + extraEta)*ipp - node->eta2*fricCoeff*igpgp;
 
       }
       else { // Quad
@@ -4538,16 +4552,16 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          elem->getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3, id1);
 
          // integrals of phi_i*phi_j, phi_i*phi_k, phi_i*phi_l
-         const double ipp_ii = elem->intPhiPhiQuad(id1, id1, x0, x1, x2, x3);
-         const double ipp_ij = elem->intPhiPhiQuad(id1, id2, x0, x1, x2, x3);
-         const double ipp_ik = elem->intPhiPhiQuad(id1, id3, x0, x1, x2, x3);
-         const double ipp_il = elem->intPhiPhiQuad(id1, id4, x0, x1, x2, x3);
+         const double ipp_ii = elem->intPhiPhiQuad(0, 0, x0, x1, x2, x3);
+         const double ipp_ij = elem->intPhiPhiQuad(0, 1, x0, x1, x2, x3);
+         const double ipp_ik = elem->intPhiPhiQuad(0, 2, x0, x1, x2, x3);
+         const double ipp_il = elem->intPhiPhiQuad(0, 3, x0, x1, x2, x3);
 
          // integrals of (grad phi_i) * (grad phi_j), (grad phi_i) * (grad phi_k), (grad phi_i) * (grad phi_l)
-         const double igpgp_ii = elem->intGradPhiGradPhiQuad(id1, id1, x0, x1, x2, x3);
-         const double igpgp_ij = elem->intGradPhiGradPhiQuad(id1, id2, x0, x1, x2, x3);
-         const double igpgp_ik = elem->intGradPhiGradPhiQuad(id1, id3, x0, x1, x2, x3);
-         const double igpgp_il = elem->intGradPhiGradPhiQuad(id1, id4, x0, x1, x2, x3);
+         const double igpgp_ii = elem->intGradPhiGradPhiQuad(0, 0, x0, x1, x2, x3);
+         const double igpgp_ij = elem->intGradPhiGradPhiQuad(0, 1, x0, x1, x2, x3);
+         const double igpgp_ik = elem->intGradPhiGradPhiQuad(0, 2, x0, x1, x2, x3);
+         const double igpgp_il = elem->intGradPhiGradPhiQuad(0, 3, x0, x1, x2, x3);
 
          // Computes the different components of integral I_1 of each node with respect to node i.
          const double I1_ii = ipp_ii + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ii;
@@ -4567,13 +4581,12 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
             // Additional variation in eta due to bed deformation or vertical velocity
             double extraEta = 0.0;
-            if      constexpr(imm == 2) extraEta = dt*vnorm;
+            if      constexpr(imm == 2) extraEta = dt*ubedNormalComp;
             else if constexpr(imm == 1) extraEta = node->bdef2 - node->bdef1; 
 
             const double ipp = elem->intPhiPhiQuad(l, j, x0, x1, x2, x3);
             const double igpgp = elem->intGradPhiGradPhiQuad(l, j, x0, x1, x2, x3);
-            node1->qel += (node->eta2 + extraEta)*ipp - 
-                           node->eta2*grav3*thetai*(1.0 - thetai)*dt*dt*hhatb*igpgp;
+            node1->qel += (node->eta2 + extraEta)*ipp - node->eta2*fricCoeff*igpgp;
 
          }         
       } 
@@ -6998,7 +7011,7 @@ extern "C" {
          if (isTri) { // For triangles
          // Interpolates the side velocities at the nodes. A magnitude defined at the sides and interpolated (extrapolated) at one node can be
          // computed as the sum of the adjacent side magnitudes minus the side magnitude that is not adjacent to the node.
-
+            #pragma unroll
             for (int j = 0; j < 3; j++) {
                // For every node of the triangle...
                Node *node = elem->nodes[j];
@@ -7025,7 +7038,7 @@ extern "C" {
                      s3u2 = s3->frame.projHorVec(s3u2, elem->frame);
                   }
 
-                  Vector2 u = s2u2 + s3u2 - s1u2; // u interpolated linearly at node j.   
+                  Vector2 u = s2u2 + s3u2 - s1u2; // u extrapolated linearly at node j.   
                   u = clampVelocity(u);
                   atomicAdd(&(node->utmp[k].x), u.x);
                   atomicAdd(&(node->utmp[k].y), u.y);
@@ -7035,7 +7048,48 @@ extern "C" {
             }
          }
          else { // For quads
-            assert(false && "computeNodalHorizontalVelocities1: not implemented for quads");
+
+
+            // Compute the bilinear coordinates of the center of each diagonal.
+            double xi, eta;
+            double shp13[4], shp24[4];
+            Point2 x0, x1, x2, x3;
+            elem->getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3);
+            const Point2 p13 = 0.5 * (x0 + x2);   // Center of sides 1 & 3
+            const Point2 p24 = 0.5 * (x1 + x3);   // Center of sides 2 & 4
+            elem->inverseBilinearQuad(p13, xi, eta, shp13);
+            elem->inverseBilinearQuad(p24, xi, eta, shp24);
+
+            
+            for (int k = kb; k < nvrt; k++) {
+
+               //Each quad is split into two triangles. For each triangle we extrapolate as we did for triangles.
+               Vector2 sideU[4];
+               #pragma unroll
+               for (int j = 0; j < 4; j++) {
+                  Vector2 u = elem->sides[j]->u2[k];
+                  if constexpr(ics == 2) u = elem->sides[j]->frame.projHorVec(u, elem->frame);
+                  sideU[j] = u;
+               }
+
+               Vector2 ud1 = shp13[0]*sideU[0] + shp13[1]*sideU[1] + shp13[2]*sideU[2] + shp13[3]*sideU[3];
+               Vector2 ud2 = shp24[0]*sideU[0] + shp24[1]*sideU[1] + shp24[2]*sideU[2] + shp24[3]*sideU[3];
+
+               Vector2 ufg0 = clampVelocity(sideU[2] + sideU[3] - ud2);  // node 1: sides 3,4
+               Vector2 ufg1 = clampVelocity(sideU[0] + sideU[3] - ud1);  // node 2: sides 1,4
+               Vector2 ufg2 = clampVelocity(sideU[0] + sideU[1] - ud2);  // node 3: sides 1,2
+               Vector2 ufg3 = clampVelocity(sideU[1] + sideU[2] - ud1);  // node 4: sides 2,3
+               const Vector2 ufg[4] = {ufg0, ufg1, ufg2, ufg3};
+               #pragma unroll
+               for (int j = 0; j < 4; j++) {
+                  Node *node = elem->nodes[j];
+                  if (node->isDry) continue;
+
+                  atomicAdd(&(node->tmp.i), 1);
+                  atomicAdd(&(node->utmp[k].x), ufg[j].x);
+                  atomicAdd(&(node->utmp[k].y), ufg[j].y);
+               }
+            }
 
          }
 

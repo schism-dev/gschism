@@ -13,8 +13,20 @@ constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
 
-constexpr double ixi_n[4] = {-1, 1, 1,-1}; // Local  xi-coordinate of the vertices of a quad 
-constexpr double iet_n[4] = {-1,-1, 1, 1}; // Local eta-coordinate of the vertices of a quad
+// eta coordinates of the nodes (idxNode = 0,1,2,3)
+__device__ __forceinline__ double eta_n(int idxNode) {
+   // bit1: 0 -> -1, 1 -> +1
+   assert(idxNode >= 0 && idxNode < 4 && "etaSign: idxNode out of range");
+   return (idxNode & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
+}
+
+// xi coordinates of the nodes (idxNode = 0,1,2,3)
+__device__ __forceinline__ double xi_n(int idxNode) {
+   // +1 if (bit0 XOR bit1), else -1
+   assert(idxNode >= 0 && idxNode < 4 && "xiSign: idxNode out of range");
+   return ((idxNode & 1) ^ (idxNode >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
+
+}
 
 #define INT_MAX 2147483647
 
@@ -138,9 +150,14 @@ __device__ __forceinline__ double pow<3>(double x) {
 }
 
 
-__device__ __forceinline__ double clamp(double x, double min, double max) {
-    return fmin(fmax(x, min), max);
+__device__ __forceinline__ double clamp(double x, double minval, double maxval) {
+    return fmin(fmax(x, minval), maxval);
 }
+
+__device__ __forceinline__ int clamp(int x, int minval, int maxval) {
+    return max(minval, min(x, maxval));
+}
+
 
 
 
@@ -737,33 +754,21 @@ struct Element {
        return {eta, xi};
    }  
 
-   // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idx = 0,1,2,3)
-   __device__ __forceinline__ double etaSign(int idxNode) const {
-      // bit1: 0 -> -1, 1 -> +1
-      assert(idxNode >= 0 && idxNode < 4 && "etaSign: idxNode out of range");
-      return (idxNode & 2) ? 1.0 : -1.0;     // [-1,-1,+1,+1]
-   }
 
-   __device__ __forceinline__ double xiSign(int idxNode) const {
-      // +1 if (bit0 XOR bit1), else -1
-      assert(idxNode >= 0 && idxNode < 4 && "xiSign: idxNode out of range");
-      return ((idxNode & 1) ^ (idxNode >> 1)) ? 1.0 : -1.0;   // [-1,+1,+1,-1]
-
-   }
 
    // Shape function Phi at a given point p = (eta,xi), idxNode = node index 0,1,2,3
    __device__ __forceinline__ double Phi(int idxNode, Point2 p) const {
-      return 0.25*(1.0 + p.x*etaSign(idxNode))*(1.0 + p.y*xiSign(idxNode));
+      return 0.25*(1.0 + p.x*eta_n(idxNode))*(1.0 + p.y*xi_n(idxNode));
    }
 
    // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi)
    __device__ __forceinline__ double dPhi_dxi(int idxNode, Point2 p) const {
-      return 0.25*xiSign(idxNode)*(1.0 + p.x*etaSign(idxNode));
+      return 0.25*xi_n(idxNode)*(1.0 + p.x*eta_n(idxNode));
    }   
 
    // Derivative of shape function Phi_idx/deta at a given point p = (eta,xi) 
    __device__ __forceinline__ double dPhi_deta(int idxNode, Point2 p) const {
-      return 0.25*(1.0 + p.y*xiSign(idxNode))*etaSign(idxNode);
+      return 0.25*(1.0 + p.y*xi_n(idxNode))*eta_n(idxNode);
    }      
    
    __inline__ __device__ double detJ_eta_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
@@ -787,17 +792,18 @@ struct Element {
 
    __device__ bool computeShapeCoords(Point2 &xt, double shpCoords[4], EFixIf fixNegShapeCoords = fiNo, const Side *origSide = nullptr) const;
    
-   __device__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
+   __device__ __forceinline__ void shapeCoordsToXY(double shpCoords[4], Vector2 &xt) const;
 
 
-   __device__ double intPhiPhiTri(int i, int j) const;
+   __device__ __forceinline__ double intPhiPhiTri(int i, int j) const;
 
-   __device__ double intPhiPhiQuad(int i, int j, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
+   __device__ __forceinline__ double intGradPhiGradPhiTri(int i, int j) const;
 
+   __device__ __forceinline__ double intPhiPhiQuad(int i, int j, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
 
-   __device__ double intGradPhiGradPhiQuad(int i1, int i2, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
+   __device__ __forceinline__ double intGradPhiGradPhiQuad(int i1, int i2, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
 
-   __device__ Vector2 grad2(double *a) const
+   __device__ __forceinline__ Vector2 grad2(double *a) const
    {
       double gx = a[0]*gradPhi[0].x + a[1]*gradPhi[1].x + a[2]*gradPhi[2].x;
       double gy = a[0]*gradPhi[0].y + a[1]*gradPhi[1].y + a[2]*gradPhi[2].y;
@@ -808,7 +814,7 @@ struct Element {
       return {gx, gy};
    }
 
-   __device__ Vector2 grad2(double Node::* field) const
+   __device__ __forceinline__ Vector2 grad2(double Node::* field) const
    {
       double gx = (nodes[0]->*field)*gradPhi[0].x + (nodes[1]->*field)*gradPhi[1].x + (nodes[2]->*field)*gradPhi[2].x;
       double gy = (nodes[0]->*field)*gradPhi[0].y + (nodes[1]->*field)*gradPhi[1].y + (nodes[2]->*field)*gradPhi[2].y;

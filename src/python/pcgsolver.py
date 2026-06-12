@@ -82,6 +82,7 @@ class PCGSolver:
                
 
     def mulA(self, p, q):
+        # XXXXX It is not using p or q
         # Computes q = A * p 
         _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
                            self.one.ctypes.data, self.desc_A.desc, self.desc_p.desc,

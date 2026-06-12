@@ -161,7 +161,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
              
         cufunc.backtrackAllNodes()              # Lines 4161-5029
 
-        # if it >= 11160 and not VISTA:
+        # if it >= 0 and not VISTA:
         #     import debug.newmonitor as newmonitor
         #     newmonitor.show()
 
@@ -219,10 +219,11 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
 
     #  Solve the wave equation
+    cufunc.printMatrix(True)   
     solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0)
 
 
-    # # cufunc.printMatrix(True)   
+    # cufunc.printMatrix(True)   
     # if it >= 2:
     #     N = 592
     #     A = cp.zeros((N, N))
