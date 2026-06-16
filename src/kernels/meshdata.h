@@ -846,11 +846,6 @@ struct Element {
    }
 
 
-
-   __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
-
-   __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords, const Side *origSide) const;
-
    __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4]) const
    {
       // Interpolate the value at the point (xt,yt) using the shape coordinates and the values at the nodes
@@ -931,8 +926,6 @@ struct Element {
 
 
 
-   __device__ void trackGoesOutOfWater(const Side *nextSide, const Side *origSide, Element *curElem, double tt, int jlev,
-                                       Point3 &xt, double zint, Vector3 &u_int);
 
    __device__ __forceinline__ Point2 getLocalNodePosition(int idx, const Side* origSide) const;
 
@@ -1447,7 +1440,7 @@ struct Node {
          coeffDiag += value;
      
       } else {
-         // Search (linearly)the index of the node in the array of nodes
+         // Search (linearly) the index of the node in the array of nodes
          // XXX: This is not efficient, see if we can improve this
          int i;
          for (i = 0; i < numNodes; i++) {

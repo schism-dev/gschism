@@ -183,7 +183,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         raise ValueError("iupwind_mom != 0 is not implemented yet")
     # computeVerticalAdvection()        # Lines 5030-5122
 
-    # if it >= 55:
+    # if it >= 1:
     #     monitor.fortranDebugPlot(it)
 
     cufunc.computeElevationBoundaryConditions(time)
@@ -219,7 +219,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
 
     #  Solve the wave equation
-    cufunc.printMatrix(True)   
+    # cufunc.printMatrix(True)   
     solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0)
 
 

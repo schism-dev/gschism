@@ -95,12 +95,12 @@ class PCGSolver:
         
         cufunc.setupCGSolvers(self.data, self.b, self.indices, self.indptr)
         
-        self.A   = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.n, self.n))
-        self.A  .sort_indices()
+        self.A = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.n, self.n))
+        self.A.sort_indices()
 
         if ensureSymmetric:
             # Make the matrix symmetric (removes small off-diagonal elements)
-            self.A.data[:]   = 0.5*(self.A   + self.A.T  ).data  
+            self.A.data[:]   = 0.5*(self.A   + self.A.T).data  
 
 
         # Recreate descriptors after matrix data is populated

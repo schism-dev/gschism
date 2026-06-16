@@ -966,11 +966,6 @@ struct Element {
    }
 
 
-
-   __inline__ __device__ bool containsPoint(Vector2 xt, const Side *origSide) const;
-
-   __inline__ __device__ bool containsPoint(Vector2 &xt, bool fixCoords, const Side *origSide) const;
-
    __device__ double interpolate(const double shapeCoords[4], const double zAtNodes[4]) const
    {
       // Interpolate the value at the point (xt,yt) using the shape coordinates and the values at the nodes
@@ -1051,8 +1046,6 @@ struct Element {
 
 
 
-   __device__ void trackGoesOutOfWater(const Side *nextSide, const Side *origSide, Element *curElem, double tt, int jlev,
-                                       Point3 &xt, double zint, Vector3 &u_int);
 
    __device__ __forceinline__ Point2 getLocalNodePosition(int idx, const Side* origSide) const;
 
@@ -1567,7 +1560,7 @@ struct Node {
          coeffDiag += value;
      
       } else {
-         // Search (linearly)the index of the node in the array of nodes
+         // Search (linearly) the index of the node in the array of nodes
          // XXX: This is not efficient, see if we can improve this
          int i;
          for (i = 0; i < numNodes; i++) {
@@ -2389,9 +2382,9 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Poi
    assert(isQuad() && "getLocalHorizontalNodePositionsQuad only works for quads");
 
    const int id1 = idx;
-   const int id2 = nxq(1 + id1);
-   const int id3 = nxq(2 + id1);
-   const int id4 = nxq(3 + id1);
+   const int id2 = (1 + idx) % 4;
+   const int id3 = (2 + idx) % 4;
+   const int id4 = nxq(3 + idx);
 
    if constexpr(ics==1) {
       x0 = nodes[id1]->p;
@@ -2484,76 +2477,6 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
 
 }
 
-
-
-__inline__ __device__ bool Element::containsPoint(Vector2 xt, const Side *origSide) const { 
-   // Check if the point (xt,yt) is inside the element.
-   // if ics==2, origSide is used to convert the point to the starting point's frame.
-   assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa (2)");
-
-   double shpCoords[4];
-   bool res = computeShapeCoords(xt, shpCoords, fiNo, origSide);
-
-   return res;
-}
-
-__inline__ __device__ bool Element::containsPoint(Vector2 &xt, bool fixCoords, const Side *origSide) const { 
-   // Check if the point (xt,yt) is inside the element.
-   // If fixCoords is true, and *the point is inside the element*, the point is nudged to be inside the element.
-   // if ics==2, origSide is used to convert the point to the starting point's frame.
-   assert((ics==2 || origSide==nullptr) && "origSide must be nullptr if ics == 1 and vice versa (3)");
-
-   double shpCoords[4];
-   Vector2 tmp_xt = xt;
-   const EFixIf fixIfCoords = fixCoords ? fiOnlyInside : fiNo;
-printf("HEREEEEEE\n");
-   bool res = computeShapeCoords(tmp_xt, shpCoords, fixIfCoords, origSide);
-
-   if (fixCoords && res) xt = tmp_xt;
-
-   return res;
-}
-
-
-__device__ void Element::trackGoesOutOfWater(const Side *nextSide, const Side *origSide, Element *curElem, double tt, int jlev,
-                                             Point3 &xt, double zint, Vector3 &u_int) {
-
-   // When this happens, we stop our algorithm that usually assumes that we move to the next element.
-   // Instead, we nudge the intersection point to the barycenter of the current element, and nextElement becomes
-   // curElement.
-
-   // Then it finds the tangential velocity at the element side (the side where the intersection was found),
-   // And uses this velocity instead to continue the tracking.
-
-   // computes the intersection point in local cartesian coordinates
-//    Point3 intersection = origSide->toLocalFrame(nextSide->p3_t(tt));  // XXXX I don't think this is necessary. The intersection is already computed in findNextIntersection.
-
-//    // Nudges the point to the barycenter of the element. 
-//    // This ensures that the point is inside the element and hence, we will find an intersection if the
-//    // next segment intersects the element sides. 
-//    // TODO: curElem->nudgeToBarycenter(intersection);  REMEMBER!!! RECOVER??? XXX KKKKK
-
-
-//    // Computes the tangential velocity at the side. Note that we are not using the x,y,z location
-//    // of the intersection point. We are approximating it by the velocity at the side center at jlev.
-//    // NOTE: With the new code it will be easy to compute the tangential velocity at the intersection point.
-//    double vtan = dot(nextSide->t(), nextSide->u2[jlev]);
-
-//    // If the side is an open boundary, the tangential velocity is set to zero.
-//    if (nextSide->isBnd()) vtan = 0.0;
-
-//    // The new velocity components are computed from the tangential velocity and the tangent vector.
-//    const double us = vtan*nextSide->t().x;
-//    const double vs = vtan*nextSide->t().y;
-//    const double ws = nextSide->w2(jlev); 
-
-//    u_int = {us, vs, ws};
-
-//    // The end of this tracking segment is now the intersection point.
-//    xt = {intersection.x, intersection.y, zint};
-// // printf("trackGoesOutOfWater: intersection = (%.17f, %.17f, %.17f), zint = %.17f, u_int = (%.17f, %.17f, %.17f)\n", intersection.x, intersection.y, zint, u_int.x, u_int.y, u_int.z);
-   
-}
 
 // Helper functions to get the 2D local node position for the Celestial walk
 __device__ __forceinline__ Point2 Element::getLocalNodePosition(int idx, const Side* origSide) const {
@@ -2686,7 +2609,7 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
       double ar3 = signedArea(x1, x2, x3);
       assert (ar1 >= 0.0 && ar2 >= 0.0 && ar3 >= 0.0 && "Negative area found in quad element");
 
-      res += ar1 + ar2 + ar3;
+      res += ar1;
 
    }
 
@@ -2910,25 +2833,13 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
    // from the local frame, so use additional check.
 
 
+
    if (isTri()) { // Triangular element
 
       // Horizontal local node coordinates. 
-      Point2 x0 = nodes[0]->p;
-      Point2 x1 = nodes[1]->p;
-      Point2 x2 = nodes[2]->p;
+      Point2 x0, x1, x2;
+      getLocalHorizontalNodePositionsTri(x0, x1, x2);
 
-      // If ics == 2, the node coordinates are transformed to local frame.
-      if constexpr(ics==2) {
-         const Point3 p0 = toPoint3(x0, nodes[0]->gz);
-         const Point3 p1 = toPoint3(x1, nodes[1]->gz);
-         const Point3 p2 = toPoint3(x2, nodes[2]->gz);
-
-
-         // Convert the node coordinates to the local frame centered at the element center
-         x0 = toPoint2(origSide->toLocalFrame(p0));
-         x1 = toPoint2(origSide->toLocalFrame(p1));
-         x2 = toPoint2(origSide->toLocalFrame(p2));
-      }
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
@@ -2939,11 +2850,9 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
       const bool res = (tmpmin >= -small);  
       
-      // If the point is not inside the element (with a small tolerance), we do not need to fix the negative shape coordinates.
+      // When to fix the negative shape coordinates?
       const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
-
-      
       // If at least one of the shape coordinates is negative, and we have the flag fixNegshpCoord set,
       // then we fix the negative shape coordinates.
       if ((tmpmin < 0) && fix) {
@@ -2972,45 +2881,41 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
 
       }
 
-      // Check if the point is inside the element
+      // Return true if the point is inside the element
       return res;      
    }
    else {
       assert(isQuad() && "computeShapeCoords");
 
+      // Horizontal local node coordinates. 
+      Point2 x0, x1, x2, x3;
+      getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3);
 
-      bool inside = false;
-printf("computeShapeCoords: quad element not implemented\n");
-      return true;
+      const double a0 = signedArea(x0, x1, xt);
+      const double a1 = signedArea(x1, x2, xt);
+      const double a2 = signedArea(x2, x3, xt);
+      const double a3 = signedArea(x3, x0, xt);
 
+      const double minArea = min4(a0, a1, a2, a3);
+      
+      const bool res = (minArea > -small*area);
 
+      // When to fix the negative shape coordinates?
+      const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
-   //    if (ifl==0) then
-   //      do i=1,4
-   //        in1=nxq(1,i,i34(ie))
-   //        in2=nxq(2,i,i34(ie))
-   //        swild2(i)=signa2(xel(in1,ie),xel(in2,ie),x,yel(in1,ie),yel(in2,ie),y)
-   //      enddo !i
-   //      tmp=minval(swild2(1:4))/area(ie)
-   //      if(tmp>-small2) then
-   //        inside=1
-   //        call ibilinear(itag,ie,area(ie),xel(1,ie),xel(2,ie),xel(3,ie),xel(4,ie), &
-   //   &yel(1,ie),yel(2,ie),yel(3,ie),yel(4,ie),x,y,xi,eta,shapef,icaseno)
-   //      endif !inside quad
-   //    else !ifl=1 - already inside
+      double xi, eta;      
+      inverseBilinearQuad(xt, xi, eta, shpCoords);
 
+      if (fix) {
+         double xn[4] = {x0.x, x1.x, x2.x, x3.x};
+         double yn[4] = {x0.y, x1.y, x2.y, x3.y};
+         xt.x = interpolate(shpCoords, xn);
+         xt.y = interpolate(shpCoords, yn);
+      }
 
-   //    call ibilinear(itag,ie,area(ie),xel(1,ie),xel(2,ie),xel(3,ie),xel(4,ie), &
-   //   &yel(1,ie),yel(2,ie),yel(3,ie),yel(4,ie),x,y,xi,eta,shapef,icaseno)
-   //      !Update pt
-   //      x=dot_product(xel(1:4,ie),shapef(1:4))
-   //      y=dot_product(yel(1:4,ie),shapef(1:4))
-   //    endif !ifl
-
-
-   //    return quad_shape(1,6,nnel,xn2,yn2,inside2,arco)
-
+      return res;
    }
+
 
    assert(false && "computeShapeCoords: should never reach this point");
    return false;  // Never reached
@@ -3090,10 +2995,10 @@ __device__ __forceinline__ double Element::intGradPhiGradPhiQuad(int i1, int i2,
       const double xi  = p.y;
 
       // Jacobian entries at the Gauss point p
-      const double dx_dxi  = 0.25 * ( (x1.x + x2.x - x0.x - x3.x) + xi *(x0.x + x2.x - x1.x - x3.x) );
-      const double dx_deta = 0.25 * ( (x2.x + x3.x - x0.x - x1.x) + eta*(x0.x + x2.x - x1.x - x3.x) );
-      const double dy_dxi  = 0.25 * ( (x1.y + x2.y - x0.y - x3.y) + xi *(x0.y + x2.y - x1.y - x3.y) );
-      const double dy_deta = 0.25 * ( (x2.y + x3.y - x0.y - x1.y) + eta*(x0.y + x2.y - x1.y - x3.y) );      
+      const double dx_dxi  = 0.25 * ( (x1.x + x2.x - x0.x - x3.x) + eta*(x0.x + x2.x - x1.x - x3.x) );
+      const double dx_deta = 0.25 * ( (x2.x + x3.x - x0.x - x1.x) + xi *(x0.x + x2.x - x1.x - x3.x) );
+      const double dy_dxi  = 0.25 * ( (x1.y + x2.y - x0.y - x3.y) + eta*(x0.y + x2.y - x1.y - x3.y) );
+      const double dy_deta = 0.25 * ( (x2.y + x3.y - x0.y - x1.y) + xi *(x0.y + x2.y - x1.y - x3.y) );      
 
       const double detJ = jacobianDetQuad(p, x0, x1, x2, x3);
       assert(detJ > 0.0 && "Negative or zero determinant of the Jacobian in intGradPhiGradPhi");
@@ -4493,7 +4398,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          // integral of [(grad phi_i) * (grad phi_j)]
          const double igpgp_ii = ((1.0/4.0)/area)*dot(x2-x1, x2-x1);
          const double igpgp_ij = ((1.0/4.0)/area)*dot(x2-x1, x0-x2);
-         const double igpgp_ik = - igpgp_ii - igpgp_ij; // This comes from the fact that if a,b,c are vectors forming a triangle (in order), then a+b+c = 0, hence: -a*c = a*(a+b+c-c) = a*a + a*b.
+         const double igpgp_ik = - igpgp_ii - igpgp_ij; // This comes from the fact that if a,b,c are vectors forming a triangle (in order), then a+b+c = 0, hence: -a.c = a.(a+b+c-c) = a.a + a.b
 
          // Computes the different components of integral I_1 of each node with respect to node i.
          const double I1_ii = ipp_ii + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ii;
@@ -4525,15 +4430,6 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          }
 
 
-         // if (!elem->isDry) {
-         //   const Vector2 gradEta = elem->grad2(&Node::eta2);
-
-         //   node1->qel -= elem->area*grav3*dt*dt*thetai*(1.0 - thetai)*hhatb*dot(elem->gradPhi[id1], gradEta);
-
-         // }
-
-
-
       }
       else { // Quad
          // To clarify the notation in this section: 
@@ -4549,20 +4445,21 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          Node *node3 = elem->nodes[id3];
          Node *node4 = elem->nodes[id4];   
          
-         elem->getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3, id1);
+         elem->getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3);
 
          // integrals of phi_i*phi_j, phi_i*phi_k, phi_i*phi_l
-         const double ipp_ii = elem->intPhiPhiQuad(0, 0, x0, x1, x2, x3);
-         const double ipp_ij = elem->intPhiPhiQuad(0, 1, x0, x1, x2, x3);
-         const double ipp_ik = elem->intPhiPhiQuad(0, 2, x0, x1, x2, x3);
-         const double ipp_il = elem->intPhiPhiQuad(0, 3, x0, x1, x2, x3);
+         const double ipp_ii = elem->intPhiPhiQuad(id1, id1, x0, x1, x2, x3);
+         const double ipp_ij = elem->intPhiPhiQuad(id1, id2, x0, x1, x2, x3);
+         const double ipp_ik = elem->intPhiPhiQuad(id1, id3, x0, x1, x2, x3);
+         const double ipp_il = elem->intPhiPhiQuad(id1, id4, x0, x1, x2, x3);
 
-         // integrals of (grad phi_i) * (grad phi_j), (grad phi_i) * (grad phi_k), (grad phi_i) * (grad phi_l)
-         const double igpgp_ii = elem->intGradPhiGradPhiQuad(0, 0, x0, x1, x2, x3);
-         const double igpgp_ij = elem->intGradPhiGradPhiQuad(0, 1, x0, x1, x2, x3);
-         const double igpgp_ik = elem->intGradPhiGradPhiQuad(0, 2, x0, x1, x2, x3);
-         const double igpgp_il = elem->intGradPhiGradPhiQuad(0, 3, x0, x1, x2, x3);
+         // integrals of (grad phi_i) * (grad phi_i), (grad phi_i) * (grad phi_j), (grad phi_i) * (grad phi_k), (grad phi_i) * (grad phi_l)
+         const double igpgp_ii = elem->intGradPhiGradPhiQuad(id1, id1, x0, x1, x2, x3);
+         const double igpgp_ij = elem->intGradPhiGradPhiQuad(id1, id2, x0, x1, x2, x3);
+         const double igpgp_ik = elem->intGradPhiGradPhiQuad(id1, id3, x0, x1, x2, x3);
+         const double igpgp_il = elem->intGradPhiGradPhiQuad(id1, id4, x0, x1, x2, x3);
 
+printf("node1->idx: %d, area: %.16f, ipp_ii: %.16f, ipp_ij: %.16f, ipp_ik: %.16f, ipp_il: %.16f\n igpgp_ii: %.16f, igpgp_ij: %.16f, igpgp_ik: %.16f, igpgp_il: %.16f\n", node1->idx, area, ipp_ii, ipp_ij, ipp_ik, ipp_il, igpgp_ii, igpgp_ij, igpgp_ik, igpgp_il);
          // Computes the different components of integral I_1 of each node with respect to node i.
          const double I1_ii = ipp_ii + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ii;
          const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;
@@ -4584,8 +4481,8 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
             if      constexpr(imm == 2) extraEta = dt*ubedNormalComp;
             else if constexpr(imm == 1) extraEta = node->bdef2 - node->bdef1; 
 
-            const double ipp = elem->intPhiPhiQuad(l, j, x0, x1, x2, x3);
-            const double igpgp = elem->intGradPhiGradPhiQuad(l, j, x0, x1, x2, x3);
+            const double ipp = elem->intPhiPhiQuad(id1, l, x0, x1, x2, x3);
+            const double igpgp = elem->intGradPhiGradPhiQuad(id1, l, x0, x1, x2, x3);
             node1->qel += (node->eta2 + extraEta)*ipp - node->eta2*fricCoeff*igpgp;
 
          }         
@@ -7057,10 +6954,13 @@ extern "C" {
             elem->getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3);
             const Point2 p13 = 0.5 * (x0 + x2);   // Center of sides 1 & 3
             const Point2 p24 = 0.5 * (x1 + x3);   // Center of sides 2 & 4
+
             elem->inverseBilinearQuad(p13, xi, eta, shp13);
             elem->inverseBilinearQuad(p24, xi, eta, shp24);
 
-            
+
+
+
             for (int k = kb; k < nvrt; k++) {
 
                //Each quad is split into two triangles. For each triangle we extrapolate as we did for triangles.
@@ -7085,7 +6985,7 @@ extern "C" {
                   Node *node = elem->nodes[j];
                   if (node->isDry) continue;
 
-                  atomicAdd(&(node->tmp.i), 1);
+                  if (k == kb) atomicAdd(&(node->tmp.i), 1);
                   atomicAdd(&(node->utmp[k].x), ufg[j].x);
                   atomicAdd(&(node->utmp[k].y), ufg[j].y);
                }

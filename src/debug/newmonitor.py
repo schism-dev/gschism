@@ -64,6 +64,24 @@ def extract_elements(n_nodes: int, node_base: int, node_stride: int):
     # shape (4, numElements), uint64 pointers to Node*
     face_ptrs = mon.getElementVar("FaceIndices").astype(cp.uint64).get()
     elem_nodes = ((face_ptrs - node_base) // node_stride).astype(np.int32)
+    i0 = elem_nodes[0, :]
+    i1 = elem_nodes[1, :]
+    i2 = elem_nodes[2, :]
+    i3 = elem_nodes[3, :]
+
+    base_valid = (
+        (i0 >= 0) & (i0 < n_nodes) &
+        (i1 >= 0) & (i1 < n_nodes) &
+        (i2 >= 0) & (i2 < n_nodes)
+    )
+    has_node4 = (
+        base_valid &
+        (i3 >= 0) & (i3 < n_nodes) &
+        (i3 != i0) & (i3 != i1) & (i3 != i2)
+    )
+    # For triangles, nodes[3] is not guaranteed to be initialized.
+    elem_nodes[3, ~has_node4] = -1
+    elem_i34 = np.where(has_node4, 4, 3).astype(np.int32)
 
     elem_dry = _get_var_with_fallback(mon.getElementVar, ("isdry", "isDry")).get().astype(np.int32)
     elem_dry = np.asarray(elem_dry, dtype=np.int32)
@@ -74,6 +92,7 @@ def extract_elements(n_nodes: int, node_base: int, node_stride: int):
 
     return {
         "en": np.ascontiguousarray(elem_nodes, dtype=np.int32),
+        "i34": np.ascontiguousarray(elem_i34, dtype=np.int32),
         "isDry": np.ascontiguousarray(elem_dry, dtype=np.int32),
     }
 
@@ -207,6 +226,7 @@ if not VISTA:
             self.side_ids = np.ascontiguousarray(side_ids, dtype=np.int32)
 
             self.en = np.ascontiguousarray(elements["en"], dtype=np.int32)
+            self.i34 = np.ascontiguousarray(elements["i34"], dtype=np.int32)
             self.element_isDry = np.ascontiguousarray(elements["isDry"], dtype=np.int32)
 
             self.mesh_ready = True
@@ -325,6 +345,7 @@ if not VISTA:
                 self.n1,
                 self.n2,
                 self.en,
+                self.i34,
                 self.node_isDry,
                 self.side_isDry,
                 self.element_isDry,

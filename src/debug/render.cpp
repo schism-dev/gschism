@@ -125,6 +125,7 @@ void drawMesh(
     py::array_t<int, py::array::c_style> n1,
     py::array_t<int, py::array::c_style> n2,
     py::array_t<int, py::array::c_style> en,
+    py::array_t<int, py::array::c_style> i34,
     py::array_t<int, py::array::c_style> node_isDry,
     py::array_t<int, py::array::c_style> side_isDry,
     py::array_t<int, py::array::c_style> element_isDry,
@@ -146,6 +147,7 @@ void drawMesh(
     auto n1Info = n1.request();
     auto n2Info = n2.request();
     auto enInfo = en.request();
+    auto i34Info = i34.request();
     auto nodeDryInfo = node_isDry.request();
     auto sideDryInfo = side_isDry.request();
     auto elemDryInfo = element_isDry.request();
@@ -169,6 +171,9 @@ void drawMesh(
     if (elemDryInfo.ndim != 1 || elemDryInfo.shape[0] != enInfo.shape[1]) {
         throw std::runtime_error("element_isDry must be 1D and match elements length");
     }
+    if (i34Info.ndim != 1 || i34Info.shape[0] != enInfo.shape[1]) {
+        throw std::runtime_error("i34 must be 1D and match elements length");
+    }
     if (zoom <= 0.0) {
         throw std::runtime_error("zoom must be > 0");
     }
@@ -183,6 +188,7 @@ void drawMesh(
     const auto* n1_ptr = static_cast<const int*>(n1Info.ptr);
     const auto* n2_ptr = static_cast<const int*>(n2Info.ptr);
     const auto* en_ptr = static_cast<const int*>(enInfo.ptr);
+    const auto* i34_ptr = static_cast<const int*>(i34Info.ptr);
     const auto* nodeDry_ptr = static_cast<const int*>(nodeDryInfo.ptr);
     const auto* sideDry_ptr = static_cast<const int*>(sideDryInfo.ptr);
     const auto* elemDry_ptr = static_cast<const int*>(elemDryInfo.ptr);
@@ -334,6 +340,8 @@ void drawMesh(
         const int i1 = elIdx(1, i);
         const int i2 = elIdx(2, i);
         const int i3 = elIdx(3, i);
+        const int elem_i34 = i34_ptr[i];
+        const bool hasNode4 = (elem_i34 == 4);
 
         // printf("drawMesh: numElements = %ld, i = %ld, i0 = %d, i1 = %d, i2 = %d, i3 = %d\n", nElements, i, i0, i1, i2, i3);
         
@@ -341,6 +349,9 @@ void drawMesh(
                 i0 >= nNodes || i1 >= nNodes || i2 >= nNodes) {
                 continue;
             }
+        if (hasNode4 && (i3 < 0 || i3 >= nNodes)) {
+            continue;
+        }
 
         const double e0x = sx(x_ptr[i0]);
         const double e0y = sy(y_ptr[i0]);
@@ -348,14 +359,24 @@ void drawMesh(
         const double e1y = sy(y_ptr[i1]);
         const double e2x = sx(x_ptr[i2]);
         const double e2y = sy(y_ptr[i2]);
+        const double e3x = hasNode4 ? sx(x_ptr[i3]) : 0.0;
+        const double e3y = hasNode4 ? sy(y_ptr[i3]) : 0.0;
 
-        const double triSize = std::max(std::max(abs(e0x - e1x), abs(e0y - e1y)), std::max(abs(e0x - e2x), abs(e0y - e2y)));
-        const bool drawLabel = triSize>50.0;
+        double elemSize = std::max(std::max(std::abs(e0x - e1x), std::abs(e0y - e1y)),
+                                   std::max(std::abs(e0x - e2x), std::abs(e0y - e2y)));
+        if (hasNode4) {
+            elemSize = std::max(elemSize,
+                                std::max(std::max(std::abs(e0x - e3x), std::abs(e0y - e3y)),
+                                         std::max(std::abs(e2x - e3x), std::abs(e2y - e3y))));
+        }
+        const bool drawLabel = elemSize > 50.0;
 
         drawNode(ctx, i0, e0x, e0y, w, h, drawLabel, nodeDry_ptr[i0] != 0, drawnNode[i0]);
         drawNode(ctx, i1, e1x, e1y, w, h, drawLabel, nodeDry_ptr[i1] != 0, drawnNode[i1]);
         drawNode(ctx, i2, e2x, e2y, w, h, drawLabel, nodeDry_ptr[i2] != 0, drawnNode[i2]);
-        // drawNode(ctx, i3, e3x, e3y, w, h, drawLabel, drawnNode[i3]);
+        if (hasNode4) {
+            drawNode(ctx, i3, e3x, e3y, w, h, drawLabel, nodeDry_ptr[i3] != 0, drawnNode[i3]);
+        }
 
 
         // Draw element centroid
@@ -364,9 +385,11 @@ void drawMesh(
         const double x0 = x_ptr[i0], y0 = y_ptr[i0];
         const double x1 = x_ptr[i1], y1 = y_ptr[i1];
         const double x2 = x_ptr[i2], y2 = y_ptr[i2];
-        // triangle centroid in world coordinates
-        const double cxw = (x0 + x1 + x2) / 3.0;
-        const double cyw = (y0 + y1 + y2) / 3.0;
+        const double x3 = hasNode4 ? x_ptr[i3] : 0.0;
+        const double y3 = hasNode4 ? y_ptr[i3] : 0.0;
+        // Element centroid in world coordinates
+        const double cxw = hasNode4 ? (x0 + x1 + x2 + x3) / 4.0 : (x0 + x1 + x2) / 3.0;
+        const double cyw = hasNode4 ? (y0 + y1 + y2 + y3) / 4.0 : (y0 + y1 + y2) / 3.0;
         // to screen
         const double cx = sx(cxw);
         const double cy = sy(cyw);
@@ -477,6 +500,7 @@ PYBIND11_MODULE(render_cpp, m) {
         py::arg("n1"),
         py::arg("n2"),
         py::arg("en"),
+        py::arg("i34"),
         py::arg("node_isDry"),
         py::arg("side_isDry"),
         py::arg("element_isDry"),

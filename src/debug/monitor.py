@@ -12,12 +12,15 @@ if not VISTA:
     matplotlib.use('TkAgg') 
 
 x, y, elem_x, elem_y,  sx, sy = None, None, None, None, None, None
-nodesInfo = [40798, 41152, 41486, 40796, 41150, 41484, 40797, 41151, 41485]
-sidesInfo = [120390, 121448, 121447, 121450, 122462, 121446, 121452]
-elemsInfo = [69889, 69888, 70516, 69891, 70514, 70518]
+nodesInfo = [0, 1, 2, 3, 4, 5, 16,17,18, 19, 29]
+sidesInfo = [0, 1, 2, 3, 4, 5, 23, 25, 26, 27, 45]
+elemsInfo = [0, 1, 2, 3, 4, 5, 8, 17]
 fortranDebuggerInitialized = False
 chan = None
 continue_execution = False
+gdb_target_it = None          # it value Fortran is stopped at (None = unknown / running)
+GDB_VERBOSE = True            # print GDB MI traffic summaries
+GDB_BREAKPOINT_TIMEOUT = 600  # seconds to wait for schism_step breakpoint
 plotCreated = False
 
 debugPlot = cp.zeros([1000000,7], dtype=cp.float64, order='F') 
@@ -344,71 +347,183 @@ def intToRGB(color_array):
     return np.stack([r, g, b], axis=1) / 255.0  # shape: (N, 3)
 
 
+def _gdb_log(stage, message):
+    print(f"[GDB:{stage}] {message}")
+
+
+def _gdb_tail(buf, max_chars=2000):
+    if not buf:
+        return "(empty buffer)"
+    return buf[-max_chars:]
+
+
+def gdb_drain_channel():
+    """Read and discard any data already waiting on the SSH channel."""
+    import time
+    drained = ""
+    while chan.recv_ready():
+        drained += chan.recv(65536).decode("utf-8", errors="replace")
+        time.sleep(0.001)
+    return drained
+
+
+def gdb_run_shell_command(command, stage="shell-cmd", timeout=15.0):
+    """
+    Run a shell command on the remote interactive channel and capture output.
+    Assumes we are at a shell prompt (not inside GDB).
+    """
+    import time
+    gdb_drain_channel()
+    chan.send(command if command.endswith("\n") else command + "\n")
+    buf = ""
+    t0 = time.time()
+    ansi_re = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+    while time.time() - t0 < timeout:
+        if chan.recv_ready():
+            buf += chan.recv(65536).decode("utf-8", errors="replace")
+            clean = ansi_re.sub("", buf)
+            tail = clean[-800:]
+            if re.search(r"(?m)(^|\n)[^\n]*[#$]\s*$", tail):
+                break
+        else:
+            time.sleep(0.05)
+    out = _gdb_tail(buf, 1200)
+    _gdb_log(stage, f"command={command!r}\n{out}")
+    return buf
+
+
+def gdb_read_until(marker, timeout=60.0, stage="read"):
+    """
+    Block until `marker` appears in the GDB MI stream.
+    Returns the accumulated buffer (may contain text before/after the marker).
+    """
+    import time
+    buf = ""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if chan.recv_ready():
+            buf += chan.recv(65536).decode("utf-8", errors="replace")
+            if marker in buf:
+                if GDB_VERBOSE:
+                    _gdb_log(stage, f"ok (saw {marker!r} after {time.time()-t0:.1f}s)")
+                return buf
+        else:
+            time.sleep(0.05)
+    raise TimeoutError(
+        f"[GDB:{stage}] timed out after {timeout}s waiting for {marker!r}\n"
+        f"Last channel data:\n{_gdb_tail(buf)}"
+    )
+
+
+def gdb_read_until_shell_prompt(timeout=120.0, stage="shell"):
+    """Wait for an interactive shell prompt (before GDB is launched)."""
+    import time
+    buf = ""
+    t0 = time.time()
+    last_log_t = t0
+    ansi_re = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+    while time.time() - t0 < timeout:
+        if chan.recv_ready():
+            buf += chan.recv(65536).decode("utf-8", errors="replace")
+            clean = ansi_re.sub("", buf)
+            tail = clean[-800:]
+            # Accept common prompt styles, with either LF or CRLF line endings.
+            # Examples: "user@host:~$ ", "[user@host RUN01e]$ ", "bash-4.2$ ", "# ".
+            if re.search(r"(?m)(^|\n)[^\n]*[#$]\s*$", tail):
+                if GDB_VERBOSE:
+                    _gdb_log(stage, f"ok (shell prompt after {time.time()-t0:.1f}s)")
+                return buf
+            now = time.time()
+            if GDB_VERBOSE and now - last_log_t > 2.0:
+                _gdb_log(stage, f"waiting for shell prompt... tail={_gdb_tail(tail, 220)!r}")
+                last_log_t = now
+        else:
+            time.sleep(0.05)
+    raise TimeoutError(
+        f"[GDB:{stage}] timed out after {timeout}s waiting for shell prompt\n"
+        f"Last channel data:\n{_gdb_tail(buf)}"
+    )
+
+
+def gdb_send_mi(command, wait_for="^done", timeout=60.0, stage=None):
+    """Send one MI command and wait for a response marker."""
+    stage = stage or command.strip().split()[0]
+    if GDB_VERBOSE:
+        _gdb_log(stage, f"send: {command.strip()}")
+    gdb_drain_channel()
+    chan.send(command if command.endswith("\n") else command + "\n")
+    if wait_for is None:
+        return ""
+    return gdb_read_until(wait_for, timeout=timeout, stage=stage)
+
+
+def gdb_sanity_check(expected_it):
+    """Confirm Fortran is stopped at the expected time step."""
+    it_val = evaluate_gdb_expression("it", timeout=10.0)
+    if it_val is None:
+        _gdb_log("sanity", "could not read `it` — inferior may still be running")
+        _gdb_log("sanity", "hint: wait for breakpoint-hit before pressing 'c'")
+        return False
+    if str(it_val) != str(expected_it):
+        _gdb_log(
+            "sanity",
+            f"it={it_val!r} but expected {expected_it} — breakpoint condition may be wrong",
+        )
+        return False
+    _gdb_log("sanity", f"it={it_val} matches expected iteration")
+    return True
+
+
+def _warn_index_oob(kind, idx, count):
+    _gdb_log(
+        "index",
+        f"{kind} index {idx} out of range for CUDA mesh (count={count}); "
+        f"Fortran uses 1-based index {idx + 1}",
+    )
+
+
 def setupFortranDebugger():
-    global fortranDebuggerInitialized, chan
+    global fortranDebuggerInitialized, chan, gdb_target_it
 
     if fortranDebuggerInitialized:
         return
     fortranDebuggerInitialized = True
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    _gdb_log("ssh", "connecting to femto.sciclone.wm.edu")
     ssh.connect("femto.sciclone.wm.edu", username="jgonzalezondin", password="Zam3loide2025!" )
-    chan = ssh.invoke_shell()  # Create chan FIRST
-    
-    # Send srun command and wait for it to complete
+    chan = ssh.invoke_shell()
+
+    # Snapshot queue before requesting resources.
+    gdb_run_shell_command("squeue -u jgonzalezondin", stage="queue-before-srun", timeout=20)
+
     chan.send("srun --pty -p batch -n 1 -t 02:00:00 bash -l\n")
-    # Wait for srun to allocate resources and start the interactive session
-    import time
-    time.sleep(2)  # Give it a moment to start
-    # Wait for prompt (you may need to adjust this based on actual output)
-    output = ""
-    while "bash" not in output.lower() and len(output) < 1000:
-        if chan.recv_ready():
-            output += chan.recv(1024).decode('utf-8', errors='replace')
-        else:
-            time.sleep(0.1)
-    
-    # Now send the unset command
+    try:
+        gdb_read_until_shell_prompt(timeout=120, stage="srun")
+    except TimeoutError:
+        # Snapshot queue again when srun wait times out.
+        gdb_run_shell_command("squeue -u jgonzalezondin", stage="queue-after-timeout", timeout=20)
+        raise
     chan.send("unset PMI_RANK PMI_SIZE PMI_FD PMIX_NAMESPACE PMIX_RANK PMIX_SERVER_URI2\n")
-    time.sleep(0.5)  # Brief wait for command to execute
-    _ = chan.recv(1024).decode('utf-8', errors='replace')  # Clear any output
-    
-    chan.send("cd /sciclone/home/jgonzalezondin/data10/RUN02d\n")
-    time.sleep(0.5)
-    _ = chan.recv(1024).decode('utf-8', errors='replace')
-    
+    gdb_read_until_shell_prompt(timeout=10, stage="unset-pmi")
+    chan.send("cd /sciclone/home/jgonzalezondin/data10/RUN01e\n")
+    gdb_read_until_shell_prompt(timeout=10, stage="cd")
+
     chan.send("gdb -q -i=mi ./pschism_FEMTO_OLDIO_BLD_STANDALONE_SH_MEM_COMM_TVD-VL\n")
+    startup = gdb_read_until("(gdb)", timeout=120, stage="gdb-startup")
+    print("=== GDB startup (tail) ===")
+    print(_gdb_tail(startup, 800))
 
-    # Wait for gdb prompt and show output
-    output = chan.recv(2048).decode()
-    print("=== Initial gdb startup ===")
-    print(output)
-
-    # Attach or run as needed
-    # Set breakpoint first
     # chan.send("-break-insert solver_subs.F90:316\n") # end solver
-    chan.send("-break-insert schism_step.F90:4505\n") # after btrack
-    # chan.send("-break-insert schism_step.F90:6821\n") # Before shapiro
-    # chan.send("-break-insert schism_step.F90:6887\n") # After shapiro
-    # chan.send("-break-insert schism_step.F90:8271\n") # Before levels0
-    # chan.send("-break-insert schism_step.F90:8276\n") # After levels0
-    # Receive confirmation
-    _ = chan.recv(4096).decode('utf-8', errors='replace')
-    # Add condition
-    chan.send(f"-break-condition 1 it .eq. {1}\n")
-    _ = chan.recv(4096).decode('utf-8', errors='replace')
-
-    chan.send("-exec-run\n")
-
-    chan.send("-gdb-set print elements 0\n")  # 0 means unlimited
-    chan.send("-gdb-set print repeats 0\n")     # Don't show repeated values
-
-    # After the breakpoint hits, increase the max value size
-    chan.send("-gdb-set max-value-size unlimited\n")
-    # Or set it to a large number
-    chan.send("-gdb-set max-value-size 10000000\n")
-    # Wait for confirmation
-    _ = chan.recv(4096).decode('utf-8', errors='replace')
+    gdb_send_mi("-break-insert schism_step.F90:5864", stage="break-insert")
+    gdb_send_mi("-break-condition 1 l .eq. 4", stage="break-condition")
+    gdb_send_mi("-exec-run", wait_for="breakpoint-hit", timeout=GDB_BREAKPOINT_TIMEOUT, stage="exec-run")
+    gdb_send_mi("-gdb-set print elements 0", stage="gdb-set")
+    gdb_send_mi("-gdb-set print repeats 0", stage="gdb-set")
+    gdb_send_mi("-gdb-set max-value-size unlimited", stage="gdb-set")
+    gdb_send_mi("-gdb-set max-value-size 10000000", stage="gdb-set")
+    gdb_target_it = 1
+    gdb_sanity_check(1)
 
 
 def fortranDebugPlot(it):
@@ -417,14 +532,22 @@ def fortranDebugPlot(it):
 
 
 
+    global gdb_target_it
+
     setupFortranDebugger()
 
-    # Set the break condition
-    chan.send(f"-break-condition 1 it .eq. {it}\n")
-    _ = chan.recv(4096).decode('utf-8', errors='replace')
-    # Now continue execution
-    chan.send("-exec-continue\n")
-    _ = chan.recv(4096).decode('utf-8', errors='replace')
+    if gdb_target_it != it:
+        gdb_send_mi(f"-break-condition 1 it .eq. {it}", stage="break-condition")
+        gdb_send_mi(
+            "-exec-continue",
+            wait_for="breakpoint-hit",
+            timeout=GDB_BREAKPOINT_TIMEOUT,
+            stage="exec-continue",
+        )
+        gdb_target_it = it
+        gdb_sanity_check(it)
+    else:
+        _gdb_log("sync", f"already stopped at it={it} (skipping exec-continue)")
 
     res = True
     
@@ -574,7 +697,14 @@ def fortranDebugPlot(it):
 
     # Print the debugging information
     print(f"Debugging information for iteration {it}:")
+    if not gdb_sanity_check(it):
+        _gdb_log("compare", "skipping Fortran reads — GDB not at expected breakpoint")
+        return False
+
     for nodeIdx in nodesInfo:
+        if nodeIdx < 0 or nodeIdx >= numNodes:
+            _warn_index_oob("node", nodeIdx, numNodes)
+            continue
 
         u = evaluate_gdb_expression(f"uu2(1, {nodeIdx+1})")
         v = evaluate_gdb_expression(f"vv2(1, {nodeIdx+1})")
@@ -585,18 +715,30 @@ def fortranDebugPlot(it):
         print(f"    eta2 = {eta2}, {eta[nodeIdx]}")
     print("--------------------------------")
     for elemIdx in elemsInfo:
+        if elemIdx < 0 or elemIdx >= numElements:
+            _warn_index_oob("element", elemIdx, numElements)
+            continue
         isdry = evaluate_gdb_expression(f"idry_e({elemIdx+1})")
         print(f"Element {elemIdx}: x = {elem_x[elemIdx]}, y = {elem_y[elemIdx]}, isdry = {isdry}-{int(elem_isDry[elemIdx])}")
     print("--------------------------------")
     for sideIdx in sidesInfo:
+        if sideIdx < 0 or sideIdx >= numSides:
+            _warn_index_oob("side", sideIdx, numSides)
+            continue
         u = evaluate_gdb_expression(f"su2(1, {sideIdx+1})")
         v = evaluate_gdb_expression(f"sv2(1, {sideIdx+1})")
         sdbtu = evaluate_gdb_expression(f"sdbt(1,1, {sideIdx+1})")
         sdbtv = evaluate_gdb_expression(f"sdbt(2,1, {sideIdx+1})")        
         isdry = evaluate_gdb_expression(f"idry_s({sideIdx+1})")
+        ipp = evaluate_gdb_expression(f"swild10(1, :)")
+        igpgp = evaluate_gdb_expression(f"swild10(2, :)")
+        ie = evaluate_gdb_expression(f"ie")
+        id = evaluate_gdb_expression(f"id")
+        area = evaluate_gdb_expression(f"area(ie)")
         print(f"Side {sideIdx}: x = {sx[sideIdx]}, y = {sy[sideIdx]}, isdry = {isdry}-{int(isSegDry[sideIdx])}")
         print(f"    u    = ({u}, {v}) - ({sux[sideIdx]}, {suy[sideIdx]}")
         print(f"    sdbt = ({sdbtu}, {sdbtv}) - ({sbux[sideIdx]}, {sbuy[sideIdx]})")
+        print(f"    ipp = {ipp}, igpgp = {igpgp}, ie = {ie}, id = {id}, area = {area}")
     print("--------------------------------")
     continue_execution = False
     # fig = None
@@ -971,7 +1113,7 @@ def plotNodeVar(varname, level=-1):
     return True
 
 
-def evaluate_gdb_expression(expression, timeout=2.0):
+def evaluate_gdb_expression(expression, timeout=10.0):
     """
     Evaluate an expression in GDB and return the result.
     
@@ -985,46 +1127,50 @@ def evaluate_gdb_expression(expression, timeout=2.0):
     global chan
     
     if chan is None:
-        print("Error: GDB channel not initialized")
+        _gdb_log("evaluate", "GDB channel not initialized (call setupFortranDebugger first)")
         return None
 
-    # Wait for and receive the response
     import time
-    import time
-    while chan.recv_ready():
-        _ = chan.recv(4096).decode('utf-8', errors='replace')
-    time.sleep(0.01)  # Brief pause to ensure buffer is clear
-    
-    # Send the evaluation command
-    chan.send(f'-data-evaluate-expression "{expression}"\n')
-    
+    gdb_drain_channel()
+    cmd = f'-data-evaluate-expression "{expression}"'
+    chan.send(cmd + "\n")
 
     response = ""
     start_time = time.time()
     
     while time.time() - start_time < timeout:
         if chan.recv_ready():
-            chunk = chan.recv(4096).decode('utf-8', errors='replace')
-            response += chunk
-            # GDB MI responses end with ^done or ^error
-            if '^done' in response or '^error' in response:
+            response += chan.recv(65536).decode("utf-8", errors="replace")
+            if "^done" in response or "^error" in response:
                 break
         else:
             time.sleep(0.02)
-    
-    # Parse GDB MI format: ^done,value="<value>"
-    if '^done' in response:
-        match = re.search(r'value="([^"]+)"', response)
+
+    elapsed = time.time() - start_time
+
+    if "^done" in response:
+        match = re.search(r'value="([^"]*)"', response)
         if match:
             return match.group(1)
-        else:
-            print(f"Warning: Could not parse GDB response: {response[:200]}")
-            return None
-    elif '^error' in response:
-        match = re.search(r'msg="([^"]+)"', response)
-        error_msg = match.group(1) if match else "Unknown error"
-        print(f"GDB Error evaluating '{expression}': {error_msg}")
+        _gdb_log("evaluate", f"could not parse value for {expression!r}")
+        print(f"  raw response: {_gdb_tail(response, 500)}")
         return None
+
+    if "^error" in response:
+        match = re.search(r'msg="([^"]*)"', response)
+        error_msg = match.group(1) if match else "unknown error"
+        _gdb_log("evaluate", f"{expression!r} -> error: {error_msg}")
+        if "not being run" in error_msg or "running" in error_msg.lower():
+            _gdb_log("evaluate", "hint: inferior is running; wait for breakpoint-hit first")
+        return None
+
+    extra = gdb_drain_channel()
+    full = response + extra
+    _gdb_log("evaluate", f"timeout ({elapsed:.1f}s) for {expression!r}")
+    if full.strip() == cmd or full.strip().endswith(cmd):
+        _gdb_log("evaluate", "only saw PTY echo — GDB may not have received the command yet")
     else:
-        print(f"Warning: No valid response from GDB for '{expression}': {response[:200]}")
-        return None
+        print(f"  partial response: {_gdb_tail(full, 500)}")
+    if extra and extra != response:
+        print(f"  extra after timeout: {_gdb_tail(extra, 500)}")
+    return None
