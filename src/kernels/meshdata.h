@@ -742,7 +742,7 @@ struct Element {
    // Local is in quotes because for ics == 1, the coordinates are unchanged. It just means that in these coordinates, the element is horizontal.
    __device__ __forceinline__ Point2 getLocalHorizontalNodePosition(int idxNode) const;
    __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2, int idx = 0) const;
-   __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3, int idx = 0) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const;
 
 
    // (eta,xi) coordinates of the Gauss-Legendre quadrature points (idxNode = 0,1,2,3)
@@ -757,17 +757,17 @@ struct Element {
 
 
    // Shape function Phi at a given point p = (eta,xi), idxNode = node index 0,1,2,3
-   __device__ __forceinline__ double Phi(int idxNode, Point2 p) const {
+   __device__ __forceinline__ double Phi_quad(int idxNode, Point2 p) const {
       return 0.25*(1.0 + p.x*eta_n(idxNode))*(1.0 + p.y*xi_n(idxNode));
    }
 
    // Derivative of shape function Phi_idx/dxi at a given point p = (eta,xi)
-   __device__ __forceinline__ double dPhi_dxi(int idxNode, Point2 p) const {
+   __device__ __forceinline__ double dPhi_dxi_quad(int idxNode, Point2 p) const {
       return 0.25*xi_n(idxNode)*(1.0 + p.x*eta_n(idxNode));
    }   
 
    // Derivative of shape function Phi_idx/deta at a given point p = (eta,xi) 
-   __device__ __forceinline__ double dPhi_deta(int idxNode, Point2 p) const {
+   __device__ __forceinline__ double dPhi_deta_quad(int idxNode, Point2 p) const {
       return 0.25*(1.0 + p.y*xi_n(idxNode))*eta_n(idxNode);
    }      
    
@@ -775,8 +775,8 @@ struct Element {
 
    __inline__ __device__ double detJ_xi_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const;
 
-   __inline__ __device__ double jacobianDetQuad(Point2 p, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const 
-         { return area/4.0 + detJ_eta_quad(x0, x1, x2, x3)*p.x + detJ_xi_quad(x0, x1, x2, x3)*p.y; }
+   __inline__ __device__ double detJ_quad(Point2 p, Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const 
+         { return (1.0/4.0)*area + detJ_eta_quad(x0, x1, x2, x3)*p.x+ detJ_xi_quad(x0, x1, x2, x3)*p.y; }
 
    // Check if the element is dry using the more up-to-date elevation.
    __inline__ __device__ bool isDry2(void) const;

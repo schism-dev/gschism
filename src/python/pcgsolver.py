@@ -98,7 +98,7 @@ class PCGSolver:
         self.A = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.n, self.n))
         self.A.sort_indices()
 
-        if ensureSymmetric:
+        if True:
             # Make the matrix symmetric (removes small off-diagonal elements)
             self.A.data[:]   = 0.5*(self.A   + self.A.T).data  
 

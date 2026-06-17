@@ -502,29 +502,26 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Poin
 
 }
 
-__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3, int idx) const {
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const {
 // Performs "getLocalHorizontalNodePosition" for the four nodes of the quad.
 
    assert(isQuad() && "getLocalHorizontalNodePositionsQuad only works for quads");
 
-   const int id1 = idx;
-   const int id2 = (1 + idx) % 4;
-   const int id3 = (2 + idx) % 4;
-   const int id4 = nxq(3 + idx);
+
 
    if constexpr(ics==1) {
-      x0 = nodes[id1]->p;
-      x1 = nodes[id2]->p;
-      x2 = nodes[id3]->p;  
-      x3 = nodes[id4]->p;
+      x0 = nodes[0]->p;
+      x1 = nodes[1]->p;
+      x2 = nodes[2]->p;  
+      x3 = nodes[3]->p;
 
    } else {
       const Vector3 c = {center.x, center.y, centerZ()}; // Element center
 
-      const Point3 p0 = toPoint3(nodes[id1]->p, nodes[id1]->gz); // XXXXX use p3D or similar?
-      const Point3 p1 = toPoint3(nodes[id2]->p, nodes[id2]->gz);
-      const Point3 p2 = toPoint3(nodes[id3]->p, nodes[id3]->gz);
-      const Point3 p3 = toPoint3(nodes[id4]->p, nodes[id4]->gz);
+      const Point3 p0 = toPoint3(nodes[0]->p, nodes[0]->gz); // XXXXX use p3D or similar?
+      const Point3 p1 = toPoint3(nodes[1]->p, nodes[1]->gz);
+      const Point3 p2 = toPoint3(nodes[2]->p, nodes[2]->gz);
+      const Point3 p3 = toPoint3(nodes[3]->p, nodes[3]->gz);
 
       x0 = toVector2(frame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
       x1 = toVector2(frame.G2L(p1 - c));
@@ -749,12 +746,12 @@ __inline__ __device__ bool Element::isDry2(void) const { return (nodes[0]->isDry
                                                                 (isQuad() && nodes[3]->isDry2());
 }
 
-__inline__ __device__ double Element::detJ_eta_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const {
-   return (x1.x - x0.x)*(x2.y - x3.y) - (x2.x - x3.x)*(x1.y - x0.y);
+__inline__ __device__ double Element::detJ_xi_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const {
+   return (1.0/8.0)*((x1.x - x0.x)*(x2.y - x3.y) - (x2.x - x3.x)*(x1.y - x0.y));
 }
 
-__inline__ __device__ double Element::detJ_xi_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const {
-   return (x2.x - x1.x)*(x3.y - x0.y) - (x3.x - x0.x)*(x2.y - x1.y);
+__inline__ __device__ double Element::detJ_eta_quad(Point2 const &x0, Point2 const &x1, Point2 const &x2, Point2 const &x3) const {
+   return (1.0/8.0)*((x2.x - x1.x)*(x3.y - x0.y) - (x3.x - x0.x)*(x2.y - x1.y));
 }
 
 __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const { 
@@ -1090,10 +1087,11 @@ __device__ __forceinline__ double Element::intPhiPhiQuad(int i, int j, Point2 co
    const double eta_sum  = eta_n(i) + eta_n(j);
    const double xi_sum   = xi_n(i)  + xi_n(j);
 
-   const double detJ_xi  = detJ_xi_quad (x0, x1, x2, x3);  // xi derivative of the Jacobian determinant
+   const double detJ_xi  = detJ_xi_quad (x0, x1, x2, x3);  // XXXXX put the 8 inside the function??? xi derivative of the Jacobian determinant
    const double detJ_eta = detJ_eta_quad(x0, x1, x2, x3);  // eta derivative of the Jacobian determinant
 
-   return (1.0/16.0)*area*xi_term*eta_term + (1.0/12.0)*(detJ_xi*eta_term*xi_sum + detJ_eta*xi_term*eta_sum);
+
+   return (1.0/16.0)*area*xi_term*eta_term + (1.0/12.0)*(detJ_eta*xi_term*eta_sum + detJ_xi*eta_term*xi_sum);
 }
    
 
@@ -1126,14 +1124,14 @@ __device__ __forceinline__ double Element::intGradPhiGradPhiQuad(int i1, int i2,
       const double dy_dxi  = 0.25 * ( (x1.y + x2.y - x0.y - x3.y) + eta*(x0.y + x2.y - x1.y - x3.y) );
       const double dy_deta = 0.25 * ( (x2.y + x3.y - x0.y - x1.y) + xi *(x0.y + x2.y - x1.y - x3.y) );      
 
-      const double detJ = jacobianDetQuad(p, x0, x1, x2, x3);
+      const double detJ = detJ_quad(p, x0, x1, x2, x3);
       assert(detJ > 0.0 && "Negative or zero determinant of the Jacobian in intGradPhiGradPhi");
 
       // Derivatives of the shape functions i1, i2 at the Gauss point p
-      const double dPhi_dxi_1  = dPhi_dxi (i1, p);
-      const double dPhi_deta_1 = dPhi_deta(i1, p);
-      const double dPhi_dxi_2  = dPhi_dxi (i2, p);
-      const double dPhi_deta_2 = dPhi_deta(i2, p);
+      const double dPhi_dxi_1  = dPhi_dxi_quad (i1, p);
+      const double dPhi_deta_1 = dPhi_deta_quad(i1, p);
+      const double dPhi_dxi_2  = dPhi_dxi_quad (i2, p);
+      const double dPhi_deta_2 = dPhi_deta_quad(i2, p);
 
       // Transform the derivatives of the shape functions to x,y coordinates (this formula leaves a multiplicative factor detJ)
       const double dPhi_dx_1_detJ =  dy_deta * dPhi_dxi_1 - dy_dxi * dPhi_deta_1;
@@ -2325,7 +2323,7 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
          const double dPhi_j_dy = (p4.x - p2.x)/(2*area); 
 
          elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
-      } // if Tri
+      } // if Tri/Quad
 
    } // for j   
    
@@ -2585,7 +2583,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          const double igpgp_ik = elem->intGradPhiGradPhiQuad(id1, id3, x0, x1, x2, x3);
          const double igpgp_il = elem->intGradPhiGradPhiQuad(id1, id4, x0, x1, x2, x3);
 
-printf("node1->idx: %d, area: %.16f, ipp_ii: %.16f, ipp_ij: %.16f, ipp_ik: %.16f, ipp_il: %.16f\n igpgp_ii: %.16f, igpgp_ij: %.16f, igpgp_ik: %.16f, igpgp_il: %.16f\n", node1->idx, area, ipp_ii, ipp_ij, ipp_ik, ipp_il, igpgp_ii, igpgp_ij, igpgp_ik, igpgp_il);
+
          // Computes the different components of integral I_1 of each node with respect to node i.
          const double I1_ii = ipp_ii + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ii;
          const double I1_ij = ipp_ij + (grav3*thetai*thetai*dt*dt*hhatb)*igpgp_ij;

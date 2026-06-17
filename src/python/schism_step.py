@@ -38,7 +38,7 @@ def solveWaveEquation(solver, maxIter=1000, tol=1e-12, ):
 
     time1 = time.time()
   
-    its = solver.solve(rtol=1e-4*tol, maxiter=maxIter)
+    its = solver.solve(rtol=tol, maxiter=maxIter)
 
     time2 = time.time()
     print(f"Time to setup and solve: {time2 - time1:.3f} , iterations: {its}")
@@ -183,7 +183,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         raise ValueError("iupwind_mom != 0 is not implemented yet")
     # computeVerticalAdvection()        # Lines 5030-5122
 
-    # if it >= 1:
+    # if it >= 0:
     #     monitor.fortranDebugPlot(it)
 
     cufunc.computeElevationBoundaryConditions(time)

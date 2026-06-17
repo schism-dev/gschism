@@ -515,8 +515,8 @@ def setupFortranDebugger():
     print(_gdb_tail(startup, 800))
 
     # chan.send("-break-insert solver_subs.F90:316\n") # end solver
-    gdb_send_mi("-break-insert schism_step.F90:5864", stage="break-insert")
-    gdb_send_mi("-break-condition 1 l .eq. 4", stage="break-condition")
+    gdb_send_mi("-break-insert schism_step.F90:6136", stage="break-insert")
+    gdb_send_mi("-break-condition 1 it .eq. 1", stage="break-condition")
     gdb_send_mi("-exec-run", wait_for="breakpoint-hit", timeout=GDB_BREAKPOINT_TIMEOUT, stage="exec-run")
     gdb_send_mi("-gdb-set print elements 0", stage="gdb-set")
     gdb_send_mi("-gdb-set print repeats 0", stage="gdb-set")
@@ -735,10 +735,14 @@ def fortranDebugPlot(it):
         ie = evaluate_gdb_expression(f"ie")
         id = evaluate_gdb_expression(f"id")
         area = evaluate_gdb_expression(f"area(ie)")
+        sparsem = evaluate_gdb_expression(f"sparsem(:,{sideIdx+1})")
+        indnd = evaluate_gdb_expression(f"indnd(:,{sideIdx+1})")
         print(f"Side {sideIdx}: x = {sx[sideIdx]}, y = {sy[sideIdx]}, isdry = {isdry}-{int(isSegDry[sideIdx])}")
         print(f"    u    = ({u}, {v}) - ({sux[sideIdx]}, {suy[sideIdx]}")
         print(f"    sdbt = ({sdbtu}, {sdbtv}) - ({sbux[sideIdx]}, {sbuy[sideIdx]})")
         print(f"    ipp = {ipp}, igpgp = {igpgp}, ie = {ie}, id = {id}, area = {area}")
+        print(f" sparsem(:,{sideIdx+1}) = {sparsem}")
+        print(f" indnd(:,{sideIdx+1}) = {indnd}")
     print("--------------------------------")
     continue_execution = False
     # fig = None
