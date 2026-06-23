@@ -220,7 +220,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     #  Solve the wave equation
     # cufunc.printMatrix(True)   
-    solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0)
+    solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0*1e-4)
 
 
     # cufunc.printMatrix(True)   

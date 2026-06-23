@@ -18,9 +18,11 @@ constexpr int textSep = 3;
 constexpr BLRgba32 nodeColor(85, 80, 255, 255);
 constexpr BLRgba32 sideColor(25, 220, 255, 255);
 constexpr BLRgba32 elementColor(20, 250, 26, 255);
+constexpr BLRgba32 quadElementColor(255, 80, 220, 255);
 constexpr BLRgba32 dryNodeLabelColor(255, 120, 120, 255);
 constexpr BLRgba32 drySideLabelColor(255, 175, 95, 255);
 constexpr BLRgba32 dryElementLabelColor(255, 90, 170, 255);
+constexpr BLRgba32 dryQuadElementLabelColor(255, 140, 255, 255);
 
 static void ensure_text_font() {
     if (g_font_ready) return;
@@ -379,9 +381,6 @@ void drawMesh(
         }
 
 
-        // Draw element centroid
-        ctx.setFillStyle(elementColor);
-
         const double x0 = x_ptr[i0], y0 = y_ptr[i0];
         const double x1 = x_ptr[i1], y1 = y_ptr[i1];
         const double x2 = x_ptr[i2], y2 = y_ptr[i2];
@@ -399,12 +398,30 @@ void drawMesh(
             cy < 0.0 || cy >= static_cast<double>(h)) {
             continue;
         }
-        // draw a small point
-        drawSquare(ctx, cx, cy);    
-        
+
+        if (hasNode4) {
+            // Quad marker: magenta diagonals + centroid (easy to spot vs triangles)
+            ctx.setStrokeStyle(quadElementColor);
+            ctx.setStrokeWidth(1.5);
+            BLArray<double> noDash;
+            ctx.setStrokeDashOffset(0.0);
+            ctx.setStrokeDashArray(noDash);
+            ctx.strokeLine(BLLine(e0x, e0y, e2x, e2y));
+            ctx.strokeLine(BLLine(e1x, e1y, e3x, e3y));
+        }
+
+        ctx.setFillStyle(hasNode4 ? quadElementColor : elementColor);
+        drawSquare(ctx, cx, cy);
+
         if (drawLabel) {
-            const std::string label = std::to_string(static_cast<int>(i));
-            ctx.setFillStyle(elemDry_ptr[i] != 0 ? dryElementLabelColor : elementColor);
+            const std::string label = hasNode4
+                ? ("Q" + std::to_string(static_cast<int>(i)))
+                : std::to_string(static_cast<int>(i));
+            if (hasNode4) {
+                ctx.setFillStyle(elemDry_ptr[i] != 0 ? dryQuadElementLabelColor : quadElementColor);
+            } else {
+                ctx.setFillStyle(elemDry_ptr[i] != 0 ? dryElementLabelColor : elementColor);
+            }
             ctx.fillUtf8Text(BLPoint(cx + textSep, cy), g_font, label.c_str());
         }
     }

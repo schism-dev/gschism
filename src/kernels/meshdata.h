@@ -1239,6 +1239,21 @@ printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p
       return (index == 0) ? sideBnd1 : sideBnd2; 
    }
 
+   __forceinline__ __device__ void linkSideBoundary(SideBoundary *sb) {
+      if (isLand) return;  // land never uses these links
+      SideBoundary *null = nullptr;
+      if (atomicCAS((unsigned long long *)&sideBnd1,
+                  (unsigned long long)null,
+                  (unsigned long long)sb) == (unsigned long long)null)
+         return;
+      if (atomicCAS((unsigned long long *)&sideBnd2,
+                  (unsigned long long)null,
+                  (unsigned long long)sb) == (unsigned long long)null)
+         return;
+      // both slots taken — OK if this side was already linked
+      assert(sideBnd1 == sb || sideBnd2 == sb);
+   }
+
 
 };
 

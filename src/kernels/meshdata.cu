@@ -381,7 +381,7 @@ if (shapeCoords[0] > 1.1 || shapeCoords[1] > 1.1 || shapeCoords[2] > 1.1 ||
       if constexpr (IsVector2<T>::value && ics == 2) {
 // printf("mean 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectNodeVectorsToElementFrame(values);
-printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+// printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
@@ -396,7 +396,7 @@ printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x,
       if constexpr (IsVector2<T>::value && ics == 2) {
 // printf("mean 1: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
          projectSideVectorsToElementFrame(values);
-printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
+// printf("mean 2: values = (%f, %f), (%f, %f), (%f, %f), (%f, %f)\n", values[0].x, values[0].y, values[1].x, values[1].y, values[2].x, values[2].y, values[3].x, values[3].y);
       }
 
       return (values[0] + values[1] + values[2] + values[3])/i34;
@@ -1975,7 +1975,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else if constexpr(nchi ==  1) node.rough    = roughness[i];
    else if constexpr(nchi == -1) node.rmanning = rmanning[i];
    else assert(false && "populateNodes: selected nchi not implemented.");
-   
+
    if constexpr(ivcor == 1) 
    {  
       node.kb = kb[i];
@@ -2035,6 +2035,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 }
 
 
+
+
 __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
                                     double *node_coords, double *node_coords_ll, bool use_ll,
                                     double *wind_rotate_angle,   
@@ -2074,8 +2076,8 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
 
 
    // Counts the number of sides connected to each node
-   side.n1->numSides++;
-   side.n2->numSides++;
+   atomicAdd(&side.n1->numSides, 1);
+   atomicAdd(&side.n2->numSides, 1);
 
    // Side boundary type
    NodeBoundary *n1bnd = side.n1->nodeBnd;
@@ -2098,14 +2100,20 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
 
          assert (isLand == side.sideBnd->segment->isLand);
 
-         // Links each node boundary to the side boundary using the first available side boundary pointer
-         if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
-         else                            n1bnd->sideBnd2 = side.sideBnd;
+printf("idx_side: %d, side.sideBnd = %p, n1bnd->idx: %d, n2bnd->idx: %d, n1bnd->sideBnd1: %p, n1bnd->sideBnd2: %p, n2bnd->sideBnd1: %p, n2bnd->sideBnd2: %p\n", i, side.sideBnd, n1bnd->idx, n2bnd->idx, n1bnd->sideBnd1, n1bnd->sideBnd2, n2bnd->sideBnd1, n2bnd->sideBnd2);
 
-         if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
-         else                            n2bnd->sideBnd2 = side.sideBnd;
+         // Links each node boundary to the side boundary using the first available side boundary pointer
+         // if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
+         // else                            n1bnd->sideBnd2 = side.sideBnd;
+
+         // if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
+         // else                            n2bnd->sideBnd2 = side.sideBnd;
          
          side.sideBnd->side = &side;
+
+         // Links each node boundary to the side boundary using the first available side boundary pointer
+         n1bnd->linkSideBoundary(side.sideBnd);
+         n2bnd->linkSideBoundary(side.sideBnd);
 
       }
       else {
@@ -2358,7 +2366,7 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
    assert(iseg < nope && "iseg is out of bounds");
 
 found: // Jumped here when the node was found
-
+printf("idxNode: %d, iseg: %d, i: %d\n", idxNode, iseg, i);
    nodeBnd->isEssentialBC = true;
    nodeBnd->elbc = 0.0;
 
@@ -2623,7 +2631,9 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // I_2 and I_6 are not needed if essential b.c. are enforced by elminating rows and columns
    NodeBoundary *nodeBnd = node1->nodeBnd;
    if (nodeBnd != nullptr && nodeBnd != &(mesh->landBoundaryNode))  { 
-      // If it is an open boundary node...
+   // If it is an open boundary node...
+
+   // XXXXX DO THIS MORE NATURALLY IN A SideBnd kernel?
 
       // At least one open bnd side, maybe two
       for (int l=0; l<2; l++) { 
@@ -2631,7 +2641,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
          // Gets each of the sides sharing the node. 
          SideBoundary *sideBnd = nodeBnd->sideBnd(l);
 
-       
+    
 
          // XXXX CAN WE DO THIS MORE NATURALLY IN A SideBnd Loop?
          if (sideBnd != nullptr) {
@@ -3855,6 +3865,7 @@ extern "C" {
       const double vmag1 = length(side->btu[kb + 1]); //Backtracked velocity at the bottom level
       side->chi2 = side->Cd()*vmag1;
       side->chi  = side->chi2;
+
       if constexpr(iveg != 0) {
          const Node *n1 = side->n1;
          const Node *n2 = side->n2;
