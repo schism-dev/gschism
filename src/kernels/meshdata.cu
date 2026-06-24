@@ -1604,7 +1604,7 @@ __inline__ __device__ void Side::btrack(
  
       iter++;
 
-
+if (iter == 38) {printf("*****iter = %d, time_rm = %.17f\n", iter, time_rm); return;}
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
       assert(time_rm_3 > time_rm && "time_rm is not decreasing");
@@ -2308,8 +2308,11 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       const int id4 = elem.nxq(3 + j);
       if (elem.isTri()) {
          // This expression can be derived from the derivatives of the shape functions in area coordinates.
-         // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
-         // da1/dx = (y1 - y2)/(2*area)
+         // phi_0 = (x2 - x0)^(x - x0)/((x2 - x0)^(x1 - x0)), where ^ is the cross product
+         // phi_0 = (x2 - x0)^(x - x0)/(2*area)
+         // dphi_0/dx = (x2.y - x0.y)/(2*area)
+         // dphi_0/dy = (x0.x - x2.x)/(2*area)
+         // And so on for the other shape functions.
 
          // Get the horizontal coordinates of the nodes id2 and id3 in the local frame
          const Point2 p2 = elem.getLocalHorizontalNodePosition(id2);

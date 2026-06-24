@@ -3493,7 +3493,7 @@ __inline__ __device__ void Side::btrack(
  
       iter++;
 
-
+if (iter == 38) {printf("*****iter = %d, time_rm = %.17f\n", iter, time_rm); return;}
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
       assert(time_rm_3 > time_rm && "time_rm is not decreasing");

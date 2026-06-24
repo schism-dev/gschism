@@ -3493,7 +3493,7 @@
  3493:  
  3494:       iter++;
  3495: 
- 3496: 
+ 3496: if (iter == 38) {printf("*****iter = %d, time_rm = %.17f\n", iter, time_rm); return;}
  3497:       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
  3498: 
  3499:       assert(time_rm_3 > time_rm && "time_rm is not decreasing");
