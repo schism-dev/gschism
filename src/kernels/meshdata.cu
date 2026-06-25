@@ -925,8 +925,8 @@ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, 
 
 
    // ---- Clamp to [-1, 1] (safety net for points slightly outside) ----
-   xi  = fmin(1.0, fmax(xi,  -1.0));
-   eta = fmin(1.0, fmax(eta, -1.0));
+   xi  = clamp(xi,  -1.0, 1.0);
+   eta = clamp(eta, -1.0, 1.0);
 
    // ---- Shape functions ----
    // N0 = (1-xi)(1-eta)/4  at P0 (xi=-1, eta=-1)
@@ -964,6 +964,7 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       // Point2 x0, x1, x2;
       // getLocalHorizontalNodePositionsTri(x0, x1, x2);
 
+// XXXXX REWRITE THIS, maybe creating an overloaded version of getLocalHorizontalNodePositionsTri that takes a Side as an argument?
 Point2 x0 = nodes[0]->p;
 Point2 x1 = nodes[1]->p;
 Point2 x2 = nodes[2]->p;
