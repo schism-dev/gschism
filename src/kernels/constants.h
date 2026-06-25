@@ -38,7 +38,7 @@ constexpr int ihconsv = 0;     // Option to include conservative wind forcing
 constexpr int isconsv = 0;     // Option to include conservative wind forcing
 
 
-constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
+constexpr int nchi = 1;             // Option to compute drag coefficients chi and chi2
 constexpr double hmin_man = 1;  // Minimum water depth for Manning's friction
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
@@ -85,8 +85,8 @@ constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
 constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 43; // Number of land boundary segments
-constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
+constexpr int nland = 45; // Number of land boundary segments
+constexpr int mnlnd = 29002; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]

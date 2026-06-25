@@ -39,7 +39,7 @@ constexpr int ihconsv = 0;     // Option to include conservative wind forcing
 constexpr int isconsv = 0;     // Option to include conservative wind forcing
 
 
-constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
+constexpr int nchi = 1;             // Option to compute drag coefficients chi and chi2
 constexpr double hmin_man = 1;  // Minimum water depth for Manning's friction
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
@@ -86,8 +86,8 @@ constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
 constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 43; // Number of land boundary segments
-constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
+constexpr int nland = 45; // Number of land boundary segments
+constexpr int mnlnd = 29002; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
@@ -2611,6 +2611,7 @@ __inline__ __device__ double Element::computeSignedArea(void) const {
    Point2 x0, x1, x2, x3;
    getLocalHorizontalNodePositionsTri(x0, x1, x2);
 
+
    double res = signedArea(x0, x1, x2);
 
    // In the quad case we need to add the area of the other triangle.
@@ -2849,9 +2850,21 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
    if (isTri()) { // Triangular element
 
       // Horizontal local node coordinates. 
-      Point2 x0, x1, x2;
-      getLocalHorizontalNodePositionsTri(x0, x1, x2);
+      // Point2 x0, x1, x2;
+      // getLocalHorizontalNodePositionsTri(x0, x1, x2);
 
+Point2 x0 = nodes[0]->p;
+Point2 x1 = nodes[1]->p;
+Point2 x2 = nodes[2]->p;
+
+if constexpr(ics == 2) {
+const Point3 p0 = toPoint3(x0, nodes[0]->gz);
+const Point3 p1 = toPoint3(x1, nodes[1]->gz);
+const Point3 p2 = toPoint3(x2, nodes[2]->gz);
+x0 = toPoint2(origSide->toLocalFrame(p0));
+x1 = toPoint2(origSide->toLocalFrame(p1));
+x2 = toPoint2(origSide->toLocalFrame(p2));
+}
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
@@ -2900,8 +2913,24 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
       assert(isQuad() && "computeShapeCoords");
 
       // Horizontal local node coordinates. 
-      Point2 x0, x1, x2, x3;
-      getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3);
+      // Point2 x0, x1, x2, x3;
+      // getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3);
+Point2 x0 = nodes[0]->p;
+Point2 x1 = nodes[1]->p;
+Point2 x2 = nodes[2]->p;
+Point2 x3 = nodes[3]->p;
+
+if constexpr(ics == 2) {
+const Point3 p0 = toPoint3(x0, nodes[0]->gz);
+const Point3 p1 = toPoint3(x1, nodes[1]->gz);
+const Point3 p2 = toPoint3(x2, nodes[2]->gz);
+const Point3 p3 = toPoint3(x3, nodes[3]->gz);
+x0 = toPoint2(origSide->toLocalFrame(p0));
+x1 = toPoint2(origSide->toLocalFrame(p1));
+x2 = toPoint2(origSide->toLocalFrame(p2));
+x3 = toPoint2(origSide->toLocalFrame(p3));
+}
+
 
       const double a0 = signedArea(x0, x1, xt);
       const double a1 = signedArea(x1, x2, xt);
@@ -4197,8 +4226,11 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       const int id4 = elem.nxq(3 + j);
       if (elem.isTri()) {
          // This expression can be derived from the derivatives of the shape functions in area coordinates.
-         // a_1 = [(x2 - x)(y1 - y) - (x1 - x)(y2 - y)]/(2*area)
-         // da1/dx = (y1 - y2)/(2*area)
+         // phi_0 = (x2 - x0)^(x - x0)/((x2 - x0)^(x1 - x0)), where ^ is the cross product
+         // phi_0 = (x2 - x0)^(x - x0)/(2*area)
+         // dphi_0/dx = (x2.y - x0.y)/(2*area)
+         // dphi_0/dy = (x0.x - x2.x)/(2*area)
+         // And so on for the other shape functions.
 
          // Get the horizontal coordinates of the nodes id2 and id3 in the local frame
          const Point2 p2 = elem.getLocalHorizontalNodePosition(id2);
@@ -4210,7 +4242,12 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
          elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
 
       }
-      else  { // Quad; evaluate at centroid
+      else  { // Quad, the derivatives are evaluated at the centroid
+
+         // The derivation is complicated, but it starts by defining the shape functions in terms of the local coordinates (eta, xi).
+         // phi_0 = (1 + eta*eta_n(0))*(1 + xi*xi_n(0))/4
+         // ...
+         // and then the derivatives are computed at the centroid (eta = 0, xi = 0)
 
          // Get the horizontal coordinates of the nodes id2 and id4 in the local frame
          const Point2 p2 = elem.getLocalHorizontalNodePosition(id2);
@@ -4220,6 +4257,7 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
          const double dPhi_j_dy = (p4.x - p2.x)/(2*area); 
 
          elem.gradPhi[j] = {dPhi_j_dx, dPhi_j_dy};
+
       } // if Tri/Quad
 
    } // for j   
