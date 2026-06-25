@@ -3379,28 +3379,13 @@ __inline__ __device__ void Side::btrack(
       // Calculate timestep
       const double dtb = min(dtbk, time_rm);
 
-// if (iter >= 38) printf("AAAAA iter = %d, curElem->idx = %d, x0 = (%.17f, %.17f, %.17f), time_rm = %.17f, dtb = %.17f, dtbk = %.17f, u_int = (%.17f, %.17f, %.17f)\n", iter, curElem->idx, x0.x, x0.y, x0.z, time_rm, dtb, dtbk, u_int.x, u_int.y, u_int.z);
-
       // Next point in the backtracking curve
       xt = x0 - dtb*u_int;
-// if (jlev == 48 && idx == 1603507)   showPoints(x0, xt, jlev, this, 0xFFFF00u, 'x', 1, 0, 0);
-// // showPoints(x0, xt, jlev, this, 0xFF00FFu, 'o', 1, 15, iter);
-// // if ((jlev==45)) printf("jlev = %d, iter = %d, x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f)\n", jlev, iter, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z);
-// if ((jlev==45))
-// {
-// // const Point3 p1 = toLocalFrame(x0);
-// // const Point3 p2 = toLocalFrame(xt);
-// // printf("jlev = %d, iter = %d, p1 = (%.17f, %.17f, %.17f), p2 = (%.17f, %.17f, %.17f)\n", jlev, iter, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-// showPoints(x0, xt, jlev, this, 0x0000FFu, 'o', 1, 0, 0); 
-    
-// }
 
       double t, s; // parameters for the line segments p0pt and p1p2
       Side *lastCrossSide = nullptr;
       const bool found = celestialWalk(curElem, x0, xt, this, lastCrossSide, jlev);
 
-
-// if (iter >= 38) printf("BBBBB idx = %d, jlev = %d, lastCrossSide->idx = %d, x0 = (%.17f, %.17f, %.17f), xt = (%.17f, %.17f, %.17f), iter = %d, curElem->idx = %d, time_rm = %.17f, dtb = %.17f, dtbk = %.17f, u_int = (%.17f, %.17f, %.17f)\n", idx, jlev, lastCrossSide->idx, x0.x, x0.y, x0.z, xt.x, xt.y, xt.z, iter, curElem->idx, time_rm, dtb, dtbk, u_int.x, u_int.y, u_int.z);
 
       if (time_rm_3 <= time_rm) {
       // If backtracking gets stuck, we stop the backtracking and use the velocity at the last x0.
@@ -3471,10 +3456,7 @@ __inline__ __device__ void Side::btrack(
 
          }
 
-         
-         // else printf("AAAAAAA idx = %d, jlev = %d, t = %.17f, denom = %.17f\n", idx, jlev, t, denom);
          assert(curElem!=nullptr && !curElem->isDry && "curElem is nullptr or dry");
-
 
 
          // We update the new target point to be right at the intersection point,
@@ -3482,9 +3464,7 @@ __inline__ __device__ void Side::btrack(
          time_rm -= s*dtb;
          xt = toPoint3(p1 + t*v2, x0.z + s*(xt.z - x0.z)); // I use p1,p2 to compute the intersection point to ensure that it is on the boundary, but the z-coordinate is the same as x0.z
 
-// Point3 xct = {curElem->center.x, curElem->center.y, curElem->centerZ()};
-// xct = toLocalFrame(xct);
-// xt = (1-0.00001)*xt + 0.00001*xct;
+
          // If it is an open boundary, just exits the loop. No sliding along the boundary is performed.
          if (lastCrossSide->sideBnd!=nullptr && !lastCrossSide->sideBnd->segment->isLand) break;
 
@@ -3512,7 +3492,6 @@ __inline__ __device__ void Side::btrack(
       // If the velocity is too small, we stop the backtracking
       const double vmag2 = norm2(toVector2(u_int));
       if (vmag2 <= velmin_btrack_sq)  {
-
          time_rm = 0.0; 
          return; 
       }
@@ -3522,6 +3501,7 @@ __inline__ __device__ void Side::btrack(
  
       iter++;
 
+// XXXXXXXXXXXXXXXXX
 if (iter == 38) {printf("*****iter = %d, time_rm = %.17f\n", iter, time_rm); return;}
       assert(iter < MAX_ITERATIONS && "Max iterations reached in btrack");
 
@@ -4744,21 +4724,17 @@ extern "C" {
 
 
       for (int k = kb; k < nvrt; k++) {
-      //  Initialize (xt,yt,zt), nnel and vel.
       //  For ics=2, the coordinates are all in the side's local frame
-      //  Caution! nnel must be initialized inside this loop as it is updated inside.
 
          const int iadvf = side->iadv();  // Advection flag   
          assert(nadv == 1 && "Advection flag is only implemented for nadv = 1");
 
          const double vmag2 = norm2(side->u2[k]);
 
-         if (vmag2 <= velmin_btrack_sq) {  // XXXXXX REPEATED?
+         if (vmag2 <= velmin_btrack_sq) {  
             // No activity 
 
             side->btu[k] = side->u2[k];  // I don't think this is necessary because it has already been set to this value XXXX
-// addDebugPlot(side->center, side->center, 0x00000F, '+');     
-
             
          } else {  // do btrack
 
@@ -4768,6 +4744,7 @@ extern "C" {
             // The gradient at a side is the average of the gradients at the elements sharing the side.
             double suma = 0.0;
             int icount = 0;
+            #pragma unroll
             for (int l=0; l<2; l++) {
             // For each element sharing the side...
 
@@ -4783,6 +4760,7 @@ extern "C" {
 
                double utmp[4];
                double vtmp[4];
+               #pragma unroll
                for (int j = 0; j < elem->i34; j++) {
 
                   const Node *node = elem->nodes[j];
@@ -4804,7 +4782,7 @@ extern "C" {
                const Vector2 grad_v = elem->grad2(vtmp);
    
                suma += dt*sqrt(dot(grad_u, grad_u) + dot(grad_v, grad_v));
-            } // for ii
+            } // for l
 
             assert(icount > 0 && "Impossible 77");
 
