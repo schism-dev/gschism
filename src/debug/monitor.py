@@ -461,13 +461,13 @@ def gdb_sanity_check(expected_it):
     """Confirm Fortran is stopped at the expected time step."""
     it_val = evaluate_gdb_expression("it", timeout=10.0)
     if it_val is None:
-        _gdb_log("sanity", "could not read `it` — inferior may still be running")
+        _gdb_log("sanity", "could not read `it` - inferior may still be running")
         _gdb_log("sanity", "hint: wait for breakpoint-hit before pressing 'c'")
         return False
     if str(it_val) != str(expected_it):
         _gdb_log(
             "sanity",
-            f"it={it_val!r} but expected {expected_it} — breakpoint condition may be wrong",
+            f"it={it_val!r} but expected {expected_it} - breakpoint condition may be wrong",
         )
         return False
     _gdb_log("sanity", f"it={it_val} matches expected iteration")
@@ -698,7 +698,7 @@ def fortranDebugPlot(it):
     # Print the debugging information
     print(f"Debugging information for iteration {it}:")
     if not gdb_sanity_check(it):
-        _gdb_log("compare", "skipping Fortran reads — GDB not at expected breakpoint")
+        _gdb_log("compare", "skipping Fortran reads - GDB not at expected breakpoint")
         return False
 
     for nodeIdx in nodesInfo:
@@ -1172,7 +1172,7 @@ def evaluate_gdb_expression(expression, timeout=10.0):
     full = response + extra
     _gdb_log("evaluate", f"timeout ({elapsed:.1f}s) for {expression!r}")
     if full.strip() == cmd or full.strip().endswith(cmd):
-        _gdb_log("evaluate", "only saw PTY echo — GDB may not have received the command yet")
+        _gdb_log("evaluate", "only saw PTY echo - GDB may not have received the command yet")
     else:
         print(f"  partial response: {_gdb_tail(full, 500)}")
     if extra and extra != response:

@@ -1250,7 +1250,7 @@ printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p
                   (unsigned long long)null,
                   (unsigned long long)sb) == (unsigned long long)null)
          return;
-      // both slots taken — OK if this side was already linked
+      // both slots taken. OK if this side was already linked
       assert(sideBnd1 == sb || sideBnd2 == sb);
    }
 
