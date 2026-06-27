@@ -488,15 +488,17 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Poin
       x2 = nodes[id3]->p;
 
    } else {
+      const Frame dstFrame = frame;  // I'm writing it this way in case I need to change the frame to another one later.
+
       const Vector3 c = {center.x, center.y, centerZ()}; // Element center
 
       const Point3 p0 = toPoint3(nodes[id1]->p, nodes[id1]->gz); // XXXXX use p3D or similar?
       const Point3 p1 = toPoint3(nodes[id2]->p, nodes[id2]->gz);
       const Point3 p2 = toPoint3(nodes[id3]->p, nodes[id3]->gz);
 
-      x0 = toVector2(frame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
-      x1 = toVector2(frame.G2L(p1 - c));
-      x2 = toVector2(frame.G2L(p2 - c));
+      x0 = toVector2(dstFrame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
+      x1 = toVector2(dstFrame.G2L(p1 - c));
+      x2 = toVector2(dstFrame.G2L(p2 - c));
 
    }
 
@@ -516,6 +518,8 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Poi
       x3 = nodes[3]->p;
 
    } else {
+      const Frame dstFrame = frame;  // I'm writing it this way in case I need to change the frame to another one later.
+
       const Vector3 c = {center.x, center.y, centerZ()}; // Element center
 
       const Point3 p0 = toPoint3(nodes[0]->p, nodes[0]->gz); // XXXXX use p3D or similar?
@@ -523,10 +527,10 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Poi
       const Point3 p2 = toPoint3(nodes[2]->p, nodes[2]->gz);
       const Point3 p3 = toPoint3(nodes[3]->p, nodes[3]->gz);
 
-      x0 = toVector2(frame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
-      x1 = toVector2(frame.G2L(p1 - c));
-      x2 = toVector2(frame.G2L(p2 - c));
-      x3 = toVector2(frame.G2L(p3 - c));
+      x0 = toVector2(dstFrame.G2L(p0 - c));  // Vectors are implicitly cast into points at the local frame centered at c
+      x1 = toVector2(dstFrame.G2L(p1 - c));
+      x2 = toVector2(dstFrame.G2L(p2 - c));
+      x3 = toVector2(dstFrame.G2L(p3 - c));
    }
 
 }
@@ -1056,8 +1060,20 @@ x3 = toPoint2(origSide->toLocalFrame(p3));
       // When to fix the negative shape coordinates?
       const bool fix = (fixNegshpCoord == EFixIf::fiOnlyInside && res) || (fixNegshpCoord == EFixIf::fiAnywhere);
 
-      double xi, eta;      
-      inverseBilinearQuad(xt, xi, eta, shpCoords);
+      double xi, eta;    
+
+      // Converts the point xt to the element frame coordinates and then to bilinear+shape coordinates.
+Point2 xt_elem = xt;
+if constexpr(ics == 2) {
+   assert(origSide != nullptr);
+   // 1) side local (horizontal) -> global 3D
+   const Point3 p_global =
+      toPoint3(origSide->center, origSide->centerZ())
+      + origSide->frame.L2G(toPoint3(xt, 0.0));
+   // 2) global -> element local horizontal
+   xt_elem = toVector2(toLocalFrame(p_global));
+}
+      inverseBilinearQuad(xt_elem, xi, eta, shpCoords);
 
       if (fix) {
          double xn[4] = {x0.x, x1.x, x2.x, x3.x};

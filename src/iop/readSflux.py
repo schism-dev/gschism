@@ -48,7 +48,7 @@ class DatasetInfo:
         
         self.name = name
         self.in_dir = in_dir
-        print(f'DatasetInfo: in_dir = {in_dir}, name = {name}, nodes.shape = {nodes.shape}')
+
         if nodes.size > 0:
             self.out_x = nodes[0, :]
             self.out_y = nodes[1, :]
