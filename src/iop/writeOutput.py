@@ -52,7 +52,6 @@ def writeOutput(it, core, opt):
     dt      = core.dt
     timesPerFile = ihfskip // nspool
 
-
     if (it % nspool) != 0:
         return
 
@@ -74,9 +73,9 @@ def writeOutput(it, core, opt):
 
     if dataC is None:
         return
-
+    
     outputTime -= time.perf_counter()
-
+    
 
     idxTime = ((it // nspool) - 1) % timesPerFile
 
@@ -144,7 +143,7 @@ def writeOutput(it, core, opt):
         min_depth_var[:] = 0.0001
 
         
-
+    
 
     # For each variable, get the data from GPU (using monitor) and store it in the NetCDF file.
     # Explicitly delete the data from CPU after storing it in the NetCDF file.
@@ -153,7 +152,7 @@ def writeOutput(it, core, opt):
     elevation_var = dataC.variables['elevation']
     elevation_var[idxTime, :] = eta_cpu
     del eta_cpu
-
+ 
 
     view = monitor.getNodeVar("u_air")
     u_air_cpu = view.get()
