@@ -12,8 +12,8 @@ from python.pcgsolver import PCGSolver
 from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 
-# pool = cp.cuda.MemoryPool()
-# cp.cuda.set_allocator(pool.malloc)
+pool = cp.cuda.MemoryPool()
+cp.cuda.set_allocator(pool.malloc)
 
 # For profiling
 from line_profiler import LineProfiler

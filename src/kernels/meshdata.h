@@ -675,6 +675,17 @@ struct Element {
       }
    }
 
+   __device__ __forceinline__ Point3 toGlobal(Point3 const& p) const {
+   // If ics == 2, convert the local point to a global point
+      
+      if constexpr (ics == 1) {
+         return p;
+      } else {
+         const Point3 c = {center.x, center.y, centerZ()};
+         return c + frame.L2G(p);
+      }
+   }
+
    __inline__ __device__ bool isTri (void) const { return i34 == 3; }
    __inline__ __device__ bool isQuad(void) const { return i34 == 4; }
 
@@ -741,7 +752,11 @@ struct Element {
    // "Local" horizontal coordinates at the nodes. They are computed from the 3D global node coordinates. For ics == 1 and 2
    // Local is in quotes because for ics == 1, the coordinates are unchanged. It just means that in these coordinates, the element is horizontal.
    __device__ __forceinline__ Point2 getLocalHorizontalNodePosition(int idxNode) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2, 
+                                                                       const Vector3& c, const Frame<ics>& dstFrame,int idx = 0) const;
    __device__ __forceinline__ void getLocalHorizontalNodePositionsTri (Point2 &x0, Point2 &x1, Point2 &x2, int idx = 0) const;
+   __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3,
+                                                                       const Vector3& c, const Frame<ics>& dstFrame) const;
    __device__ __forceinline__ void getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const;
 
 
@@ -783,7 +798,7 @@ struct Element {
 
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
-   __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const;
+   __forceinline__ __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const;
 
    __inline__ __device__ double computeSignedArea(void) const;
 
@@ -1088,6 +1103,15 @@ struct Side {
          const Point3 c = {center.x, center.y, centerZ()};
          const Point3 local = frame.G2L(p - c);
          return local;
+      }
+   }
+
+   __device__ __forceinline__ Point3 toGlobal(Point3 const& p) const {
+      if constexpr (ics == 1) {
+         return p;
+      } else {
+         const Point3 c = {center.x, center.y, centerZ()};
+         return c + frame.L2G(p);
       }
    }
 
@@ -1424,6 +1448,17 @@ struct Node {
          const Point3 c = {p.x, p.y, gz};
          const Point3 local = frame.G2L(p - c);
          return local;
+      }
+   }
+
+   __device__ __forceinline__ Point3 toGlobal(Point3 const& p) const {
+   // If ics == 2, convert the global point to the local frame
+      
+      if constexpr (ics == 1) {
+         return p;
+      } else {
+         const Point3 c = {p.x, p.y, gz};
+         return c + frame.L2G(p);
       }
    }
 

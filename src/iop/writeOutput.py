@@ -184,6 +184,12 @@ def writeOutput(it, core, opt):
     u_cpu = view[0,:,:].get()
     v_cpu = view[1,:,:].get()
 
+    import gc
+    gc.collect()
+    print(cp.get_default_memory_pool().used_bytes() / 1e6, "MB in CuPy pool")
+    cp.get_default_memory_pool().free_all_blocks()
+
+    return
     # Mask depth layers above kb (dry/above bed) as NaN
     kb_cpu = monitor.getNodeVar("kb").get()
     nvrt_u = u_cpu.shape[0]

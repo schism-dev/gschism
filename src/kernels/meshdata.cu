@@ -475,7 +475,8 @@ __device__ __forceinline__ Point2 Element::getLocalHorizontalNodePosition(int id
 }
 
 
-__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Point2 &x0, Point2 &x1, Point2 &x2, int idx) const {
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Point2 &x0, Point2 &x1, Point2 &x2, 
+                                                                            const Vector3& c, const Frame<ics>& dstFrame, int idx) const {
 // Performs "getLocalHorizontalNodePosition" for the three nodes of the triangle.
 
    const int id1 = idx;
@@ -488,9 +489,6 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Poin
       x2 = nodes[id3]->p;
 
    } else {
-      const Frame dstFrame = frame;  // I'm writing it this way in case I need to change the frame to another one later.
-
-      const Vector3 c = {center.x, center.y, centerZ()}; // Element center
 
       const Point3 p0 = toPoint3(nodes[id1]->p, nodes[id1]->gz); // XXXXX use p3D or similar?
       const Point3 p1 = toPoint3(nodes[id2]->p, nodes[id2]->gz);
@@ -504,7 +502,13 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Poin
 
 }
 
-__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3) const {
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsTri(Point2 &x0, Point2 &x1, Point2 &x2, int idx) const {
+   getLocalHorizontalNodePositionsTri(x0, x1, x2, {center.x, center.y, centerZ()}, frame, idx);
+}
+
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(
+            Point2 &x0, Point2 &x1, Point2 &x2, Point2 &x3,
+            const Vector3& c, const Frame<ics>& dstFrame) const {
 // Performs "getLocalHorizontalNodePosition" for the four nodes of the quad.
 
    assert(isQuad() && "getLocalHorizontalNodePositionsQuad only works for quads");
@@ -518,9 +522,6 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Poi
       x3 = nodes[3]->p;
 
    } else {
-      const Frame dstFrame = frame;  // I'm writing it this way in case I need to change the frame to another one later.
-
-      const Vector3 c = {center.x, center.y, centerZ()}; // Element center
 
       const Point3 p0 = toPoint3(nodes[0]->p, nodes[0]->gz); // XXXXX use p3D or similar?
       const Point3 p1 = toPoint3(nodes[1]->p, nodes[1]->gz);
@@ -533,6 +534,12 @@ __device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(Poi
       x3 = toVector2(dstFrame.G2L(p3 - c));
    }
 
+}
+
+__device__ __forceinline__ void Element::getLocalHorizontalNodePositionsQuad(
+   Point2& x0, Point2& x1, Point2& x2, Point2& x3) const
+{
+   getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3, {center.x, center.y, centerZ()}, frame);
 }
 
 
@@ -764,7 +771,7 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    return side->elems[1] == nullptr; 
 }
 
-__device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const {
+__forceinline__ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const {
    // Given a point p in the quad element returns the bilinear coordinates (xi,eta) and the shape coordinates shp[4]
    // For ics == 2, this function uses local frame coordinates.
 
@@ -961,32 +968,18 @@ __device__ bool Element::computeShapeCoords(Point2 &xt, double shpCoords[4], EFi
    // from the local frame, so use additional check.
 
 
+   Point3 origSideCenter = toPoint3(origSide->center, origSide->centerZ());
 
    if (isTri()) { // Triangular element
 
       // Horizontal local node coordinates. 
-      // Point2 x0, x1, x2;
-      // getLocalHorizontalNodePositionsTri(x0, x1, x2);
-
-// XXXXX REWRITE THIS, maybe creating an overloaded version of getLocalHorizontalNodePositionsTri that takes a Side as an argument?
-Point2 x0 = nodes[0]->p;
-Point2 x1 = nodes[1]->p;
-Point2 x2 = nodes[2]->p;
-
-if constexpr(ics == 2) {
-const Point3 p0 = toPoint3(x0, nodes[0]->gz);
-const Point3 p1 = toPoint3(x1, nodes[1]->gz);
-const Point3 p2 = toPoint3(x2, nodes[2]->gz);
-x0 = toPoint2(origSide->toLocalFrame(p0));
-x1 = toPoint2(origSide->toLocalFrame(p1));
-x2 = toPoint2(origSide->toLocalFrame(p2));
-}
+      Point2 x0, x1, x2;
+      getLocalHorizontalNodePositionsTri(x0, x1, x2, origSideCenter, origSide->frame);
 
       shpCoords[0] = signedArea(xt,x1,x2)/area;
       shpCoords[1] = signedArea(x0,xt,x2)/area; 
       shpCoords[2] = 1.0 - shpCoords[0] - shpCoords[1];
       shpCoords[3] = 0.0;
-
 
       double tmpmin = min3(shpCoords[0], shpCoords[1], shpCoords[2]);
       const bool res = (tmpmin >= -small);  
@@ -1028,25 +1021,9 @@ x2 = toPoint2(origSide->toLocalFrame(p2));
    else {
       assert(isQuad() && "computeShapeCoords");
 
-      // Horizontal local node coordinates. 
-      // Point2 x0, x1, x2, x3;
-      // getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3);
-Point2 x0 = nodes[0]->p;
-Point2 x1 = nodes[1]->p;
-Point2 x2 = nodes[2]->p;
-Point2 x3 = nodes[3]->p;
-
-if constexpr(ics == 2) {
-const Point3 p0 = toPoint3(x0, nodes[0]->gz);
-const Point3 p1 = toPoint3(x1, nodes[1]->gz);
-const Point3 p2 = toPoint3(x2, nodes[2]->gz);
-const Point3 p3 = toPoint3(x3, nodes[3]->gz);
-x0 = toPoint2(origSide->toLocalFrame(p0));
-x1 = toPoint2(origSide->toLocalFrame(p1));
-x2 = toPoint2(origSide->toLocalFrame(p2));
-x3 = toPoint2(origSide->toLocalFrame(p3));
-}
-
+      // Horizontal local node coordinates with respect to the original side.
+      Point2 x0, x1, x2, x3;
+      getLocalHorizontalNodePositionsQuad(x0, x1, x2, x3, origSideCenter, origSide->frame);
 
       const double a0 = signedArea(x0, x1, xt);
       const double a1 = signedArea(x1, x2, xt);
@@ -1063,16 +1040,10 @@ x3 = toPoint2(origSide->toLocalFrame(p3));
       double xi, eta;    
 
       // Converts the point xt to the element frame coordinates and then to bilinear+shape coordinates.
-Point2 xt_elem = xt;
-if constexpr(ics == 2) {
-   assert(origSide != nullptr);
-   // 1) side local (horizontal) -> global 3D
-   const Point3 p_global =
-      toPoint3(origSide->center, origSide->centerZ())
-      + origSide->frame.L2G(toPoint3(xt, 0.0));
-   // 2) global -> element local horizontal
-   xt_elem = toVector2(toLocalFrame(p_global));
-}
+      // Does nothing if ics == 1.
+      assert(origSide != nullptr);
+      Point2 xt_elem = toPoint2(toLocalFrame(origSide->toGlobal(toPoint3(xt, 0.0))));
+
       inverseBilinearQuad(xt_elem, xi, eta, shpCoords);
 
       if (fix) {
@@ -2125,15 +2096,6 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
          else          side.sideBnd->segment = &(localSegmentMem[isbs]);
 
          assert (isLand == side.sideBnd->segment->isLand);
-
-printf("idx_side: %d, side.sideBnd = %p, n1bnd->idx: %d, n2bnd->idx: %d, n1bnd->sideBnd1: %p, n1bnd->sideBnd2: %p, n2bnd->sideBnd1: %p, n2bnd->sideBnd2: %p\n", i, side.sideBnd, n1bnd->idx, n2bnd->idx, n1bnd->sideBnd1, n1bnd->sideBnd2, n2bnd->sideBnd1, n2bnd->sideBnd2);
-
-         // Links each node boundary to the side boundary using the first available side boundary pointer
-         // if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
-         // else                            n1bnd->sideBnd2 = side.sideBnd;
-
-         // if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
-         // else                            n2bnd->sideBnd2 = side.sideBnd;
          
          side.sideBnd->side = &side;
 
@@ -2401,7 +2363,7 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
    assert(iseg < nope && "iseg is out of bounds");
 
 found: // Jumped here when the node was found
-printf("idxNode: %d, iseg: %d, i: %d\n", idxNode, iseg, i);
+
    nodeBnd->isEssentialBC = true;
    nodeBnd->elbc = 0.0;
 
