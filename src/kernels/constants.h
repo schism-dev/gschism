@@ -4,7 +4,7 @@
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 constexpr double rad2deg = 180.0/3.14159265358979323846;
 
-constexpr int BLOCK_SIZE = 128;
+constexpr int BLOCK_SIZE = 256;
 
 constexpr int N_TRACERS = 2;
 

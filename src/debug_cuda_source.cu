@@ -5,7 +5,7 @@
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 constexpr double rad2deg = 180.0/3.14159265358979323846;
 
-constexpr int BLOCK_SIZE = 128;
+constexpr int BLOCK_SIZE = 256;
 
 constexpr int N_TRACERS = 2;
 
@@ -4020,15 +4020,6 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
          else          side.sideBnd->segment = &(localSegmentMem[isbs]);
 
          assert (isLand == side.sideBnd->segment->isLand);
-
-printf("idx_side: %d, side.sideBnd = %p, n1bnd->idx: %d, n2bnd->idx: %d, n1bnd->sideBnd1: %p, n1bnd->sideBnd2: %p, n2bnd->sideBnd1: %p, n2bnd->sideBnd2: %p\n", i, side.sideBnd, n1bnd->idx, n2bnd->idx, n1bnd->sideBnd1, n1bnd->sideBnd2, n2bnd->sideBnd1, n2bnd->sideBnd2);
-
-         // Links each node boundary to the side boundary using the first available side boundary pointer
-         // if (n1bnd->sideBnd1 == nullptr) n1bnd->sideBnd1 = side.sideBnd;
-         // else                            n1bnd->sideBnd2 = side.sideBnd;
-
-         // if (n2bnd->sideBnd1 == nullptr) n2bnd->sideBnd1 = side.sideBnd;
-         // else                            n2bnd->sideBnd2 = side.sideBnd;
          
          side.sideBnd->side = &side;
 
@@ -4296,7 +4287,7 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
    assert(iseg < nope && "iseg is out of bounds");
 
 found: // Jumped here when the node was found
-printf("idxNode: %d, iseg: %d, i: %d\n", idxNode, iseg, i);
+
    nodeBnd->isEssentialBC = true;
    nodeBnd->elbc = 0.0;
 
