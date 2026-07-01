@@ -102,7 +102,6 @@ constexpr double dtb_min = __DTB_MIN__;
 constexpr double dtb_max = __DTB_MAX__; 
 constexpr double velmin_btrack = __VELMIN_BTRACK__; // Minimum velocity for backtracking (m/s)
 constexpr double velmin_btrack_sq = velmin_btrack*velmin_btrack;
-constexpr double btrack_nudge = __BTRACK_NUDGE__;   // Nudging factor for backtracking
 
 constexpr int nadv = __NADV__; // Advection flag
 

@@ -190,7 +190,7 @@ def readParam(pathNamelist):
         'kr_co': 1,
         'rmaxvel': 5.0,
         'velmin_btrack': 1.0e-4,
-        'btrack_nudge': 9.013e-3,
+        'btrack_nudge': 9.013e-3, # Not used in gschism
         'ibtrack_test': 0,
         'irouse_test': 0,
         'inunfl': 0,
