@@ -11,6 +11,7 @@ import pybind11
 from python.pcgsolver import PCGSolver
 from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
+from iop.cudaKernelWrapper as ckw
 
 pool = cp.cuda.MemoryPool()
 cp.cuda.set_allocator(pool.malloc)
@@ -456,7 +457,7 @@ if __name__ == "__main__":
 
 
     # Get number of GPUs
-    n_gpus = cp.cuda.runtime.getDeviceCount()
+    n_gpus = ckw.configCuda.deviceCount
     print(f"Found {n_gpus} GPUs")
 
 
@@ -485,7 +486,7 @@ if __name__ == "__main__":
     numPartNodes = []
     numPartSides = []
     numPartBoundaryNodes = []
-    numPartBoundarySides = []
+    numPartBoundarySides = [] XXXXX
     for ipart, device_id in enumerate(range(n_gpus)):
 
         # Count the number of elements in the partition

@@ -1,7 +1,7 @@
 import os
 import sys
 
- 
+from iop.cudaKernelWrapper import initCudaDeviceConfig 
 from iop.cudamodule import CudaSourceManager 
 
 
@@ -79,9 +79,11 @@ solverCopyResult = None
 # test = None
 
 
-def initializeCudaKernelManager(_project_root):
+def initializeCudaKernelManager(_project_root, devices=None):
     global createMesh, getStructSizes
     global initTidalHarmonicConstituents, cuda_manager, project_root, mod
+
+    initCudaDeviceConfig(devices)
 
     project_root = _project_root
 
