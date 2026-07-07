@@ -106,7 +106,7 @@ def initializeCudaKernelManager(_project_root, devices=None):
         try:
             sizes = {'global': 1}
             createMesh     = mod.get_function('createMesh',     sizes, kernel_type='global')
-            getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='global')
+            getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='once')
             initTidalHarmonicConstituents = mod.get_function('initTidalHarmonicConstituents', sizes, kernel_type='global')
 
         except Exception as e:
@@ -215,7 +215,7 @@ def initializeCudaFunctions(sizes):
 
         # test = mod.get_function('test', sizes, kernel_type='global')
 
-        setupCGSolvers = mod.get_function('setupCGSolvers', sizes, kernel_type='nodes')
+        setupCGSolvers   = mod.get_function('setupCGSolvers', sizes, kernel_type='nodes')
         solverCopyResult = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
 
     except Exception as e:

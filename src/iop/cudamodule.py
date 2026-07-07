@@ -177,7 +177,7 @@ class CudaSourceManager:
             self.source = source
             self.manager = manager
             
-        def get_function(self, name, sizes,kernel_type):
+        def get_function(self, name, sizes, kernel_type):
             """Get a kernel function with error handling."""
             try:
                 func = self.module.get_function(name)

@@ -6180,6 +6180,7 @@ extern "C"  __global__ void destroyMeshCPU(void) {
 
 __global__ void getStructSizes(int* sizes)  {
    // Get the size of each struct. This is used to allocate memory for the structs in the host code.
+      printf(">>>>>*** C++ 3 getStructSizes, sizes = %p\n", sizes);
       sizes[0] = (int)sizeof(Node);
       sizes[1] = (int)sizeof(Element);
       sizes[2] = (int)sizeof(Side);

@@ -657,7 +657,7 @@ if __name__ == "__main__":
             globalElemIndices = cp.arange(numPartElements[ipart]).astype(cp.int32)[maskElemsPart]
             globalSideIndices = cp.arange(numPartSides   [ipart]).astype(cp.int32)[maskSidesPart]
 
-    sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
+    sizes = {'once': 1, 'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
              'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
     cufunc.initializeCudaFunctions(sizes)
 

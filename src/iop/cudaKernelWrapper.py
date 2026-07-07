@@ -51,7 +51,7 @@ class CudaKernelWrapper:
         """Execute the kernel on all devices"""
 
         numGPUs = configCuda.deviceCount
-        if numGPUs == 1:
+        if numGPUs == 1 or self.kernel_type == 'once':
             # Launch on one device only
             num_blocks = (self.num_items + self.threads_per_block - 1) // self.threads_per_block
             self.kernel_func((num_blocks,), (self.threads_per_block,), args)
