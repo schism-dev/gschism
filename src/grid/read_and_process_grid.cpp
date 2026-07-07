@@ -737,6 +737,91 @@ py::tuple toPyArray(const ArrayOfRows<T>& data) {
     return py::make_tuple(array, arrayIndices);
 }
 
+
+
+int findSideBoundaryType(int n1, int n2,
+                         const Array2D<int>& iond, const std::vector<int>& nond, int nope,
+                         const Array2D<int>& ilnd, const std::vector<int>& nlnd, int nland,
+                         bool& isLand)
+{
+    isLand = false;
+
+    // Check land segments
+    for (int i = 0; i < nland; i++) {
+        for (int j = 0; j < nlnd[i] - 1; j++) {
+            const int b1 = ilnd(i, j);
+            const int b2 = ilnd(i, j + 1);
+            if (b1 < 0 || b2 < 0) continue;
+            if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
+                isLand = true;
+                return i;   // land segment index
+            }
+        }
+    }
+
+    // Check open segments
+    for (int i = 0; i < nope; i++) {
+        for (int j = 0; j < nond[i] - 1; j++) {
+            const int b1 = iond(i, j);
+            const int b2 = iond(i, j + 1);
+            if (b1 < 0 || b2 < 0) continue;
+            if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
+                isLand = false;
+                return i;   // open segment index
+            }
+        }
+    }
+
+    return -1;  // not a boundary segment edge
+}
+
+
+void countPartitionSizes(
+    int nPartitions, int nElements, int nNodes, int nSides,
+    const std::vector<idx_t>& partElements,
+    const std::vector<int>& partNodes,
+    const std::vector<int>& partSides,
+    const std::vector<int>& isbnd,
+    const Array2D<int>& isidenode,
+    const Array2D<int>& iond, const std::vector<int>& nond, int nope,
+    const Array2D<int>& ilnd, const std::vector<int>& nlnd, int nland,
+    std::vector<int>& numPartElements,
+    std::vector<int>& numPartNodes,
+    std::vector<int>& numPartSides,
+    std::vector<int>& numPartBoundaryNodes,
+    std::vector<int>& numPartBoundarySides)
+{
+    std::fill(numPartElements.begin(), numPartElements.end(), 0);
+    std::fill(numPartNodes.begin(), numPartNodes.end(), 0);
+    std::fill(numPartSides.begin(), numPartSides.end(), 0);
+    std::fill(numPartBoundaryNodes.begin(), numPartBoundaryNodes.end(), 0);
+    std::fill(numPartBoundarySides.begin(), numPartBoundarySides.end(), 0);
+    for (int ie = 0; ie < nElements; ie++) {
+        const int p = static_cast<int>(partElements[ie]);
+        numPartElements[p]++;
+    }
+    for (int in = 0; in < nNodes; in++) {
+        const int p = partNodes[in];
+        numPartNodes[p]++;
+        if (isbnd[in] >= 0)  // open BC only; matches populateNodes
+            numPartBoundaryNodes[p]++;
+    }
+    for (int is = 0; is < nSides; is++) {
+        const int p = partSides[is];
+        numPartSides[p]++;
+        const int n1 = isidenode(0, is);
+        const int n2 = isidenode(1, is);
+        if (isbnd[n1] == internalNode || isbnd[n2] == internalNode)
+            continue;
+        bool isLand = false;
+        const int isbs = findSideBoundaryType(
+            n1, n2, iond, nond, nope, ilnd, nlnd, nland, isLand);
+        if (isbs >= 0)
+            numPartBoundarySides[p]++;
+    }
+}
+
+
 std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>,    // partElements
            py::array_t<int32_t>,    // partNodes
@@ -754,8 +839,13 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>,    // iond
            py::array_t<int32_t>,    // ilnd
            py::tuple,               // nodeNeighElems
-           py::tuple                // nodeNeighNodes
-           >
+           py::tuple,               // nodeNeighNodes
+           py::array_t<int32_t>,    // numPartElements
+           py::array_t<int32_t>,    // numPartNodes
+           py::array_t<int32_t>,    // numPartSides
+           py::array_t<int32_t>,    // numPartBoundaryNodes
+           py::array_t<int32_t>     // numPartBoundarySides
+        >
 readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPartitions, int ncor) {
 
     
@@ -1055,6 +1145,26 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
 
     partitionNodesAndSides(nElements, nNodes, nSides, elnode, i34, ic3, isdel, partElements, nodeNeighElems, partNodes, partSides);
 
+
+    // Count per-partition sizes for GPU allocation
+    std::vector<int> numPartElements(nPartitions, 0);
+    std::vector<int> numPartNodes(nPartitions, 0);
+    std::vector<int> numPartSides(nPartitions, 0);
+    std::vector<int> numPartBoundaryNodes(nPartitions, 0);
+    std::vector<int> numPartBoundarySides(nPartitions, 0);
+
+    countPartitionSizes(
+        nPartitions, nElements, nNodes, nSides,
+        partElements, partNodes, partSides,
+        isbnd, isidenode,
+        iond, nond, nope, ilnd, nlnd, nland,
+        numPartElements, numPartNodes, numPartSides,
+        numPartBoundaryNodes, numPartBoundarySides);
+printFormatted(ansi::green("******numPartElements = %d"), numPartElements[0]);
+printFormatted(ansi::green("******numPartNodes = %d"), numPartNodes[0]);
+printFormatted(ansi::green("******numPartSides = %d"), numPartSides[0]);
+printFormatted(ansi::green("******numPartBoundaryNodes = %d"), numPartBoundaryNodes[0]);
+printFormatted(ansi::green("******numPartBoundarySides = %d"), numPartBoundarySides[0]);
     // Read the longitude and latitude of the nodes if the file is present
     Array2D<double> nodeCoords_ll(0, 0);
     if (filename_ll != "" && ncor > 0) {
@@ -1121,7 +1231,12 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
         toPyArray(iond),
         toPyArray(ilnd),
         toPyArray(nodeNeighElems),
-        toPyArray(nodeNeighNodes)
+        toPyArray(nodeNeighNodes),
+        toPyArray(numPartElements),
+        toPyArray(numPartNodes),
+        toPyArray(numPartSides),
+        toPyArray(numPartBoundaryNodes),
+        toPyArray(numPartBoundarySides)
 
     );  
 }

@@ -4,7 +4,7 @@ mntracers = 30  # Maximum number of tracers, used only for dimensioning btrack a
 
 
 DEBUG = False
-VISTA = False 
+VISTA = True 
 WINDOWS = not VISTA
 
 if VISTA:

@@ -11,7 +11,7 @@ import pybind11
 from python.pcgsolver import PCGSolver
 from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
-from iop.cudaKernelWrapper as ckw
+import iop.cudaKernelWrapper as ckw
 
 pool = cp.cuda.MemoryPool()
 cp.cuda.set_allocator(pool.malloc)
@@ -238,11 +238,14 @@ if __name__ == "__main__":
     hgrid_ll_file = os.path.join(in_dir, 'hgrid.ll')
     vgrid_file    = os.path.join(in_dir, 'vgrid.in')
 
-    
-    numPartitions = 1
+    # Initialize the CUDA functions
+    cufunc.initializeCudaKernelManager(project_root)
+
+
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
-        nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes = \
-            module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions, namelist.opt.ncor)
+        nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes, \
+        numPartElements, numPartNodes, numPartSides, numPartBoundaryNodes, numPartBoundarySides = \
+            module.readHGrid(hgrid_file, hgrid_ll_file, ckw.configCuda.deviceCount, namelist.opt.ncor)
     
     sizeMatrix = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.
     totMatrixElements = nodeNeighNodes[0].size + sizeMatrix   # The total number of matrix elements is the number of node neighbors plus the number of nodes.
@@ -313,8 +316,7 @@ if __name__ == "__main__":
                      templatePath="kernels/constants_template.h", 
                      outputPath="kernels/constants.h")
     
-    # Initialize the CUDA functions
-    cufunc.initializeCudaKernelManager(project_root)
+ 
 
     
     # convert arrays to cupy
@@ -455,11 +457,7 @@ if __name__ == "__main__":
     # js         = cp.array(js)
     
 
-
-    # Get number of GPUs
-    n_gpus = ckw.configCuda.deviceCount
-    print(f"Found {n_gpus} GPUs")
-
+    print(f"Found {ckw.configCuda.deviceCount} GPUs")
 
     cufunc.initTidalHarmonicConstituents(bctides.amig, bctides.face, bctides.ff)
 
@@ -480,40 +478,40 @@ if __name__ == "__main__":
 
 
 
-    
+    # XXXXX Remember to remove
     # Compute the maximum number of nodes, elements, and sides per partition
-    numPartElements = []
-    numPartNodes = []
-    numPartSides = []
-    numPartBoundaryNodes = []
-    numPartBoundarySides = [] XXXXX
-    for ipart, device_id in enumerate(range(n_gpus)):
+    # numPartElements = []
+    # numPartNodes = []
+    # numPartSides = []
+    # numPartBoundaryNodes = []
+    # numPartBoundarySides = [] 
+    # for ipart, device_id in enumerate(ckw.configCuda.devices):
 
-        # Count the number of elements in the partition
-        numPartElements.append((partElements == ipart).sum().get())
-        print(f"Partition {ipart} has {numPartElements} elements")
+    #     # Count the number of elements in the partition
+    #     numPartElements.append((partElements == ipart).sum().get())
+    #     print(f"Partition {ipart} has {numPartElements} elements")
 
-        # Count the number of nodes in the partition
-        numPartNodes.append((partNodes == ipart).sum().get())
-        print(f"Partition {ipart} has {numPartNodes} nodes")
+    #     # Count the number of nodes in the partition
+    #     numPartNodes.append((partNodes == ipart).sum().get())
+    #     print(f"Partition {ipart} has {numPartNodes} nodes")
 
-        # Count the number of sides in the partition
-        numPartSides.append((partSides == ipart).sum().get())
-        print(f"Partition {ipart} has {numPartSides} sides")
+    #     # Count the number of sides in the partition
+    #     numPartSides.append((partSides == ipart).sum().get())
+    #     print(f"Partition {ipart} has {numPartSides} sides")
        
-        # Count the number of boundary nodes in the partition
-        # idxBndNodes = cp.unique(cp.concatenate([ilnd.flatten(), iond.flatten()]))
-        # XXXXX The whole computation of the number of boundary nodes and sides is wrong. 
-        print("REMEMBER TO FIX THIS*****")
-        idxBndNodes = cp.append(cp.unique(iond.flatten()), cp.unique(ilnd.flatten()))
-        idxBndNodes = idxBndNodes[idxBndNodes >= 0]
-        numPartBoundaryNodes.append((partNodes[idxBndNodes] == ipart).sum().get())
-        print(f"Partition {ipart} has {numPartBoundaryNodes} boundary nodes")
+    #     # Count the number of boundary nodes in the partition
+    #     # idxBndNodes = cp.unique(cp.concatenate([ilnd.flatten(), iond.flatten()]))
+    #     # XXXXX The whole computation of the number of boundary nodes and sides is wrong. 
+    #     print("REMEMBER TO FIX THIS*****")
+    #     idxBndNodes = cp.append(cp.unique(iond.flatten()), cp.unique(ilnd.flatten()))
+    #     idxBndNodes = idxBndNodes[idxBndNodes >= 0]
+    #     numPartBoundaryNodes.append((partNodes[idxBndNodes] == ipart).sum().get())
+    #     print(f"Partition {ipart} has {numPartBoundaryNodes} boundary nodes")
        
-        # Count the number of boundary sides in the partition
-        numPartBoundarySides.append((partSides[idxBndNodes] == ipart).sum().get())
-        # numPartBoundarySides.append((partSides[cp.unique(ilnd)] == ipart).sum().get())
-        print(f"Partition {ipart} has {numPartBoundarySides} boundary sides")
+    #     # Count the number of boundary sides in the partition
+    #     numPartBoundarySides.append((partSides[idxBndSides] == ipart).sum().get())
+    #     # numPartBoundarySides.append((partSides[cp.unique(ilnd)] == ipart).sum().get())
+    #     print(f"Partition {ipart} has {numPartBoundarySides} boundary sides")
 
 
     monitor.init(numNodes, numElements, numSides, numPartBoundarySides, nvrt) # XXX not valid for multiGPU
@@ -525,7 +523,7 @@ if __name__ == "__main__":
     boundaryNodesMemList = []
     boundarySidesMemList = []
     segmentMemList       = []
-    for ipart, device_id in enumerate(range(n_gpus)):
+    for ipart, device_id in enumerate(ckw.configCuda.devices):
         with cp.cuda.Device(device_id):
 
             # Create the local device arrays.
@@ -569,7 +567,7 @@ if __name__ == "__main__":
     partCoeffMatrixMem    = []
 
     # Create the local node and element neighbor arrays
-    for ipart, device_id in enumerate(range(n_gpus)):
+    for ipart, device_id in enumerate(ckw.configCuda.devices):
         with cp.cuda.Device(device_id):
 
             maskNodesPart = (partNodes == ipart)
@@ -604,7 +602,7 @@ if __name__ == "__main__":
         localElemPart    = cp.zeros(numElements, dtype=cp.int32)
         localSidePart    = cp.zeros(numSides,    dtype=cp.int32)
         
-        for ipart in range(n_gpus):
+        for ipart in range(ckw.configCuda.deviceCount):
             
             maskNodesPart = (partNodes == ipart)
             maskElemsPart = (partElements == ipart)
@@ -620,7 +618,7 @@ if __name__ == "__main__":
             localElemPart   [maskElemsPart] = ipart
             localSidePart   [maskSidesPart] = ipart
 
-    for ipart in range(n_gpus):
+    for ipart in range(ckw.configCuda.deviceCount):
         with cp.cuda.Device(ipart):
 
             maskNodesPart = (partNodes == ipart)
@@ -664,7 +662,7 @@ if __name__ == "__main__":
     cufunc.initializeCudaFunctions(sizes)
 
 
-    for ipart in range(n_gpus):
+    for ipart in range(ckw.configCuda.deviceCount):
         with cp.cuda.Device(ipart):
             # Adds additional information to the mesh object. This function deals with the actual data
             # of the mesh, including the nodes, elements, sides, and their neighbors.
