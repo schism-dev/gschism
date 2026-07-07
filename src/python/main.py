@@ -458,9 +458,9 @@ if __name__ == "__main__":
     
 
     print(f"Found {ckw.configCuda.deviceCount} GPUs")
-
+    print(">>>> 1")
     cufunc.initTidalHarmonicConstituents(bctides.amig, bctides.face, bctides.ff)
-
+    print(">>>> 2")
     # This list stores references to the device memory of the local arrays. This ensures that the memory is not freed until the mesh is destroyed.
     deviceMemRef = [ztot, sigma, cs, dcs]
 
@@ -468,14 +468,14 @@ if __name__ == "__main__":
     numNodes = nodeCoords.shape[1]
     numElements = elnode.shape[1]
     numSides = isdel.shape[1]  
- 
+    print(f">>>>> 3 numNodes = {numNodes}, numElements = {numElements}, numSides = {numSides}")
 
     
     # Get the struct sizes
     sizes = cp.zeros(6, dtype=cp.int32)
     cufunc.getStructSizes(sizes)
     [nodesSize, elemsSize, sidesSize, boundaryNodesSize, sideBoundarySize, segmentSize] = sizes.tolist()
-
+    print(f">>>>> 4 nodesSize = {nodesSize}, elemsSize = {elemsSize}, sidesSize = {sidesSize}, boundaryNodesSize = {boundaryNodesSize}, sideBoundarySize = {sideBoundarySize}, segmentSize = {segmentSize}")
 
 
     # XXXXX Remember to remove
@@ -515,7 +515,7 @@ if __name__ == "__main__":
 
 
     monitor.init(numNodes, numElements, numSides, numPartBoundarySides, nvrt) # XXX not valid for multiGPU
-    
+    print(f">>>>> 5 monitor initialized")
        
     nodesMemList = []
     elemsMemList = []
@@ -525,7 +525,7 @@ if __name__ == "__main__":
     segmentMemList       = []
     for ipart, device_id in enumerate(ckw.configCuda.devices):
         with cp.cuda.Device(device_id):
-
+            print(f">>>>> 6 device {device_id} initialized")
             # Create the local device arrays.
             i34_part    = cp.array(i34[partElements == ipart])
             elnode_part = cp.array(elnode[:, partElements == ipart])
