@@ -19,7 +19,7 @@ configCuda = None
 def initCudaDeviceConfig(devices = None):
     global configCuda
 
-    devices = (0,)   # THIS IS FOR TESTING ONLY XXXXXXX
+    devices = (0, 1)   # THIS IS FOR TESTING ONLY XXXXXXX
 
     configCuda = CudaDeviceConfig(devices)
     return configCuda
