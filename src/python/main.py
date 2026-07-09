@@ -320,40 +320,38 @@ if __name__ == "__main__":
 
     
     # convert arrays to cupy
-    for ipart, device_id in enumerate(ckw.configCuda.devices):
-        with cp.cuda.Device(device_id):
-            i34                  = cp.array(i34,               dtype=cp.int32, order='F')
-            partElements         = cp.array(partElements,      dtype=cp.int32, order='F')
-            partNodes            = cp.array(partNodes,         dtype=cp.int32, order='F')
-            partSides            = cp.array(partSides,         dtype=cp.int32, order='F')
-            elnode               = cp.array(elnode,            dtype=cp.int32, order='F')
-            elside               = cp.array(elside,            dtype=cp.int32, order='F')
-            ic3                  = cp.array(ic3,               dtype=cp.int32, order='F')
-            isdel                = cp.array(isdel,             dtype=cp.int32, order='F')
-            isidenode            = cp.array(isidenode,         dtype=cp.int32, order='F')
-            isbnd                = cp.array(isbnd,             dtype=cp.int32, order='F')
-            nond                 = cp.array(nond,              dtype=cp.int32, order='F')
-            nlnd                 = cp.array(nlnd,              dtype=cp.int32, order='F')
-            iond                 = cp.array(iond,              dtype=cp.int32, order='F')
-            ilnd                 = cp.array(ilnd,              dtype=cp.int32, order='F')
-            nodeNeighNodesStart  = cp.array(nodeNeighNodes[1], dtype=cp.int32, order='F')
-            nodeNeighNodes       = cp.array(nodeNeighNodes[0], dtype=cp.int32, order='F')
-            nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32, order='F')
-            nodeNeighElems       = cp.array(nodeNeighElems[0], dtype=cp.int32, order='F')
-            nodeCoords           = cp.array(nodeCoords,        dtype=cp.float64, order='F')
-            nodeCoords_ll        = cp.array(nodeCoords_ll,     dtype=cp.float64, order='F')
-            wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
+    i34                  = cp.array(i34,               dtype=cp.int32, order='F')
+    partElements         = cp.array(partElements,      dtype=cp.int32, order='F')
+    partNodes            = cp.array(partNodes,         dtype=cp.int32, order='F')
+    partSides            = cp.array(partSides,         dtype=cp.int32, order='F')
+    elnode               = cp.array(elnode,            dtype=cp.int32, order='F')
+    elside               = cp.array(elside,            dtype=cp.int32, order='F')
+    ic3                  = cp.array(ic3,               dtype=cp.int32, order='F')
+    isdel                = cp.array(isdel,             dtype=cp.int32, order='F')
+    isidenode            = cp.array(isidenode,         dtype=cp.int32, order='F')
+    isbnd                = cp.array(isbnd,             dtype=cp.int32, order='F')
+    nond                 = cp.array(nond,              dtype=cp.int32, order='F')
+    nlnd                 = cp.array(nlnd,              dtype=cp.int32, order='F')
+    iond                 = cp.array(iond,              dtype=cp.int32, order='F')
+    ilnd                 = cp.array(ilnd,              dtype=cp.int32, order='F')
+    nodeNeighNodesStart  = cp.array(nodeNeighNodes[1], dtype=cp.int32, order='F')
+    nodeNeighNodes       = cp.array(nodeNeighNodes[0], dtype=cp.int32, order='F')
+    nodeNeighElemsStart  = cp.array(nodeNeighElems[1], dtype=cp.int32, order='F')
+    nodeNeighElems       = cp.array(nodeNeighElems[0], dtype=cp.int32, order='F')
+    nodeCoords           = cp.array(nodeCoords,        dtype=cp.float64, order='F')
+    nodeCoords_ll        = cp.array(nodeCoords_ll,     dtype=cp.float64, order='F')
+    wind_rotate_angle    = cp.array(wind_rotate_angle, dtype=cp.float64, order='F')
 
-            ztot                 = cp.array(ztot,              dtype=cp.float64, order='F')
-            sigma_lcl            = cp.array(sigma_lcl,         dtype=cp.float64, order='F') 
-            kb                   = cp.array(kb,                dtype=cp.int32,   order='F')
-            sigma                = cp.array(sigma,             dtype=cp.float64, order='F')
-            cs                   = cp.array(cs,                dtype=cp.float64, order='F')
-            dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
+    ztot                 = cp.array(ztot,              dtype=cp.float64, order='F')
+    sigma_lcl            = cp.array(sigma_lcl,         dtype=cp.float64, order='F') 
+    kb                   = cp.array(kb,                dtype=cp.int32,   order='F')
+    sigma                = cp.array(sigma,             dtype=cp.float64, order='F')
+    cs                   = cp.array(cs,                dtype=cp.float64, order='F')
+    dcs                  = cp.array(dcs,               dtype=cp.float64, order='F')
 
-            drag                 = cp.array(drag,              dtype=cp.float64, order='F')
-            roughness            = cp.array(roughness,         dtype=cp.float64, order='F')
-            rmanning             = cp.array(rmanning,          dtype=cp.float64, order='F')
+    drag                 = cp.array(drag,              dtype=cp.float64, order='F')
+    roughness            = cp.array(roughness,         dtype=cp.float64, order='F')
+    rmanning             = cp.array(rmanning,          dtype=cp.float64, order='F')
 
 
 
@@ -456,8 +454,7 @@ if __name__ == "__main__":
         plt.show()
         plt.pause(0)
 
-    # js         = cp.array(js)
-    
+   
 
     print(f"Found {ckw.configCuda.deviceCount} GPUs")
     print(">>>> 1")
