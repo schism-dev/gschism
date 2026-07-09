@@ -619,7 +619,7 @@ if __name__ == "__main__":
             localSidePart   [maskSidesPart] = ipart
 
     for ipart in range(ckw.configCuda.deviceCount):
-        with cp.cuda.Device(ipart):
+        with cp.cuda.Device(ckw.configCuda.devices[ipart]):
 
             maskNodesPart = (partNodes == ipart)
             maskElemsPart = (partElements == ipart)
