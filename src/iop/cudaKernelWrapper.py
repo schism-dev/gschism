@@ -35,12 +35,12 @@ class CudaKernelWrapper:
             kernel_type: Type of kernel ('global', 'nodes', 'elements', 'sides'). Can also
                          include 'onlycurrent' to indicate that the kernel should only be executed on the current device.
         """
-
+        print(f"kernel_type = {kernel_type}")
         tags = [t.strip().lower() for t in kernel_type.split(',') if t.strip()]
-
+        print(f"tags = {tags}")
         self.onlyCurrent = 'onlycurrent' in tags
         tags.remove('onlycurrent')
-
+        print(f"tags = {tags}")
         if len(tags) > 1:
             raise ValueError(f"Too many tags in kernel type: {kernel_type}")
 
