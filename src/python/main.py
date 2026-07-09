@@ -655,9 +655,13 @@ if __name__ == "__main__":
             print(f"numPartNodes   [ipart] = {numPartNodes   [ipart]}, size of maskNodesPart = {maskNodesPart.size}")
             print(f"numPartElements[ipart] = {numPartElements[ipart]}, size of maskElemsPart = {maskElemsPart.size}")
             print(f"numPartSides   [ipart] = {numPartSides   [ipart]}, size of maskSidesPart = {maskSidesPart.size}")
-            globalNodeIndices = cp.arange(numPartNodes   [ipart]).astype(cp.int32)[maskNodesPart]
-            globalElemIndices = cp.arange(numPartElements[ipart]).astype(cp.int32)[maskElemsPart]
-            globalSideIndices = cp.arange(numPartSides   [ipart]).astype(cp.int32)[maskSidesPart]
+            globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
+            globalElemIndices = cp.arange(maskElemsPart.size).astype(cp.int32)[maskElemsPart]
+            globalSideIndices = cp.arange(maskSidesPart.size).astype(cp.int32)[maskSidesPart]
+
+            # Check sizes
+            if globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart]:
+                raise ValueError(f"globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart] for partition {ipart}")
 
     sizes = {'once': 1, 'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
              'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
