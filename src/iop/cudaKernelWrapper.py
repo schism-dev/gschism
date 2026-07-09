@@ -39,7 +39,8 @@ class CudaKernelWrapper:
         tags = [t.strip().lower() for t in kernel_type.split(',') if t.strip()]
 
         self.onlyCurrent = 'onlycurrent' in tags
-        tags.remove('onlycurrent')
+        if self.onlyCurrent:
+            tags.remove('onlycurrent')
 
         if len(tags) > 1 or len(tags) == 0:
             raise ValueError(f"Too many tags in kernel type: {kernel_type}")
