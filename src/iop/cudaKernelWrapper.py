@@ -41,8 +41,8 @@ class CudaKernelWrapper:
         self.onlyCurrent = 'onlycurrent' in tags
         tags.remove('onlycurrent')
 
-        if len(tags) > 1:
-            raise ValueError(f"Too many tags in kernel type: {kernel_type}")
+        if len(tags) > 1 or len(tags) == 0:
+            raise ValueError(f"Invalid tags in kernel type: {kernel_type}")
 
         self.n_gpus = configCuda.deviceCount
         self.kernel_func = kernel_func
