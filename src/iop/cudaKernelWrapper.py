@@ -42,7 +42,7 @@ class CudaKernelWrapper:
         tags.remove('onlycurrent')
 
         if len(tags) > 1 or len(tags) == 0:
-            raise ValueError(f"Invalid tags in kernel type: {kernel_type}")
+            raise ValueError(f"Too many tags in kernel type: {kernel_type}")
 
         self.n_gpus = configCuda.deviceCount
         self.kernel_func = kernel_func
@@ -50,8 +50,8 @@ class CudaKernelWrapper:
         
         # Set number of items and threads based on kernel type
 
-        self.num_items = sizes[kernel_type]
-        if kernel_type != 'global':
+        self.num_items = sizes[self.kernel_type]
+        if self.kernel_type != 'global':
             self.threads_per_block = THREADS_PER_BLOCK
         else:
             self.threads_per_block = 1
