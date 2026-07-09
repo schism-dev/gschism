@@ -104,7 +104,7 @@ def initializeCudaKernelManager(_project_root, devices=None):
         
         # Get kernel functions with better error handling
         try:
-            sizes = {'once': 1}
+            sizes = {'once': 1, 'global': 1}
             createMesh     = mod.get_function('createMesh',     sizes, kernel_type='once')
             getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='once')
             initTidalHarmonicConstituents = mod.get_function('initTidalHarmonicConstituents', sizes, kernel_type='global')
