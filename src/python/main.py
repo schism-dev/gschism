@@ -622,8 +622,10 @@ if __name__ == "__main__":
 
             maskNodesPart = (partNodes == ipart)
             maskElemsPart = (partElements == ipart)
-            nodeIndicesPart = cp.where(maskNodesPart)[0].astype(cp.int32)
-
+            maskSidesPart = (partSides == ipart)
+            # nodeIndicesPart = cp.where(maskNodesPart)[0].astype(cp.int32)
+            # elemIndicesPart = cp.where(maskElemsPart)[0].astype(cp.int32)
+            # sideIndicesPart = cp.where(maskSidesPart)[0].astype(cp.int32)
             i34Part    = i34[maskElemsPart].copy(order='F')
             elnodePart = elnode[:, maskElemsPart].copy(order='F')
             elsidePart = elside[:, maskElemsPart].copy(order='F')
