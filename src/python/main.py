@@ -668,7 +668,7 @@ if __name__ == "__main__":
                 print(f"globalSideIndices.size = {globalSideIndices.size}, numPartSides[ipart] = {numPartSides[ipart]}")
                 raise ValueError(f"globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart] for partition {ipart}")
 
-    sizes = {'once': 1, 'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
+    sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
              'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
     cufunc.initializeCudaFunctions(sizes)
 

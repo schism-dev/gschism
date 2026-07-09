@@ -104,9 +104,9 @@ def initializeCudaKernelManager(_project_root, devices=None):
         
         # Get kernel functions with better error handling
         try:
-            sizes = {'once': 1, 'global': 1}
-            createMesh     = mod.get_function('createMesh',     sizes, kernel_type='once')
-            getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='once')
+            sizes = {'global': 1}
+            createMesh     = mod.get_function('createMesh',     sizes, kernel_type='global,onlycurrent')
+            getStructSizes = mod.get_function('getStructSizes', sizes, kernel_type='global,onlycurrent')
             initTidalHarmonicConstituents = mod.get_function('initTidalHarmonicConstituents', sizes, kernel_type='global')
 
         except Exception as e:
@@ -142,12 +142,12 @@ def initializeCudaFunctions(sizes):
 
     # Get kernel functions with better error handling
     try:
-        populateMesh                        = mod.get_function('populateMesh',                        sizes, kernel_type='global')
-        populateNodes                       = mod.get_function('populateNodes',                       sizes, kernel_type='nodes')
-        populateSides                       = mod.get_function('populateSides',                       sizes, kernel_type='sides')
-        populateElements                    = mod.get_function('populateElements',                    sizes, kernel_type='elements')
-        populateBoundaryNodes               = mod.get_function('populateBoundaryNodes',               sizes, kernel_type='nodeBnd')
-        populateBoundarySideLinks           = mod.get_function('populateBoundarySideLinks',           sizes, kernel_type='sideBnd')
+        populateMesh                        = mod.get_function('populateMesh',                        sizes, kernel_type='global,onlycurrent')
+        populateNodes                       = mod.get_function('populateNodes',                       sizes, kernel_type='nodes,onlycurrent')
+        populateSides                       = mod.get_function('populateSides',                       sizes, kernel_type='sides,onlycurrent')
+        populateElements                    = mod.get_function('populateElements',                    sizes, kernel_type='elements,onlycurrent')
+        populateBoundaryNodes               = mod.get_function('populateBoundaryNodes',               sizes, kernel_type='nodeBnd,onlycurrent')
+        populateBoundarySideLinks           = mod.get_function('populateBoundarySideLinks',           sizes, kernel_type='sideBnd,onlycurrent')
 
         scaleGravity                        = mod.get_function('scaleGravity',                        sizes, kernel_type='nodes')
         setWinds                            = mod.get_function('setWinds',                            sizes, kernel_type='nodes')

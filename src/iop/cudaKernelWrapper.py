@@ -32,8 +32,20 @@ class CudaKernelWrapper:
         
         Args:
             kernel_func: CuPy kernel function from get_function()
-            kernel_type: Type of kernel ('global', 'nodes', 'elements', 'sides')
+            kernel_type: Type of kernel ('global', 'nodes', 'elements', 'sides'). Can also
+                         include 'onlycurrent' to indicate that the kernel should only be executed on the current device.
         """
+
+        tags = [t.strip().lower() for t in kernel_type.split(',') if t.strip()]
+
+        self.onlyCurrent = 'onlycurrent' in tags
+        tags.remove('onlycurrent')
+
+        if len(tags) > 1:
+            raise ValueError(f"Too many tags in kernel type: {kernel_type}")
+
+        self.kernel_type = tags[0]
+
         self.n_gpus = configCuda.deviceCount
         self.kernel_func = kernel_func
         self.kernel_type = kernel_type
@@ -51,7 +63,7 @@ class CudaKernelWrapper:
         """Execute the kernel on all devices"""
 
         numGPUs = configCuda.deviceCount
-        if numGPUs == 1 or self.kernel_type == 'once':
+        if numGPUs == 1 or self.onlyCurrent:
             # Launch on one device only
             num_blocks = (self.num_items + self.threads_per_block - 1) // self.threads_per_block
             self.kernel_func((num_blocks,), (self.threads_per_block,), args)
