@@ -36,7 +36,7 @@ class CudaKernelWrapper:
                          include 'onlycurrent' to indicate that the kernel should only be executed on the current device.
         """
 
-        tags = [t.strip().lower() for t in kernel_type.split(',') if t.strip()]
+        tags = [t.strip() for t in kernel_type.split(',') if t.strip()]
 
         self.onlyCurrent = 'onlycurrent' in tags
         if self.onlyCurrent:

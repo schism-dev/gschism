@@ -654,9 +654,6 @@ if __name__ == "__main__":
                               monitor.debugPlot.data.ptr, monitor.debugPlotIdx.data.ptr)
             
             # Given a local index, this array will return the global index
-            print(f"numPartNodes   [ipart] = {numPartNodes   [ipart]}, size of maskNodesPart = {maskNodesPart.size}")
-            print(f"numPartElements[ipart] = {numPartElements[ipart]}, size of maskElemsPart = {maskElemsPart.size}")
-            print(f"numPartSides   [ipart] = {numPartSides   [ipart]}, size of maskSidesPart = {maskSidesPart.size}")
             globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
             globalElemIndices = cp.arange(maskElemsPart.size).astype(cp.int32)[maskElemsPart]
             globalSideIndices = cp.arange(maskSidesPart.size).astype(cp.int32)[maskSidesPart]
