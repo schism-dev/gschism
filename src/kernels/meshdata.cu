@@ -1898,6 +1898,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    node.idx = iglobal;
 
+   printf("populateNodes: i = %d, iglobal = %d\n", i, iglobal);
+
    // It is important to differentiate between the global and local "start" indices because they
    // play different, but related, roles in this code. The global "start" indices are used
    // for the CSR-like indexing of the node and element neighbor arrays in the "global"
