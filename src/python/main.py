@@ -697,6 +697,7 @@ if __name__ == "__main__":
                        localNodePart, localElemPart, localSidePart,
                        drag, roughness, rmanning, kb, sigma_lcl)
 
+            print(f"HERE device {ipart} populateSides")
             cufunc.populateSides(i34Part, sharedIdxSideBoundary,
                        nodeCoordsPart, nodeCoords_llPart, use_ll,
                        windRotateAnglePart,   
@@ -709,6 +710,7 @@ if __name__ == "__main__":
                        localNodePart, localElemPart, localSidePart,
                        drag, roughness);        
 
+            print(f"HERE device {ipart} populateElements")
             cufunc.populateElements(i34Part, elnodePart, elsidePart,
                        nodeCoordsPart, nodeCoords_llPart, use_ll,
                        windRotateAnglePart,   
