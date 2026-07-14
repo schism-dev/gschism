@@ -684,9 +684,9 @@ if __name__ == "__main__":
 
             # Check sizes
             if globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart]:
-                print(f"globalNodeIndices.size = {globalNodeIndices.size}, numPartNodes[ipart] = {numPartNodes[ipart]}")
-                print(f"globalElemIndices.size = {globalElemIndices.size}, numPartElements[ipart] = {numPartElements[ipart]}")
-                print(f"globalSideIndices.size = {globalSideIndices.size}, numPartSides[ipart] = {numPartSides[ipart]}")
+                print(f">>>>> globalNodeIndices.size = {globalNodeIndices.size}, numPartNodes[ipart] = {numPartNodes[ipart]}")
+                print(f">>>>> globalElemIndices.size = {globalElemIndices.size}, numPartElements[ipart] = {numPartElements[ipart]}")
+                print(f">>>>> globalSideIndices.size = {globalSideIndices.size}, numPartSides[ipart] = {numPartSides[ipart]}")
                 raise ValueError(f"globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart] for partition {ipart}")
 
             print(f"HERE device {ipart} populateNodes")
