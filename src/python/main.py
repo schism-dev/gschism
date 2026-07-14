@@ -687,6 +687,7 @@ if __name__ == "__main__":
             sharedIdxNodeBoundary  = cp.zeros(1, dtype=cp.int32) - 1 # the first increment makes it 0
             sharedIdxSideBoundary  = cp.zeros(1, dtype=cp.int32) - 1 
 
+            print(f"HERE device {ipart} populateNodes")
             cufunc.populateNodes(i34Part, isbnd, sharedIdxNodeBoundary,
                        nodeCoordsPart, nodeCoords_llPart, use_ll, windRotateAnglePart, 
                        nodeNeighNodesStart, nodeNeighNodes,
