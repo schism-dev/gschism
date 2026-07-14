@@ -1893,6 +1893,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    NODE(pnode);  
    const int i = idx_node;
+   printf("populateNodes: idx_node = %d, globalNodeIndices = %p  ---\n", i, globalNodeIndices);
    const int iglobal = globalNodeIndices[i];
    Node &node(*pnode);
 
