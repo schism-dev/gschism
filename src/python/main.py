@@ -663,17 +663,7 @@ if __name__ == "__main__":
                               kb, h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, ztot, cs, dcs,
                               monitor.debugPlot.data.ptr, monitor.debugPlotIdx.data.ptr)
             
-            # Given a local index, this array will return the global index
-            globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
-            globalElemIndices = cp.arange(maskElemsPart.size).astype(cp.int32)[maskElemsPart]
-            globalSideIndices = cp.arange(maskSidesPart.size).astype(cp.int32)[maskSidesPart]
 
-            # Check sizes
-            if globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart]:
-                print(f"globalNodeIndices.size = {globalNodeIndices.size}, numPartNodes[ipart] = {numPartNodes[ipart]}")
-                print(f"globalElemIndices.size = {globalElemIndices.size}, numPartElements[ipart] = {numPartElements[ipart]}")
-                print(f"globalSideIndices.size = {globalSideIndices.size}, numPartSides[ipart] = {numPartSides[ipart]}")
-                raise ValueError(f"globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart] for partition {ipart}")
 
     sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
              'nodeBnd': max(numPartBoundaryNodes), 'sideBnd': max(numPartBoundarySides)}
@@ -686,6 +676,18 @@ if __name__ == "__main__":
             # of the mesh, including the nodes, elements, sides, and their neighbors.
             sharedIdxNodeBoundary  = cp.zeros(1, dtype=cp.int32) - 1 # the first increment makes it 0
             sharedIdxSideBoundary  = cp.zeros(1, dtype=cp.int32) - 1 
+
+            # Given a local index, this array will return the global index
+            globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
+            globalElemIndices = cp.arange(maskElemsPart.size).astype(cp.int32)[maskElemsPart]
+            globalSideIndices = cp.arange(maskSidesPart.size).astype(cp.int32)[maskSidesPart]
+
+            # Check sizes
+            if globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart]:
+                print(f"globalNodeIndices.size = {globalNodeIndices.size}, numPartNodes[ipart] = {numPartNodes[ipart]}")
+                print(f"globalElemIndices.size = {globalElemIndices.size}, numPartElements[ipart] = {numPartElements[ipart]}")
+                print(f"globalSideIndices.size = {globalSideIndices.size}, numPartSides[ipart] = {numPartSides[ipart]}")
+                raise ValueError(f"globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart] for partition {ipart}")
 
             print(f"HERE device {ipart} populateNodes")
             cufunc.populateNodes(i34Part, isbnd, sharedIdxNodeBoundary,
