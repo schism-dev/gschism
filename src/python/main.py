@@ -579,10 +579,20 @@ if __name__ == "__main__":
             partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
             partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
 
+            # Compute the cumulative sum of the node and element neighbor counts.
+            # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
+            localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
+            localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
+
+            localNodeNeighElemsStart = cp.zeros(partNodeNeighElemsCount.size + 1, dtype=cp.int32)
+            localNodeNeighElemsStart[1:] = cp.cumsum(partNodeNeighElemsCount)
+
+
             pointerSize = cp.dtype(cp.uintp).itemsize 
             partNodeNeighNodesMem += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
             partNodeNeighElemsMem += [cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)]
             partCoeffMatrixMem    += [cp.zeros(partNodeNeighNodesCount.sum().item(), dtype=cp.float64)]
+
     print(f"SIZE OF partCoeffMatrixMem = {partCoeffMatrixMem[0].size}") # XXXXXX REMOVE
     print(f"zeros in partNodeNeighNodesCount = {(partNodeNeighNodesCount == 0).sum().get()}")
     print(f"max in partNodeNeighNodesCount = {partNodeNeighNodesCount.max().get()}")
@@ -681,6 +691,8 @@ if __name__ == "__main__":
                        nodeCoordsPart, nodeCoords_llPart, use_ll, windRotateAnglePart, 
                        nodeNeighNodesStart, nodeNeighNodes,
                        nodeNeighElemsStart, nodeNeighElems,
+                       localNodeNeighNodesStart, localNodeNeighElemsStart, 
+                       globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
                        drag, roughness, rmanning, kb, sigma_lcl)

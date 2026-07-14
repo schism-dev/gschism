@@ -1742,6 +1742,8 @@ struct Mesh {
                   double *wind_rotate_angle, 
                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                  int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
+                  int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
                   double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
@@ -3808,49 +3810,57 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     double *wind_rotate_angle, 
                                     int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                                    int *localNodeNeighNodesStart, int *localNodeNeighElemsStart, 
+                                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart,
                                     double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
 
    NODE(pnode);  
    const int i = idx_node;
+   const int iglobal = globalNodeIndices[i];
    Node &node(*pnode);
 
-   node.idx = i;
+   node.idx = iglobal;
 
-   const int idxNodeStart = nodeNeighNodesStart[i];
-   const int idxNodeEnd   = nodeNeighNodesStart[i+1];
+   // It is important to differentiate between the global and local "start" indices because they
+   // play different, but related, roles in this code. The global "start" indices are used
+   // for the CSR-like indexing of the node and element neighbor arrays in the "global"
+   // (unpartitioned) mesh. The local "start" indices are used for the CSR-like indexing of the 
+   // node and element neighbor arrays in the "local" (partitioned) mesh.
+   const int idxNodeStart = nodeNeighNodesStart[iglobal];
+   const int idxNodeEnd   = nodeNeighNodesStart[iglobal + 1];
+   const int idxNodeLocalStart = localNodeNeighNodesStart[i];
    node.numNodes = idxNodeEnd - idxNodeStart;
-   node.nodes = nodeNeighNodes + idxNodeStart;
-   node.coeffMatrix = coeffMatrixMem + idxNodeStart;
+   node.nodes = nodeNeighNodes + idxNodeLocalStart;
+   node.coeffMatrix = coeffMatrixMem + idxNodeLocalStart;
 
-
-
-   const int idxElemStart = nodeNeighElemsStart[i];
-   const int idxElemEnd   = nodeNeighElemsStart[i+1];      
+   const int idxElemStart = nodeNeighElemsStart[iglobal];
+   const int idxElemEnd   = nodeNeighElemsStart[iglobal + 1]; 
+   const int idxElemLocalStart = localNodeNeighElemsStart[i];
    node.numElements = idxElemEnd - idxElemStart;
-   node.elements = nodeNeighElems + idxElemStart;
+   node.elements = nodeNeighElems + idxElemLocalStart;
 
 
-   for (int idx = idxNodeStart; idx < idxNodeEnd; idx++) {
+   for (int idx = idxNodeStart, idxLocal = idxNodeLocalStart; idx < idxNodeEnd; idx++, idxLocal++) {
       const int idxNodeGlobal = nodeNeighNodesIndices[idx];
       const int partNode = localNodePart[idxNodeGlobal]; 
       const int idxNode  = localNodeIndices[idxNodeGlobal];
 
       Node *node_ptr = nodes[partNode] + idxNode;
       
-      nodeNeighNodes[idx] = node_ptr;
+      nodeNeighNodes[idxLocal] = node_ptr;
    }
 
 
-   for (int idx = idxElemStart; idx < idxElemEnd; idx++) {
+   for (int idx = idxElemStart, idxLocal = idxElemLocalStart; idx < idxElemEnd; idx++, idxLocal++) {
       const int idxElemGlobal = nodeNeighElemsIndices[idx];
       const int partElem = localElemPart[idxElemGlobal];
       const int idxElem  = localElemIndices[idxElemGlobal];
 
       Element *elem_ptr = elems[partElem] + idxElem;
 
-      nodeNeighElems[idx] = elem_ptr;
+      nodeNeighElems[idxLocal] = elem_ptr;
    }      
 
    // Compute the cosine and sine of the mesh rotation angle. We use float here because memory efficiency is more important than precision in this case.
@@ -4059,6 +4069,7 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    else {
       side.elems[1] = nullptr;
    }
+
    if (side.elems[1] == nullptr && side.sideBnd == nullptr) {
       
       NodeBoundary *n1bnd = side.n1->nodeBnd;
@@ -8022,6 +8033,8 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    double *node_coords, double *node_coords_ll, bool use_ll, double *wind_rotate_angle, 
    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+   int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
+   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
    double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
@@ -8030,6 +8043,8 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
                        nodeNeighNodesStart, nodeNeighNodesIndices,
                        nodeNeighElemsStart, nodeNeighElemsIndices,
+                       localNodeNeighNodesStart, localNodeNeighElemsStart,
+                       globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
                        drag, roughness, rmanning, kb, localSigma);
@@ -8103,6 +8118,7 @@ extern "C"  __global__ void destroyMeshCPU(void) {
 
 __global__ void getStructSizes(int* sizes)  {
    // Get the size of each struct. This is used to allocate memory for the structs in the host code.
+      printf(">>>>>*** C++ 3 getStructSizes, sizes = %p\n", sizes);
       sizes[0] = (int)sizeof(Node);
       sizes[1] = (int)sizeof(Element);
       sizes[2] = (int)sizeof(Side);
