@@ -677,9 +677,23 @@ if __name__ == "__main__":
             sharedIdxNodeBoundary  = cp.zeros(1, dtype=cp.int32) - 1 # the first increment makes it 0
             sharedIdxSideBoundary  = cp.zeros(1, dtype=cp.int32) - 1 
 
+            # This whole block is repeated from the createMesh function. XXXXXXXXX
             maskNodesPart = (partNodes == ipart)
             maskElemsPart = (partElements == ipart)
             maskSidesPart = (partSides == ipart)
+            i34Part    = i34[maskElemsPart].copy(order='F')
+            elnodePart = elnode[:, maskElemsPart].copy(order='F')
+            elsidePart = elside[:, maskElemsPart].copy(order='F')
+            nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
+            windRotateAnglePart = wind_rotate_angle[maskNodesPart].copy(order='F')
+            nodeCoords_llPart = cp.zeros((0, 0), dtype=cp.float64, order='F')
+            if nodeCoords_ll.shape[0] > 0:
+                nodeCoords_llPart  = nodeCoords_ll[:, maskNodesPart].copy(order='F')
+                use_ll = True
+            else:
+                use_ll = False
+
+            numSegments = ilnd.shape[0]
 
             # Given a local index, this array will return the global index
             globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
