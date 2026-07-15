@@ -650,6 +650,15 @@ if __name__ == "__main__":
 
             numSegments = ilnd.shape[0]
 
+            # This also seems repeated. XXXXXXXXX
+                       # Compute the cumulative sum of the node and element neighbor counts.
+            # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
+            localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
+            localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
+
+            localNodeNeighElemsStart = cp.zeros(partNodeNeighElemsCount.size + 1, dtype=cp.int32)
+            localNodeNeighElemsStart[1:] = cp.cumsum(partNodeNeighElemsCount)
+
             # Creates the mesh object on each GPU. This function mostly deals with letting the GPU know
             # which memory is being used by the mesh, both locally and in other GPUs.
             cufunc.createMesh(ipart, numNodes, numElements, numSides, numSegments,
