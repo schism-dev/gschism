@@ -677,6 +677,10 @@ if __name__ == "__main__":
             sharedIdxNodeBoundary  = cp.zeros(1, dtype=cp.int32) - 1 # the first increment makes it 0
             sharedIdxSideBoundary  = cp.zeros(1, dtype=cp.int32) - 1 
 
+            maskNodesPart = (partNodes == ipart)
+            maskElemsPart = (partElements == ipart)
+            maskSidesPart = (partSides == ipart)
+
             # Given a local index, this array will return the global index
             globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
             globalElemIndices = cp.arange(maskElemsPart.size).astype(cp.int32)[maskElemsPart]
