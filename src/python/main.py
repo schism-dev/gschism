@@ -636,8 +636,12 @@ if __name__ == "__main__":
    
             numSegments = ilnd.shape[0]
 
+            # compute the local size of the node and element neighbor arrays  XXXX is the [maskNodesPart] below correct?
+            partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
+            partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
+
             # This also seems repeated. XXXXXXXXX
-                       # Compute the cumulative sum of the node and element neighbor counts.
+            # Compute the cumulative sum of the node and element neighbor counts.
             # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
             localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
             localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
@@ -693,6 +697,10 @@ if __name__ == "__main__":
             # Compute the cumulative sum of the node and element neighbor counts.
             # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
             # XXXX Repeated??
+            partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
+            partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
+
+
             localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
             localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
 
