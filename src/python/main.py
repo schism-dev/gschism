@@ -641,13 +641,7 @@ if __name__ == "__main__":
             elsidePart = elside[:, maskElemsPart].copy(order='F')
             nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
             windRotateAnglePart = wind_rotate_angle[maskNodesPart].copy(order='F')
-            nodeCoords_llPart = cp.zeros((0, 0), dtype=cp.float64, order='F')
-            if nodeCoords_ll.shape[0] > 0:
-                nodeCoords_llPart  = nodeCoords_ll[:, maskNodesPart].copy(order='F')
-                use_ll = True
-            else:
-                use_ll = False
-
+   
             numSegments = ilnd.shape[0]
 
             # This also seems repeated. XXXXXXXXX
