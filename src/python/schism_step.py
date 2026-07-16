@@ -145,7 +145,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # bottom drag and vegetation drag
     cufunc.computeBottomDragVegetation()      # Lines 2353-2662
 
-
+    print(">>>>>>>> 5 <<<<<<<<")
 
     # computeTurbulence()                # Lines 2663-3839
 
@@ -153,6 +153,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Horizontal viscosity, implemented as a filter (also Shapiro filter)
     cufunc.computeHorizontalViscosity()       # Lines 3840-4160
 
+    print(">>>>>>>> 6 <<<<<<<<")
 
     # Backtracking/upwind for momentum
     tic("backtrackAllNodes")
@@ -177,6 +178,9 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         print(f"Error in backtrackAllNodes: {e}")
     toc("backtrackAllNodes")
     print(_times)
+
+
+    print(">>>>>>>> 7 <<<<<<<<")
 
     # Vertical advection 
     if opt.iupwind_mom != 0:
