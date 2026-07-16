@@ -61,6 +61,7 @@ class CudaKernelWrapper:
     def __call__(self, *args, async_launch=False, **kwargs):
         """Execute the kernel on all devices"""
 
+
         numGPUs = configCuda.deviceCount
         if numGPUs == 1 or self.onlyCurrent:
             # Launch on one device only
@@ -69,7 +70,7 @@ class CudaKernelWrapper:
             if not async_launch:
                 cp.cuda.Stream.null.synchronize()
         else:
-            print(f">>>>>*** 1 launching on all devices")
+            print(f">>>>>*** 1 launching {self.kernel_func.__name__} on all devices")
             # Launch on all devices
             for device_id in configCuda.devices:
                 with cp.cuda.Device(device_id):

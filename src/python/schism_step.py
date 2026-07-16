@@ -107,7 +107,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     # computeTracerStuff()            # Lines 1015-1145
 
-    print(">>>>>>>> 1 <<<<<<<<")
+    
     # # Compute hydraulic transfer blocks together with reading in flux values
     # computeHydraulicTransfer()      # Lines 1146-1330
 
@@ -122,17 +122,17 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     # # Calculation of cross-section areas and length for flow b.c.
     # computeFlowBcAreas()                   # Lines 1611-1758
-    print(">>>>>>>> 2 <<<<<<<<")
+
     # Computes the cross-section areas and lengths for flow boundary conditions at each segment.
     cufunc.resetBoundaryAreas()
     cufunc.computeBoundaryAreas()
 
-    print(">>>>>>>> 3 <<<<<<<<")
+
     # XXX I think I will combine all BCs into one function
     # Compute new vel. for flow b.c. (uth,vth)
     cufunc.computeFlowBcVelocities(time)            # Lines 1759-1800
 
-    print(">>>>>>>> 4 <<<<<<<<")
+
 
     # Bottom drag coefficients for nchi=-1 or 1; Cd and Cdp for nchi=0 already read in
     ####cufunc.computeBottomDrag()                  # Lines 1801-1961
@@ -145,7 +145,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # bottom drag and vegetation drag
     cufunc.computeBottomDragVegetation()      # Lines 2353-2662
 
-    print(">>>>>>>> 5 <<<<<<<<")
+
 
     # computeTurbulence()                # Lines 2663-3839
 
@@ -153,7 +153,6 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     # Horizontal viscosity, implemented as a filter (also Shapiro filter)
     cufunc.computeHorizontalViscosity()       # Lines 3840-4160
 
-    print(">>>>>>>> 6 <<<<<<<<")
 
     # Backtracking/upwind for momentum
     tic("backtrackAllNodes")
@@ -178,9 +177,6 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         print(f"Error in backtrackAllNodes: {e}")
     toc("backtrackAllNodes")
     print(_times)
-
-
-    print(">>>>>>>> 7 <<<<<<<<")
 
     # Vertical advection 
     if opt.iupwind_mom != 0:
