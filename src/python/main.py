@@ -579,14 +579,6 @@ if __name__ == "__main__":
             partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
             partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
 
-            # Compute the cumulative sum of the node and element neighbor counts.
-            # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
-            localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
-            localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
-
-            localNodeNeighElemsStart = cp.zeros(partNodeNeighElemsCount.size + 1, dtype=cp.int32)
-            localNodeNeighElemsStart[1:] = cp.cumsum(partNodeNeighElemsCount)
-
 
             pointerSize = cp.dtype(cp.uintp).itemsize 
             partNodeNeighNodesMem += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
@@ -697,6 +689,15 @@ if __name__ == "__main__":
                 use_ll = False
 
             numSegments = ilnd.shape[0]
+
+            # Compute the cumulative sum of the node and element neighbor counts.
+            # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
+            # XXXX Repeated??
+            localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
+            localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
+
+            localNodeNeighElemsStart = cp.zeros(partNodeNeighElemsCount.size + 1, dtype=cp.int32)
+            localNodeNeighElemsStart[1:] = cp.cumsum(partNodeNeighElemsCount)
 
             # Given a local index, this array will return the global index
             globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
