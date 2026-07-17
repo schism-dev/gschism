@@ -1997,7 +1997,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    
    // Links the node to the boundary information
-   if (isbnd[i] >= 0) {
+   if (isbnd[iglobal] >= 0) {
      
       // Get the index of the node boundary
       const int idxNodeBoundary = atomicAdd(sharedIdxNodeBoundary, 1) + 1;
@@ -2008,9 +2008,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       node.nodeBnd->sideBnd1 = nullptr;
       node.nodeBnd->sideBnd2 = nullptr;
 
-      if (isbnd[i]>=0) {
+      if (isbnd[iglobal]>=0) {
 
-         node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
+         node.nodeBnd->segment = &(localSegmentMem[isbnd[iglobal]]);
          
          node.nodeBnd->segment->ifltype = 0; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
          node.nodeBnd->segment->iettype = 0; // XXXXXXXXX
@@ -2024,7 +2024,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
       node.nodeBnd = nullptr; // For internal nodes
 
-      if (isbnd[i] == landSegment) {
+      if (isbnd[iglobal] == landSegment) {
          node.nodeBnd = &landBoundaryNode;
          node.nodeBnd->segment = &landBoundarySegment;
       }
