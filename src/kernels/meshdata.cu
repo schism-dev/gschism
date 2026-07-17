@@ -2058,8 +2058,8 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    SIDE(pside);
    Side &side(*pside);
    const int i = idx_side;
-
-   side.idx = i;  
+   const int iglobal = globalSideIndices[i];
+   side.idx = iglobal;  
    
    // Parameters used to compute a linear approximation of the Coriolis coefficient around the reference latitude sfea0
    const double fc   = 2.0*omega_e*sin(sfea0);
@@ -2068,17 +2068,23 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    assert(sfea0 >= -pi/2.0 && sfea0 <= pi/2.0 && "GRID: sfea0 out of range");
 
    // finding the pointer to the nodes that form the side
-   const int idx_n1 = isidenode[globalSideIndices[i]*2];
-   const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
+   const int idx_n1 = isidenode[iglobal*2];
+   const int idx_n2 = isidenode[iglobal*2 + 1];
+
+printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
 
    const int locidx_n1 = localNodeIndices[idx_n1];
    const int locidx_n2 = localNodeIndices[idx_n2];
    const int part_n1 =   localNodePart[idx_n1];
    const int part_n2 =   localNodePart[idx_n2];
 
+   const int locidx_n1 = localNodeIndices[idx_n1];
+printf("populateSides: locidx_n1 = %d, locidx_n2 = %d, part_n1 = %d, part_n2 = %d\n", locidx_n1, locidx_n2, part_n1, part_n2);
+
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
+printf("populateSides: side.n1 = %p, side.n2 = %p\n", side.n1, side.n2);
 
    // Counts the number of sides connected to each node
    atomicAdd(&side.n1->numSides, 1);
@@ -2123,8 +2129,8 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
 
 
    // finding the pointer to the elements that share the side
-   const int idx_e1 = isdel[globalSideIndices[i]*2];
-   const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
+   const int idx_e1 = isdel[iglobal*2];
+   const int idx_e2 = isdel[iglobal*2 + 1];
 
    if (idx_e1 > -1) {
       const int locidx_e1 = localElemIndices[idx_e1];
