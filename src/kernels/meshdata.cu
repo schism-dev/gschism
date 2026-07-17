@@ -3681,7 +3681,7 @@ printf("setEssentialBC: nodeBnd->isEssentialBC = false ****\n");
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
-
+printf("setEssentialBC: node = %p\n", node);
                   // Subtract contribution to RHS
                   node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
