@@ -3652,6 +3652,7 @@ extern "C" {
  
       // Check if this node has essential BC
       if (nodeBnd && nodeBnd->isEssentialBC) {
+print("setEssentialBC: nodeBnd->isEssentialBC = true");
          // Verify BC value is valid
          assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
@@ -3662,14 +3663,14 @@ extern "C" {
          for (int j = 0; j < node->numNodes; j++) {
                node->coeffMatrix[j] = 0.0;
          }
-         
+print("setEssentialBC: node->coeffMatrix = 0.0");         
          // Set solution and RHS to BC value
          node->mX  = nodeBnd->elbc;
          node->qel = nodeBnd->elbc;
-
+print("setEssentialBC: node->qel = nodeBnd->elbc");
       } else {
          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
-
+print("setEssentialBC: nodeBnd->isEssentialBC = false ****");
          for (int j = 0; j < node->numNodes; j++) {
                Node* nbNode = node->nodes[j];
                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
@@ -3682,6 +3683,7 @@ extern "C" {
                   node->coeffMatrix[j] = 0.0;  
                }
          }
+print("setEssentialBC: node->qel = nodeBnd->elbc - node->coeffMatrix[j]*nbNodeBnd->elbc");
       }
    }
 
