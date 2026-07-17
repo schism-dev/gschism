@@ -3670,7 +3670,7 @@ printf("setEssentialBC: node->coeffMatrix = 0.0\n");
 printf("setEssentialBC: node->qel = nodeBnd->elbc\n");
       } else {
          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
-printf("setEssentialBC: nodeBnd->isEssentialBC = false ****\n");
+printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node);
          for (int j = 0; j < node->numNodes; j++) {
                const Node* nbNode = node->nodes[j];
    	         assert(nbNode != nullptr && "setEssentialBC: nbNode is nullptr");
