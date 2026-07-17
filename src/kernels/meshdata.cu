@@ -1893,13 +1893,10 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    NODE(pnode);  
    const int i = idx_node;
-   printf("populateNodes: idx_node = %d, globalNodeIndices = %p  ---\n", i, globalNodeIndices);
    const int iglobal = globalNodeIndices[i];
    Node &node(*pnode);
 
    node.idx = iglobal;
-
-   printf("populateNodes: i = %d, iglobal = %d\n", i, iglobal);
 
    // It is important to differentiate between the global and local "start" indices because they
    // play different, but related, roles in this code. The global "start" indices are used
@@ -1979,16 +1976,16 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.numSides = 0;
 
    // drag, rough, and manning are actually stored in the same memory location. This is just sugar to make the code more readable without using unnecessary memory.
-   if      constexpr(nchi ==  0) node.drag     = drag[i];
-   else if constexpr(nchi ==  1) node.rough    = roughness[i];
-   else if constexpr(nchi == -1) node.rmanning = rmanning[i];
+   if      constexpr(nchi ==  0) node.drag     = drag[iglobal];
+   else if constexpr(nchi ==  1) node.rough    = roughness[iglobal];
+   else if constexpr(nchi == -1) node.rmanning = rmanning[iglobal];
    else assert(false && "populateNodes: selected nchi not implemented.");
 
    if constexpr(ivcor == 1) 
    {  
-      node.kb = kb[i];
+      node.kb = kb[iglobal];
 
-      for (int k = 0; k < nvrt; k++) node.localSigma[k] = localSigma[k + i*nvrt];
+      for (int k = 0; k < nvrt; k++) node.localSigma[k] = localSigma[k + iglobal*nvrt];
    }
 
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
