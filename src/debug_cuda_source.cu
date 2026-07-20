@@ -3818,13 +3818,10 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    NODE(pnode);  
    const int i = idx_node;
-   printf("populateNodes: idx_node = %d, globalNodeIndices = %p  ---\n", i, globalNodeIndices);
    const int iglobal = globalNodeIndices[i];
    Node &node(*pnode);
 
    node.idx = iglobal;
-
-   printf("populateNodes: i = %d, iglobal = %d\n", i, iglobal);
 
    // It is important to differentiate between the global and local "start" indices because they
    // play different, but related, roles in this code. The global "start" indices are used
@@ -3904,16 +3901,16 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    node.numSides = 0;
 
    // drag, rough, and manning are actually stored in the same memory location. This is just sugar to make the code more readable without using unnecessary memory.
-   if      constexpr(nchi ==  0) node.drag     = drag[i];
-   else if constexpr(nchi ==  1) node.rough    = roughness[i];
-   else if constexpr(nchi == -1) node.rmanning = rmanning[i];
+   if      constexpr(nchi ==  0) node.drag     = drag[iglobal];
+   else if constexpr(nchi ==  1) node.rough    = roughness[iglobal];
+   else if constexpr(nchi == -1) node.rmanning = rmanning[iglobal];
    else assert(false && "populateNodes: selected nchi not implemented.");
 
    if constexpr(ivcor == 1) 
    {  
-      node.kb = kb[i];
+      node.kb = kb[iglobal];
 
-      for (int k = 0; k < nvrt; k++) node.localSigma[k] = localSigma[k + i*nvrt];
+      for (int k = 0; k < nvrt; k++) node.localSigma[k] = localSigma[k + iglobal*nvrt];
    }
 
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
@@ -3922,7 +3919,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
    
    // Links the node to the boundary information
-   if (isbnd[i] >= 0) {
+   if (isbnd[iglobal] >= 0) {
      
       // Get the index of the node boundary
       const int idxNodeBoundary = atomicAdd(sharedIdxNodeBoundary, 1) + 1;
@@ -3933,9 +3930,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       node.nodeBnd->sideBnd1 = nullptr;
       node.nodeBnd->sideBnd2 = nullptr;
 
-      if (isbnd[i]>=0) {
+      if (isbnd[iglobal]>=0) {
 
-         node.nodeBnd->segment = &(localSegmentMem[isbnd[i]]);
+         node.nodeBnd->segment = &(localSegmentMem[isbnd[iglobal]]);
          
          node.nodeBnd->segment->ifltype = 0; //(isbnd[i]==0)?3:0; // XXXXX KKKKK
          node.nodeBnd->segment->iettype = 0; // XXXXXXXXX
@@ -3949,7 +3946,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
       node.nodeBnd = nullptr; // For internal nodes
 
-      if (isbnd[i] == landSegment) {
+      if (isbnd[iglobal] == landSegment) {
          node.nodeBnd = &landBoundaryNode;
          node.nodeBnd->segment = &landBoundarySegment;
       }
@@ -3986,8 +3983,8 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    SIDE(pside);
    Side &side(*pside);
    const int i = idx_side;
-
-   side.idx = i;  
+   const int iglobal = globalSideIndices[i];
+   side.idx = iglobal;  
    
    // Parameters used to compute a linear approximation of the Coriolis coefficient around the reference latitude sfea0
    const double fc   = 2.0*omega_e*sin(sfea0);
@@ -3996,13 +3993,17 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    assert(sfea0 >= -pi/2.0 && sfea0 <= pi/2.0 && "GRID: sfea0 out of range");
 
    // finding the pointer to the nodes that form the side
-   const int idx_n1 = isidenode[globalSideIndices[i]*2];
-   const int idx_n2 = isidenode[globalSideIndices[i]*2 + 1];
+   const int idx_n1 = isidenode[iglobal*2];
+   const int idx_n2 = isidenode[iglobal*2 + 1];
+
+printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
 
    const int locidx_n1 = localNodeIndices[idx_n1];
    const int locidx_n2 = localNodeIndices[idx_n2];
    const int part_n1 =   localNodePart[idx_n1];
    const int part_n2 =   localNodePart[idx_n2];
+
+printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
@@ -4051,8 +4052,8 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
 
 
    // finding the pointer to the elements that share the side
-   const int idx_e1 = isdel[globalSideIndices[i]*2];
-   const int idx_e2 = isdel[globalSideIndices[i]*2 + 1];
+   const int idx_e1 = isdel[iglobal*2];
+   const int idx_e2 = isdel[iglobal*2 + 1];
 
    if (idx_e1 > -1) {
       const int locidx_e1 = localElemIndices[idx_e1];
@@ -5577,7 +5578,7 @@ extern "C" {
  
       // Check if this node has essential BC
       if (nodeBnd && nodeBnd->isEssentialBC) {
-print("setEssentialBC: nodeBnd->isEssentialBC = true");
+printf("setEssentialBC: nodeBnd->isEssentialBC = true");
          // Verify BC value is valid
          assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
@@ -5588,27 +5589,31 @@ print("setEssentialBC: nodeBnd->isEssentialBC = true");
          for (int j = 0; j < node->numNodes; j++) {
                node->coeffMatrix[j] = 0.0;
          }
-print("setEssentialBC: node->coeffMatrix = 0.0");         
+printf("setEssentialBC: node->coeffMatrix = 0.0\n");         
          // Set solution and RHS to BC value
          node->mX  = nodeBnd->elbc;
          node->qel = nodeBnd->elbc;
-print("setEssentialBC: node->qel = nodeBnd->elbc");
+printf("setEssentialBC: node->qel = nodeBnd->elbc\n");
       } else {
          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
-print("setEssentialBC: nodeBnd->isEssentialBC = false ****");
+printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node);
          for (int j = 0; j < node->numNodes; j++) {
-               Node* nbNode = node->nodes[j];
+               const Node* nbNode = node->nodes[j];
+   	         assert(nbNode != nullptr && "setEssentialBC: nbNode is nullptr");
+
                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
+               assert(nbNodeBnd != nullptr && "setEssentialBC: nbNodeBnd is nullptr");
+
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
-
+printf("setEssentialBC: node = %p\n", node);
                   // Subtract contribution to RHS
                   node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
                }
          }
-print("setEssentialBC: node->qel = nodeBnd->elbc - node->coeffMatrix[j]*nbNodeBnd->elbc");
+printf("setEssentialBC: node->qel = nodeBnd->elbc - node->coeffMatrix[j]*nbNodeBnd->elbc\n");
       }
    }
 

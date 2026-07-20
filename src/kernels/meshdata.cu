@@ -2078,13 +2078,11 @@ printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n
    const int part_n1 =   localNodePart[idx_n1];
    const int part_n2 =   localNodePart[idx_n2];
 
-   const int locidx_n1 = localNodeIndices[idx_n1];
-printf("populateSides: locidx_n1 = %d, locidx_n2 = %d, part_n1 = %d, part_n2 = %d\n", locidx_n1, locidx_n2, part_n1, part_n2);
+printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
-printf("populateSides: side.n1 = %p, side.n2 = %p\n", side.n1, side.n2);
 
    // Counts the number of sides connected to each node
    atomicAdd(&side.n1->numSides, 1);

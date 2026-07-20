@@ -619,38 +619,11 @@ if __name__ == "__main__":
             localElemPart   [maskElemsPart] = ipart
             localSidePart   [maskSidesPart] = ipart
 
-    for ipart in range(ckw.configCuda.deviceCount):
-        with cp.cuda.Device(ckw.configCuda.devices[ipart]):
-
-            maskNodesPart = (partNodes == ipart)
-            maskElemsPart = (partElements == ipart)
-            maskSidesPart = (partSides == ipart)
-            # nodeIndicesPart = cp.where(maskNodesPart)[0].astype(cp.int32)
-            # elemIndicesPart = cp.where(maskElemsPart)[0].astype(cp.int32)
-            # sideIndicesPart = cp.where(maskSidesPart)[0].astype(cp.int32)
-            i34Part    = i34[maskElemsPart].copy(order='F')
-            elnodePart = elnode[:, maskElemsPart].copy(order='F')
-            elsidePart = elside[:, maskElemsPart].copy(order='F')
-            nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
-            windRotateAnglePart = wind_rotate_angle[maskNodesPart].copy(order='F')
-   
+    # Creates the mesh object on each GPU. This function mostly deals with letting the GPU know
+    # which memory is being used by the mesh, both locally and in other GPUs.
+    for ipart, device_id in enumerate(ckw.configCuda.devices):
+        with cp.cuda.Device(device_id):
             numSegments = ilnd.shape[0]
-
-            # compute the local size of the node and element neighbor arrays  XXXX is the [maskNodesPart] below correct?
-            partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
-            partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
-
-            # This also seems repeated. XXXXXXXXX
-            # Compute the cumulative sum of the node and element neighbor counts.
-            # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
-            localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
-            localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
-
-            localNodeNeighElemsStart = cp.zeros(partNodeNeighElemsCount.size + 1, dtype=cp.int32)
-            localNodeNeighElemsStart[1:] = cp.cumsum(partNodeNeighElemsCount)
-
-            # Creates the mesh object on each GPU. This function mostly deals with letting the GPU know
-            # which memory is being used by the mesh, both locally and in other GPUs.
             cufunc.createMesh(ipart, numNodes, numElements, numSides, numSegments,
                               numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart],  
                               max(numPartNodes), max(numPartElements), max(numPartSides),
@@ -661,7 +634,7 @@ if __name__ == "__main__":
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
                               kb, h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, ztot, cs, dcs,
                               monitor.debugPlot.data.ptr, monitor.debugPlotIdx.data.ptr)
-            
+
 
 
     sizes = {'global': 1, 'nodes': max(numPartNodes), 'elements': max(numPartElements), 'sides': max(numPartSides),
@@ -669,113 +642,232 @@ if __name__ == "__main__":
     cufunc.initializeCudaFunctions(sizes)
 
 
-    for ipart in range(ckw.configCuda.deviceCount):
-        with cp.cuda.Device(ipart):
-            # Adds additional information to the mesh object. This function deals with the actual data
-            # of the mesh, including the nodes, elements, sides, and their neighbors.
-            sharedIdxNodeBoundary  = cp.zeros(1, dtype=cp.int32) - 1 # the first increment makes it 0
-            sharedIdxSideBoundary  = cp.zeros(1, dtype=cp.int32) - 1 
-
-            # This whole block is repeated from the createMesh function. XXXXXXXXX
+    # Per-partition populate inputs (built once)
+    partPopulate = []
+    for ipart, device_id in enumerate(ckw.configCuda.devices):
+        with cp.cuda.Device(device_id):
             maskNodesPart = (partNodes == ipart)
             maskElemsPart = (partElements == ipart)
             maskSidesPart = (partSides == ipart)
-            i34Part    = i34[maskElemsPart].copy(order='F')
-            elnodePart = elnode[:, maskElemsPart].copy(order='F')
-            elsidePart = elside[:, maskElemsPart].copy(order='F')
-            nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
-            windRotateAnglePart = wind_rotate_angle[maskNodesPart].copy(order='F')
             nodeCoords_llPart = cp.zeros((0, 0), dtype=cp.float64, order='F')
-            if nodeCoords_ll.shape[0] > 0:
-                nodeCoords_llPart  = nodeCoords_ll[:, maskNodesPart].copy(order='F')
-                use_ll = True
-            else:
-                use_ll = False
-
-            numSegments = ilnd.shape[0]
-
-            # Compute the cumulative sum of the node and element neighbor counts.
-            # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
-            # XXXX Repeated??
-            partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
-            partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
-
-
+            use_ll = nodeCoords_ll.shape[0] > 0
+            if use_ll:
+                nodeCoords_llPart = nodeCoords_ll[:, maskNodesPart].copy(order='F')
+            partNodeNeighNodesCount = (
+                nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart]
+            )
+            partNodeNeighElemsCount = (
+                nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart]
+            )
             localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
             localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
-
             localNodeNeighElemsStart = cp.zeros(partNodeNeighElemsCount.size + 1, dtype=cp.int32)
             localNodeNeighElemsStart[1:] = cp.cumsum(partNodeNeighElemsCount)
+            globalNodeIndices = cp.arange(maskNodesPart.size, dtype=cp.int32)[maskNodesPart]
+            globalElemIndices = cp.arange(maskElemsPart.size, dtype=cp.int32)[maskElemsPart]
+            globalSideIndices = cp.arange(maskSidesPart.size, dtype=cp.int32)[maskSidesPart]
+            if (globalNodeIndices.size != numPartNodes[ipart]
+                    or globalElemIndices.size != numPartElements[ipart]
+                    or globalSideIndices.size != numPartSides[ipart]):
+                raise ValueError(f"Partition {ipart}: global index sizes do not match partition counts")
+            partPopulate.append({
+                'device_id': device_id,
+                'sharedIdxNodeBoundary': cp.zeros(1, dtype=cp.int32) - 1,
+                'sharedIdxSideBoundary': cp.zeros(1, dtype=cp.int32) - 1,
+                'i34Part': i34[maskElemsPart].copy(order='F'),
+                'elnodePart': elnode[:, maskElemsPart].copy(order='F'),
+                'elsidePart': elside[:, maskElemsPart].copy(order='F'),
+                'nodeCoordsPart': nodeCoords[:, maskNodesPart].copy(order='F'),
+                'nodeCoords_llPart': nodeCoords_llPart,
+                'use_ll': use_ll,
+                'windRotateAnglePart': wind_rotate_angle[maskNodesPart].copy(order='F'),
+                'localNodeNeighNodesStart': localNodeNeighNodesStart,
+                'localNodeNeighElemsStart': localNodeNeighElemsStart,
+                'globalNodeIndices': globalNodeIndices,
+                'globalElemIndices': globalElemIndices,
+                'globalSideIndices': globalSideIndices,
+            })
 
-            # Given a local index, this array will return the global index
-            globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
-            globalElemIndices = cp.arange(maskElemsPart.size).astype(cp.int32)[maskElemsPart]
-            globalSideIndices = cp.arange(maskSidesPart.size).astype(cp.int32)[maskSidesPart]
-
-            # Check sizes
-            if globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart]:
-                print(f">>>>> globalNodeIndices.size = {globalNodeIndices.size}, numPartNodes[ipart] = {numPartNodes[ipart]}")
-                print(f">>>>> globalElemIndices.size = {globalElemIndices.size}, numPartElements[ipart] = {numPartElements[ipart]}")
-                print(f">>>>> globalSideIndices.size = {globalSideIndices.size}, numPartSides[ipart] = {numPartSides[ipart]}")
-                raise ValueError(f"globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart] for partition {ipart}")
-
+    # Phase 1: all nodes on all GPUs
+    for ipart, pd in enumerate(partPopulate):
+        with cp.cuda.Device(pd['device_id']):
             print(f"HERE device {ipart} populateNodes")
-            cufunc.populateNodes(i34Part, isbnd, sharedIdxNodeBoundary,
-                       nodeCoordsPart, nodeCoords_llPart, use_ll, windRotateAnglePart, 
-                       nodeNeighNodesStart, nodeNeighNodes,
-                       nodeNeighElemsStart, nodeNeighElems,
-                       localNodeNeighNodesStart, localNodeNeighElemsStart, 
-                       globalNodeIndices, globalElemIndices, globalSideIndices,
-                       localNodeIndices, localElemIndices, localSideIndices,
-                       localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning, kb, sigma_lcl)
-
+            cufunc.populateNodes(
+                pd['i34Part'], isbnd, pd['sharedIdxNodeBoundary'],
+                pd['nodeCoordsPart'], pd['nodeCoords_llPart'], pd['use_ll'], pd['windRotateAnglePart'],
+                nodeNeighNodesStart, nodeNeighNodes,
+                nodeNeighElemsStart, nodeNeighElems,
+                pd['localNodeNeighNodesStart'], pd['localNodeNeighElemsStart'],
+                pd['globalNodeIndices'], pd['globalElemIndices'], pd['globalSideIndices'],
+                localNodeIndices, localElemIndices, localSideIndices,
+                localNodePart, localElemPart, localSidePart,
+                drag, roughness, rmanning, kb, sigma_lcl)
+    # Phase 2: all sides
+    for ipart, pd in enumerate(partPopulate):
+        with cp.cuda.Device(pd['device_id']):
             print(f"HERE device {ipart} populateSides")
-            cufunc.populateSides(i34Part, sharedIdxSideBoundary,
-                       nodeCoordsPart, nodeCoords_llPart, use_ll,
-                       windRotateAnglePart,   
-                       isdel, isidenode, isbnd,
-                       nond, nlnd, iond, ilnd,                                  
-                       nodeNeighNodesStart, nodeNeighNodes,
-                       nodeNeighElemsStart, nodeNeighElems,
-                       globalNodeIndices, globalElemIndices, globalSideIndices,
-                       localNodeIndices, localElemIndices, localSideIndices,
-                       localNodePart, localElemPart, localSidePart,
-                       drag, roughness);        
-
+            cufunc.populateSides(
+                pd['i34Part'], pd['sharedIdxSideBoundary'],
+                pd['nodeCoordsPart'], pd['nodeCoords_llPart'], pd['use_ll'],
+                pd['windRotateAnglePart'],
+                isdel, isidenode, isbnd,
+                nond, nlnd, iond, ilnd,
+                nodeNeighNodesStart, nodeNeighNodes,
+                nodeNeighElemsStart, nodeNeighElems,
+                pd['globalNodeIndices'], pd['globalElemIndices'], pd['globalSideIndices'],
+                localNodeIndices, localElemIndices, localSideIndices,
+                localNodePart, localElemPart, localSidePart,
+                drag, roughness)
+    # Phase 3: all elements
+    for ipart, pd in enumerate(partPopulate):
+        with cp.cuda.Device(pd['device_id']):
             print(f"HERE device {ipart} populateElements")
-            cufunc.populateElements(i34Part, elnodePart, elsidePart,
-                       nodeCoordsPart, nodeCoords_llPart, use_ll,
-                       windRotateAnglePart,   
-                       isdel, isidenode, isbnd,
-                       nond, nlnd, iond, ilnd,                                  
-                       nodeNeighNodesStart, nodeNeighNodes,
-                       nodeNeighElemsStart, nodeNeighElems,
-                       globalNodeIndices, globalElemIndices, globalSideIndices,
-                       localNodeIndices, localElemIndices, localSideIndices,
-                       localNodePart, localElemPart, localSidePart,
-                       drag, roughness);                                             
+            cufunc.populateElements(
+                pd['i34Part'], pd['elnodePart'], pd['elsidePart'],
+                pd['nodeCoordsPart'], pd['nodeCoords_llPart'], pd['use_ll'],
+                pd['windRotateAnglePart'],
+                isdel, isidenode, isbnd,
+                nond, nlnd, iond, ilnd,
+                nodeNeighNodesStart, nodeNeighNodes,
+                nodeNeighElemsStart, nodeNeighElems,
+                pd['globalNodeIndices'], pd['globalElemIndices'], pd['globalSideIndices'],
+                localNodeIndices, localElemIndices, localSideIndices,
+                localNodePart, localElemPart, localSidePart,
+                drag, roughness)
+    # Phase 4: finalize mesh (needs sharedIdx from phases 1 and 2)
+    for ipart, pd in enumerate(partPopulate):
+        with cp.cuda.Device(pd['device_id']):
+            cufunc.populateMesh(
+                pd['i34Part'], pd['elnodePart'], pd['elsidePart'],
+                pd['nodeCoordsPart'], pd['nodeCoords_llPart'], pd['use_ll'],
+                pd['windRotateAnglePart'], pd['sharedIdxNodeBoundary'], pd['sharedIdxSideBoundary'],
+                isdel, isidenode, isbnd,
+                nond, nlnd, iond, ilnd,
+                nodeNeighNodesStart, nodeNeighNodes,
+                nodeNeighElemsStart, nodeNeighElems,
+                pd['globalNodeIndices'], pd['globalElemIndices'], pd['globalSideIndices'],
+                localNodeIndices, localElemIndices, localSideIndices,
+                localNodePart, localElemPart, localSidePart,
+                drag, roughness,
+                bctides.emo, bctides.efa,
+                bctides.umo, bctides.ufa,
+                bctides.vmo, bctides.vfa)
+    # Phase 5: boundary nodes
+    for ipart, pd in enumerate(partPopulate):
+        with cp.cuda.Device(pd['device_id']):
+            cufunc.populateBoundaryNodes(
+                nond, iond,
+                bctides.emo, bctides.efa,
+                bctides.umo, bctides.ufa,
+                bctides.vmo, bctides.vfa,
+                bctides.ifltype, bctides.iettype)
+    # for ipart in range(ckw.configCuda.deviceCount):
+    #     with cp.cuda.Device(ipart):
+    #         # Adds additional information to the mesh object. This function deals with the actual data
+    #         # of the mesh, including the nodes, elements, sides, and their neighbors.
+    #         sharedIdxNodeBoundary  = cp.zeros(1, dtype=cp.int32) - 1 # the first increment makes it 0
+    #         sharedIdxSideBoundary  = cp.zeros(1, dtype=cp.int32) - 1 
+
+    #         # This whole block is repeated from the createMesh function. XXXXXXXXX
+    #         maskNodesPart = (partNodes == ipart)
+    #         maskElemsPart = (partElements == ipart)
+    #         maskSidesPart = (partSides == ipart)
+    #         i34Part    = i34[maskElemsPart].copy(order='F')
+    #         elnodePart = elnode[:, maskElemsPart].copy(order='F')
+    #         elsidePart = elside[:, maskElemsPart].copy(order='F')
+    #         nodeCoordsPart      = nodeCoords[:, maskNodesPart].copy(order='F')
+    #         windRotateAnglePart = wind_rotate_angle[maskNodesPart].copy(order='F')
+    #         nodeCoords_llPart = cp.zeros((0, 0), dtype=cp.float64, order='F')
+    #         if nodeCoords_ll.shape[0] > 0:
+    #             nodeCoords_llPart  = nodeCoords_ll[:, maskNodesPart].copy(order='F')
+    #             use_ll = True
+    #         else:
+    #             use_ll = False
+
+    #         numSegments = ilnd.shape[0]
+
+    #         # Compute the cumulative sum of the node and element neighbor counts.
+    #         # This will be used to compute the start index of the node and element neighbor arrays in the local partition.
+    #         # XXXX Repeated??
+    #         partNodeNeighNodesCount = (nodeNeighNodesStart[1:][maskNodesPart] - nodeNeighNodesStart[:-1][maskNodesPart])
+    #         partNodeNeighElemsCount = (nodeNeighElemsStart[1:][maskNodesPart] - nodeNeighElemsStart[:-1][maskNodesPart])
 
 
-            cufunc.populateMesh(i34Part, elnodePart, elsidePart, nodeCoordsPart, nodeCoords_llPart, use_ll,
-                                windRotateAnglePart, sharedIdxNodeBoundary, sharedIdxSideBoundary,
-                                isdel, isidenode, isbnd,
-                                nond, nlnd, iond, ilnd, 
-                                nodeNeighNodesStart, nodeNeighNodes,
-                                nodeNeighElemsStart, nodeNeighElems,
-                                globalNodeIndices, globalElemIndices, globalSideIndices,
-                                localNodeIndices, localElemIndices, localSideIndices,
-                                localNodePart, localElemPart, localSidePart,
-                                drag, roughness,
-                                bctides.emo, bctides.efa, 
-                                bctides.umo, bctides.ufa,
-                                bctides.vmo, bctides.vfa)
+    #         localNodeNeighNodesStart = cp.zeros(partNodeNeighNodesCount.size + 1, dtype=cp.int32)
+    #         localNodeNeighNodesStart[1:] = cp.cumsum(partNodeNeighNodesCount)
 
-            cufunc.populateBoundaryNodes(nond, iond,
-                                         bctides.emo, bctides.efa, 
-                                         bctides.umo, bctides.ufa,
-                                         bctides.vmo, bctides.vfa,
-                                         bctides.ifltype, bctides.iettype)    
+    #         localNodeNeighElemsStart = cp.zeros(partNodeNeighElemsCount.size + 1, dtype=cp.int32)
+    #         localNodeNeighElemsStart[1:] = cp.cumsum(partNodeNeighElemsCount)
+
+    #         # Given a local index, this array will return the global index
+    #         globalNodeIndices = cp.arange(maskNodesPart.size).astype(cp.int32)[maskNodesPart]
+    #         globalElemIndices = cp.arange(maskElemsPart.size).astype(cp.int32)[maskElemsPart]
+    #         globalSideIndices = cp.arange(maskSidesPart.size).astype(cp.int32)[maskSidesPart]
+
+    #         # Check sizes
+    #         if globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart]:
+    #             print(f">>>>> globalNodeIndices.size = {globalNodeIndices.size}, numPartNodes[ipart] = {numPartNodes[ipart]}")
+    #             print(f">>>>> globalElemIndices.size = {globalElemIndices.size}, numPartElements[ipart] = {numPartElements[ipart]}")
+    #             print(f">>>>> globalSideIndices.size = {globalSideIndices.size}, numPartSides[ipart] = {numPartSides[ipart]}")
+    #             raise ValueError(f"globalNodeIndices.size != numPartNodes[ipart] or globalElemIndices.size != numPartElements[ipart] or globalSideIndices.size != numPartSides[ipart] for partition {ipart}")
+
+    #         print(f"HERE device {ipart} populateNodes")
+    #         cufunc.populateNodes(i34Part, isbnd, sharedIdxNodeBoundary,
+    #                    nodeCoordsPart, nodeCoords_llPart, use_ll, windRotateAnglePart, 
+    #                    nodeNeighNodesStart, nodeNeighNodes,
+    #                    nodeNeighElemsStart, nodeNeighElems,
+    #                    localNodeNeighNodesStart, localNodeNeighElemsStart, 
+    #                    globalNodeIndices, globalElemIndices, globalSideIndices,
+    #                    localNodeIndices, localElemIndices, localSideIndices,
+    #                    localNodePart, localElemPart, localSidePart,
+    #                    drag, roughness, rmanning, kb, sigma_lcl)
+
+    #         print(f"HERE device {ipart} populateSides")
+    #         cufunc.populateSides(i34Part, sharedIdxSideBoundary,
+    #                    nodeCoordsPart, nodeCoords_llPart, use_ll,
+    #                    windRotateAnglePart,   
+    #                    isdel, isidenode, isbnd,
+    #                    nond, nlnd, iond, ilnd,                                  
+    #                    nodeNeighNodesStart, nodeNeighNodes,
+    #                    nodeNeighElemsStart, nodeNeighElems,
+    #                    globalNodeIndices, globalElemIndices, globalSideIndices,
+    #                    localNodeIndices, localElemIndices, localSideIndices,
+    #                    localNodePart, localElemPart, localSidePart,
+    #                    drag, roughness);        
+
+    #         print(f"HERE device {ipart} populateElements")
+    #         cufunc.populateElements(i34Part, elnodePart, elsidePart,
+    #                    nodeCoordsPart, nodeCoords_llPart, use_ll,
+    #                    windRotateAnglePart,   
+    #                    isdel, isidenode, isbnd,
+    #                    nond, nlnd, iond, ilnd,                                  
+    #                    nodeNeighNodesStart, nodeNeighNodes,
+    #                    nodeNeighElemsStart, nodeNeighElems,
+    #                    globalNodeIndices, globalElemIndices, globalSideIndices,
+    #                    localNodeIndices, localElemIndices, localSideIndices,
+    #                    localNodePart, localElemPart, localSidePart,
+    #                    drag, roughness);                                             
+
+
+    #         cufunc.populateMesh(i34Part, elnodePart, elsidePart, nodeCoordsPart, nodeCoords_llPart, use_ll,
+    #                             windRotateAnglePart, sharedIdxNodeBoundary, sharedIdxSideBoundary,
+    #                             isdel, isidenode, isbnd,
+    #                             nond, nlnd, iond, ilnd, 
+    #                             nodeNeighNodesStart, nodeNeighNodes,
+    #                             nodeNeighElemsStart, nodeNeighElems,
+    #                             globalNodeIndices, globalElemIndices, globalSideIndices,
+    #                             localNodeIndices, localElemIndices, localSideIndices,
+    #                             localNodePart, localElemPart, localSidePart,
+    #                             drag, roughness,
+    #                             bctides.emo, bctides.efa, 
+    #                             bctides.umo, bctides.ufa,
+    #                             bctides.vmo, bctides.vfa)
+
+    #         cufunc.populateBoundaryNodes(nond, iond,
+    #                                      bctides.emo, bctides.efa, 
+    #                                      bctides.umo, bctides.ufa,
+    #                                      bctides.vmo, bctides.vfa,
+    #                                      bctides.ifltype, bctides.iettype)    
 
             
 
