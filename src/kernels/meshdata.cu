@@ -2071,14 +2071,14 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    const int idx_n1 = isidenode[iglobal*2];
    const int idx_n2 = isidenode[iglobal*2 + 1];
 
-printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
+if (i == 0) printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
 
    const int locidx_n1 = localNodeIndices[idx_n1];
    const int locidx_n2 = localNodeIndices[idx_n2];
    const int part_n1 =   localNodePart[idx_n1];
    const int part_n2 =   localNodePart[idx_n2];
 
-printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
+if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
