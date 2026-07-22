@@ -3653,7 +3653,7 @@ extern "C" {
  
       // Check if this node has essential BC
       if (nodeBnd && nodeBnd->isEssentialBC) {
-printf("setEssentialBC: nodeBnd->isEssentialBC = true");
+// printf("setEssentialBC: nodeBnd->isEssentialBC = true");
          // Verify BC value is valid
          assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
@@ -3664,14 +3664,14 @@ printf("setEssentialBC: nodeBnd->isEssentialBC = true");
          for (int j = 0; j < node->numNodes; j++) {
                node->coeffMatrix[j] = 0.0;
          }
-printf("setEssentialBC: node->coeffMatrix = 0.0\n");         
+// printf("setEssentialBC: node->coeffMatrix = 0.0\n");         
          // Set solution and RHS to BC value
          node->mX  = nodeBnd->elbc;
          node->qel = nodeBnd->elbc;
-printf("setEssentialBC: node->qel = nodeBnd->elbc\n");
+// printf("setEssentialBC: node->qel = nodeBnd->elbc\n");
       } else {
          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
-printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node);
+// printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node);
          for (int j = 0; j < node->numNodes; j++) {
                const Node* nbNode = node->nodes[j];
    	         assert(nbNode != nullptr && "setEssentialBC: nbNode is nullptr");
@@ -3682,13 +3682,13 @@ printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node)
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
-printf("setEssentialBC: node = %p\n", node);
+// printf("setEssentialBC: node = %p\n", node);
                   // Subtract contribution to RHS
                   node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
                }
          }
-printf("setEssentialBC: node->qel = nodeBnd->elbc - node->coeffMatrix[j]*nbNodeBnd->elbc\n");
+// printf("setEssentialBC: node->qel = nodeBnd->elbc - node->coeffMatrix[j]*nbNodeBnd->elbc\n");
       }
    }
 
