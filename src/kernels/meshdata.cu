@@ -2108,7 +2108,7 @@ if (i == 0) printf("populateSides: 2\n");
          side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
 
          if   (isLand) side.sideBnd->segment = landBoundarySegment;
-         else          side.sideBnd->segment = localSegmentMem[isbs];
+         else          side.sideBnd->segment = &(localSegmentMem[isbs]);
 
          assert (isLand == side.sideBnd->segment->isLand);
          
