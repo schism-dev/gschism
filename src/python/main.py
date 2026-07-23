@@ -688,6 +688,11 @@ if __name__ == "__main__":
                 'globalSideIndices': globalSideIndices,
             })
 
+    print(cp.unique(partNodes, return_counts=True))
+    print(int((localNodePart == 0).sum()), int((localNodePart == 1).sum()))
+    print(int((localSidePart == 0).sum()), int((localSidePart == 1).sum()))
+
+
     # Phase 1: all nodes on all GPUs
     for ipart, pd in enumerate(partPopulate):
         with cp.cuda.Device(pd['device_id']):
