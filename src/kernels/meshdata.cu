@@ -2113,11 +2113,11 @@ if (i == 0) printf("populateSides: 2\n");
          assert (isLand == side.sideBnd->segment->isLand);
          
          side.sideBnd->side = &side;
-return;
+
          // Links each node boundary to the side boundary using the first available side boundary pointer
          n1bnd->linkSideBoundary(side.sideBnd);
          n2bnd->linkSideBoundary(side.sideBnd);
-
+return;
       }
       else {
          side.sideBnd = nullptr;
