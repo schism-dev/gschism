@@ -2083,7 +2083,7 @@ if (i % 100 == 0) printf("populateSides: i = %d, nodes[part_n1] = %p, nodes[part
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
-return;
+// return;
 if (i % 100 == 0) printf("populateSides: 1, i = %d, side.n1 = %p, side.n2 = %p\n", i, side.n1, side.n2);
 
    // Counts the number of sides connected to each node
@@ -2094,7 +2094,7 @@ if (i % 100 == 0) printf("populateSides: 1, i = %d, side.n1 = %p, side.n2 = %p\n
    NodeBoundary *n1bnd = side.n1->nodeBnd;
    NodeBoundary *n2bnd = side.n2->nodeBnd;
 if (i == 0) printf("populateSides: 2\n");
-
+return;
    if (n1bnd != nullptr && n2bnd != nullptr) 
    // If both nodes are on the boundary, then the side may be on the boundary (Notice that there are cases where the side is not on the boundary, but both nodes are on the boundary)
    {
