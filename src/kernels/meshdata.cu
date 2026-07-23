@@ -2094,7 +2094,7 @@ if (i % 100 == 0) printf("populateSides: 1, i = %d, side.n1 = %p, side.n2 = %p\n
    NodeBoundary *n1bnd = side.n1->nodeBnd;
    NodeBoundary *n2bnd = side.n2->nodeBnd;
 if (i == 0) printf("populateSides: 2\n");
-return;
+// return;
    if (n1bnd != nullptr && n2bnd != nullptr) 
    // If both nodes are on the boundary, then the side may be on the boundary (Notice that there are cases where the side is not on the boundary, but both nodes are on the boundary)
    {
@@ -2129,7 +2129,7 @@ return;
    }
 
 if (i % 100 == 0) printf("populateSides: 3, i = %d\n", i);
-
+return;
    // finding the pointer to the elements that share the side
    const int idx_e1 = isdel[iglobal*2];
    const int idx_e2 = isdel[iglobal*2 + 1];
