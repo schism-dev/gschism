@@ -2078,13 +2078,13 @@ if (i == 0) printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", ig
    const int part_n1 =   localNodePart[idx_n1];
    const int part_n2 =   localNodePart[idx_n2];
 
-if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %, locidx_n1 = %d, locidx_n2 = %d\n", part_n1, part_n2, locidx_n1, locidx_n2);
+if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d, locidx_n1 = %d, locidx_n2 = %d\n", part_n1, part_n2, locidx_n1, locidx_n2);
 if (i == 0) printf("populateSides: nodes[part_n1] = %p, nodes[part_n2] = %p\n", mesh->nodes[part_n1], mesh->nodes[part_n2]);
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
-if (i == 0) printf("populateSides: 1\n");
+if (i == 0) printf("populateSides: 1, side.n1 = %p, side.n2 = %p\n", side.n1, side.n2);
 
    // Counts the number of sides connected to each node
    atomicAdd(&side.n1->numSides, 1);

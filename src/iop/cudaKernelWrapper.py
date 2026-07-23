@@ -22,6 +22,13 @@ def initCudaDeviceConfig(devices = None):
     devices = (0, 1)   # THIS IS FOR TESTING ONLY XXXXXXX
 
     configCuda = CudaDeviceConfig(devices)
+
+    # Enable P2P both ways (test only) XXXXXXXXX
+    with cp.cuda.Device(0):
+        cp.cuda.runtime.deviceEnablePeerAccess(1)
+    with cp.cuda.Device(1):
+        cp.cuda.runtime.deviceEnablePeerAccess(0)
+
     return configCuda
 
 
