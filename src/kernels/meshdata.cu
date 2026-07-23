@@ -2655,7 +2655,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2 and I_6 are not needed if essential b.c. are enforced by elminating rows and columns
    NodeBoundary *nodeBnd = node1->nodeBnd;
-   if (nodeBnd != nullptr && nodeBnd != &(mesh->landBoundaryNode))  { 
+   if (nodeBnd != nullptr && nodeBnd != mesh->landBoundaryNode)  { 
    // If it is an open boundary node...
 
    // XXXXX DO THIS MORE NATURALLY IN A SideBnd kernel?
