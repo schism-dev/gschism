@@ -2078,11 +2078,13 @@ if (i == 0) printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", ig
    const int part_n1 =   localNodePart[idx_n1];
    const int part_n2 =   localNodePart[idx_n2];
 
-if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
+if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %, locidx_n1 = %d, locidx_n2 = %d\n", part_n1, part_n2, locidx_n1, locidx_n2);
+if (i == 0) printf("populateSides: nodes[part_n1] = %p, nodes[part_n2] = %p\n", mesh->nodes[part_n1], mesh->nodes[part_n2]);
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
 
+if (i == 0) printf("populateSides: 1\n");
 
    // Counts the number of sides connected to each node
    atomicAdd(&side.n1->numSides, 1);
@@ -2091,6 +2093,7 @@ if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_
    // Side boundary type
    NodeBoundary *n1bnd = side.n1->nodeBnd;
    NodeBoundary *n2bnd = side.n2->nodeBnd;
+if (i == 0) printf("populateSides: 2\n");
 
    if (n1bnd != nullptr && n2bnd != nullptr) 
    // If both nodes are on the boundary, then the side may be on the boundary (Notice that there are cases where the side is not on the boundary, but both nodes are on the boundary)
@@ -2125,6 +2128,7 @@ if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_
       side.sideBnd = nullptr;
    }
 
+if (i == 0) printf("populateSides: 3\n");
 
    // finding the pointer to the elements that share the side
    const int idx_e1 = isdel[iglobal*2];
@@ -2140,6 +2144,8 @@ if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_
       side.elems[0] = nullptr;
    }
 
+if (i == 0) printf("populateSides: 4\n");
+
    if (idx_e2 > -1) {
       const int locidx_e2 = localElemIndices[idx_e2];
       const int part_e2 =  localElemPart[idx_e2];
@@ -2148,6 +2154,8 @@ if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_
    else {
       side.elems[1] = nullptr;
    }
+
+if (i == 0) printf("populateSides: 5\n");
 
    if (side.elems[1] == nullptr && side.sideBnd == nullptr) {
       
@@ -2168,6 +2176,8 @@ if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_
    #ifdef USE_FRAMES
    side.setFrame();
    #endif
+
+if (i == 0) printf("populateSides: 6\n");
 
    // Normal, unitary vector to the side
    if constexpr(ics == 1) {
@@ -2190,6 +2200,8 @@ if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_
 
    }
 
+if (i == 0) printf("populateSides: 7\n");
+
    assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
    side.shapiro = shapiro0;
 
@@ -2207,6 +2219,7 @@ if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_
    // Compute the length of the side
    side.len = length(toPoint3(side.n2->p, side.n2->gz) - toPoint3(side.n1->p, side.n1->gz));
 
+if (i == 0) printf("populateSides: 8\n");
 
    // Compute the Coriolis coefficient
 
@@ -2227,6 +2240,8 @@ if (i == 0) printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_
       }
 
    }
+
+if (i == 0) printf("populateSides: 9\n");
 
 }
 
