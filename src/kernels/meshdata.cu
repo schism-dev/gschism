@@ -2072,7 +2072,7 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    const int idx_n2 = isidenode[iglobal*2 + 1];
 
 if (i % 100 == 0) printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
-return;
+
    const int locidx_n1 = localNodeIndices[idx_n1];
    const int locidx_n2 = localNodeIndices[idx_n2];
    const int part_n1 =   localNodePart[idx_n1];
@@ -2083,7 +2083,7 @@ if (i % 100 == 0) printf("populateSides: i = %d, nodes[part_n1] = %p, nodes[part
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
-
+return;
 if (i % 100 == 0) printf("populateSides: 1, i = %d, side.n1 = %p, side.n2 = %p\n", i, side.n1, side.n2);
 
    // Counts the number of sides connected to each node
