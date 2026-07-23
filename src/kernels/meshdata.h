@@ -1582,7 +1582,7 @@ struct Mesh {
                    int npgb, int negb, int nsgb, 
                    int np, int ne, int ns,
                    int max_np, int max_ne, int max_ns, int nseg,
-                   int *plandNodeBndMem, int *plandSegMem,
+                   NodeBoundary *plandNodeBndMem, BoundarySegment *plandSegMem,
                    Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
