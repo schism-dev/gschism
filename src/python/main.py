@@ -544,6 +544,10 @@ if __name__ == "__main__":
             # We save all the segment info in all partitions.
             segmentMem = cp.zeros(ilnd.shape[0]*segmentSize, dtype=cp.int8)
 
+            # Memory for the land boundary nodes and segments.
+            landNodeBndMem = cp.zeros(1 * boundaryNodesSize, dtype=cp.int8)
+            landSegMem     = cp.zeros(1 * segmentSize, dtype=cp.int8)
+
             # Need to store the pointers to be used later in createMesh and populateMesh
             boundaryNodesMemList.append(boundaryNodesMem.data.ptr)
             boundarySidesMemList.append(boundarySidesMem.data.ptr)
@@ -627,6 +631,7 @@ if __name__ == "__main__":
             cufunc.createMesh(ipart, numNodes, numElements, numSides, numSegments,
                               numPartNodes[ipart], numPartElements[ipart], numPartSides[ipart],  
                               max(numPartNodes), max(numPartElements), max(numPartSides),
+                              landNodeBndMem, landSegMem,
                               nodesPtr, elemsPtr, sidesPtr,
                               nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
                               partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 

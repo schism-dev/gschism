@@ -1561,8 +1561,8 @@ struct Mesh {
    Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
    Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
 
-   BoundarySegment landBoundarySegment;
-   NodeBoundary landBoundaryNode;
+   BoundarySegment *landBoundarySegment;
+   NodeBoundary *landBoundaryNode;
 
    // Vertical coordinate system
    // Sigma levels
@@ -1582,6 +1582,7 @@ struct Mesh {
                    int npgb, int negb, int nsgb, 
                    int np, int ne, int ns,
                    int max_np, int max_ne, int max_ns, int nseg,
+                   int *plandNodeBndMem, int *plandSegMem,
                    Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
@@ -1603,8 +1604,8 @@ struct Mesh {
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
                        coeffMatrixMem(partCoeffMatrixMem),
-                       landBoundarySegment(true),
-                       landBoundaryNode(true)
+                       landBoundarySegment(plandSegMem),
+                       landBoundaryNode(plandNodeBndMem)
    {
       printf("Mesh constructor for partition %d\n", partNum);
 
@@ -1615,6 +1616,9 @@ struct Mesh {
       printf("elemsPtr = %p, elems = %p\n", *elems, elemsMem);
       
       sinh_theta_f = sinh(theta_f);
+
+      landBoundaryNode = new NodeBoundary(true);
+      landBoundarySegment = new BoundarySegment(true);   
 
    }
 

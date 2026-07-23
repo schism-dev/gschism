@@ -2022,8 +2022,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       node.nodeBnd = nullptr; // For internal nodes
 
       if (isbnd[iglobal] == landSegment) {
-         node.nodeBnd = &landBoundaryNode;
-         node.nodeBnd->segment = &landBoundarySegment;
+         node.nodeBnd = landBoundaryNode;
+         node.nodeBnd->segment = landBoundarySegment;
       }
       
    }
@@ -2115,8 +2115,8 @@ if (i == 0) printf("populateSides: 2\n");
          side.sideBnd->side = &side;
 
          // Links each node boundary to the side boundary using the first available side boundary pointer
-if (part_n1 == mesh->partNum) n1bnd->linkSideBoundary(side.sideBnd);
-if (part_n2 == mesh->partNum) n2bnd->linkSideBoundary(side.sideBnd);
+         n1bnd->linkSideBoundary(side.sideBnd);
+         n2bnd->linkSideBoundary(side.sideBnd);
 
       }
       else {
@@ -2129,7 +2129,7 @@ if (part_n2 == mesh->partNum) n2bnd->linkSideBoundary(side.sideBnd);
    }
 
 if (i % 100 == 0) printf("populateSides: 3, i = %d\n", i);
-return;
+// return;
    // finding the pointer to the elements that share the side
    const int idx_e1 = isdel[iglobal*2];
    const int idx_e2 = isdel[iglobal*2 + 1];
@@ -6054,6 +6054,7 @@ __global__ void createMesh(int partNum,
                            int npgb, int negb, int nsgb, int nseg,
                            int np, int ne, int ns, 
                            int max_np, int max_ne, int max_ns,
+                           int *landNodeBndMem, int *landSegMem,
                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
@@ -6087,6 +6088,7 @@ __global__ void createMesh(int partNum,
    mesh = new Mesh(partNum, npgb, negb, nsgb, 
                    np, ne, ns,
                    max_np, max_ne, max_ns, nseg, 
+                   landNodeBndMem, landSegMem,
                    nodesPtr, elemsPtr, sidesPtr, 
                    nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
