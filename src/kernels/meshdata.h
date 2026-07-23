@@ -1617,8 +1617,8 @@ struct Mesh {
       
       sinh_theta_f = sinh(theta_f);
 
-      landBoundaryNode = new NodeBoundary(true);
-      landBoundarySegment = new BoundarySegment(true);   
+      *landBoundaryNode    = NodeBoundary(true);
+      *landBoundarySegment = BoundarySegment(true);   
 
    }
 
