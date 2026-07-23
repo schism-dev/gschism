@@ -2071,8 +2071,8 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    const int idx_n1 = isidenode[iglobal*2];
    const int idx_n2 = isidenode[iglobal*2 + 1];
 
-if (i == 0) printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
-
+if (i % 100 == 0) printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
+return;
    const int locidx_n1 = localNodeIndices[idx_n1];
    const int locidx_n2 = localNodeIndices[idx_n2];
    const int part_n1 =   localNodePart[idx_n1];
