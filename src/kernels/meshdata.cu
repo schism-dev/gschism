@@ -1653,7 +1653,6 @@ __device__ double Node::computeETP(int idxComp, double time, double* tfreq, doub
 
 }
 
-
 __device__ void Node::updateKb(void) {
 // Updates the node's kb index. Must be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
@@ -1875,6 +1874,10 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
          }
       }
    }
+
+   // Check that the nodes are not both on the boundary
+   assert( (side.n1->nodeBnd == nullptr || side.n2->nodeBnd == nullptr)
+        && "side not in ilnd/iond but both nodes are boundary" );
 
    return -1;
 }
@@ -2655,7 +2658,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2 and I_6 are not needed if essential b.c. are enforced by elminating rows and columns
    NodeBoundary *nodeBnd = node1->nodeBnd;
-   if (nodeBnd != nullptr && nodeBnd != mesh->landBoundaryNode)  { 
+   if (nodeBnd != nullptr && !nodeBnd->isLand) {
    // If it is an open boundary node...
 
    // XXXXX DO THIS MORE NATURALLY IN A SideBnd kernel?
@@ -5190,7 +5193,7 @@ extern "C" {
    // Set velocity to zero for open boundary nodes where the velocity is imposed.
 
       NODE_BND(nodebnd);
-printf("DDDDDDDDDD\n");
+printf("DDDDDDDDDD\n");  // XXXXXXX
       if (nodebnd->segment != nullptr && nodebnd->segment->ifltype != 0) {
          for (int k = 0; k < nvrt; k++) { nodebnd->node->u2[k] = {0.0, 0.0}; nodebnd->node->w2[k] = 0.0; }  // XXXXXXX
       }

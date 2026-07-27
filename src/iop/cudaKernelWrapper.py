@@ -1,5 +1,6 @@
 import cupy as cp
 from functools import partial
+from schism_consts import VISTA
 
 THREADS_PER_BLOCK = 64  # XXXXXXX
 
@@ -19,15 +20,23 @@ configCuda = None
 def initCudaDeviceConfig(devices = None):
     global configCuda
 
-    devices = (0, 1)   # THIS IS FOR TESTING ONLY XXXXXXX
+    # THIS IS FOR TESTING ONLY XXXXXXX
+    if VISTA:
+        devices = (0, 1)
+    else:
+        devices = (0,)
+
 
     configCuda = CudaDeviceConfig(devices)
 
     # Enable P2P both ways (test only) XXXXXXXXX
-    with cp.cuda.Device(0):
-        cp.cuda.runtime.deviceEnablePeerAccess(1)
-    with cp.cuda.Device(1):
-        cp.cuda.runtime.deviceEnablePeerAccess(0)
+    try:
+        with cp.cuda.Device(0):
+            cp.cuda.runtime.deviceEnablePeerAccess(1)
+        with cp.cuda.Device(1):
+            cp.cuda.runtime.deviceEnablePeerAccess(0)
+    except:
+        print("Error enabling peer access between devices")
 
     return configCuda
 

@@ -1,6 +1,6 @@
 // BEGIN INCLUDE: constants.h
 #define USE_LOCALIZED_SIGMA
-#define USE_FRAMES
+#define DO_NOT_USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 constexpr double rad2deg = 180.0/3.14159265358979323846;
@@ -10,7 +10,7 @@ constexpr int BLOCK_SIZE = 128;
 constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 1;              // Vertical coordinate system
-constexpr int ics = 2;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
+constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
@@ -39,7 +39,7 @@ constexpr int ihconsv = 0;     // Option to include conservative wind forcing
 constexpr int isconsv = 0;     // Option to include conservative wind forcing
 
 
-constexpr int nchi = 1;             // Option to compute drag coefficients chi and chi2
+constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
 constexpr double hmin_man = 1;  // Minimum water depth for Manning's friction
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
@@ -86,8 +86,8 @@ constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
 constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 45; // Number of land boundary segments
-constexpr int mnlnd = 29002; // Maximum number of nodes per land boundary segment
+constexpr int nland = 43; // Number of land boundary segments
+constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
@@ -1680,8 +1680,8 @@ struct Mesh {
    Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
    Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
 
-   BoundarySegment landBoundarySegment;
-   NodeBoundary landBoundaryNode;
+   BoundarySegment *landBoundarySegment;
+   NodeBoundary *landBoundaryNode;
 
    // Vertical coordinate system
    // Sigma levels
@@ -1701,6 +1701,7 @@ struct Mesh {
                    int npgb, int negb, int nsgb, 
                    int np, int ne, int ns,
                    int max_np, int max_ne, int max_ns, int nseg,
+                   NodeBoundary *plandNodeBndMem, BoundarySegment *plandSegMem,
                    Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
@@ -1722,8 +1723,8 @@ struct Mesh {
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
                        coeffMatrixMem(partCoeffMatrixMem),
-                       landBoundarySegment(true),
-                       landBoundaryNode(true)
+                       landBoundarySegment(plandSegMem),
+                       landBoundaryNode(plandNodeBndMem)
    {
       printf("Mesh constructor for partition %d\n", partNum);
 
@@ -1734,6 +1735,9 @@ struct Mesh {
       printf("elemsPtr = %p, elems = %p\n", *elems, elemsMem);
       
       sinh_theta_f = sinh(theta_f);
+
+      *landBoundaryNode    = NodeBoundary(true);
+      *landBoundarySegment = BoundarySegment(true);   
 
    }
 
@@ -3578,7 +3582,6 @@ __device__ double Node::computeETP(int idxComp, double time, double* tfreq, doub
 
 }
 
-
 __device__ void Node::updateKb(void) {
 // Updates the node's kb index. Must be called before compZCoord(), preferibly right after Depth and/or eta2 are updated
 
@@ -3801,6 +3804,10 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
       }
    }
 
+   // Check that the nodes are not both on the boundary
+   assert( (side.n1->nodeBnd == nullptr || side.n2->nodeBnd == nullptr)
+        && "side not in ilnd/iond but both nodes are boundary" );
+
    return -1;
 }
 
@@ -3947,8 +3954,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       node.nodeBnd = nullptr; // For internal nodes
 
       if (isbnd[iglobal] == landSegment) {
-         node.nodeBnd = &landBoundaryNode;
-         node.nodeBnd->segment = &landBoundarySegment;
+         node.nodeBnd = landBoundaryNode;
+         node.nodeBnd->segment = landBoundarySegment;
       }
       
    }
@@ -3996,18 +4003,20 @@ __device__ void Mesh::populateSides(int *i34, int *sharedIdxSideBoundary,
    const int idx_n1 = isidenode[iglobal*2];
    const int idx_n2 = isidenode[iglobal*2 + 1];
 
-printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
+if (i % 100 == 0) printf("populateSides: iglobal = %d, idx_n1 = %d, idx_n2 = %d\n", iglobal, idx_n1, idx_n2);
 
    const int locidx_n1 = localNodeIndices[idx_n1];
    const int locidx_n2 = localNodeIndices[idx_n2];
    const int part_n1 =   localNodePart[idx_n1];
    const int part_n2 =   localNodePart[idx_n2];
 
-printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
+if (i % 100 == 0) printf("populateSides: i = %d, part_n1 = %d, part_n2 = %d, locidx_n1 = %d, locidx_n2 = %d\n", i, part_n1, part_n2, locidx_n1, locidx_n2);
+if (i % 100 == 0) printf("populateSides: i = %d, nodes[part_n1] = %p, nodes[part_n2] = %p\n", i, mesh->nodes[part_n1], mesh->nodes[part_n2]);
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
-
+// return;
+if (i % 100 == 0) printf("populateSides: 1, i = %d, side.n1 = %p, side.n2 = %p\n", i, side.n1, side.n2);
 
    // Counts the number of sides connected to each node
    atomicAdd(&side.n1->numSides, 1);
@@ -4016,7 +4025,8 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
    // Side boundary type
    NodeBoundary *n1bnd = side.n1->nodeBnd;
    NodeBoundary *n2bnd = side.n2->nodeBnd;
-
+if (i == 0) printf("populateSides: 2\n");
+// return;
    if (n1bnd != nullptr && n2bnd != nullptr) 
    // If both nodes are on the boundary, then the side may be on the boundary (Notice that there are cases where the side is not on the boundary, but both nodes are on the boundary)
    {
@@ -4029,7 +4039,7 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
 
          side.sideBnd = &(localSideBoundaryMem[idxSideBoundary]);
 
-         if   (isLand) side.sideBnd->segment = &landBoundarySegment;
+         if   (isLand) side.sideBnd->segment = landBoundarySegment;
          else          side.sideBnd->segment = &(localSegmentMem[isbs]);
 
          assert (isLand == side.sideBnd->segment->isLand);
@@ -4050,7 +4060,8 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
       side.sideBnd = nullptr;
    }
 
-
+if (i % 100 == 0) printf("populateSides: 3, i = %d\n", i);
+// return;
    // finding the pointer to the elements that share the side
    const int idx_e1 = isdel[iglobal*2];
    const int idx_e2 = isdel[iglobal*2 + 1];
@@ -4065,6 +4076,8 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
       side.elems[0] = nullptr;
    }
 
+if (i % 100 == 0) printf("populateSides: 4, i = %d\n", i);
+
    if (idx_e2 > -1) {
       const int locidx_e2 = localElemIndices[idx_e2];
       const int part_e2 =  localElemPart[idx_e2];
@@ -4073,6 +4086,8 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
    else {
       side.elems[1] = nullptr;
    }
+
+if (i % 100 == 0) printf("populateSides: 5, i = %d\n", i);
 
    if (side.elems[1] == nullptr && side.sideBnd == nullptr) {
       
@@ -4093,6 +4108,8 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
    #ifdef USE_FRAMES
    side.setFrame();
    #endif
+
+if (i % 100 == 0) printf("populateSides: 6, i = %d\n", i);
 
    // Normal, unitary vector to the side
    if constexpr(ics == 1) {
@@ -4115,6 +4132,8 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
 
    }
 
+if (i % 100 == 0) printf("populateSides: 7, i = %d\n", i);
+
    assert(ishapiro == 1 && "Only shapiro = 1 is implemented");
    side.shapiro = shapiro0;
 
@@ -4132,6 +4151,7 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
    // Compute the length of the side
    side.len = length(toPoint3(side.n2->p, side.n2->gz) - toPoint3(side.n1->p, side.n1->gz));
 
+if (i % 100 == 0) printf("populateSides: 8, i = %d\n", i);
 
    // Compute the Coriolis coefficient
 
@@ -4152,6 +4172,8 @@ printf("populateSides: part_n1 = %d, part_n2 = %d\n", part_n1, part_n2);
       }
 
    }
+
+if (i % 100 == 0) printf("populateSides: 9, i = %d\n", i);
 
 }
 
@@ -4565,7 +4587,7 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Boundary integrals I_{2,3,5,6}; they all vanish at land boundaries
    // I_2 and I_6 are not needed if essential b.c. are enforced by elminating rows and columns
    NodeBoundary *nodeBnd = node1->nodeBnd;
-   if (nodeBnd != nullptr && nodeBnd != &(mesh->landBoundaryNode))  { 
+   if (nodeBnd != nullptr && !nodeBnd->isLand) {
    // If it is an open boundary node...
 
    // XXXXX DO THIS MORE NATURALLY IN A SideBnd kernel?
@@ -5578,7 +5600,7 @@ extern "C" {
  
       // Check if this node has essential BC
       if (nodeBnd && nodeBnd->isEssentialBC) {
-printf("setEssentialBC: nodeBnd->isEssentialBC = true");
+// printf("setEssentialBC: nodeBnd->isEssentialBC = true");
          // Verify BC value is valid
          assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
@@ -5589,14 +5611,14 @@ printf("setEssentialBC: nodeBnd->isEssentialBC = true");
          for (int j = 0; j < node->numNodes; j++) {
                node->coeffMatrix[j] = 0.0;
          }
-printf("setEssentialBC: node->coeffMatrix = 0.0\n");         
+// printf("setEssentialBC: node->coeffMatrix = 0.0\n");         
          // Set solution and RHS to BC value
          node->mX  = nodeBnd->elbc;
          node->qel = nodeBnd->elbc;
-printf("setEssentialBC: node->qel = nodeBnd->elbc\n");
+// printf("setEssentialBC: node->qel = nodeBnd->elbc\n");
       } else {
          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
-printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node);
+// printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node);
          for (int j = 0; j < node->numNodes; j++) {
                const Node* nbNode = node->nodes[j];
    	         assert(nbNode != nullptr && "setEssentialBC: nbNode is nullptr");
@@ -5607,13 +5629,13 @@ printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node)
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
-printf("setEssentialBC: node = %p\n", node);
+// printf("setEssentialBC: node = %p\n", node);
                   // Subtract contribution to RHS
                   node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
                   node->coeffMatrix[j] = 0.0;  
                }
          }
-printf("setEssentialBC: node->qel = nodeBnd->elbc - node->coeffMatrix[j]*nbNodeBnd->elbc\n");
+// printf("setEssentialBC: node->qel = nodeBnd->elbc - node->coeffMatrix[j]*nbNodeBnd->elbc\n");
       }
    }
 
@@ -7100,7 +7122,7 @@ extern "C" {
    // Set velocity to zero for open boundary nodes where the velocity is imposed.
 
       NODE_BND(nodebnd);
-printf("DDDDDDDDDD\n");
+printf("DDDDDDDDDD\n");  // XXXXXXX
       if (nodebnd->segment != nullptr && nodebnd->segment->ifltype != 0) {
          for (int k = 0; k < nvrt; k++) { nodebnd->node->u2[k] = {0.0, 0.0}; nodebnd->node->w2[k] = 0.0; }  // XXXXXXX
       }
@@ -7964,6 +7986,7 @@ __global__ void createMesh(int partNum,
                            int npgb, int negb, int nsgb, int nseg,
                            int np, int ne, int ns, 
                            int max_np, int max_ne, int max_ns,
+                           NodeBoundary *plandNodeBndMem, BoundarySegment *plandSegMem,
                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
@@ -7997,6 +8020,7 @@ __global__ void createMesh(int partNum,
    mesh = new Mesh(partNum, npgb, negb, nsgb, 
                    np, ne, ns,
                    max_np, max_ne, max_ns, nseg, 
+                   plandNodeBndMem, plandSegMem,
                    nodesPtr, elemsPtr, sidesPtr, 
                    nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 

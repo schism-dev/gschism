@@ -14,7 +14,7 @@ from cupy_backends.cuda.libs import cusparse as _cusparse
 from cupyx import cusparse
 from cupyx.scipy.sparse import csr_matrix
 
-
+from iop.cudaKernelWrapper import CudaDeviceConfig
 from line_profiler import LineProfiler
 
 checkEveryNIterations = 1
@@ -77,10 +77,6 @@ class PCGSolver:
             self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, alg)
         self.buff = cp.empty(self.buff_size, cp.int8)
 
-
-        
-               
-
     def mulA(self, p, q):
         # XXXXX It is not using p or q
         # Computes q = A * p 
@@ -119,9 +115,6 @@ class PCGSolver:
         old_iters = 0
 
  
-        # Starts solving on single precision
-        # ----------------------------------
-
         # Initial residual: r = b - A*x
         self.r[:] = self.b - self.A @ self.x 
         
@@ -187,18 +180,127 @@ class PCGSolver:
 
         cufunc.solverCopyResult(self.x)
 
-                # Roll the previous solutions (for parabolic extrapolation)
+        # Roll the previous solutions (for parabolic extrapolation)
         self.x2[:] = self.x1
         self.x1[:] = self.x0
         self.x0[:] = self.x
         
         return iters
 
-
     def print_stats(self):
         self.solver_profiler.print_stats()
 
+class PCGSolverMultiGPU:
+    def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
+        """Pre-allocate everything for maximum performance."""
 
+        self.configCuda = configCuda
+        self.deviceCount = configCuda.deviceCount
+        self.N = N
+        self.NNZ = NNZ
+
+        self.A       = [[None]*self.deviceCount for _ in range(self.deviceCount)]
+        self.b       = [[None]*self.deviceCount]
+        self.indices = [[None]*self.deviceCount]
+        self.indptr  = [[None]*self.deviceCount]
+        self.diag    = [[None]*self.deviceCount]
+        self.r       = [[None]*self.deviceCount]
+        self.z       = [[None]*self.deviceCount]
+        self.p       = [[None]*self.deviceCount]
+        self.q       = [[None]*self.deviceCount]
+
+        for i, device_id in enumerate(configCuda.devices):
+            
+            with cp.cuda.Device(device_id):
+                for j in range(self.deviceCount):
+
+                    self.data     = cp.zeros(self.NNZ[i], dtype=cp.float64)
+                    self.b        = cp.zeros(self.N[i],  dtype=cp.float64)
+
+
+                    self.indices= cp.zeros(self.NNZ[i],    dtype=cp.int32)
+                    self.indptr = cp.zeros(self.N[i] + 1, dtype=cp.int32)
+                    self.indptr[self.N[i]] = self.NNZ[i]
+
+                    self.A[i][j]   = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.N[i], self.N[j]))
+
+                    
+                    # Pre-allocate all work vectors (no allocations in solve loop)
+                    self.diag = cp.empty(self.N[i], dtype=cp.float64)
+                    self.r    = cp.empty(self.N[i], dtype=cp.float64)
+                    self.z    = cp.empty(self.N[i], dtype=cp.float64) 
+                    self.p    = cp.empty(self.N[i], dtype=cp.float64)
+                    self.q    = cp.empty(self.N[i], dtype=cp.float64)
+                    self.x    = cp.empty(self.N[i], dtype=cp.float64)
+                    self.x0   = cp.empty(self.N[i], dtype=cp.float64)
+                    self.x1   = cp.empty(self.N[i], dtype=cp.float64)
+                    self.x2   = cp.empty(self.N[i], dtype=cp.float64)
+
+                    # Set up scalars
+                    self.one  = np.array(1.0, np.float64)
+                    self.zero = np.array(0.0, np.float64)        
+                    
+                    self.cuda_dtype = _dtype.to_cuda_dtype(self.zero.dtype)
+
+                    # Pre-allocate cuSPARSE descriptors
+                    self.handle = device.get_cusparse_handle()
+                    self.desc_A = cusparse.SpMatDescriptor.create(self.A)
+                    self.desc_p = cusparse.DnVecDescriptor.create(self.p)
+                    self.desc_q = cusparse.DnVecDescriptor.create(self.q)
+                    self.desc_r = cusparse.DnVecDescriptor.create(self.r)
+                    self.desc_x = cusparse.DnVecDescriptor.create(self.x)
+                    
+                    # Pre-allocate buffer
+                    alg = _cusparse.CUSPARSE_MV_ALG_DEFAULT
+                    self.buff_size = _cusparse.spMV_bufferSize(
+                        self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+                        self.one.ctypes.data, self.desc_A.desc, self.desc_p.desc,
+                        self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, alg)
+                    self.buff = cp.empty(self.buff_size, cp.int8)
+
+
+        
+               
+
+    def mulA(self, p, q):
+        # XXXXX It is not using p or q
+        # Computes q = A * p 
+        _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+                           self.one.ctypes.data, self.desc_A.desc, self.desc_p.desc,
+                           self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
+                           self.buff.data.ptr)
+
+ 
+    def solveMultiGPU(self, rtol=1e-5, maxiter = None, ensureSymmetric = False):
+
+        # Funtions below are not implemented yet. They will operate on class managed
+        # data structures.
+        self.packIntoCacheFriendlyFormat()
+
+        self.extrapolateGuess()
+
+        self.computeResiduals()          # ri = bi - Aii xi - sum_j Aij xj
+
+        atol = self.computeAtol(rtol)    # all-reduce of norms
+        rho = 0.0
+        for iters in range(maxiter):
+            self.applyPreconditioner()   # zi = Diinv * ri
+            rhoNew = self.dotRZ()        # sum_i ri·zi
+            self.updateP(rhoNew, rho)    # pi = zi + beta pi
+            self.matvecQ()               # qi = Aii pi + sum_j Aij pj
+            alpha = rhoNew / self.dotPQ()
+            self.axpyUpdate(alpha)       # xi, ri
+            rho = rhoNew
+            if self.residualBelow(atol):
+                break
+
+        self.scatterXToMesh()
+        self.rollHistory()
+        return iters
+
+
+    def print_stats(self):
+        self.solver_profiler.print_stats()
 
 
 

@@ -1,5 +1,5 @@
 #define USE_LOCALIZED_SIGMA
-#define USE_FRAMES
+#define DO_NOT_USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 constexpr double rad2deg = 180.0/3.14159265358979323846;
@@ -9,7 +9,7 @@ constexpr int BLOCK_SIZE = 128;
 constexpr int N_TRACERS = 2;
 
 constexpr int ivcor = 1;              // Vertical coordinate system
-constexpr int ics = 2;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
+constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
@@ -38,7 +38,7 @@ constexpr int ihconsv = 0;     // Option to include conservative wind forcing
 constexpr int isconsv = 0;     // Option to include conservative wind forcing
 
 
-constexpr int nchi = 1;             // Option to compute drag coefficients chi and chi2
+constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
 constexpr double hmin_man = 1;  // Minimum water depth for Manning's friction
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
@@ -85,8 +85,8 @@ constexpr int isiglev = nsiglev - 1;
 
 constexpr int nope  = 1; // Number of open boundary segments
 constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 45; // Number of land boundary segments
-constexpr int mnlnd = 29002; // Maximum number of nodes per land boundary segment
+constexpr int nland = 43; // Number of land boundary segments
+constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
