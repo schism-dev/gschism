@@ -13,6 +13,7 @@ project_root = None
 createMesh = None
 populateMesh = None
 populateNodes = None
+populateNodes2 = None
 populateSides = None
 populateElements = None
 populateBoundaryNodes = None
@@ -74,7 +75,8 @@ getElementVarFunc = None
 getNodeVarFunc = None
 getSideVarFunc = None
 
-setupCGSolvers = None
+setupCGSolver = None
+setupMultiGPUCGSolver = None
 solverCopyResult = None
 # test = None
 
@@ -121,7 +123,7 @@ def initializeCudaKernelManager(_project_root, devices=None):
 
 def initializeCudaFunctions(sizes):
     global mod
-    global populateMesh, populateNodes, populateSides, populateElements, populateBoundaryNodes, populateBoundarySideLinks
+    global populateMesh, populateNodes, populateNodes2, populateSides, populateElements, populateBoundaryNodes, populateBoundarySideLinks
     global scaleGravity, computeTimeRamps, setWinds
     global computeBedDeformation, computeTidalPotential
     global getBoundaryConditions, computeFlowBcVelocities, resetBoundaryAreas, computeBoundaryAreas
@@ -129,7 +131,7 @@ def initializeCudaFunctions(sizes):
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
-    global setupCGSolvers, solverCopyResult, ul0ComputeDryElements, ul0ComputeDryNodes
+    global setupCGSolver, setupMultiGPUCGSolver, solverCopyResult, ul0ComputeDryElements, ul0ComputeDryNodes
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix, returnX, returnB
@@ -144,6 +146,7 @@ def initializeCudaFunctions(sizes):
     try:
         populateMesh                        = mod.get_function('populateMesh',                        sizes, kernel_type='global,onlycurrent')
         populateNodes                       = mod.get_function('populateNodes',                       sizes, kernel_type='nodes,onlycurrent')
+        populateNodes2                      = mod.get_function('populateNodes2',                      sizes, kernel_type='nodes')
         populateSides                       = mod.get_function('populateSides',                       sizes, kernel_type='sides,onlycurrent')
         populateElements                    = mod.get_function('populateElements',                    sizes, kernel_type='elements,onlycurrent')
         populateBoundaryNodes               = mod.get_function('populateBoundaryNodes',               sizes, kernel_type='nodeBnd,onlycurrent')
@@ -215,8 +218,9 @@ def initializeCudaFunctions(sizes):
 
         # test = mod.get_function('test', sizes, kernel_type='global')
 
-        setupCGSolvers   = mod.get_function('setupCGSolvers', sizes, kernel_type='nodes')
-        solverCopyResult = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
+        setupCGSolver            = mod.get_function('setupCGSolver', sizes, kernel_type='nodes')
+        setupMultiGPUCGSolver    = mod.get_function('setupMultiGPUCGSolver', sizes, kernel_type='nodes')
+        solverCopyResult         = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
 
     except Exception as e:
         print(f"Error getting CUDA functions: {e}")

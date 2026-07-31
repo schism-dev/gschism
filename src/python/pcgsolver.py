@@ -89,7 +89,7 @@ class PCGSolver:
         """Solve with pre-allocated vectors - zero allocations in hot loop."""
 
         
-        cufunc.setupCGSolvers(self.data, self.b, self.indices, self.indptr)
+        cufunc.setupCGSolver(self.data, self.b, self.indices, self.indptr)
         
         self.A = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.n, self.n))
         self.A.sort_indices()

@@ -1,4 +1,6 @@
- 
+using int16_t = short;
+using uintptr_t = unsigned long long;   // CUDA device pointers are 64-bit
+
 constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
@@ -615,12 +617,12 @@ struct Element {
 
    // Geometry information
    int idx;                   // Index of the element
-   int i34;                   // Number of sides for the element 
+   int16_t i34;               // Number of sides for the element 
    Side *sides[4];            // Sides of the element
    Node *nodes[4];            // Nodes of the element
    Element *nghbElems[4];     // Neighbors of the element
 
-   int kb;                    // Bottom index of the element
+   int16_t kb;                // Bottom index of the element
    double area;               // Area of the element
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
@@ -1033,12 +1035,12 @@ struct Side {
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
    
-   int kb;                // Bottom index of the side
+   int16_t kb;            // Bottom index of the side
    bool isDry;            // True if the side is dry
  
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
-   Tracers tracers[nvrt];   // Tracer concentrations at nodes
+   Tracers tracers[nvrt]; // Tracer concentrations at nodes
 
    // Physical information
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
@@ -1265,15 +1267,13 @@ printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p
 
    __forceinline__ __device__ void linkSideBoundary(SideBoundary *sb) {
       if (isLand) return;  // land never uses these links
-      SideBoundary *null = nullptr;
-      if (atomicCAS((unsigned long long *)&sideBnd1,
-                  (unsigned long long)null,
-                  (unsigned long long)sb) == (unsigned long long)null)
-         return;
-      if (atomicCAS((unsigned long long *)&sideBnd2,
-                  (unsigned long long)null,
-                  (unsigned long long)sb) == (unsigned long long)null)
-         return;
+
+      SideBoundary *nullSideBoundary = nullptr;
+      uintptr_t null = (uintptr_t)nullSideBoundary;
+
+      if (atomicCAS((uintptr_t *)&sideBnd1, null, (uintptr_t)sb) == null) return;
+      if (atomicCAS((uintptr_t *)&sideBnd2, null, (uintptr_t)sb) == null) return;
+
       // both slots taken. OK if this side was already linked
       assert(sideBnd1 == sb || sideBnd2 == sb);
    }
@@ -1284,14 +1284,17 @@ printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p
 struct Node {
 
    // Geometry information
-   int idx;        // Index of the node
-   Node **nodes;   // Array of pointers to the nodes that are neighbors of this node (there is no guarantee that they are connected)
-   int numNodes;   // Number of nodes neighbors of this node
+   int idx;            // Global index of the node
+   int16_t part;       // Partition of the node
+
+   Node **nodes;       // Array of pointers to the nodes that are neighbors of this node (there is no guarantee that they are connected)
+   int16_t numNodes;   // Number of nodes neighbors of this node
 
    Element **elements; // Array of pointers to the elements that share this node
-   int numElements;    // Number of elements that share this node
+   int16_t numElements;// Number of elements that share this node
 
-   int numSides;       // Number of sides that are connected to this node
+   int16_t numSides;   // Number of sides that are connected to this node
+
 
    Point2 p;           // Horizontal coordinates at the node. (if ics == 2, this are the x,y coordinates of the 3d global cartesian coordinates. Together with gz, they form the 3D global cartesian coordinates.)
    double gz;          // Global vertical coordinate at the node.
@@ -1306,11 +1309,11 @@ struct Node {
 
    LocalSigma<ivcor> localSigma;  
 
-   int kb;       // Bottom index of the node
+   int16_t kb;     // Bottom index of the node
 
    bool isDry;     // True if the node is dry
 
-   int iadv;     // Advection flag
+   int16_t iadv;   // Advection flag
 
    NodeBoundary *nodeBnd; // Pointer to additional boundary information. For non-boundary nodes, 
                           // this is nullptr
@@ -1363,6 +1366,9 @@ struct Node {
    double bdef1 = 0.0; // Bottom deformation at previous timestep
    double bdef2 = 0.0; // Bottom deformation at current timestep
 
+   int16_t *permutationSortedByGlobalIndex;  // Array of indices for the coefficients sorted by the global index. (This is to improve the cache locality when accessing the coefficients.)
+   int16_t diagonalIndex;                    // Index of the element right before the diagonal element in the permutationSortedByGlobalIndex array.
+
    double qel; // RHS
    double coeffDiag; // Diagonal coefficient of the matrix
    double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
@@ -1380,6 +1386,21 @@ struct Node {
    double t_air;
    double q_air;
    float cRot, sRot;  // Cosine and sine of the mesh rotation matrix
+
+
+   __device__ double getCoeffSorted(int k) const {
+   // Returns the k-th coefficient sorted by the global index. Includes the diagonal element.
+
+   
+      assert(k >= 0 && k <= numNodes);
+      const int16_t *perm = permutationSortedByGlobalIndex;
+
+      // Special case, k is the diagonal element.
+      if (k == diagonalIndex) return coeffDiag;
+
+      if (k < diagonalIndex) return coeffMatrix[perm[k]];
+      else                   return coeffMatrix[perm[k - 1]];
+   }
 
    __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the mesh angle
@@ -1558,8 +1579,9 @@ struct Mesh {
 
   
    // Additional topology information
-   Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
-   Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
+   Node    **nodeNeighNodes;     // Array of pointers to the nodes neighbors of each node
+   Element **nodeNeighElems;     // Array of pointers to the elements neighbors of each node
+   int16_t *nodePermutationSort; // Array of indices for the array nodes such that neighbors nodes are sorted in increasing order of their global index.
 
    BoundarySegment *landBoundarySegment;
    NodeBoundary *landBoundaryNode;
@@ -1587,6 +1609,7 @@ struct Mesh {
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
                    Element **localNodeNeighElemsMem,
+                   int16_t *localNodePermutationSortMem,
                    double *partCoeffMatrixMem,
                    NodeBoundary *localNodeBoundaryMem,
                    SideBoundary *localSideBoundaryMem,
@@ -1599,6 +1622,7 @@ struct Mesh {
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
                        nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
+                       nodePermutationSort(localNodePermutationSortMem),
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
@@ -1627,12 +1651,13 @@ struct Mesh {
                   double *wind_rotate_angle, 
                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                  int16_t *nodePermutationSort,
                   int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
                   double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
-
+   __device__ void populateNodes2(void);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
                   double *wind_rotate_angle,   
@@ -1801,8 +1826,8 @@ extern "C" {
    __global__ void computeHorGradientAtSide(void);  
 
 
-   __global__ void setupCGSolvers(double* data_d, double* b_d, 
-                                  int* indices, int* indptr);
+   __global__ void setupCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
+   __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
 
 #endif
 

@@ -585,9 +585,10 @@ if __name__ == "__main__":
 
 
             pointerSize = cp.dtype(cp.uintp).itemsize 
-            partNodeNeighNodesMem += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
-            partNodeNeighElemsMem += [cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)]
-            partCoeffMatrixMem    += [cp.zeros(partNodeNeighNodesCount.sum().item(), dtype=cp.float64)]
+            partNodeNeighNodesMem      += [cp.zeros(partNodeNeighNodesCount.sum().item()*pointerSize, dtype=cp.int8)]
+            partNodeNeighElemsMem      += [cp.zeros(partNodeNeighElemsCount.sum().item()*pointerSize, dtype=cp.int8)]
+            partNodePermutationSortMem += [cp.zeros(partNodeNeighNodesCount.sum().item(), dtype=cp.int16)]
+            partCoeffMatrixMem         += [cp.zeros(partNodeNeighNodesCount.sum().item(), dtype=cp.float64)]
 
     print(f"SIZE OF partCoeffMatrixMem = {partCoeffMatrixMem[0].size}") # XXXXXX REMOVE
     print(f"zeros in partNodeNeighNodesCount = {(partNodeNeighNodesCount == 0).sum().get()}")
@@ -635,6 +636,7 @@ if __name__ == "__main__":
                               nodesPtr, elemsPtr, sidesPtr,
                               nodesMemList[ipart], elemsMemList[ipart], sidesMemList[ipart],
                               partNodeNeighNodesMem[ipart], partNodeNeighElemsMem[ipart], 
+                              partNodePermutationSortMem[ipart],
                               partCoeffMatrixMem[ipart],
                               boundaryNodesMemList[ipart], boundarySidesMemList[ipart], segmentMemList[ipart],
                               kb, h_c.item(), h_s.item(), theta_b.item(), theta_f.item(), sigma, ztot, cs, dcs,
@@ -707,6 +709,9 @@ if __name__ == "__main__":
                 localNodeIndices, localElemIndices, localSideIndices,
                 localNodePart, localElemPart, localSidePart,
                 drag, roughness, rmanning, kb, sigma_lcl)
+    print(f"HERE populateNodes2")
+    cufunc.populateNodes2()
+
     # Phase 2: all sides
     for ipart, pd in enumerate(partPopulate):
         with cp.cuda.Device(pd['device_id']):

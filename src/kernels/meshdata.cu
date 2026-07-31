@@ -41,7 +41,20 @@ __device__ Mesh* mesh = nullptr;
 
 #define SIDE_BND(side_bnd) const int idx_side_bnd = threadIdx.x + blockIdx.x * blockDim.x; \
                            SideBoundary *side_bnd = &(mesh->localSideBoundaryMem[idx_side_bnd]); \
-                           if (idx_side_bnd >= mesh->nbs) return;                           
+                           if (idx_side_bnd >= mesh->nbs) return;  
+
+
+__device__ inline void atomicAddInt16Unsafe(int16_t* address, int16_t val)
+{
+    uintptr_t p = (uintptr_t)address;
+    assert((p & 1) == 0);
+
+    unsigned int* base = (unsigned int*)(p & ~3);
+    unsigned int addend = (p & 2) ? ((unsigned int)val << 16)
+                                  :  (unsigned int)val;
+
+    atomicAdd(base, addend);
+}
 
 Polynomial<4> *polyDischarge; // XXX read from file
 
@@ -1888,6 +1901,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     double *wind_rotate_angle, 
                                     int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                                    int16_t *nodePermutationSort, 
                                     int *localNodeNeighNodesStart, int *localNodeNeighElemsStart, 
                                     int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -1900,6 +1914,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    Node &node(*pnode);
 
    node.idx = iglobal;
+   node.part = localNodePart[iglobal];
 
    // It is important to differentiate between the global and local "start" indices because they
    // play different, but related, roles in this code. The global "start" indices are used
@@ -1911,6 +1926,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    const int idxNodeLocalStart = localNodeNeighNodesStart[i];
    node.numNodes = idxNodeEnd - idxNodeStart;
    node.nodes = nodeNeighNodes + idxNodeLocalStart;
+   node.permutationSortedByGlobalIndex = nodePermutationSort + idxNodeLocalStart;
    node.coeffMatrix = coeffMatrixMem + idxNodeLocalStart;
 
    const int idxElemStart = nodeNeighElemsStart[iglobal];
@@ -2042,6 +2058,37 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
 }
 
+__device__ void Mesh::populateNodes2(void) {
+   NODE(node);
+
+
+   // Computes the permutation of the nodes such that nodes[permutationNodesSortedByGlobalIndex[i]] are the nodes in increasing order of their global index.
+   const int n = node->numNodes;
+   int16_t *perm = node->permutationSortedByGlobalIndex;  
+   for (int k = 0; k < n; ++k) perm[k] = k;
+
+   // in-place insertion sort by global id (is fine becausen is tiny)
+   for (int a = 1; a < n; ++a) {
+      int16_t key = perm[a];
+      int ka = a - 1;
+      while (ka >= 0 &&
+            node->nodes[perm[ka]]->idx > node->nodes[key]->idx) {
+         perm[ka + 1] = perm[ka];
+         --ka;
+      }
+      perm[ka + 1] = key;
+   }
+
+   // Finds the index of the diagonal element in the permutationSortedByGlobalIndex array.
+   node->diagonalIndex = n; // n means that the diagonal element is the last one.
+   for (int k = 0; k < n; ++k) {
+      if (node->nodes[perm[k]]->idx > node->idx) {
+         node->diagonalIndex = k - 1; // if k==0, diagonalIndex = -1, meaning that the diagonal element is the first one.
+         break;
+      }
+   }
+}
+
 
 
 
@@ -2086,18 +2133,18 @@ if (i % 100 == 0) printf("populateSides: i = %d, nodes[part_n1] = %p, nodes[part
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
-// return;
+
 if (i % 100 == 0) printf("populateSides: 1, i = %d, side.n1 = %p, side.n2 = %p\n", i, side.n1, side.n2);
 
    // Counts the number of sides connected to each node
-   atomicAdd(&side.n1->numSides, 1);
-   atomicAdd(&side.n2->numSides, 1);
+   atomicAddInt16Unsafe(&side.n1->numSides, 1);  // Unsafe here means that it doesn't check for overflow. This function is defined in this file.
+   atomicAddInt16Unsafe(&side.n2->numSides, 1);
 
    // Side boundary type
    NodeBoundary *n1bnd = side.n1->nodeBnd;
    NodeBoundary *n2bnd = side.n2->nodeBnd;
 if (i == 0) printf("populateSides: 2\n");
-// return;
+
    if (n1bnd != nullptr && n2bnd != nullptr) 
    // If both nodes are on the boundary, then the side may be on the boundary (Notice that there are cases where the side is not on the boundary, but both nodes are on the boundary)
    {
@@ -2132,7 +2179,7 @@ if (i == 0) printf("populateSides: 2\n");
    }
 
 if (i % 100 == 0) printf("populateSides: 3, i = %d\n", i);
-// return;
+
    // finding the pointer to the elements that share the side
    const int idx_e1 = isdel[iglobal*2];
    const int idx_e2 = isdel[iglobal*2 + 1];
@@ -2759,15 +2806,15 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
 
 extern "C" {
-   __global__ void setupCGSolvers(double* data_d, double* b_d, 
-                                  int* indices, int* indptr) {
+   __global__ void setupCGSolver(double* data_d, double* b_d, 
+                                 int* indices, int* indptr) {
 
       NODE(node);
       
       const int idx = node->idx;
       
       // Computes the index in the nzz array      
-      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx; // idx is there to account for the diagonal element that is not stored in the nodeNeighNodes array
 
 
       indptr[idx] = nzzIdx;
@@ -2787,8 +2834,65 @@ extern "C" {
          indices[nzzIdx + k + 1] = j;
       }
 
+   }
+
+   __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, 
+                                         int *indices, int *indptr) {
+   // Builds all the A_ij matrices and b_i and x_i vectors for the solver.
+
+      NODE(node);
+
+      // Global and local indices of the node.
+      // In this function, I stands for the global index of the current node,
+      // and J stands for the global index of the neighbor node under consideration.
+      // i and j are the local indices of the current node and the neighbor node under consideration.
+      // Notice that i and j may be local to different GPUs.
+      // idxPart is the number of the partition of the *neighbor* node. There is
+      // a biunivocal correspondence between the partitions and the GPUs.
+      const int I = node->idx;
+      const int i = idx_node;
+      const int partI = node->part;
+      
+      // // Computes the index in the nzz array      
+      // const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+
+      // indptr[idx] = nzzIdx;
+      // indices[nzzIdx] = idx;
+
+      // data_d[nzzIdx]    = node->coeffDiag;
+
+      // b_d[idx] = node->qel;
+      setBValue(partI, i, idxCSR, node->qel);
+      bool diagonalUsed = false;
+      const int numCoeffs = node->numNodes + 1;  // Includes the diagonal element
+      int i1 = -1;
+      for (int k = 0; k < numCoeffs; ++k) {
+
+         // Get the next node sorted by the global index.
+         // This includes the diagonal element, that is stored as coeffDiag
+         // const Node* nb = node->getNodeSorted(k);
+         const double coeff = node->getCoeffSorted(k);
+ 
+         const int J = nb->idx;
+         // const int j = nb - mesh->nodes[nb->part]; // Tricky! The local index is computed as the difference between the pointer to the node and the pointer to the first node stored in the partition.
+         const int partJ = nb->part;
+
+         const int idxCSR = countPerPartition[partJ];
+
+         setAValue(partI, partJ, i, idxCSR, coeff);
+         
+         countPerPartition[partJ]++;
+
+
+      //    data_d[nzzIdx + k + 1]    = node->coeffMatrix[k];
+
+      //    indices[nzzIdx + k + 1] = j;
+      // }
+      }
  
    }
+}
 
 
 
@@ -6061,6 +6165,7 @@ __global__ void createMesh(int partNum,
                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
+                           int16_t *localNodePermutationSortMem,
                            double *partCoeffMatrixMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
                            int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma, 
@@ -6095,6 +6200,7 @@ __global__ void createMesh(int partNum,
                    nodesPtr, elemsPtr, sidesPtr, 
                    nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
+                   localNodePermutationSortMem,
                    partCoeffMatrixMem,
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
                    kb, h_c, h_s, theta_b, theta_f, sigma, ztot, cs, dcs);
@@ -6138,6 +6244,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    double *node_coords, double *node_coords_ll, bool use_ll, double *wind_rotate_angle, 
    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+   int16_t *nodePermutationSort,
    int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -6148,12 +6255,19 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
                        nodeNeighNodesStart, nodeNeighNodesIndices,
                        nodeNeighElemsStart, nodeNeighElemsIndices,
+                       nodePermutationSort,
                        localNodeNeighNodesStart, localNodeNeighElemsStart,
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
                        drag, roughness, rmanning, kb, localSigma);
 }  
+
+extern "C" __global__ void populateNodes2(void) {
+
+   mesh->populateNodes2();
+}
+
 
 extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                                          double *node_coords, double *node_coords_ll, bool use_ll,

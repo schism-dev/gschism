@@ -117,7 +117,9 @@ constexpr double h0 = 0.0001;  // Minimum water depth for wetting and drying [m]
 enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35, u_air=36, outputCoords=37}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
- 
+using int16_t = short;
+using uintptr_t = unsigned long long;   // CUDA device pointers are 64-bit
+
 constexpr double small1 = 1.0e-7;       // Small non-negative number
 constexpr double small2 = small1*100.0;  // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
@@ -734,12 +736,12 @@ struct Element {
 
    // Geometry information
    int idx;                   // Index of the element
-   int i34;                   // Number of sides for the element 
+   int16_t i34;               // Number of sides for the element 
    Side *sides[4];            // Sides of the element
    Node *nodes[4];            // Nodes of the element
    Element *nghbElems[4];     // Neighbors of the element
 
-   int kb;                    // Bottom index of the element
+   int16_t kb;                // Bottom index of the element
    double area;               // Area of the element
    double ssign[4];           // Sign associated with each side of an element
    double radius;             // Element equivalent radii
@@ -1152,12 +1154,12 @@ struct Side {
    SideBoundary *sideBnd; // Pointer to additional boundary information. For non-boundary sides, 
                           // this is nullptr
    
-   int kb;                // Bottom index of the side
+   int16_t kb;            // Bottom index of the side
    bool isDry;            // True if the side is dry
  
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
-   Tracers tracers[nvrt];   // Tracer concentrations at nodes
+   Tracers tracers[nvrt]; // Tracer concentrations at nodes
 
    // Physical information
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
@@ -1384,15 +1386,13 @@ printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p
 
    __forceinline__ __device__ void linkSideBoundary(SideBoundary *sb) {
       if (isLand) return;  // land never uses these links
-      SideBoundary *null = nullptr;
-      if (atomicCAS((unsigned long long *)&sideBnd1,
-                  (unsigned long long)null,
-                  (unsigned long long)sb) == (unsigned long long)null)
-         return;
-      if (atomicCAS((unsigned long long *)&sideBnd2,
-                  (unsigned long long)null,
-                  (unsigned long long)sb) == (unsigned long long)null)
-         return;
+
+      SideBoundary *nullSideBoundary = nullptr;
+      uintptr_t null = (uintptr_t)nullSideBoundary;
+
+      if (atomicCAS((uintptr_t *)&sideBnd1, null, (uintptr_t)sb) == null) return;
+      if (atomicCAS((uintptr_t *)&sideBnd2, null, (uintptr_t)sb) == null) return;
+
       // both slots taken. OK if this side was already linked
       assert(sideBnd1 == sb || sideBnd2 == sb);
    }
@@ -1403,14 +1403,17 @@ printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p
 struct Node {
 
    // Geometry information
-   int idx;        // Index of the node
-   Node **nodes;   // Array of pointers to the nodes that are neighbors of this node (there is no guarantee that they are connected)
-   int numNodes;   // Number of nodes neighbors of this node
+   int idx;            // Global index of the node
+   int16_t part;       // Partition of the node
+
+   Node **nodes;       // Array of pointers to the nodes that are neighbors of this node (there is no guarantee that they are connected)
+   int16_t numNodes;   // Number of nodes neighbors of this node
 
    Element **elements; // Array of pointers to the elements that share this node
-   int numElements;    // Number of elements that share this node
+   int16_t numElements;// Number of elements that share this node
 
-   int numSides;       // Number of sides that are connected to this node
+   int16_t numSides;   // Number of sides that are connected to this node
+
 
    Point2 p;           // Horizontal coordinates at the node. (if ics == 2, this are the x,y coordinates of the 3d global cartesian coordinates. Together with gz, they form the 3D global cartesian coordinates.)
    double gz;          // Global vertical coordinate at the node.
@@ -1425,11 +1428,11 @@ struct Node {
 
    LocalSigma<ivcor> localSigma;  
 
-   int kb;       // Bottom index of the node
+   int16_t kb;     // Bottom index of the node
 
    bool isDry;     // True if the node is dry
 
-   int iadv;     // Advection flag
+   int16_t iadv;   // Advection flag
 
    NodeBoundary *nodeBnd; // Pointer to additional boundary information. For non-boundary nodes, 
                           // this is nullptr
@@ -1482,6 +1485,9 @@ struct Node {
    double bdef1 = 0.0; // Bottom deformation at previous timestep
    double bdef2 = 0.0; // Bottom deformation at current timestep
 
+   int16_t *permutationSortedByGlobalIndex;  // Array of indices for the coefficients sorted by the global index. (This is to improve the cache locality when accessing the coefficients.)
+   int16_t diagonalIndex;                    // Index of the element right before the diagonal element in the permutationSortedByGlobalIndex array.
+
    double qel; // RHS
    double coeffDiag; // Diagonal coefficient of the matrix
    double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
@@ -1499,6 +1505,21 @@ struct Node {
    double t_air;
    double q_air;
    float cRot, sRot;  // Cosine and sine of the mesh rotation matrix
+
+
+   __device__ double getCoeffSorted(int k) const {
+   // Returns the k-th coefficient sorted by the global index. Includes the diagonal element.
+
+   
+      assert(k >= 0 && k <= numNodes);
+      const int16_t *perm = permutationSortedByGlobalIndex;
+
+      // Special case, k is the diagonal element.
+      if (k == diagonalIndex) return coeffDiag;
+
+      if (k < diagonalIndex) return coeffMatrix[perm[k]];
+      else                   return coeffMatrix[perm[k - 1]];
+   }
 
    __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the mesh angle
@@ -1677,8 +1698,9 @@ struct Mesh {
 
   
    // Additional topology information
-   Node    **nodeNeighNodes; // Array of pointers to the nodes neighbors of each node
-   Element **nodeNeighElems; // Array of pointers to the elements neighbors of each node
+   Node    **nodeNeighNodes;     // Array of pointers to the nodes neighbors of each node
+   Element **nodeNeighElems;     // Array of pointers to the elements neighbors of each node
+   int16_t *nodePermutationSort; // Array of indices for the array nodes such that neighbors nodes are sorted in increasing order of their global index.
 
    BoundarySegment *landBoundarySegment;
    NodeBoundary *landBoundaryNode;
@@ -1706,6 +1728,7 @@ struct Mesh {
                    Node *nodesMem, Element *elemsMem, Side *sidesMem,
                    Node    **localNodeNeighNodesMem,
                    Element **localNodeNeighElemsMem,
+                   int16_t *localNodePermutationSortMem,
                    double *partCoeffMatrixMem,
                    NodeBoundary *localNodeBoundaryMem,
                    SideBoundary *localSideBoundaryMem,
@@ -1718,6 +1741,7 @@ struct Mesh {
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
                        nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
+                       nodePermutationSort(localNodePermutationSortMem),
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
@@ -1746,12 +1770,13 @@ struct Mesh {
                   double *wind_rotate_angle, 
                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                  int16_t *nodePermutationSort,
                   int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
                   double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
-
+   __device__ void populateNodes2(void);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
                   double *wind_rotate_angle,   
@@ -1920,8 +1945,8 @@ extern "C" {
    __global__ void computeHorGradientAtSide(void);  
 
 
-   __global__ void setupCGSolvers(double* data_d, double* b_d, 
-                                  int* indices, int* indptr);
+   __global__ void setupCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
+   __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
 
 #endif
 
@@ -1970,7 +1995,20 @@ __device__ Mesh* mesh = nullptr;
 
 #define SIDE_BND(side_bnd) const int idx_side_bnd = threadIdx.x + blockIdx.x * blockDim.x; \
                            SideBoundary *side_bnd = &(mesh->localSideBoundaryMem[idx_side_bnd]); \
-                           if (idx_side_bnd >= mesh->nbs) return;                           
+                           if (idx_side_bnd >= mesh->nbs) return;  
+
+
+__device__ inline void atomicAddInt16Unsafe(int16_t* address, int16_t val)
+{
+    uintptr_t p = (uintptr_t)address;
+    assert((p & 1) == 0);
+
+    unsigned int* base = (unsigned int*)(p & ~3);
+    unsigned int addend = (p & 2) ? ((unsigned int)val << 16)
+                                  :  (unsigned int)val;
+
+    atomicAdd(base, addend);
+}
 
 Polynomial<4> *polyDischarge; // XXX read from file
 
@@ -3817,6 +3855,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     double *wind_rotate_angle, 
                                     int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+                                    int16_t *nodePermutationSort, 
                                     int *localNodeNeighNodesStart, int *localNodeNeighElemsStart, 
                                     int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -3829,6 +3868,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    Node &node(*pnode);
 
    node.idx = iglobal;
+   node.part = localNodePart[iglobal];
 
    // It is important to differentiate between the global and local "start" indices because they
    // play different, but related, roles in this code. The global "start" indices are used
@@ -3840,6 +3880,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    const int idxNodeLocalStart = localNodeNeighNodesStart[i];
    node.numNodes = idxNodeEnd - idxNodeStart;
    node.nodes = nodeNeighNodes + idxNodeLocalStart;
+   node.permutationSortedByGlobalIndex = nodePermutationSort + idxNodeLocalStart;
    node.coeffMatrix = coeffMatrixMem + idxNodeLocalStart;
 
    const int idxElemStart = nodeNeighElemsStart[iglobal];
@@ -3971,6 +4012,37 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
 }
 
+__device__ void Mesh::populateNodes2(void) {
+   NODE(node);
+
+
+   // Computes the permutation of the nodes such that nodes[permutationNodesSortedByGlobalIndex[i]] are the nodes in increasing order of their global index.
+   const int n = node->numNodes;
+   int16_t *perm = node->permutationSortedByGlobalIndex;  
+   for (int k = 0; k < n; ++k) perm[k] = k;
+
+   // in-place insertion sort by global id (is fine becausen is tiny)
+   for (int a = 1; a < n; ++a) {
+      int16_t key = perm[a];
+      int ka = a - 1;
+      while (ka >= 0 &&
+            node->nodes[perm[ka]]->idx > node->nodes[key]->idx) {
+         perm[ka + 1] = perm[ka];
+         --ka;
+      }
+      perm[ka + 1] = key;
+   }
+
+   // Finds the index of the diagonal element in the permutationSortedByGlobalIndex array.
+   node->diagonalIndex = n; // n means that the diagonal element is the last one.
+   for (int k = 0; k < n; ++k) {
+      if (node->nodes[perm[k]]->idx > node->idx) {
+         node->diagonalIndex = k - 1; // if k==0, diagonalIndex = -1, meaning that the diagonal element is the first one.
+         break;
+      }
+   }
+}
+
 
 
 
@@ -4015,18 +4087,18 @@ if (i % 100 == 0) printf("populateSides: i = %d, nodes[part_n1] = %p, nodes[part
 
    side.n1 = (Node *)&(mesh->nodes[part_n1][locidx_n1]);
    side.n2 = (Node *)&(mesh->nodes[part_n2][locidx_n2]);
-// return;
+
 if (i % 100 == 0) printf("populateSides: 1, i = %d, side.n1 = %p, side.n2 = %p\n", i, side.n1, side.n2);
 
    // Counts the number of sides connected to each node
-   atomicAdd(&side.n1->numSides, 1);
-   atomicAdd(&side.n2->numSides, 1);
+   atomicAddInt16Unsafe(&side.n1->numSides, 1);  // Unsafe here means that it doesn't check for overflow. This function is defined in this file.
+   atomicAddInt16Unsafe(&side.n2->numSides, 1);
 
    // Side boundary type
    NodeBoundary *n1bnd = side.n1->nodeBnd;
    NodeBoundary *n2bnd = side.n2->nodeBnd;
 if (i == 0) printf("populateSides: 2\n");
-// return;
+
    if (n1bnd != nullptr && n2bnd != nullptr) 
    // If both nodes are on the boundary, then the side may be on the boundary (Notice that there are cases where the side is not on the boundary, but both nodes are on the boundary)
    {
@@ -4061,7 +4133,7 @@ if (i == 0) printf("populateSides: 2\n");
    }
 
 if (i % 100 == 0) printf("populateSides: 3, i = %d\n", i);
-// return;
+
    // finding the pointer to the elements that share the side
    const int idx_e1 = isdel[iglobal*2];
    const int idx_e2 = isdel[iglobal*2 + 1];
@@ -4688,15 +4760,15 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
 
 extern "C" {
-   __global__ void setupCGSolvers(double* data_d, double* b_d, 
-                                  int* indices, int* indptr) {
+   __global__ void setupCGSolver(double* data_d, double* b_d, 
+                                 int* indices, int* indptr) {
 
       NODE(node);
       
       const int idx = node->idx;
       
       // Computes the index in the nzz array      
-      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx; // idx is there to account for the diagonal element that is not stored in the nodeNeighNodes array
 
 
       indptr[idx] = nzzIdx;
@@ -4716,8 +4788,65 @@ extern "C" {
          indices[nzzIdx + k + 1] = j;
       }
 
+   }
+
+   __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, 
+                                         int *indices, int *indptr) {
+   // Builds all the A_ij matrices and b_i and x_i vectors for the solver.
+
+      NODE(node);
+
+      // Global and local indices of the node.
+      // In this function, I stands for the global index of the current node,
+      // and J stands for the global index of the neighbor node under consideration.
+      // i and j are the local indices of the current node and the neighbor node under consideration.
+      // Notice that i and j may be local to different GPUs.
+      // idxPart is the number of the partition of the *neighbor* node. There is
+      // a biunivocal correspondence between the partitions and the GPUs.
+      const int I = node->idx;
+      const int i = idx_node;
+      const int partI = node->part;
+      
+      // // Computes the index in the nzz array      
+      // const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
+
+
+      // indptr[idx] = nzzIdx;
+      // indices[nzzIdx] = idx;
+
+      // data_d[nzzIdx]    = node->coeffDiag;
+
+      // b_d[idx] = node->qel;
+      setBValue(partI, i, idxCSR, node->qel);
+      bool diagonalUsed = false;
+      const int numCoeffs = node->numNodes + 1;  // Includes the diagonal element
+      int i1 = -1;
+      for (int k = 0; k < numCoeffs; ++k) {
+
+         // Get the next node sorted by the global index.
+         // This includes the diagonal element, that is stored as coeffDiag
+         // const Node* nb = node->getNodeSorted(k);
+         const double coeff = node->getCoeffSorted(k);
+ 
+         const int J = nb->idx;
+         // const int j = nb - mesh->nodes[nb->part]; // Tricky! The local index is computed as the difference between the pointer to the node and the pointer to the first node stored in the partition.
+         const int partJ = nb->part;
+
+         const int idxCSR = countPerPartition[partJ];
+
+         setAValue(partI, partJ, i, idxCSR, coeff);
+         
+         countPerPartition[partJ]++;
+
+
+      //    data_d[nzzIdx + k + 1]    = node->coeffMatrix[k];
+
+      //    indices[nzzIdx + k + 1] = j;
+      // }
+      }
  
    }
+}
 
 
 
@@ -7990,6 +8119,7 @@ __global__ void createMesh(int partNum,
                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
                            Node *nodes, Element *elems, Side *sides,
                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
+                           int16_t *localNodePermutationSortMem,
                            double *partCoeffMatrixMem,
                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
                            int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma, 
@@ -8024,6 +8154,7 @@ __global__ void createMesh(int partNum,
                    nodesPtr, elemsPtr, sidesPtr, 
                    nodes, elems, sides,
                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
+                   localNodePermutationSortMem,
                    partCoeffMatrixMem,
                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
                    kb, h_c, h_s, theta_b, theta_f, sigma, ztot, cs, dcs);
@@ -8067,6 +8198,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    double *node_coords, double *node_coords_ll, bool use_ll, double *wind_rotate_angle, 
    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+   int16_t *nodePermutationSort,
    int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
@@ -8077,12 +8209,19 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
                        nodeNeighNodesStart, nodeNeighNodesIndices,
                        nodeNeighElemsStart, nodeNeighElemsIndices,
+                       nodePermutationSort,
                        localNodeNeighNodesStart, localNodeNeighElemsStart,
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
                        drag, roughness, rmanning, kb, localSigma);
 }  
+
+extern "C" __global__ void populateNodes2(void) {
+
+   mesh->populateNodes2();
+}
+
 
 extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                                          double *node_coords, double *node_coords_ll, bool use_ll,
