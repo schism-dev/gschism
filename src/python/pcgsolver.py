@@ -191,19 +191,25 @@ class PCGSolver:
         self.solver_profiler.print_stats()
 
 class PCGSolverMultiGPU:
-    def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
+    def __init__(self, configCuda: CudaDeviceConfig, N: list[int]):
         """Pre-allocate everything for maximum performance."""
 
         self.configCuda = configCuda
         self.deviceCount = configCuda.deviceCount
         self.N = N
-        self.NNZ = NNZ
+        
 
         self.A       = [[None]*self.deviceCount for _ in range(self.deviceCount)]
-        self.b       = [[None]*self.deviceCount]
-        self.indices = [[None]*self.deviceCount]
-        self.indptr  = [[None]*self.deviceCount]
+        self.data    = [[None]*self.deviceCount for _ in range(self.deviceCount)]
+        self.indices = [[None]*self.deviceCount for _ in range(self.deviceCount)]
+        self.indptr  = [[None]*self.deviceCount for _ in range(self.deviceCount)]
+        self.NNZ     = [[None]*self.deviceCount for _ in range(self.deviceCount)]
         self.diag    = [[None]*self.deviceCount]
+        self.N       = [[None]*self.deviceCount]
+
+
+        self.b       = [[None]*self.deviceCount]
+
         self.r       = [[None]*self.deviceCount]
         self.z       = [[None]*self.deviceCount]
         self.p       = [[None]*self.deviceCount]
@@ -214,13 +220,12 @@ class PCGSolverMultiGPU:
             with cp.cuda.Device(device_id):
                 for j in range(self.deviceCount):
 
-                    self.data     = cp.zeros(self.NNZ[i], dtype=cp.float64)
-                    self.b        = cp.zeros(self.N[i],  dtype=cp.float64)
-
-
-                    self.indices= cp.zeros(self.NNZ[i],    dtype=cp.int32)
-                    self.indptr = cp.zeros(self.N[i] + 1, dtype=cp.int32)
+                    self.data[i][j]     = cp.zeros(self.NNZ[i], dtype=cp.float64)
+                    self.indices[i][j]  = cp.zeros(self.NNZ[i],    dtype=cp.int32)
+                    self.indptr[i][j]   = cp.zeros(self.N[i] + 1, dtype=cp.int32)
                     self.indptr[self.N[i]] = self.NNZ[i]
+
+                    self.b[i]     = cp.zeros(self.N[i],  dtype=cp.float64)
 
                     self.A[i][j]   = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.N[i], self.N[j]))
 

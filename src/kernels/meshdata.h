@@ -32,17 +32,7 @@ __device__ __forceinline__ double xi_n(int idxNode) {
 
 #define INT_MAX 2147483647
 
-#ifdef DEBUG
-  #define assertFmt(cond, fmt, ...)                                      \
-    do {                                                                   \
-      if (!(cond)) {                                                       \
-        printf("ASSERT FAILED: " fmt "\n", ##__VA_ARGS__);                \
-        assert(false && "ASSERT FAILED"); \
-      }                                                                    \
-    } while (0)
-#else
-  #define assertFmt(cond, fmt, ...) do { (void)sizeof(cond); } while (0)
-#endif
+
 
 // Time ramps ---------------------------------------------------------------------------
 
@@ -611,6 +601,116 @@ struct CubicSpline {
    double *yp  = nullptr;
    double *ypp = nullptr;
 };
+
+
+
+// ------------------------------------------------------------
+// Data structures for the system matrix and vector
+// ------------------------------------------------------------
+
+// Since every device owns a partition, we can divide a matrix A into blocks A_pq, where p and q are the device indices.
+// Here we are absuing notation assuming that the indices are consecutive per partition.
+// In general, partition p will contain indices that are not consecutive in the global index space.
+
+__device__ __forceinline__ int localIdx(Node* node) {
+   const int part = node->part;
+   const int localIdx = node - mesh->nodes[part]; // The local index of the node in the partition is computed as the difference between the node and the start of the node memory block in the partition
+   return localIdx;
+}
+
+// Wrapper of CuPyx CSR matrix. Store individual A_pq blocks of the matrix.
+struct CsrBlockMatrix {
+   double* data;
+   int*    indices;
+   int*    indptr;
+   int nrows;
+   int ncols;
+
+   __device__ CsrBlockMatrix(double* data, int* indices, int* indptr, int nrows, int ncols) : data(data), indices(indices), indptr(indptr), nrows(nrows), ncols(ncols) {}
+
+   __device__ __forceinline__ void clearRow(Node* node) { 
+      const int i = localIdx(node);
+      for (int k = indptr[i]; k < indptr[i + 1]; ++k) data[k] = 0.0;
+    }
+
+   __device__ __forceinline__ void add(int i, int j, double val) {
+      const int start = indptr[i];
+      const int end   = indptr[i + 1];
+      for (int k = start; k < end; ++k) {
+         if (indices[k] == j) {
+            data[k] += val;
+            return;
+         }
+      }
+      assert(false && "CSR entry (i,j) missing");
+   };
+};
+
+
+// A block row matrix. All coefficients stored in a single device.
+struct RowBlockMatrix {
+   CsrBlockMatrix Ap[nPartitions];
+
+   __device__ __forceinline__ RowBlockMatrix(CsrBlockMatrix const* src) {
+      for (int q = 0; q < nPartitions; ++q)
+         this->Ap[q] = src[q];
+   }
+
+   __device__ __forceinline__ void clearRow(Node* n) {
+      for (int q = 0; q < nPartitions; ++q)
+         Ap[q].clearRow(n);
+   }
+
+   __device__ __forceinline__ void add(Node* row, Node* col, double val)
+   {
+         assert(row->part == mesh->partNum);
+
+         const int i = localIdx(row);
+         const int j = localIdx(col);
+         const int p = row->part; // Unused. Included for symmetry. Doesn't generate any code.
+         const int q = col->part;
+
+         Ap[q].add(i, j, val);
+
+   }
+
+};
+
+
+// A full vector. Coefficients can be stored in different devices.
+struct FullVector {
+   double* data[nPartitions];   // Pointer to vectors in different devices
+
+   __device__ FullVector(double* const src[nPartitions]) {
+      for (int p = 0; p < nPartitions; ++p)
+         data[p] = src[p];
+   }
+
+   __device__ __forceinline__ double& operator()(Node* node) {
+      const int part = node->part;
+      const int locIdx = localIdx(node); // Local index of the node in the partition
+      return data[part][locIdx];
+   }
+
+   __device__ __forceinline__ double  operator()(Node* node) const {
+      const int part = node->part;
+      const int localIdx = node - mesh->nodes[part]; // Local index of the node in the partition
+      return data[part][localIdx];
+   }
+};
+
+
+__global__ void setupSolverMatricesAndVectors(
+   double** data_ptrs,
+   int**    indices_ptrs,
+   int**    indptr_ptrs,
+   int*     nrows,
+   int*     ncols,
+   double** x_ptrs,
+   double** b_ptrs);
+
+
+// ------------------------------------------------------------
 
 
 struct Element {
@@ -1366,8 +1466,9 @@ struct Node {
    double bdef1 = 0.0; // Bottom deformation at previous timestep
    double bdef2 = 0.0; // Bottom deformation at current timestep
 
+   
    int16_t *permutationSortedByGlobalIndex;  // Array of indices for the coefficients sorted by the global index. (This is to improve the cache locality when accessing the coefficients.)
-   int16_t diagonalIndex;                    // Index of the element right before the diagonal element in the permutationSortedByGlobalIndex array.
+   int16_t idxRightOfDiagonalIndex;          // Index of the element that is just to the right of the diagonal element in the permutationSortedByGlobalIndex array.
 
    double qel; // RHS
    double coeffDiag; // Diagonal coefficient of the matrix
@@ -1388,18 +1489,28 @@ struct Node {
    float cRot, sRot;  // Cosine and sine of the mesh rotation matrix
 
 
-   __device__ double getCoeffSorted(int k) const {
+   __device__ double getCoeffSorted(int k, Node* &node) const {
    // Returns the k-th coefficient sorted by the global index. Includes the diagonal element.
+   // Also returns the node pointer .
 
    
       assert(k >= 0 && k <= numNodes);
       const int16_t *perm = permutationSortedByGlobalIndex;
 
       // Special case, k is the diagonal element.
-      if (k == diagonalIndex) return coeffDiag;
+      if (k == idxRightOfDiagonalIndex) {
+         node = this;
+         return coeffDiag;
+      }
 
-      if (k < diagonalIndex) return coeffMatrix[perm[k]];
-      else                   return coeffMatrix[perm[k - 1]];
+      if (k < idxRightOfDiagonalIndex) {
+         node = nodes[perm[k]];
+         return coeffMatrix[perm[k]];
+      }
+      else {
+         node = nodes[perm[k - 1]];
+         return coeffMatrix[perm[k - 1]];
+      }
    }
 
    __device__ void setWind(Vector2 &u) {

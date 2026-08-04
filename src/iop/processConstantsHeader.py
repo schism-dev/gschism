@@ -2,6 +2,7 @@ from python.schism_consts import *
 
 def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsiglev: int,
                      nope: int, mnond: int, nland: int, mnlnd: int,
+                     numPartNodes: list[int],
                      templatePath="src/kernels/constants_template.h", 
                      outputPath="src/kernels/constants.h"):
     """
@@ -38,6 +39,11 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         useFrames = 'USE_FRAMES'
     else:
         raise ValueError(f"Invalid ics = {namelist.opt.ics}, not in [1, 2]")
+
+    nGPUs = len(numPartNodes)  # or deviceCount
+    offsets = [numPartNodes[0]]
+    for n in numPartNodes[1:]:
+        offsets.append(offsets[-1] + int(n))
 
     # Define mapping of template placeholders to values
     # Format: 'PLACEHOLDER': (value, source_description)
@@ -110,6 +116,10 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__MAX_NODES_PER_OPEN_BOUNDARY_SEGMENT__': (mnond, 'grid'),
         '__N_LAND_BOUNDARY_SEGMENTS__': (nland, 'grid'),
         '__MAX_NODES_PER_LAND_BOUNDARY_SEGMENT__': (mnlnd, 'grid'),
+        '__N_GPUS__': (nGPUs, 'partition'),
+        '__NUM_NODES_PER_PARTITION__': (', '.join(str(int(n)) for n in numPartNodes), 'partition'),
+        '__NODE_OFFSET_PER_PARTITION__': (', '.join(str(o) for o in offsets), 'partition'),
+
         # From tidal data
         '__NTIP__': (tidalData.ntip, 'tidal'),
         '__TIP_DP__': (tidalData.tip_dp, 'tidal'),

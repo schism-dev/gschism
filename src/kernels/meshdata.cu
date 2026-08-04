@@ -202,7 +202,22 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 }
 
 
-
+__global__ void setupMatrices(
+   double** data_ptrs,
+   int**    indices_ptrs,
+   int**    indptr_ptrs,
+   int*     nrows,
+   int*     ncols,
+   double** x_ptrs,
+   double** b_ptrs) {
+      
+   CsrBlockMatrix blocks[nPartitions];
+   for (int q = 0; q < nPartitions; ++q)
+      blocks[q] = CsrBlockMatrix(data_ptrs[q], indices_ptrs[q], indptr_ptrs[q], nrows[q], ncols[q]);
+   mesh->A = new RowBlockMatrix(blocks);
+   mesh->x = new FullVector(x_ptrs);
+   mesh->b = new FullVector(b_ptrs);
+}
 
 
 __inline__ __device__ Point2 Element::outputCoords(void) const {
@@ -2079,11 +2094,11 @@ __device__ void Mesh::populateNodes2(void) {
       perm[ka + 1] = key;
    }
 
-   // Finds the index of the diagonal element in the permutationSortedByGlobalIndex array.
-   node->diagonalIndex = n; // n means that the diagonal element is the last one.
+   // Finds the index of the element that is just to the right of the diagonal element in the permutationSortedByGlobalIndex array.
+   node->idxRightOfDiagonalIndex = n; // n means that the diagonal element is the last one.
    for (int k = 0; k < n; ++k) {
       if (node->nodes[perm[k]]->idx > node->idx) {
-         node->diagonalIndex = k - 1; // if k==0, diagonalIndex = -1, meaning that the diagonal element is the first one.
+         node->idxRightOfDiagonalIndex = k; 
          break;
       }
    }
@@ -2849,46 +2864,36 @@ extern "C" {
       // Notice that i and j may be local to different GPUs.
       // idxPart is the number of the partition of the *neighbor* node. There is
       // a biunivocal correspondence between the partitions and the GPUs.
-      const int I = node->idx;
-      const int i = idx_node;
-      const int partI = node->part;
+      const int I = node->idx;      
+      const int i = idx_node;       
+      const int partI = node->part; // Partition of the current node.
       
-      // // Computes the index in the nzz array      
-      // const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
 
+      setBValue(partI, i, node->qel);
 
-      // indptr[idx] = nzzIdx;
-      // indices[nzzIdx] = idx;
-
-      // data_d[nzzIdx]    = node->coeffDiag;
-
-      // b_d[idx] = node->qel;
-      setBValue(partI, i, idxCSR, node->qel);
-      bool diagonalUsed = false;
       const int numCoeffs = node->numNodes + 1;  // Includes the diagonal element
-      int i1 = -1;
+      int oldPartJ = -1;
+      int idxCSR = 0;
       for (int k = 0; k < numCoeffs; ++k) {
+
 
          // Get the next node sorted by the global index.
          // This includes the diagonal element, that is stored as coeffDiag
-         // const Node* nb = node->getNodeSorted(k);
-         const double coeff = node->getCoeffSorted(k);
+         Node* nb = nullptr;
+         const double coeff = node->getCoeffSorted(k, nb);
  
          const int J = nb->idx;
-         // const int j = nb - mesh->nodes[nb->part]; // Tricky! The local index is computed as the difference between the pointer to the node and the pointer to the first node stored in the partition.
-         const int partJ = nb->part;
+         const int partJ = nb->part; // For sorted nodes, partJ never decreases.
 
-         const int idxCSR = countPerPartition[partJ];
+         // Reset the index in the CSR array when the partition changes.
+         if (partJ != oldPartJ) idxCSR = 0;
 
          setAValue(partI, partJ, i, idxCSR, coeff);
          
-         countPerPartition[partJ]++;
+         idxCSR++;
 
 
-      //    data_d[nzzIdx + k + 1]    = node->coeffMatrix[k];
-
-      //    indices[nzzIdx + k + 1] = j;
-      // }
+         oldPartJ = partJ;
       }
  
    }

@@ -1393,6 +1393,32 @@ Polynomial<4> *polyDischarge; // XXX read from file
 //===============================================================================
 //     
 //===============================================================================
+
+
+__global__ void setupSolverMatricesAndVectors(
+   double** data_ptrs,
+   int**    indices_ptrs,
+   int**    indptr_ptrs,
+   int*     nrows,
+   int*     ncols,
+   double** x_ptrs,
+   double** b_ptrs) {
+
+   CsrBlockMatrix blocks[nPartitions];
+   for (int q = 0; q < nPartitions; ++q)
+      blocks[q] = CsrBlockMatrix(data_ptrs[q], indices_ptrs[q], indptr_ptrs[q],
+                                 nrows[q], ncols[q]);
+   mesh->A = new RowBlockMatrix(blocks);
+   mesh->x = new FullVector(x_ptrs);
+   mesh->b = new FullVector(b_ptrs);
+
+}
+
+//===============================================================================
+//     
+//===============================================================================  
+
+
 __device__ __forceinline__ void update_bdef(double time, double x0, double y0, double &dep, Vector3 &vel) {
    // For imm=2, user needs to update bottom depth and velocity
 

@@ -241,14 +241,46 @@ if __name__ == "__main__":
     # Initialize the CUDA functions
     cufunc.initializeCudaKernelManager(project_root)
 
-
+    numPartitions = ckw.configCuda.deviceCount
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
         nodeCoords_ll, ic3, isdel, isidenode,isbnd, nond, nlnd, iond, ilnd, nodeNeighElems, nodeNeighNodes, \
         numPartElements, numPartNodes, numPartSides, numPartBoundaryNodes, numPartBoundarySides = \
-            module.readHGrid(hgrid_file, hgrid_ll_file, ckw.configCuda.deviceCount, namelist.opt.ncor)
+            module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions, namelist.opt.ncor)
     
-    sizeMatrix = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.
-    totMatrixElements = nodeNeighNodes[0].size + sizeMatrix   # The total number of matrix elements is the number of node neighbors plus the number of nodes.
+
+
+    if numPartitions == 1:
+        sizeMatrix = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.
+        totMatrixElements = nodeNeighNodes[0].size + sizeMatrix   # The total number of matrix elements is the number of node neighbors plus the number of nodes.
+
+    else:
+        # Count the number of non-zero matrix elements per matrix block (A_pq)
+        NNZ = np.zeros((numPartitions, numPartitions), dtype=np.int64)
+        # still NumPy, before line 323
+        idxStarts = nodeNeighNodes[1]    # Start index of the node neighbors (a CRS-type approach)
+        idxNeigh  = nodeNeighNodes[0]    # Global indices of the node neighbors
+
+        # Element A_ij represents a "connection" between node i and node j.
+        # Each node i, j may live in different partitions.
+        # ipart and jpart are arrays with the same size as idxNeigh, but each element is the partition of
+        # the corresponding node.
+        ipart = np.repeat(partNodes, np.diff(idxStarts))
+        jpart = partNodes[idxNeigh]
+
+        # Adds all the off-diagonal non-zero elements to the NNZ_pq element.
+        np.add.at(NNZ, (ipart, jpart), 1)
+
+        # delete ipart, jpart arrays
+        del ipart, jpart
+
+        # For the diagonal block matrices A_pp, add the number of nodes in the partition to the diagonal elements.
+        NNZ[np.arange(numPartitions), np.arange(numPartitions)] += numPartNodes
+
+        if not NNZ.sum() == idxNeigh.size + nodeCoords.shape[1]:
+            raise Exception(f"The number of non-zero matrix elements is not correct. Expected {idxNeigh.size + nodeCoords.shape[1]}, got {NNZ.sum()}")
+
+        solver = PCGSolverMultiGPU(..., NNZ)
+
 
     # Create the solver
     solver = PCGSolver(sizeMatrix, totMatrixElements)
@@ -313,6 +345,7 @@ if __name__ == "__main__":
     # Generate the constants.h file that will be compiled with the CUDA kernels
     processConstants(namelist, bctides, ivcor, nvrt, nzlev, nsiglev, 
                      nope, mnond, nland, mnlnd,
+                     numPartNodes,
                      templatePath="kernels/constants_template.h", 
                      outputPath="kernels/constants.h")
     

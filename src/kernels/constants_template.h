@@ -8,6 +8,14 @@ constexpr int BLOCK_SIZE = __BLOCK_SIZE__;
 
 constexpr int N_TRACERS = __N_TRACERS__;
 
+constexpr int nGPUs = __N_GPUS__; // nGPUs is always equal to the number of partitions.
+constexpr int nPartitions = nGPUs;
+
+// Nodes owned by each partition
+constexpr int numNodesPerPartition[nPartitions] = {__NUM_NODES_PER_PARTITION__};
+// Cumulative counts: offset[0]=numNodesPerPartition[0], offset[p]=offset[p-1]+numNodesPerPartition[p]
+constexpr int nodeOffsetPerPartition[nPartitions] = {__NODE_OFFSET_PER_PARTITION__};
+
 constexpr int ivcor = __IVCOR__;              // Vertical coordinate system
 constexpr int ics = __ICS__;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = __IMM__;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
