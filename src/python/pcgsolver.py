@@ -191,55 +191,67 @@ class PCGSolver:
         self.solver_profiler.print_stats()
 
 class PCGSolverMultiGPU:
-    def __init__(self, configCuda: CudaDeviceConfig, N: list[int]):
+    def __init__(self, configCuda: CudaDeviceConfig, N: list[list[int]], NNZ:list[list[int]]):
         """Pre-allocate everything for maximum performance."""
 
+        numParts = len(N)
+
         self.configCuda = configCuda
-        self.deviceCount = configCuda.deviceCount
+        self.numParts = numParts
         self.N = N
+        self.NNZ = NNZ
         
 
-        self.A       = [[None]*self.deviceCount for _ in range(self.deviceCount)]
-        self.data    = [[None]*self.deviceCount for _ in range(self.deviceCount)]
-        self.indices = [[None]*self.deviceCount for _ in range(self.deviceCount)]
-        self.indptr  = [[None]*self.deviceCount for _ in range(self.deviceCount)]
-        self.NNZ     = [[None]*self.deviceCount for _ in range(self.deviceCount)]
-        self.diag    = [[None]*self.deviceCount]
-        self.N       = [[None]*self.deviceCount]
+        self.A       = [[None]*numParts for _ in range(numParts)]
+        self.data    = [[None]*numParts for _ in range(numParts)]
+        self.indices = [[None]*numParts for _ in range(numParts)]
+        self.indptr  = [[None]*numParts for _ in range(numParts)]
+        self.NNZ     = [[None]*numParts for _ in range(numParts)]
+        self.diag    = [[None]*numParts]
+        self.N       = [[None]*numParts]
 
 
-        self.b       = [[None]*self.deviceCount]
+        self.b       = [[None]*numParts]
 
-        self.r       = [[None]*self.deviceCount]
-        self.z       = [[None]*self.deviceCount]
-        self.p       = [[None]*self.deviceCount]
-        self.q       = [[None]*self.deviceCount]
+        self.r       = [[None]*numParts]
+        self.z       = [[None]*numParts]
+        self.p       = [[None]*numParts]
+        self.q       = [[None]*numParts]
 
-        for i, device_id in enumerate(configCuda.devices):
+        self.desc_A = [[None] * numParts for _ in range(numParts)]
+        self.buff   = [[None] * numParts for _ in range(numParts)]
+        self.handle = [None] * numParts
+        self.desc_p = [None] * numParts
+        self.desc_q = [None] * numParts
+        self.desc_r = [None] * numParts
+        self.desc_x = [None] * numParts
+
+        # p, q here stand for partitions, as in A_pq. Do not confuse with CG's self.p, self.q.
+        for p, device_id in enumerate(configCuda.devices):
             
             with cp.cuda.Device(device_id):
-                for j in range(self.deviceCount):
+                for q in range(numParts):
 
-                    self.data[i][j]     = cp.zeros(self.NNZ[i], dtype=cp.float64)
-                    self.indices[i][j]  = cp.zeros(self.NNZ[i],    dtype=cp.int32)
-                    self.indptr[i][j]   = cp.zeros(self.N[i] + 1, dtype=cp.int32)
-                    self.indptr[self.N[i]] = self.NNZ[i]
+                    self.data[p][q]     = cp.zeros(self.NNZ[p][q],   dtype=cp.float64)
+                    self.indices[p][q]  = cp.zeros(self.NNZ[p][q],   dtype=cp.int32)
+                    self.indptr[p][q]   = cp.zeros(self.N[p] + 1,    dtype=cp.int32)
+                    self.indptr[self.N[p]] = self.NNZ[p][q] # Last index of the indptr array is just the number of non-zero matrix elements. The others will be filled in later.
 
-                    self.b[i]     = cp.zeros(self.N[i],  dtype=cp.float64)
+                    self.b[p]     = cp.zeros(self.N[p],  dtype=cp.float64)
 
-                    self.A[i][j]   = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.N[i], self.N[j]))
+                    self.A[p][q]   = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.N[p], self.N[q]))
 
                     
                     # Pre-allocate all work vectors (no allocations in solve loop)
-                    self.diag = cp.empty(self.N[i], dtype=cp.float64)
-                    self.r    = cp.empty(self.N[i], dtype=cp.float64)
-                    self.z    = cp.empty(self.N[i], dtype=cp.float64) 
-                    self.p    = cp.empty(self.N[i], dtype=cp.float64)
-                    self.q    = cp.empty(self.N[i], dtype=cp.float64)
-                    self.x    = cp.empty(self.N[i], dtype=cp.float64)
-                    self.x0   = cp.empty(self.N[i], dtype=cp.float64)
-                    self.x1   = cp.empty(self.N[i], dtype=cp.float64)
-                    self.x2   = cp.empty(self.N[i], dtype=cp.float64)
+                    self.diag = cp.empty(self.N[p], dtype=cp.float64)
+                    self.r    = cp.empty(self.N[p], dtype=cp.float64)
+                    self.z    = cp.empty(self.N[p], dtype=cp.float64) 
+                    self.p    = cp.empty(self.N[p], dtype=cp.float64)
+                    self.q    = cp.empty(self.N[p], dtype=cp.float64)
+                    self.x    = cp.empty(self.N[p], dtype=cp.float64)
+                    self.x0   = cp.empty(self.N[p], dtype=cp.float64)
+                    self.x1   = cp.empty(self.N[p], dtype=cp.float64)
+                    self.x2   = cp.empty(self.N[p], dtype=cp.float64)
 
                     # Set up scalars
                     self.one  = np.array(1.0, np.float64)

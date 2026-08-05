@@ -8,7 +8,7 @@ import cupy as cp
 import debug.monitor as monitor
 import time
 import pybind11
-from python.pcgsolver import PCGSolver
+from python.pcgsolver import PCGSolver, PCGSolverMultiGPU
 from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 import iop.cudaKernelWrapper as ckw
@@ -248,10 +248,12 @@ if __name__ == "__main__":
             module.readHGrid(hgrid_file, hgrid_ll_file, numPartitions, namelist.opt.ncor)
     
 
-
+    # Initialize the solver
     if numPartitions == 1:
-        sizeMatrix = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.
-        totMatrixElements = nodeNeighNodes[0].size + sizeMatrix   # The total number of matrix elements is the number of node neighbors plus the number of nodes.
+        N = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.
+        NNZ = nodeNeighNodes[0].size + N   # The total number of non-zero matrix elements is the number of node neighbors plus the number of nodes.
+        solver = PCGSolver(N, NNZ)
+        print(f"Matrix size = {N}, total number of non-zero matrix elements = {NNZ}")
 
     else:
         # Count the number of non-zero matrix elements per matrix block (A_pq)
@@ -279,13 +281,15 @@ if __name__ == "__main__":
         if not NNZ.sum() == idxNeigh.size + nodeCoords.shape[1]:
             raise Exception(f"The number of non-zero matrix elements is not correct. Expected {idxNeigh.size + nodeCoords.shape[1]}, got {NNZ.sum()}")
 
-        solver = PCGSolverMultiGPU(..., NNZ)
+        N = [sum(partNodes == part) for part in range(numPartitions)] # Number of nodes in each partition
+
+        solver = PCGSolverMultiGPU(ckw.configCuda, N, NNZ)
 
 
-    # Create the solver
-    solver = PCGSolver(sizeMatrix, totMatrixElements)
     
-    print(f"Matrix size = {sizeMatrix}, total number of non-zero matrix elements = {totMatrixElements}")
+    
+    
+    
     nope, mnond  = iond.shape
     nland, mnlnd = ilnd.shape
     bctides = read_bctides(in_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
