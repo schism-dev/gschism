@@ -77,13 +77,19 @@ class PCGSolver:
             self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, alg)
         self.buff = cp.empty(self.buff_size, cp.int8)
 
+
     def mulA(self, p, q):
-        # XXXXX It is not using p or q
-        # Computes q = A * p 
-        _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
-                           self.one.ctypes.data, self.desc_A.desc, self.desc_p.desc,
-                           self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
-                           self.buff.data.ptr)
+        """Compute q = A @ p via cuSPARSE SpMV."""
+        # Reuse preallocated descriptors when callers pass self.p / self.q
+        # (the CG hot path). Otherwise bind descriptors to the given vectors.
+        desc_p = self.desc_p if p is self.p else cusparse.DnVecDescriptor.create(p)
+        desc_q = self.desc_q if q is self.q else cusparse.DnVecDescriptor.create(q)
+        _cusparse.spMV(
+            self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+            self.one.ctypes.data, self.desc_A.desc, desc_p.desc,
+            self.zero.ctypes.data, desc_q.desc, self.cuda_dtype,
+            _cusparse.CUSPARSE_MV_ALG_DEFAULT, self.buff.data.ptr)
+
 
     def solve(self, rtol=1e-5, maxiter = None, ensureSymmetric = False):
         """Solve with pre-allocated vectors - zero allocations in hot loop."""
@@ -187,126 +193,305 @@ class PCGSolver:
         
         return iters
 
+
+
+    def csr_data(self, m=0):    return self.data
+    def csr_indices(self, m=0): return self.indices
+    def csr_indptr(self, m=0):  return self.indptr
+
+
     def print_stats(self):
         self.solver_profiler.print_stats()
 
 class PCGSolverMultiGPU:
-    def __init__(self, configCuda: CudaDeviceConfig, N: list[list[int]], NNZ:list[list[int]]):
-        """Pre-allocate everything for maximum performance."""
+    def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
+        """Pre-allocate row-block matrices A_m and per-partition vectors.
+
+        Naming:
+          m            : partition / device index
+          A_m[m]       : CSR row-block on device m, shape (N_m[m], N_total), nnz NNZ_m[m]
+          *_m[m]       : vectors owned by partition m (length N_m[m])
+          p[m], x[m]   : full packed vectors on device m (length N_total)
+          p_m[m], x_m[m] : owned segments (length N_m[m])
+          q_m[m]       : local matvec result  q_m = A_m @ p  (or A_m @ x)
+
+        Column packing for A_m / p / x is [partition 0 | partition 1 | ...] via nodeOffset.
+        """
 
         numParts = len(N)
+        if len(NNZ) != numParts:
+            raise ValueError(f"NNZ must have length numParts={numParts}, got {len(NNZ)}")
+
+        if len(configCuda.devices) != numParts:
+            raise ValueError(f"Number of devices ({len(configCuda.devices)}) must match numParts ({numParts})")
 
         self.configCuda = configCuda
         self.numParts = numParts
-        self.N = N
-        self.NNZ = NNZ
-        
+        self.N_m = list(N)            # N_m[m] = rows owned by partition m
+        self.NNZ_m = list(NNZ)        # NNZ_m[m] = nonzeros in row-block A_m
+        self.N_total = int(sum(self.N_m))
 
-        self.A       = [[None]*numParts for _ in range(numParts)]
-        self.data    = [[None]*numParts for _ in range(numParts)]
-        self.indices = [[None]*numParts for _ in range(numParts)]
-        self.indptr  = [[None]*numParts for _ in range(numParts)]
-        self.NNZ     = [[None]*numParts for _ in range(numParts)]
-        self.diag    = [[None]*numParts]
-        self.N       = [[None]*numParts]
+        # Packed column offsets for p / CSR column indices
+        self.nodeOffset = [0] * (numParts + 1)
+        for m in range(numParts):
+            self.nodeOffset[m + 1] = self.nodeOffset[m] + self.N_m[m]
 
+        # Row-block CSR storage (one A_m per device)
+        self.A_m       = [None] * numParts
+        self.data_m    = [None] * numParts
+        self.indices_m = [None] * numParts
+        self.indptr_m  = [None] * numParts
 
-        self.b       = [[None]*numParts]
+        # Local (partition-owned) vectors, length N_m[m]
+        self.b_m    = [None] * numParts
+        self.diag_m = [None] * numParts
+        self.r_m    = [None] * numParts
+        self.z_m    = [None] * numParts
+        self.p_m    = [None] * numParts   # owned segment of CG search direction
+        self.q_m    = [None] * numParts   # q_m = A_m @ p
+        self.x_m    = [None] * numParts
+        self.x0_m   = [None] * numParts
+        self.x1_m   = [None] * numParts
+        self.x2_m   = [None] * numParts
 
-        self.r       = [[None]*numParts]
-        self.z       = [[None]*numParts]
-        self.p       = [[None]*numParts]
-        self.q       = [[None]*numParts]
+        # Full packed vectors on each device (SpMV inputs)
+        self.p = [None] * numParts
+        self.x = [None] * numParts
 
-        self.desc_A = [[None] * numParts for _ in range(numParts)]
-        self.buff   = [[None] * numParts for _ in range(numParts)]
-        self.handle = [None] * numParts
-        self.desc_p = [None] * numParts
-        self.desc_q = [None] * numParts
-        self.desc_r = [None] * numParts
-        self.desc_x = [None] * numParts
+        # cuSPARSE state (one SpMV of A_m per device)
+        self.handle   = [None] * numParts
+        self.desc_A_m = [None] * numParts
+        self.desc_p   = [None] * numParts
+        self.desc_x   = [None] * numParts
+        self.desc_q_m = [None] * numParts
+        self.buff_m   = [None] * numParts
 
-        # p, q here stand for partitions, as in A_pq. Do not confuse with CG's self.p, self.q.
-        for p, device_id in enumerate(configCuda.devices):
-            
+        self.one  = np.array(1.0, np.float64)
+        self.zero = np.array(0.0, np.float64)
+        self.cuda_dtype = _dtype.to_cuda_dtype(self.zero.dtype)
+        alg = _cusparse.CUSPARSE_MV_ALG_DEFAULT
+
+        for m, device_id in enumerate(configCuda.devices):
             with cp.cuda.Device(device_id):
-                for q in range(numParts):
+                Nm = self.N_m[m]
+                NNZm = self.NNZ_m[m]
 
-                    self.data[p][q]     = cp.zeros(self.NNZ[p][q],   dtype=cp.float64)
-                    self.indices[p][q]  = cp.zeros(self.NNZ[p][q],   dtype=cp.int32)
-                    self.indptr[p][q]   = cp.zeros(self.N[p] + 1,    dtype=cp.int32)
-                    self.indptr[self.N[p]] = self.NNZ[p][q] # Last index of the indptr array is just the number of non-zero matrix elements. The others will be filled in later.
+                self.data_m[m] = cp.zeros(NNZm, dtype=cp.float64)
+                self.indices_m[m] = cp.zeros(NNZm, dtype=cp.int32)
+                self.indptr_m[m] = cp.zeros(Nm + 1, dtype=cp.int32)
+                self.indptr_m[m][Nm] = NNZm
 
-                    self.b[p]     = cp.zeros(self.N[p],  dtype=cp.float64)
+                # A_m: Nm rows (local), N_total columns (packed partitions)
+                self.A_m[m] = csr_matrix(
+                    (self.data_m[m], self.indices_m[m], self.indptr_m[m]),
+                    shape=(Nm, self.N_total),
+                )
 
-                    self.A[p][q]   = csr_matrix((self.data  , self.indices, self.indptr), shape=(self.N[p], self.N[q]))
+                self.b_m[m]    = cp.zeros(Nm, dtype=cp.float64)
+                self.diag_m[m] = cp.empty(Nm, dtype=cp.float64)
+                self.r_m[m]    = cp.empty(Nm, dtype=cp.float64)
+                self.z_m[m]    = cp.empty(Nm, dtype=cp.float64)
+                self.p_m[m]    = cp.empty(Nm, dtype=cp.float64)
+                self.q_m[m]    = cp.empty(Nm, dtype=cp.float64)
+                self.x_m[m]    = cp.empty(Nm, dtype=cp.float64)
+                self.x0_m[m]   = cp.empty(Nm, dtype=cp.float64)
+                self.x1_m[m]   = cp.empty(Nm, dtype=cp.float64)
+                self.x2_m[m]   = cp.empty(Nm, dtype=cp.float64)
 
-                    
-                    # Pre-allocate all work vectors (no allocations in solve loop)
-                    self.diag = cp.empty(self.N[p], dtype=cp.float64)
-                    self.r    = cp.empty(self.N[p], dtype=cp.float64)
-                    self.z    = cp.empty(self.N[p], dtype=cp.float64) 
-                    self.p    = cp.empty(self.N[p], dtype=cp.float64)
-                    self.q    = cp.empty(self.N[p], dtype=cp.float64)
-                    self.x    = cp.empty(self.N[p], dtype=cp.float64)
-                    self.x0   = cp.empty(self.N[p], dtype=cp.float64)
-                    self.x1   = cp.empty(self.N[p], dtype=cp.float64)
-                    self.x2   = cp.empty(self.N[p], dtype=cp.float64)
+                self.p[m] = cp.empty(self.N_total, dtype=cp.float64)
+                self.x[m] = cp.empty(self.N_total, dtype=cp.float64)
 
-                    # Set up scalars
-                    self.one  = np.array(1.0, np.float64)
-                    self.zero = np.array(0.0, np.float64)        
-                    
-                    self.cuda_dtype = _dtype.to_cuda_dtype(self.zero.dtype)
+                self.handle[m] = device.get_cusparse_handle()
+                self.desc_A_m[m] = cusparse.SpMatDescriptor.create(self.A_m[m])
+                self.desc_p[m]   = cusparse.DnVecDescriptor.create(self.p[m])
+                self.desc_x[m]   = cusparse.DnVecDescriptor.create(self.x[m])
+                self.desc_q_m[m] = cusparse.DnVecDescriptor.create(self.q_m[m])
 
-                    # Pre-allocate cuSPARSE descriptors
-                    self.handle = device.get_cusparse_handle()
-                    self.desc_A = cusparse.SpMatDescriptor.create(self.A)
-                    self.desc_p = cusparse.DnVecDescriptor.create(self.p)
-                    self.desc_q = cusparse.DnVecDescriptor.create(self.q)
-                    self.desc_r = cusparse.DnVecDescriptor.create(self.r)
-                    self.desc_x = cusparse.DnVecDescriptor.create(self.x)
-                    
-                    # Pre-allocate buffer
-                    alg = _cusparse.CUSPARSE_MV_ALG_DEFAULT
-                    self.buff_size = _cusparse.spMV_bufferSize(
-                        self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
-                        self.one.ctypes.data, self.desc_A.desc, self.desc_p.desc,
-                        self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, alg)
-                    self.buff = cp.empty(self.buff_size, cp.int8)
+                buff_size = _cusparse.spMV_bufferSize(
+                    self.handle[m],
+                    _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+                    self.one.ctypes.data,
+                    self.desc_A_m[m].desc,
+                    self.desc_p[m].desc,
+                    self.zero.ctypes.data,
+                    self.desc_q_m[m].desc,
+                    self.cuda_dtype,
+                    alg,
+                )
+                self.buff_m[m] = cp.empty(buff_size, dtype=cp.int8)
 
 
-        
-               
+    def gather(self, full, local):
+        """Gather full[dest] on every GPU from local[src] pieces (packed by partition)."""
+        for dest_m, dest_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(dest_id):
+                for src_m, src_id in enumerate(self.configCuda.devices):
+                    lo = self.nodeOffset[src_m]
+                    hi = self.nodeOffset[src_m + 1]
+                    dst = full[dest_m][lo:hi]
+                    src = local[src_m]
+                    if dest_id == src_id:
+                        dst[:] = src
+                    else:
+                        cp.cuda.runtime.memcpyPeerAsync(
+                            dst.data.ptr,
+                            dest_id,
+                            src.data.ptr,
+                            src_id,
+                            dst.nbytes,
+                            cp.cuda.get_current_stream().ptr,
+                        )
+                cp.cuda.Stream.null.synchronize()
 
-    def mulA(self, p, q):
-        # XXXXX It is not using p or q
-        # Computes q = A * p 
-        _cusparse.spMV(self.handle, _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
-                           self.one.ctypes.data, self.desc_A.desc, self.desc_p.desc,
-                           self.zero.ctypes.data, self.desc_q.desc, self.cuda_dtype, _cusparse.CUSPARSE_MV_ALG_DEFAULT, 
-                           self.buff.data.ptr)
 
- 
-    def solveMultiGPU(self, rtol=1e-5, maxiter = None, ensureSymmetric = False):
+    def gatherP(self):
+        """Gather full p from local p_m pieces."""
+        self.gather(self.p, self.p_m)
 
-        # Funtions below are not implemented yet. They will operate on class managed
-        # data structures.
-        self.packIntoCacheFriendlyFormat()
+
+    def gather_x(self):
+        """Gather full x from local x_m pieces."""
+        self.gather(self.x, self.x_m)
+
+
+    def spmv(self, desc_in):
+        """On each device m: q_m[m] = A_m[m] @ in[m]."""
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                _cusparse.spMV(
+                    self.handle[m],
+                    _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
+                    self.one.ctypes.data,
+                    self.desc_A_m[m].desc,
+                    desc_in[m].desc,
+                    self.zero.ctypes.data,
+                    self.desc_q_m[m].desc,
+                    self.cuda_dtype,
+                    _cusparse.CUSPARSE_MV_ALG_DEFAULT,
+                    self.buff_m[m].data.ptr,
+                )
+
+
+    def mulA(self):
+        """q_m = A_m @ p. Call gatherP() first."""
+        self.spmv(self.desc_p)
+
+
+    def extrapolateGuess(self):
+        """Parabolic initial guess from previous solutions; zero local search direction."""
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                self.x_m[m][:] = 3.0 * self.x0_m[m] - 3.0 * self.x1_m[m] + self.x2_m[m]
+                self.p_m[m][:] = 0.0
+
+
+    def computeResiduals(self):
+        """r_m = b_m - A_m @ x  (gathers full x first)."""
+        self.gather_x()
+        self.spmv(self.desc_x)
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                cp.subtract(self.b_m[m], self.q_m[m], out=self.r_m[m])
+
+
+    def computeAtol(self, rtol):
+        """atol = rtol * ||r|| with ||r||^2 = sum_m r_m · r_m."""
+        rnorm2 = np.float64(0.0)
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                rnorm2 += np.float64(cublas.dotc(self.r_m[m], self.r_m[m]))
+        return rtol * np.sqrt(rnorm2)
+
+
+    def applyPreconditioner(self):
+        """z_m = diag_m * r_m (Jacobi)."""
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                cp.multiply(self.r_m[m], self.diag_m[m], out=self.z_m[m])
+
+
+    def dotSum(self, a_m, b_m):
+        """Sum of local dots across partitions: sum_m a_m · b_m (host float64)."""
+        total = np.float64(0.0)
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                total += np.float64(cublas.dotc(a_m[m], b_m[m]))
+        return total
+
+
+    def dotRZ(self):
+        """rho = sum_m r_m · z_m."""
+        return self.dotSum(self.r_m, self.z_m)
+
+
+    def dotPQ(self):
+        """sum_m p_m · q_m."""
+        return self.dotSum(self.p_m, self.q_m)
+
+
+    def updateP(self, rhoNew, rho):
+        """p_m = z_m + beta * p_m, with beta = rhoNew/rho (0 if rho == 0)."""
+        beta = rhoNew / rho if rho != 0.0 else np.float64(0.0)
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                self.p_m[m][:] *= beta
+                cp.add(self.p_m[m], self.z_m[m], out=self.p_m[m])
+
+
+    def axpyUpdate(self, alpha):
+        """x_m += alpha * p_m, r_m -= alpha * q_m."""
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                cublas.axpy( alpha, self.p_m[m], self.x_m[m])
+                cublas.axpy(-alpha, self.q_m[m], self.r_m[m])
+
+
+    def rollHistory(self):
+        """x2_m ← x1_m ← x0_m ← x_m (parabolic extrapolation history)."""
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                self.x2_m[m][:] = self.x1_m[m]
+                self.x1_m[m][:] = self.x0_m[m]
+                self.x0_m[m][:] = self.x_m[m]
+
+
+    def residualBelow(self, atol):
+        """True if sum_m r_m · r_m <= atol^2."""
+        return self.dotSum(self.r_m, self.r_m) <= atol * atol
+
+
+    def gatherBFromMesh(self):
+        """b_m ← qel on each partition."""
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                cufunc.gatherBFromMesh(self.b_m[m])
+
+
+    def scatterXToMesh(self):
+        """mX ← x_m on each partition."""
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                cufunc.scatterXToMesh(self.x_m[m])
+                
+
+    def solveMultiGPU(self, rtol=1e-5, maxiter=None, ensureSymmetric=False):
 
         self.extrapolateGuess()
 
-        self.computeResiduals()          # ri = bi - Aii xi - sum_j Aij xj
+        self.gatherBFromMesh()
+
+        self.computeResiduals()          # r_m = b_m - A_m @ x (gathered)
 
         atol = self.computeAtol(rtol)    # all-reduce of norms
         rho = 0.0
         for iters in range(maxiter):
-            self.applyPreconditioner()   # zi = Diinv * ri
-            rhoNew = self.dotRZ()        # sum_i ri·zi
-            self.updateP(rhoNew, rho)    # pi = zi + beta pi
-            self.matvecQ()               # qi = Aii pi + sum_j Aij pj
+            self.applyPreconditioner()   # z_m = diag_m * r_m
+            rhoNew = self.dotRZ()        # sum_m r_m · z_m
+            self.updateP(rhoNew, rho)    # p_m = z_m + beta p_m
+            self.gatherP()
+            self.mulA()                  # q_m = A_m @ p
             alpha = rhoNew / self.dotPQ()
-            self.axpyUpdate(alpha)       # xi, ri
+            self.axpyUpdate(alpha)       # x_m, r_m
             rho = rhoNew
             if self.residualBelow(atol):
                 break
@@ -314,6 +499,11 @@ class PCGSolverMultiGPU:
         self.scatterXToMesh()
         self.rollHistory()
         return iters
+
+
+    def csr_data(self, m):      return self.data_m[m]
+    def csr_indices(self, m):   return self.indices_m[m]
+    def csr_indptr(self, m):    return self.indptr_m[m]
 
 
     def print_stats(self):

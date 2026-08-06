@@ -1467,17 +1467,11 @@ struct Node {
    double bdef2 = 0.0; // Bottom deformation at current timestep
 
    
-   int16_t *permutationSortedByGlobalIndex;  // Array of indices for the coefficients sorted by the global index. (This is to improve the cache locality when accessing the coefficients.)
-   int16_t idxRightOfDiagonalIndex;          // Index of the element that is just to the right of the diagonal element in the permutationSortedByGlobalIndex array.
-
    double qel; // RHS
-   double coeffDiag; // Diagonal coefficient of the matrix
-   double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
-
-   // This was used by a previous version of the conjugate gradient method
-   // double mP; // Search direction for conjugate gradient method
-   // double mR; // Residual for conjugate gradient method
-   // double mAp; // Product of matrix and search direction for conjugate gradient method
+   double *coeffDiag;    // Pointer to the diagonal coefficient of the matrix
+   double *coeffRow;     // Pointer to the coefficients of the row of the CRS matrix for this node.
+   int16_t *csrSlot;     // csrSlot[i], is the slot/index of nodes[i] entry the CRS matrix row for this node.
+                         // The index of the diagonal element is coeffDiag - coeffRow.   
 
    double mX; // Solution of the FEM system
 
@@ -1489,29 +1483,7 @@ struct Node {
    float cRot, sRot;  // Cosine and sine of the mesh rotation matrix
 
 
-   __device__ double getCoeffSorted(int k, Node* &node) const {
-   // Returns the k-th coefficient sorted by the global index. Includes the diagonal element.
-   // Also returns the node pointer .
 
-   
-      assert(k >= 0 && k <= numNodes);
-      const int16_t *perm = permutationSortedByGlobalIndex;
-
-      // Special case, k is the diagonal element.
-      if (k == idxRightOfDiagonalIndex) {
-         node = this;
-         return coeffDiag;
-      }
-
-      if (k < idxRightOfDiagonalIndex) {
-         node = nodes[perm[k]];
-         return coeffMatrix[perm[k]];
-      }
-      else {
-         node = nodes[perm[k - 1]];
-         return coeffMatrix[perm[k - 1]];
-      }
-   }
 
    __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the mesh angle
@@ -1608,10 +1580,7 @@ struct Node {
    __device__ __forceinline__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
 
-
-      coeffDiag = 0.0;
-
-      for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
+      for (int i = 0; i <= numNodes; i++) coeffRow[i] = 0.0;
 
    }
 
@@ -1619,20 +1588,17 @@ struct Node {
    // Add the value to the sparse matrix for this node that corresponds to the file of node *this and the column of node *node
       
       if (node == this) {
-         coeffDiag += value;
-     
-      } else {
-         // Search (linearly) the index of the node in the array of nodes
-         // XXX: This is not efficient, see if we can improve this
-         int i;
-         for (i = 0; i < numNodes; i++) {
-            if (nodes[i] == node) {
-               break;
-            }
-         }
-         assert(i < numNodes && "addToSparseMatrix: node not found in array of nodes");
-         coeffMatrix[i] += value;
+         *coeffDiag += value;
+         return;
       }
+
+      int i;
+      for (i = 0; i < numNodes; i++) {
+         if (nodes[i] == node) break;
+      }
+
+      assert(i < numNodes && "addToSparseMatrix: node not found in array of nodes");
+      coeffRow[csrSlot[i]] += value;
    }
 
 
@@ -1738,7 +1704,7 @@ struct Mesh {
                        localSegmentMem(localSegmentMem),
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
-                       coeffMatrixMem(partCoeffMatrixMem),
+                       coeffMatrixMem(partCoeffMatrixMem),  // XXX REMOVE?
                        landBoundarySegment(plandSegMem),
                        landBoundaryNode(plandNodeBndMem)
    {
@@ -1923,24 +1889,10 @@ extern "C" {
 
    }
 
-#ifdef OLD_PCG_SOLVER
-   __global__ void initializeScalars(double *scalars);
- 
-   __global__ void initializePreconditionedResidual(void);
-
-   __global__ void computeMatrixProductAndDotProducts(void);
-
-   __global__ void updateSolutionAndDotProducts(void);
-
-   __global__ void updateSearchDirection(void);
-   
-   __global__ void computeHorGradientAtSide(void);  
-
 
    __global__ void setupCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
    __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
 
-#endif
 
 }
 

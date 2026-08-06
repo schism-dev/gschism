@@ -256,34 +256,28 @@ if __name__ == "__main__":
         print(f"Matrix size = {N}, total number of non-zero matrix elements = {NNZ}")
 
     else:
-        # Count the number of non-zero matrix elements per matrix block (A_pq)
-        NNZ = np.zeros((numPartitions, numPartitions), dtype=np.int64)
-        # still NumPy, before line 323
-        idxStarts = nodeNeighNodes[1]    # Start index of the node neighbors (a CRS-type approach)
-        idxNeigh  = nodeNeighNodes[0]    # Global indices of the node neighbors
+        # Count nonzeros per row-block A_p (rows owned by partition p, columns = all nodes packed).
+        idxStarts = nodeNeighNodes[1]
+        idxNeigh = nodeNeighNodes[0]
 
-        # Element A_ij represents a "connection" between node i and node j.
-        # Each node i, j may live in different partitions.
-        # ipart and jpart are arrays with the same size as idxNeigh, but each element is the partition of
-        # the corresponding node.
+        # ipart[k] = partition of the row node for the k-th off-diagonal neighbor entry
         ipart = np.repeat(partNodes, np.diff(idxStarts))
-        jpart = partNodes[idxNeigh]
 
-        # Adds all the off-diagonal non-zero elements to the NNZ_pq element.
-        np.add.at(NNZ, (ipart, jpart), 1)
+        NNZ = np.zeros(numPartitions, dtype=np.int64)
+        np.add.at(NNZ, ipart, 1)  # off-diagonals whose row is in partition p
+        del ipart
 
-        # delete ipart, jpart arrays
-        del ipart, jpart
+        N = [int(np.sum(partNodes == part)) for part in range(numPartitions)]
+        NNZ += np.asarray(numPartNodes, dtype=np.int64)  # + diagonal per owned row
 
-        # For the diagonal block matrices A_pp, add the number of nodes in the partition to the diagonal elements.
-        NNZ[np.arange(numPartitions), np.arange(numPartitions)] += numPartNodes
+        if NNZ.sum() != idxNeigh.size + nodeCoords.shape[1]:
+            raise Exception(
+                f"The number of non-zero matrix elements is not correct. "
+                f"Expected {idxNeigh.size + nodeCoords.shape[1]}, got {NNZ.sum()}"
+            )
 
-        if not NNZ.sum() == idxNeigh.size + nodeCoords.shape[1]:
-            raise Exception(f"The number of non-zero matrix elements is not correct. Expected {idxNeigh.size + nodeCoords.shape[1]}, got {NNZ.sum()}")
-
-        N = [sum(partNodes == part) for part in range(numPartitions)] # Number of nodes in each partition
-
-        solver = PCGSolverMultiGPU(ckw.configCuda, N, NNZ)
+        solver = PCGSolverMultiGPU(ckw.configCuda, N, NNZ.tolist())
+        print(f"Row-block NNZ = {NNZ.tolist()}, N = {N}")
 
 
     
@@ -391,105 +385,6 @@ if __name__ == "__main__":
     rmanning             = cp.array(rmanning,          dtype=cp.float64, order='F')
 
 
-
-    if False:   
-
-        fig, ax = plt.subplots(figsize=(12, 8))
-        
-        plotLabels = True
-        useRange = True
-        lrXmin = -86261 - 1000
-        lrXmax = -86261 + 1000
-        lrYmin = 3600645 - 1000
-        lrYmax = 3600645 + 1000
-
-        # Plot all nodes
-        plt.plot(nodeCoords[0,:].get(), nodeCoords[1,:].get(), '.', alpha=0.3, markersize=.3)
-
-        if plotLabels:
-            # Add node labels
-            for i in range(nodeCoords.shape[1]):
-                if not useRange or (nodeCoords[0,i].get() > lrXmin and nodeCoords[0,i].get() < lrXmax and nodeCoords[1,i].get() > lrYmin and nodeCoords[1,i].get() < lrYmax):
-                    plt.annotate(f'N{i}', 
-                            (nodeCoords[0,i].get(), nodeCoords[1,i].get()),
-                            xytext=(2, 2),
-                            textcoords='offset points',
-                            color='black',
-                            fontsize=6,
-                            alpha=0.5)
-
-        nodes = elnode[:3,:].get()
-        # Append the first node to close the triangle
-        closed_nodes = np.vstack((nodes, nodes[0,:]))
-        
-        # Get coordinates for all nodes
-        x1 = nodeCoords[0, nodes[0, :]].get()
-        y1 = nodeCoords[1, nodes[0, :]].get()
-        x2 = nodeCoords[0, nodes[1, :]].get()
-        y2 = nodeCoords[1, nodes[1, :]].get()
-        x3 = nodeCoords[0, nodes[2, :]].get()
-        y3 = nodeCoords[1, nodes[2, :]].get()
-        
-        # Plot element edges
-        points = np.stack((np.column_stack((x1, y1)), np.column_stack((x2, y2))), axis=1)
-        lc = LineCollection(points, colors='r', alpha=0.1)
-        ax.add_collection(lc)
-        points = np.stack((np.column_stack((x2, y2)), np.column_stack((x3, y3))), axis=1)
-        lc = LineCollection(points, colors='r', alpha=0.1)
-        ax.add_collection(lc)
-        points = np.stack((np.column_stack((x3, y3)), np.column_stack((x1, y1))), axis=1)
-        lc = LineCollection(points, colors='r', alpha=0.1)
-        ax.add_collection(lc)
-
-
-
-        if plotLabels:
-            # Add element labels at centroids
-            for i in range(elnode.shape[1]):
-                # Get triangle nodes
-                tri_nodes = elnode[:3,i].get()
-                
-                # Calculate triangle centroid
-                centroid_x = np.mean(nodeCoords[0,tri_nodes].get())
-                centroid_y = np.mean(nodeCoords[1,tri_nodes].get())
-                
-                if not useRange or (centroid_x > lrXmin and centroid_x < lrXmax and centroid_y > lrYmin and centroid_y < lrYmax):
-                    # Element label at centroid
-                    plt.annotate(f'E{i}', 
-                                (centroid_x, centroid_y),
-                                xytext=(0, 0),
-                                textcoords='offset points',
-                                color='red',
-                                fontsize=6,
-                                alpha=0.6)
-
-
-            # Add side labels
-            for i in range(isidenode.shape[1]):
-                # Get side nodes
-                side_nodes = isidenode[:,i].get()
-                
-                # Calculate side midpoint
-                mid_x = np.mean(nodeCoords[0,side_nodes].get())
-                mid_y = np.mean(nodeCoords[1,side_nodes].get())
-                
-                # Side label at midpoint
-                if not useRange or (mid_x > lrXmin and mid_x < lrXmax and mid_y > lrYmin and mid_y < lrYmax):                
-                    plt.annotate(f'S{i}',
-                                (mid_x, mid_y),
-                                xytext=(0, 3),
-                                textcoords='offset points',
-                                color='blue',
-                                fontsize=6,
-                                alpha=0.3)
-                
-
-            
-        # Prevent plot distortion by setting equal aspect ratio
-        plt.axis('equal')
-        
-        plt.show()
-        plt.pause(0)
 
    
 
