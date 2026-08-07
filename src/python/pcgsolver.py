@@ -244,7 +244,7 @@ class PCGSolverMultiGPU:
 
         # Local (partition-owned) vectors, length N_m[m]
         self.b_m    = [None] * numParts
-        self.diag_m = [None] * numParts
+        self.invD_m = [None] * numParts
         self.r_m    = [None] * numParts
         self.z_m    = [None] * numParts
         self.p_m    = [None] * numParts   # owned segment of CG search direction
@@ -288,7 +288,7 @@ class PCGSolverMultiGPU:
                 )
 
                 self.b_m[m]    = cp.zeros(Nm, dtype=cp.float64)
-                self.diag_m[m] = cp.empty(Nm, dtype=cp.float64)
+                self.invD_m[m] = cp.empty(Nm, dtype=cp.float64)
                 self.r_m[m]    = cp.empty(Nm, dtype=cp.float64)
                 self.z_m[m]    = cp.empty(Nm, dtype=cp.float64)
                 self.p_m[m]    = cp.empty(Nm, dtype=cp.float64)
@@ -321,7 +321,7 @@ class PCGSolverMultiGPU:
                 self.buff_m[m] = cp.empty(buff_size, dtype=cp.int8)
 
 
-    def gather(self, full, local):
+    def gatherVector(self, full, local):
         """Gather full[dest] on every GPU from local[src] pieces (packed by partition)."""
         for dest_m, dest_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dest_id):
@@ -402,12 +402,19 @@ class PCGSolverMultiGPU:
                 rnorm2 += np.float64(cublas.dotc(self.r_m[m], self.r_m[m]))
         return rtol * np.sqrt(rnorm2)
 
+    def computeInvDiag(self):
+        """invD_m = 1.0 / A_m.diagonal() (gathers full A first)."""
 
-    def applyPreconditioner(self):
-        """z_m = diag_m * r_m (Jacobi)."""
         for m, device_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(device_id):
-                cp.multiply(self.r_m[m], self.diag_m[m], out=self.z_m[m])
+                k = self.nodeOffset[m]
+                self.invD_m[m][:] = 1.0 / self.A_m[m].diagonal(k)
+
+    def applyPreconditioner(self):
+        """z_m = invD_m * r_m (Jacobi)."""
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                cp.multiply(self.r_m[m], self.invD_m[m], out=self.z_m[m])
 
 
     def dotSum(self, a_m, b_m):
@@ -472,7 +479,7 @@ class PCGSolverMultiGPU:
         for m, device_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(device_id):
                 cufunc.scatterXToMesh(self.x_m[m])
-                
+
 
     def solveMultiGPU(self, rtol=1e-5, maxiter=None, ensureSymmetric=False):
 
@@ -482,10 +489,12 @@ class PCGSolverMultiGPU:
 
         self.computeResiduals()          # r_m = b_m - A_m @ x (gathered)
 
+        self.computeInvDiag()
+
         atol = self.computeAtol(rtol)    # all-reduce of norms
         rho = 0.0
         for iters in range(maxiter):
-            self.applyPreconditioner()   # z_m = diag_m * r_m
+            self.applyPreconditioner()   # z_m = invD_m * r_m
             rhoNew = self.dotRZ()        # sum_m r_m · z_m
             self.updateP(rhoNew, rho)    # p_m = z_m + beta p_m
             self.gatherP()
