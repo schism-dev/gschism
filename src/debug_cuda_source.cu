@@ -731,97 +731,6 @@ struct CubicSpline {
 
 
 
-// ------------------------------------------------------------
-// Data structures for the system matrix and vector
-// ------------------------------------------------------------
-
-// Since every device owns a partition, we can divide a matrix A into row blocks A_p, where p is the device/partition index.
-// Here we are abusing notation assuming that the global indices are consecutive per partition.
-// In general, partition p will contain indices that are not consecutive in the global index space.
-
-__device__ __forceinline__ int localIdx(Node* node);
-
-// Wrapper of CuPyx CSR matrix. Used to store individual A_p rowblocks of the matrix.
-struct CsrBlockMatrix {
-   double* data;
-   int*    indices;
-   int*    indptr;
-   int nrows;
-   int ncols;
-
-   __device__ CsrBlockMatrix(double* data, int* indices, int* indptr, int nrows, int ncols) : data(data), indices(indices), indptr(indptr), nrows(nrows), ncols(ncols) {}
-
-   __device__ __forceinline__ void clearRow(Node* node) { 
-      const int i = localIdx(node);
-      for (int k = indptr[i]; k < indptr[i + 1]; ++k) data[k] = 0.0;
-    }
-
-   __device__ __forceinline__ void add(int i, int j, double val) {
-      const int start = indptr[i];
-      const int end   = indptr[i + 1];
-      for (int k = start; k < end; ++k) {
-         if (indices[k] == j) {
-            data[k] += val;
-            return;
-         }
-      }
-      assert(false && "CSR entry (i,j) missing");
-   };
-};
-
-
-// A block row matrix. All coefficients stored in a single device.
-struct RowBlockMatrix {
-   CsrBlockMatrix Ap[nPartitions];
-
-   __device__ __forceinline__ RowBlockMatrix(CsrBlockMatrix const* src) {
-      for (int q = 0; q < nPartitions; ++q)
-         this->Ap[q] = src[q];
-   }
-
-   __device__ __forceinline__ void clearRow(Node* n) {
-      for (int q = 0; q < nPartitions; ++q)
-         Ap[q].clearRow(n);
-   }
-
-   __device__ __forceinline__ void add(Node* row, Node* col, double val)
-   {
-         assert(row->part == mesh->partNum);
-
-         const int i = localIdx(row);
-         const int j = localIdx(col);
-         const int p = row->part; // Unused. Included for symmetry. Doesn't generate any code.
-         const int q = col->part;
-
-         Ap[q].add(i, j, val);
-
-   }
-
-};
-
-
-// A full vector. Coefficients can be stored in different devices.
-struct FullVector {
-   double* data[nPartitions];   // Pointer to vectors in different devices
-
-   __device__ FullVector(double* const src[nPartitions]) {
-      for (int p = 0; p < nPartitions; ++p)
-         data[p] = src[p];
-   }
-
-   __device__ __forceinline__ double& operator()(Node* node) {
-      const int part = node->part;
-      const int locIdx = localIdx(node); // Local index of the node in the partition
-      return data[part][locIdx];
-   }
-
-   __device__ __forceinline__ double  operator()(Node* node) const {
-      const int part = node->part;
-      const int localIdx = node - mesh->nodes[part]; // Local index of the node in the partition
-      return data[part][localIdx];
-   }
-};
-
 
 __global__ void setupSolverMatricesAndVectors(
    double** data_ptrs,
@@ -1856,8 +1765,9 @@ struct Mesh {
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
+                  double *crs_data, 
                   double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
-   __device__ void populateNodes2(void);
+   __device__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
                   double *wind_rotate_angle,   
@@ -2223,22 +2133,6 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 }
 
 
-__global__ void setupMatrices(
-   double** data_ptrs,
-   int**    indices_ptrs,
-   int**    indptr_ptrs,
-   int*     nrows,
-   int*     ncols,
-   double** x_ptrs,
-   double** b_ptrs) {
-      
-   CsrBlockMatrix blocks[nPartitions];
-   for (int q = 0; q < nPartitions; ++q)
-      blocks[q] = CsrBlockMatrix(data_ptrs[q], indices_ptrs[q], indptr_ptrs[q], nrows[q], ncols[q]);
-   mesh->A = new RowBlockMatrix(blocks);
-   mesh->x = new FullVector(x_ptrs);
-   mesh->b = new FullVector(b_ptrs);
-}
 
 
 __inline__ __device__ Point2 Element::outputCoords(void) const {
@@ -4099,7 +3993,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 }
 
 __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
+   
    NODE(node);
+   const int localIdx = idx_node;
 
 
    // Computes csrSlot, the array of indices/slots of the neighbor nodes in the CRS matrix.
@@ -4126,11 +4022,11 @@ __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_ind
    node->coeffDiag = &(node->coeffRow[idxDiag]);
 
    // Fills the CRS indices and indptr arrays for the cupyz's crs matrix in the solver.
-   const int idxNodeLocalStart = localNodeNeighNodesStart[i];
+   const int idxNodeLocalStart = localNodeNeighNodesStart[localIdx];
 
-   const int rowStart = idxNodeLocalStart + i;  // +i is to account for the diagonal element.
+   const int rowStart = idxNodeLocalStart + localIdx;  // +i is to account for the diagonal element.
    const int rowNNZ = node.numNodes + 1;        // +1 is to account for the diagonal element.
-   crs_indptr[i] = rowStart;
+   crs_indptr[localIdx] = rowStart;
 
    const int d = (int)(node->coeffDiag - node->coeffRow);
    crs_indices[rowStart + d] = node->idx;  
@@ -5341,11 +5237,7 @@ __device__ double evalCubicSpline(CubicSpline spline, double z, bool extrapolate
 //    }
 // }
 
-__device__ __forceinline__ int localIdx(Node* node) {
-   const int part = node->part;
-   const int localIdx = node - mesh->nodes[part]; // The local index of the node in the partition is computed as the difference between the node and the start of the node memory block in the partition
-   return localIdx;
-}
+
 
 extern "C" {
 

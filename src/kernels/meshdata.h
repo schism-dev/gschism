@@ -1638,8 +1638,9 @@ struct Mesh {
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
+                  double *crs_data, 
                   double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
-   __device__ void populateNodes2(void);
+   __device__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
                   double *wind_rotate_angle,   

@@ -2062,7 +2062,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 }
 
 __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
+   
    NODE(node);
+   const int localIdx = idx_node;
 
 
    // Computes csrSlot, the array of indices/slots of the neighbor nodes in the CRS matrix.
@@ -2089,11 +2091,11 @@ __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_ind
    node->coeffDiag = &(node->coeffRow[idxDiag]);
 
    // Fills the CRS indices and indptr arrays for the cupyz's crs matrix in the solver.
-   const int idxNodeLocalStart = localNodeNeighNodesStart[i];
+   const int idxNodeLocalStart = localNodeNeighNodesStart[localIdx];
 
-   const int rowStart = idxNodeLocalStart + i;  // +i is to account for the diagonal element.
-   const int rowNNZ = node.numNodes + 1;        // +1 is to account for the diagonal element.
-   crs_indptr[i] = rowStart;
+   const int rowStart = idxNodeLocalStart + localIdx;  // +i is to account for the diagonal element.
+   const int rowNNZ = node->numNodes + 1;        // +1 is to account for the diagonal element.
+   crs_indptr[localIdx] = rowStart;
 
    const int d = (int)(node->coeffDiag - node->coeffRow);
    crs_indices[rowStart + d] = node->idx;  
