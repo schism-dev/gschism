@@ -4,7 +4,12 @@ mntracers = 30  # Maximum number of tracers, used only for dimensioning btrack a
 
 
 DEBUG = False
-WINDOWS = sys.platform.startswith("win")
+try:
+    import sys
+    WINDOWS = sys.platform.startswith("win")
+
+except ImportError:
+    WINDOWS = False
 VISTA = not WINDOWS
 
 if VISTA:
