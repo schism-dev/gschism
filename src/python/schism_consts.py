@@ -4,8 +4,8 @@ mntracers = 30  # Maximum number of tracers, used only for dimensioning btrack a
 
 
 DEBUG = False
-VISTA = False
-WINDOWS = not VISTA
+WINDOWS = sys.platform.startswith("win")
+VISTA = not WINDOWS
 
 if VISTA:
     blockSize = 256

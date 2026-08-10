@@ -454,7 +454,7 @@ class PCGSolverMultiGPU:
 
 
     def rollHistory(self):
-        """x2_m ← x1_m ← x0_m ← x_m (parabolic extrapolation history)."""
+        """x2_m <- x1_m <- x0_m <- x_m (parabolic extrapolation history)."""
         for m, device_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(device_id):
                 self.x2_m[m][:] = self.x1_m[m]
@@ -468,14 +468,14 @@ class PCGSolverMultiGPU:
 
 
     def gatherBFromMesh(self):
-        """b_m ← qel on each partition."""
+        """b_m <- qel on each partition."""
         for m, device_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(device_id):
                 cufunc.gatherBFromMesh(self.b_m[m])
 
 
     def scatterXToMesh(self):
-        """mX ← x_m on each partition."""
+        """mX <- x_m on each partition."""
         for m, device_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(device_id):
                 cufunc.scatterXToMesh(self.x_m[m])

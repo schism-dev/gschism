@@ -9,6 +9,14 @@ constexpr int BLOCK_SIZE = 128;
 
 constexpr int N_TRACERS = 2;
 
+constexpr int nGPUs = 1; // nGPUs is always equal to the number of partitions.
+constexpr int nPartitions = nGPUs;
+
+// Nodes owned by each partition
+constexpr int numNodesPerPartition[nPartitions] = {1457889};
+// Cumulative counts: offset[0]=numNodesPerPartition[0], offset[p]=offset[p-1]+numNodesPerPartition[p]
+constexpr int nodeOffsetPerPartition[nPartitions] = {1457889};
+
 constexpr int ivcor = 1;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
@@ -151,17 +159,7 @@ __device__ __forceinline__ double xi_n(int idxNode) {
 
 #define INT_MAX 2147483647
 
-#ifdef DEBUG
-  #define assertFmt(cond, fmt, ...)                                      \
-    do {                                                                   \
-      if (!(cond)) {                                                       \
-        printf("ASSERT FAILED: " fmt "\n", ##__VA_ARGS__);                \
-        assert(false && "ASSERT FAILED"); \
-      }                                                                    \
-    } while (0)
-#else
-  #define assertFmt(cond, fmt, ...) do { (void)sizeof(cond); } while (0)
-#endif
+
 
 // Time ramps ---------------------------------------------------------------------------
 
@@ -548,7 +546,7 @@ struct LocalSigma {};
 template<>
 struct LocalSigma<2> {
    __device__ double operator[](int k) const { return 0.0; }
-   __device__ double& operator[](int k) { return (double &)*((double *)nullptr); }
+   __device__ double& operator[](int k) { assert(false && "LocalSigma<2>: operator[] not implemented"); return (double &)*((double *)nullptr); }
 };
 
 template<>
@@ -730,6 +728,112 @@ struct CubicSpline {
    double *yp  = nullptr;
    double *ypp = nullptr;
 };
+
+
+
+// ------------------------------------------------------------
+// Data structures for the system matrix and vector
+// ------------------------------------------------------------
+
+// Since every device owns a partition, we can divide a matrix A into row blocks A_p, where p is the device/partition index.
+// Here we are abusing notation assuming that the global indices are consecutive per partition.
+// In general, partition p will contain indices that are not consecutive in the global index space.
+
+__device__ __forceinline__ int localIdx(Node* node);
+
+// Wrapper of CuPyx CSR matrix. Used to store individual A_p rowblocks of the matrix.
+struct CsrBlockMatrix {
+   double* data;
+   int*    indices;
+   int*    indptr;
+   int nrows;
+   int ncols;
+
+   __device__ CsrBlockMatrix(double* data, int* indices, int* indptr, int nrows, int ncols) : data(data), indices(indices), indptr(indptr), nrows(nrows), ncols(ncols) {}
+
+   __device__ __forceinline__ void clearRow(Node* node) { 
+      const int i = localIdx(node);
+      for (int k = indptr[i]; k < indptr[i + 1]; ++k) data[k] = 0.0;
+    }
+
+   __device__ __forceinline__ void add(int i, int j, double val) {
+      const int start = indptr[i];
+      const int end   = indptr[i + 1];
+      for (int k = start; k < end; ++k) {
+         if (indices[k] == j) {
+            data[k] += val;
+            return;
+         }
+      }
+      assert(false && "CSR entry (i,j) missing");
+   };
+};
+
+
+// A block row matrix. All coefficients stored in a single device.
+struct RowBlockMatrix {
+   CsrBlockMatrix Ap[nPartitions];
+
+   __device__ __forceinline__ RowBlockMatrix(CsrBlockMatrix const* src) {
+      for (int q = 0; q < nPartitions; ++q)
+         this->Ap[q] = src[q];
+   }
+
+   __device__ __forceinline__ void clearRow(Node* n) {
+      for (int q = 0; q < nPartitions; ++q)
+         Ap[q].clearRow(n);
+   }
+
+   __device__ __forceinline__ void add(Node* row, Node* col, double val)
+   {
+         assert(row->part == mesh->partNum);
+
+         const int i = localIdx(row);
+         const int j = localIdx(col);
+         const int p = row->part; // Unused. Included for symmetry. Doesn't generate any code.
+         const int q = col->part;
+
+         Ap[q].add(i, j, val);
+
+   }
+
+};
+
+
+// A full vector. Coefficients can be stored in different devices.
+struct FullVector {
+   double* data[nPartitions];   // Pointer to vectors in different devices
+
+   __device__ FullVector(double* const src[nPartitions]) {
+      for (int p = 0; p < nPartitions; ++p)
+         data[p] = src[p];
+   }
+
+   __device__ __forceinline__ double& operator()(Node* node) {
+      const int part = node->part;
+      const int locIdx = localIdx(node); // Local index of the node in the partition
+      return data[part][locIdx];
+   }
+
+   __device__ __forceinline__ double  operator()(Node* node) const {
+      const int part = node->part;
+      const int localIdx = node - mesh->nodes[part]; // Local index of the node in the partition
+      return data[part][localIdx];
+   }
+};
+
+
+__global__ void setupSolverMatricesAndVectors(
+   double** data_ptrs,
+   int**    indices_ptrs,
+   int**    indptr_ptrs,
+   int*     nrows,
+   int*     ncols,
+   double** x_ptrs,
+   double** b_ptrs);
+
+
+// ------------------------------------------------------------
 
 
 struct Element {
@@ -1485,17 +1589,12 @@ struct Node {
    double bdef1 = 0.0; // Bottom deformation at previous timestep
    double bdef2 = 0.0; // Bottom deformation at current timestep
 
-   int16_t *permutationSortedByGlobalIndex;  // Array of indices for the coefficients sorted by the global index. (This is to improve the cache locality when accessing the coefficients.)
-   int16_t diagonalIndex;                    // Index of the element right before the diagonal element in the permutationSortedByGlobalIndex array.
-
+   
    double qel; // RHS
-   double coeffDiag; // Diagonal coefficient of the matrix
-   double *coeffMatrix; // Matrix coefficients for neighbors. [0..numNodes-1]
-
-   // This was used by a previous version of the conjugate gradient method
-   // double mP; // Search direction for conjugate gradient method
-   // double mR; // Residual for conjugate gradient method
-   // double mAp; // Product of matrix and search direction for conjugate gradient method
+   double *coeffDiag;    // Pointer to the diagonal coefficient of the matrix
+   double *coeffRow;     // Pointer to the coefficients of the row of the CRS matrix for this node.
+   int16_t *csrSlot;     // csrSlot[i], is the slot/index of nodes[i] entry the CRS matrix row for this node.
+                         // The index of the diagonal element is coeffDiag - coeffRow.   
 
    double mX; // Solution of the FEM system
 
@@ -1507,19 +1606,7 @@ struct Node {
    float cRot, sRot;  // Cosine and sine of the mesh rotation matrix
 
 
-   __device__ double getCoeffSorted(int k) const {
-   // Returns the k-th coefficient sorted by the global index. Includes the diagonal element.
 
-   
-      assert(k >= 0 && k <= numNodes);
-      const int16_t *perm = permutationSortedByGlobalIndex;
-
-      // Special case, k is the diagonal element.
-      if (k == diagonalIndex) return coeffDiag;
-
-      if (k < diagonalIndex) return coeffMatrix[perm[k]];
-      else                   return coeffMatrix[perm[k - 1]];
-   }
 
    __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the mesh angle
@@ -1616,10 +1703,7 @@ struct Node {
    __device__ __forceinline__ void clearMatrixRow(void) {
       // Clear the matrix row for this node
 
-
-      coeffDiag = 0.0;
-
-      for (int i = 0; i < numNodes; i++) coeffMatrix[i] = 0.0;
+      for (int i = 0; i <= numNodes; i++) coeffRow[i] = 0.0;
 
    }
 
@@ -1627,20 +1711,17 @@ struct Node {
    // Add the value to the sparse matrix for this node that corresponds to the file of node *this and the column of node *node
       
       if (node == this) {
-         coeffDiag += value;
-     
-      } else {
-         // Search (linearly) the index of the node in the array of nodes
-         // XXX: This is not efficient, see if we can improve this
-         int i;
-         for (i = 0; i < numNodes; i++) {
-            if (nodes[i] == node) {
-               break;
-            }
-         }
-         assert(i < numNodes && "addToSparseMatrix: node not found in array of nodes");
-         coeffMatrix[i] += value;
+         *coeffDiag += value;
+         return;
       }
+
+      int i;
+      for (i = 0; i < numNodes; i++) {
+         if (nodes[i] == node) break;
+      }
+
+      assert(i < numNodes && "addToSparseMatrix: node not found in array of nodes");
+      coeffRow[csrSlot[i]] += value;
    }
 
 
@@ -1746,7 +1827,7 @@ struct Mesh {
                        localSegmentMem(localSegmentMem),
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
-                       coeffMatrixMem(partCoeffMatrixMem),
+                       coeffMatrixMem(partCoeffMatrixMem),  // XXX REMOVE?
                        landBoundarySegment(plandSegMem),
                        landBoundaryNode(plandNodeBndMem)
    {
@@ -1931,24 +2012,10 @@ extern "C" {
 
    }
 
-#ifdef OLD_PCG_SOLVER
-   __global__ void initializeScalars(double *scalars);
- 
-   __global__ void initializePreconditionedResidual(void);
-
-   __global__ void computeMatrixProductAndDotProducts(void);
-
-   __global__ void updateSolutionAndDotProducts(void);
-
-   __global__ void updateSearchDirection(void);
-   
-   __global__ void computeHorGradientAtSide(void);  
-
 
    __global__ void setupCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
    __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
 
-#endif
 
 }
 
@@ -2156,7 +2223,22 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 }
 
 
-
+__global__ void setupMatrices(
+   double** data_ptrs,
+   int**    indices_ptrs,
+   int**    indptr_ptrs,
+   int*     nrows,
+   int*     ncols,
+   double** x_ptrs,
+   double** b_ptrs) {
+      
+   CsrBlockMatrix blocks[nPartitions];
+   for (int q = 0; q < nPartitions; ++q)
+      blocks[q] = CsrBlockMatrix(data_ptrs[q], indices_ptrs[q], indptr_ptrs[q], nrows[q], ncols[q]);
+   mesh->A = new RowBlockMatrix(blocks);
+   mesh->x = new FullVector(x_ptrs);
+   mesh->b = new FullVector(b_ptrs);
+}
 
 
 __inline__ __device__ Point2 Element::outputCoords(void) const {
@@ -3860,6 +3942,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart,
+                                    double *crs_data, 
                                     double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
 
    NODE(pnode);  
@@ -3880,8 +3963,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    const int idxNodeLocalStart = localNodeNeighNodesStart[i];
    node.numNodes = idxNodeEnd - idxNodeStart;
    node.nodes = nodeNeighNodes + idxNodeLocalStart;
-   node.permutationSortedByGlobalIndex = nodePermutationSort + idxNodeLocalStart;
-   node.coeffMatrix = coeffMatrixMem + idxNodeLocalStart;
+
+   const int rowStart = idxNodeLocalStart + i; // +i is to account for the diagonal element.
+   node.coeffRow = crs_data + rowStart; 
+
+
 
    const int idxElemStart = nodeNeighElemsStart[iglobal];
    const int idxElemEnd   = nodeNeighElemsStart[iglobal + 1]; 
@@ -4012,35 +4098,45 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
 
 }
 
-__device__ void Mesh::populateNodes2(void) {
+__device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
    NODE(node);
 
 
-   // Computes the permutation of the nodes such that nodes[permutationNodesSortedByGlobalIndex[i]] are the nodes in increasing order of their global index.
-   const int n = node->numNodes;
-   int16_t *perm = node->permutationSortedByGlobalIndex;  
-   for (int k = 0; k < n; ++k) perm[k] = k;
+   // Computes csrSlot, the array of indices/slots of the neighbor nodes in the CRS matrix.
+   int16_t *csrSlot = node->csrSlot;  
 
-   // in-place insertion sort by global id (is fine becausen is tiny)
-   for (int a = 1; a < n; ++a) {
-      int16_t key = perm[a];
-      int ka = a - 1;
-      while (ka >= 0 &&
-            node->nodes[perm[ka]]->idx > node->nodes[key]->idx) {
-         perm[ka + 1] = perm[ka];
-         --ka;
-      }
-      perm[ka + 1] = key;
+   // Simply count the number of nodes with a smaller global index than the current node.
+   // It accounts for the diagonal element.
+   for (int i = 0; i < node->numNodes; ++i) {
+      const int col = node->nodes[i]->idx;
+      int16_t idx = 0;
+
+      //Takes care of the diagonal element.
+      if (node->idx < col) ++idx;          
+
+      for (int j = 0; j < node->numNodes; ++j) if (node->nodes[j]->idx < col) ++idx;
+      csrSlot[i] = idx;
    }
 
-   // Finds the index of the diagonal element in the permutationSortedByGlobalIndex array.
-   node->diagonalIndex = n; // n means that the diagonal element is the last one.
-   for (int k = 0; k < n; ++k) {
-      if (node->nodes[perm[k]]->idx > node->idx) {
-         node->diagonalIndex = k - 1; // if k==0, diagonalIndex = -1, meaning that the diagonal element is the first one.
-         break;
-      }
-   }
+   // Find the diagonal element in the CRS matrix.
+   int16_t idxDiag = 0;
+   for (int j = 0; j < node->numNodes; ++j)
+      if (node->nodes[j]->idx < node->idx) ++idxDiag;
+
+   node->coeffDiag = &(node->coeffRow[idxDiag]);
+
+   // Fills the CRS indices and indptr arrays for the cupyz's crs matrix in the solver.
+   const int idxNodeLocalStart = localNodeNeighNodesStart[i];
+
+   const int rowStart = idxNodeLocalStart + i;  // +i is to account for the diagonal element.
+   const int rowNNZ = node.numNodes + 1;        // +1 is to account for the diagonal element.
+   crs_indptr[i] = rowStart;
+
+   const int d = (int)(node->coeffDiag - node->coeffRow);
+   crs_indices[rowStart + d] = node->idx;  
+   for (int j = 0; j < node->numNodes; ++j) crs_indices[rowStart + node->csrSlot[j]] = node->nodes[j]->idx;
+
+
 }
 
 
@@ -4760,33 +4856,49 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 
 
 extern "C" {
+
+   __global__ void gatherBFromMesh(double* b) {
+      // b[local] <- qel  (local = idx_node on this device)
+      NODE(node);
+      b[idx_node] = node->qel;
+   }
+
+   
+   __global__ void scatterXToMesh(double* x) {
+      // mX <- x[local]
+      NODE(node);
+      node->mX = x[idx_node];
+   }
+
    __global__ void setupCGSolver(double* data_d, double* b_d, 
                                  int* indices, int* indptr) {
+      // XXXXXXXXXXXX REMOVE!!!
+      assert(false && "setupCGSolver has beed deprecated");
 
-      NODE(node);
+      // NODE(node);
       
-      const int idx = node->idx;
+      // const int idx = node->idx;
       
-      // Computes the index in the nzz array      
-      const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx; // idx is there to account for the diagonal element that is not stored in the nodeNeighNodes array
+      // // Computes the index in the nzz array      
+      // const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx; // idx is there to account for the diagonal element that is not stored in the nodeNeighNodes array
 
 
-      indptr[idx] = nzzIdx;
-      indices[nzzIdx] = idx;
+      // indptr[idx] = nzzIdx;
+      // indices[nzzIdx] = idx;
 
-      data_d[nzzIdx]    = node->coeffDiag;
+      // data_d[nzzIdx]    = node->coeffDiag;
 
-      b_d[idx] = node->qel;
+      // b_d[idx] = node->qel;
 
-      for (int k = 0; k < node->numNodes; ++k) {
-         const Node* nb = node->nodes[k];
+      // for (int k = 0; k < node->numNodes; ++k) {
+      //    const Node* nb = node->nodes[k];
 
-         const int j = nb->idx;
+      //    const int j = nb->idx;
 
-         data_d[nzzIdx + k + 1]    = node->coeffMatrix[k];
+      //    data_d[nzzIdx + k + 1]    = node->coeffMatrix[k];
 
-         indices[nzzIdx + k + 1] = j;
-      }
+      //    indices[nzzIdx + k + 1] = j;
+      // }
 
    }
 
@@ -4803,47 +4915,14 @@ extern "C" {
       // Notice that i and j may be local to different GPUs.
       // idxPart is the number of the partition of the *neighbor* node. There is
       // a biunivocal correspondence between the partitions and the GPUs.
-      const int I = node->idx;
-      const int i = idx_node;
-      const int partI = node->part;
+      const int I = node->idx;      
+      const int i = idx_node;       
+      const int partI = node->part; // Partition of the current node.
       
-      // // Computes the index in the nzz array      
-      // const int nzzIdx = (node->nodes - mesh->nodeNeighNodes) + idx;
 
+      setBValue(partI, i, node->qel);
 
-      // indptr[idx] = nzzIdx;
-      // indices[nzzIdx] = idx;
-
-      // data_d[nzzIdx]    = node->coeffDiag;
-
-      // b_d[idx] = node->qel;
-      setBValue(partI, i, idxCSR, node->qel);
-      bool diagonalUsed = false;
-      const int numCoeffs = node->numNodes + 1;  // Includes the diagonal element
-      int i1 = -1;
-      for (int k = 0; k < numCoeffs; ++k) {
-
-         // Get the next node sorted by the global index.
-         // This includes the diagonal element, that is stored as coeffDiag
-         // const Node* nb = node->getNodeSorted(k);
-         const double coeff = node->getCoeffSorted(k);
- 
-         const int J = nb->idx;
-         // const int j = nb - mesh->nodes[nb->part]; // Tricky! The local index is computed as the difference between the pointer to the node and the pointer to the first node stored in the partition.
-         const int partJ = nb->part;
-
-         const int idxCSR = countPerPartition[partJ];
-
-         setAValue(partI, partJ, i, idxCSR, coeff);
-         
-         countPerPartition[partJ]++;
-
-
-      //    data_d[nzzIdx + k + 1]    = node->coeffMatrix[k];
-
-      //    indices[nzzIdx + k + 1] = j;
-      // }
-      }
+   
  
    }
 }
@@ -5262,6 +5341,11 @@ __device__ double evalCubicSpline(CubicSpline spline, double z, bool extrapolate
 //    }
 // }
 
+__device__ __forceinline__ int localIdx(Node* node) {
+   const int part = node->part;
+   const int localIdx = node - mesh->nodes[part]; // The local index of the node in the partition is computed as the difference between the node and the start of the node memory block in the partition
+   return localIdx;
+}
 
 extern "C" {
 
@@ -5423,7 +5507,7 @@ extern "C" {
 
 
    //      rat=(time-th_time2(1,1))/th_dt2(1)
-   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //      if(rat< -small1.or.rat>1.d0+small1) then
    //        write(errmsg,*) 'STEP: rat out in elev2D.th:',rat,time,th_time2(1:2,1),th_dt2(1)
    //        call parallel_abort(errmsg)
    //      endif
@@ -5729,25 +5813,26 @@ extern "C" {
  
       // Check if this node has essential BC
       if (nodeBnd && nodeBnd->isEssentialBC) {
-// printf("setEssentialBC: nodeBnd->isEssentialBC = true");
+
          // Verify BC value is valid
          assert(nodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
 
        
          // Set diagonal to 1 and zero off-diagonals
-         node->coeffDiag = 1.0;
-
-         for (int j = 0; j < node->numNodes; j++) {
-               node->coeffMatrix[j] = 0.0;
+         for (int j = 0; j <= node->numNodes; j++) {
+               node->coeffRow[j] = 0.0;
          }
-// printf("setEssentialBC: node->coeffMatrix = 0.0\n");         
+
+         *(node->coeffDiag) = 1.0;
+
+
          // Set solution and RHS to BC value
          node->mX  = nodeBnd->elbc;
          node->qel = nodeBnd->elbc;
-// printf("setEssentialBC: node->qel = nodeBnd->elbc\n");
+
       } else {
          // Not an essential BC node. Still need to modify RHS and columns that belong to neighbors with essential BCs
-// printf("setEssentialBC: nodeBnd->isEssentialBC = false ****, node = %p\n", node);
+
          for (int j = 0; j < node->numNodes; j++) {
                const Node* nbNode = node->nodes[j];
    	         assert(nbNode != nullptr && "setEssentialBC: nbNode is nullptr");
@@ -5758,10 +5843,10 @@ extern "C" {
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
                   assert(nbNodeBnd->elbc >= -9998.0 && "setEssentialBC: wrong b.c. at node");
-// printf("setEssentialBC: node = %p\n", node);
+
                   // Subtract contribution to RHS
-                  node->qel -= node->coeffMatrix[j]*nbNodeBnd->elbc;
-                  node->coeffMatrix[j] = 0.0;  
+                  node->qel -= node->coeffRow[node->csrSlot[j]]*nbNodeBnd->elbc;
+                  node->coeffRow[node->csrSlot[j]] = 0.0;  
                }
          }
 // printf("setEssentialBC: node->qel = nodeBnd->elbc - node->coeffMatrix[j]*nbNodeBnd->elbc\n");
@@ -8330,10 +8415,10 @@ __global__ void returnMatrix(double *res) {
    const int size = mesh->np;
    for (int idx_node = 0; idx_node < size; idx_node++) {
       const Node *node = mesh->localNodeData + idx_node;
-      res[idx_node*size + idx_node] = node->coeffDiag;
+      res[idx_node*size + idx_node] = *(node->coeffDiag);
       for (int j = 0; j < node->numNodes; j++) {
          Node* nbNode = node->nodes[j];
-         if (node->coeffMatrix[j] != 0.0) res[nbNode->idx*size + idx_node] =  node->coeffMatrix[j];
+         if (node->coeffRow[j] != 0.0) res[nbNode->idx*size + idx_node] =  node->coeffRow[csrSlot[j]];
       }
 
    }
@@ -8367,213 +8452,7 @@ __global__ void returnB(double *res) {
    
 }
 
-#ifdef OLD_PCG_SOLVER
-__global__ void computeMatrixProductAndDotProducts() {
-   // Computes A*p, r'Mr and p'Ap
 
-   // 1) shared buffer: first half for rMr, second for pAp
-   __shared__ double sdata[2*BLOCK_SIZE];
-   double* s_rMr = sdata;
-   double* s_pAp = sdata + BLOCK_SIZE;
-
-   const int tid = threadIdx.x;
-
-   double l_pAp = 0.0;
-
-   s_rMr[tid] = 0.0;
-   s_pAp[tid] = 0.0;
-
-   // 2) get your node pointer
-   // NODE(node);   
-   const int idx_node = threadIdx.x + blockIdx.x * blockDim.x; 
-   Node *node = &(mesh->localNodeData[idx_node]); 
-      if (idx_node < mesh->np) {
-
-      const double diag = node->coeffDiag;
-      const double r    = node->mR;
-      const double p    = node->mP;  
-
-      // apply preconditioner on the fly:
-      // const double Mr   = r/diag;   // M is the preconditioner (inverse of the diagonal)
-
-      // 4) compute Ap = A.p
-      double Ap = node->coeffDiag * node->mP;
-      for (int j = 0; j < node->numNodes; ++j) {
-         const Node *nbNode = node->nodes[j];
-         Ap += node->coeffMatrix[j] * nbNode->mP;
-
-      }
-
-      node->mAp = Ap;
-      
-
-      // 5) dot-products individual products (r'Mr, p'Ap) (Will be reduced later)
-      // const double l_rMr = r*Mr;  // r'Mr
-      l_pAp = p*Ap;  // p'Ap
-
-
-   }
-
-   // 6) write into shared mem
-   // s_rMr[tid] = l_rMr;
-   s_pAp[tid] = l_pAp;
-
-   __syncthreads();
-
-   // 7) block-wide tree reduction
-   for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
-      if (tid < stride)  {
-         s_pAp[tid] += s_pAp[tid + stride];
-      }
-      __syncthreads();
-   }
-
-   // 8) thread 0 atomically accumulates into the globals
-   // XXX: This is slower than it needs to be, but it is simple and works
-   if (tid == 0) {
-      atomicAdd(pAp, s_pAp[0]);
-   }
-
-
-}
-
-
-__global__ void updateSolutionAndDotProducts(void) {
-   extern __shared__ double s_rMr[BLOCK_SIZE];       
-
-   const int tid = threadIdx.x;
-
-   s_rMr[tid] = 0.0;
-
-   // get node & bounds-check:
-   NODE(node);
-
-   
-   // Compute alpha
-   const double alpha = (*rMr_old)/(*pAp); 
-
-
-   assert(*pAp != 0.0 && "updateSolutionAndDotProducts: pAp = 0.0");
-
-
-   // load scalars
-   const double diag = node->coeffDiag;
-   const double p    = node->mP;
-   const double Ap   = node->mAp;
-   const double x    = node->mX;
-   const double r    = node->mR;
-   
-   assert(diag != 0.0 && "updateSolutionAndDotProducts: diag = 0.0");
-
-   // 1) update solution & residual
-   const double x_new = x + alpha*p;
-   const double r_new = r - alpha*Ap;
-   node->mX = x_new;
-   node->mR = r_new;
-
-   // 2) apply Jacobi preconditioner on the fly
-   const double Mr_new = r_new/diag;
-
-
-   // 3) local contributions for the two dot-products
-   const double l_rMr = r_new*Mr_new;  // r'M^-1r
-
-   // 4) write into shared-mem
-   s_rMr[tid] = l_rMr;
-
-   __syncthreads();
-
-
-   // 5) block-wide tree reduction (O(log BLOCK_SIZE))
-   for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
-      if (tid < stride) s_rMr[tid] += s_rMr[tid + stride];
-      __syncthreads();
-   }
-
-   // 6) thread 0 atomically folds into the global accumulators
-   if (tid == 0) atomicAdd(rMr_new, s_rMr[0]);
-
-
-}
-
-
-__global__ void updateSearchDirection() {
-
-    NODE(node);
-
-    // recompute z on-the-fly
-    const double z = node->mR / node->coeffDiag;
-    const double p = node->mP;
-
-    const double beta = (*rMr_new)/(*rMr_old);
-
-
-    // p =z + beta*p
-    node->mP = z + beta*p;
-
-}
-
-__global__ void initializeScalars(double *scalars) {
-
-   // These point to a cupy array in the host code
-   rMr_old = scalars + 0;
-   rMr_new = scalars + 1;
-   pAp     = scalars + 2;
-}
-
-__global__ void initializePreconditionedResidual(void) {
-
-    __shared__ double s_rMr[BLOCK_SIZE];  
-
-    s_rMr[threadIdx.x] = 0.0;
-
-    NODE_ALL(node, valid);
-    const int tid = threadIdx.x;
-    // For the first iteration:
-    // 1. Initial solution x = 0 (already set)
-    // 2. Initial residual r = b (stored in qel)
-    // 3. Initial search direction p = M^-1 * r = M^-1 * b
-
-// XXX we should use the guess solution here    
-
-    double l_rMr = 0.0;
-    if (valid) {
-      // Set initial residual r = b (from qel)
-      node->mR = node->qel;
-
-      // Compute z = M^-1 * r (preconditioned residual)
-      const double z = node->mR / node->coeffDiag;
-
-      // Set initial search direction p = z
-      node->mP = z;
-
-      // Initialize other variables needed for CG
-      node->mX = 0.0;  // Initial solution
-      node->mAp = 0.0; // Will be computed in first iteration
-
-
-      // Computes the first r'Mr (reduction)
-      l_rMr = node->mR*node->mR/node->coeffDiag;  // r'M^-1r
-    }
-    // 4) write into shared-mem
-    s_rMr[tid] = l_rMr;
-
-    __syncthreads();
-
-
-    // 5) block-wide tree reduction (O(log BLOCK_SIZE))
-    for (int stride = BLOCK_SIZE/2; stride > 0; stride >>= 1) {
-        if (tid < stride) s_rMr[tid] += s_rMr[tid + stride];
-        __syncthreads();
-    }
-
-    // 6) thread 0 atomically folds into the global accumulators
-    if (tid == 0) atomicAdd(rMr_new, s_rMr[0]);        
-
-    *rMr_old = 0.0;
-    *pAp = 0.0;
-}
-#endif
 
 extern "C" __global__ void getElementVarFunc(int varCode, double *res) {
 

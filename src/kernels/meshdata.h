@@ -419,7 +419,7 @@ struct LocalSigma {};
 template<>
 struct LocalSigma<2> {
    __device__ double operator[](int k) const { return 0.0; }
-   __device__ double& operator[](int k) { return (double &)*((double *)nullptr); }
+   __device__ double& operator[](int k) { assert(false && "LocalSigma<2>: operator[] not implemented"); return (double &)*((double *)nullptr); }
 };
 
 template<>
@@ -603,101 +603,6 @@ struct CubicSpline {
 };
 
 
-
-// ------------------------------------------------------------
-// Data structures for the system matrix and vector
-// ------------------------------------------------------------
-
-// Since every device owns a partition, we can divide a matrix A into blocks A_pq, where p and q are the device indices.
-// Here we are absuing notation assuming that the indices are consecutive per partition.
-// In general, partition p will contain indices that are not consecutive in the global index space.
-
-__device__ __forceinline__ int localIdx(Node* node) {
-   const int part = node->part;
-   const int localIdx = node - mesh->nodes[part]; // The local index of the node in the partition is computed as the difference between the node and the start of the node memory block in the partition
-   return localIdx;
-}
-
-// Wrapper of CuPyx CSR matrix. Store individual A_pq blocks of the matrix.
-struct CsrBlockMatrix {
-   double* data;
-   int*    indices;
-   int*    indptr;
-   int nrows;
-   int ncols;
-
-   __device__ CsrBlockMatrix(double* data, int* indices, int* indptr, int nrows, int ncols) : data(data), indices(indices), indptr(indptr), nrows(nrows), ncols(ncols) {}
-
-   __device__ __forceinline__ void clearRow(Node* node) { 
-      const int i = localIdx(node);
-      for (int k = indptr[i]; k < indptr[i + 1]; ++k) data[k] = 0.0;
-    }
-
-   __device__ __forceinline__ void add(int i, int j, double val) {
-      const int start = indptr[i];
-      const int end   = indptr[i + 1];
-      for (int k = start; k < end; ++k) {
-         if (indices[k] == j) {
-            data[k] += val;
-            return;
-         }
-      }
-      assert(false && "CSR entry (i,j) missing");
-   };
-};
-
-
-// A block row matrix. All coefficients stored in a single device.
-struct RowBlockMatrix {
-   CsrBlockMatrix Ap[nPartitions];
-
-   __device__ __forceinline__ RowBlockMatrix(CsrBlockMatrix const* src) {
-      for (int q = 0; q < nPartitions; ++q)
-         this->Ap[q] = src[q];
-   }
-
-   __device__ __forceinline__ void clearRow(Node* n) {
-      for (int q = 0; q < nPartitions; ++q)
-         Ap[q].clearRow(n);
-   }
-
-   __device__ __forceinline__ void add(Node* row, Node* col, double val)
-   {
-         assert(row->part == mesh->partNum);
-
-         const int i = localIdx(row);
-         const int j = localIdx(col);
-         const int p = row->part; // Unused. Included for symmetry. Doesn't generate any code.
-         const int q = col->part;
-
-         Ap[q].add(i, j, val);
-
-   }
-
-};
-
-
-// A full vector. Coefficients can be stored in different devices.
-struct FullVector {
-   double* data[nPartitions];   // Pointer to vectors in different devices
-
-   __device__ FullVector(double* const src[nPartitions]) {
-      for (int p = 0; p < nPartitions; ++p)
-         data[p] = src[p];
-   }
-
-   __device__ __forceinline__ double& operator()(Node* node) {
-      const int part = node->part;
-      const int locIdx = localIdx(node); // Local index of the node in the partition
-      return data[part][locIdx];
-   }
-
-   __device__ __forceinline__ double  operator()(Node* node) const {
-      const int part = node->part;
-      const int localIdx = node - mesh->nodes[part]; // Local index of the node in the partition
-      return data[part][localIdx];
-   }
-};
 
 
 __global__ void setupSolverMatricesAndVectors(

@@ -239,7 +239,9 @@ if __name__ == "__main__":
     vgrid_file    = os.path.join(in_dir, 'vgrid.in')
 
     # Initialize the CUDA functions
-    cufunc.initializeCudaKernelManager(project_root)
+
+    configCuda = ckw.initCudaDeviceConfig()
+
 
     numPartitions = ckw.configCuda.deviceCount
     i34, partElements, partNodes, partSides, elnode, elside, nodeCoords, \
@@ -347,7 +349,7 @@ if __name__ == "__main__":
                      templatePath="kernels/constants_template.h", 
                      outputPath="kernels/constants.h")
     
- 
+    cufunc.initializeCudaKernelManager(project_root)
 
     
     # convert arrays to cupy

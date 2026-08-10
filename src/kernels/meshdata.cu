@@ -202,22 +202,6 @@ __device__ __forceinline__ void update_bdef(double time, double x0, double y0, d
 }
 
 
-__global__ void setupMatrices(
-   double** data_ptrs,
-   int**    indices_ptrs,
-   int**    indptr_ptrs,
-   int*     nrows,
-   int*     ncols,
-   double** x_ptrs,
-   double** b_ptrs) {
-      
-   CsrBlockMatrix blocks[nPartitions];
-   for (int q = 0; q < nPartitions; ++q)
-      blocks[q] = CsrBlockMatrix(data_ptrs[q], indices_ptrs[q], indptr_ptrs[q], nrows[q], ncols[q]);
-   mesh->A = new RowBlockMatrix(blocks);
-   mesh->x = new FullVector(x_ptrs);
-   mesh->b = new FullVector(b_ptrs);
-}
 
 
 __inline__ __device__ Point2 Element::outputCoords(void) const {
@@ -2837,14 +2821,14 @@ extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
 extern "C" {
 
    __global__ void gatherBFromMesh(double* b) {
-      // b[local] ← qel  (local = idx_node on this device)
+      // b[local] <- qel  (local = idx_node on this device)
       NODE(node);
       b[idx_node] = node->qel;
    }
 
    
    __global__ void scatterXToMesh(double* x) {
-      // mX ← x[local]
+      // mX <- x[local]
       NODE(node);
       node->mX = x[idx_node];
    }
@@ -3321,6 +3305,7 @@ __device__ double evalCubicSpline(CubicSpline spline, double z, bool extrapolate
 // }
 
 
+
 extern "C" {
 
    __global__ void scaleGravity(double loadtide_coef) {
@@ -3481,7 +3466,7 @@ extern "C" {
 
 
    //      rat=(time-th_time2(1,1))/th_dt2(1)
-   //      if(rat<-small1.or.rat>1.d0+small1) then
+   //      if(rat< -small1.or.rat>1.d0+small1) then
    //        write(errmsg,*) 'STEP: rat out in elev2D.th:',rat,time,th_time2(1:2,1),th_dt2(1)
    //        call parallel_abort(errmsg)
    //      endif

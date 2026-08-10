@@ -17,7 +17,7 @@ class CudaDeviceConfig:
 
 
 configCuda = None
-def initCudaDeviceConfig(devices = None):
+def initCudaDeviceConfig():
     global configCuda
 
     # THIS IS FOR TESTING ONLY XXXXXXX
