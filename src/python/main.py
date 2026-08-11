@@ -499,9 +499,10 @@ if __name__ == "__main__":
     elemsPtr = cp.array(elemsMemList, dtype=cp.uintp)
     sidesPtr = cp.array(sidesMemList, dtype=cp.uintp)
 
-    partNodeNeighNodesMem = []
-    partNodeNeighElemsMem = []
-    partCoeffMatrixMem    = []
+    partNodeNeighNodesMem      = []
+    partNodeNeighElemsMem      = []
+    partNodePermutationSortMem = []
+    partCoeffMatrixMem         = []
 
     # Create the local node and element neighbor arrays
     for ipart, device_id in enumerate(ckw.configCuda.devices):
