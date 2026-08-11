@@ -2867,29 +2867,7 @@ extern "C" {
 
    }
 
-   __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, 
-                                         int *indices, int *indptr) {
-   // Builds all the A_ij matrices and b_i and x_i vectors for the solver.
 
-      NODE(node);
-
-      // Global and local indices of the node.
-      // In this function, I stands for the global index of the current node,
-      // and J stands for the global index of the neighbor node under consideration.
-      // i and j are the local indices of the current node and the neighbor node under consideration.
-      // Notice that i and j may be local to different GPUs.
-      // idxPart is the number of the partition of the *neighbor* node. There is
-      // a biunivocal correspondence between the partitions and the GPUs.
-      const int I = node->idx;      
-      const int i = idx_node;       
-      const int partI = node->part; // Partition of the current node.
-      
-
-      setBValue(partI, i, node->qel);
-
-   
- 
-   }
 }
 
 
