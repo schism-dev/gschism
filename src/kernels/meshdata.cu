@@ -6327,22 +6327,32 @@ __global__ void getStructSizes(int* sizes)  {
 
 
 __global__ void printMatrix(bool full) {
-   // Debugging: print the matrix
+   // Debugging: print the FEM matrix row for each local node
 
    const int size = mesh->np;
    double sum = 0.0;
+
    for (int idx_node = 0; idx_node < size; idx_node++) {
       const Node *node = mesh->localNodeData + idx_node;
-      if (full) printf("idx_node = %d [%d] diag=%lf, [", idx_node, node->numNodes, node->coeffDiag);
+
+      if (full)
+         printf("idx_node = %d [%d] diag=%lf, [",
+                idx_node, node->numNodes, *(node->coeffDiag));
+
+      // Full CSR row length = numNodes + 1 (includes diagonal)
+      for (int k = 0; k < node->numNodes + 1; k++)
+         sum += node->coeffRow[k];
+
       for (int j = 0; j < node->numNodes; j++) {
-         Node* nbNode = node->nodes[j];
-         if (full && node->coeffMatrix[j] != 0.0) printf("%d:%f,  ", nbNode->idx, node->coeffMatrix[j]);
-         sum += node->coeffMatrix[j];
+         const Node *nbNode = node->nodes[j];
+         const double aij = node->coeffRow[node->csrSlot[j]];
+         if (full && aij != 0.0)
+            printf("%d:%f,  ", nbNode->idx, aij);
       }
+
       if (full) printf("]\n");
-
-
    }
+
    if (!full) printf("sum=%lf\n", sum);
 }
 
@@ -6350,20 +6360,29 @@ __global__ void printMatrix(bool full) {
 
 
 __global__ void returnMatrix(double *res) {
-   // Debugging: returns the matrix as a CuPy array
+   // Debugging: dense local matrix, row-major, size = mesh->np
+   // Assumes single-partition / local indexing (see note below).
 
    const int size = mesh->np;
+
    for (int idx_node = 0; idx_node < size; idx_node++) {
       const Node *node = mesh->localNodeData + idx_node;
-      res[idx_node*size + idx_node] = *(node->coeffDiag);
-      for (int j = 0; j < node->numNodes; j++) {
-         Node* nbNode = node->nodes[j];
-         if (node->coeffRow[j] != 0.0) res[nbNode->idx*size + idx_node] =  node->coeffRow[csrSlot[j]];
-      }
 
+      res[idx_node * size + idx_node] = *(node->coeffDiag);
+
+      for (int j = 0; j < node->numNodes; j++) {
+         const Node *nbNode = node->nodes[j];
+         // Only dump neighbors that live on this partition
+         if (nbNode->part != mesh->partNum) continue;
+
+         const int jlocal = (int)(nbNode - mesh->nodes[nbNode->part]);
+         const double aij = node->coeffRow[node->csrSlot[j]];
+         if (aij != 0.0)
+            res[jlocal * size + idx_node] = aij;
+      }
    }
-   
 }
+
 
 __global__ void returnX(double *res) {
    // Debugging: returns the matrix as a CuPy array
