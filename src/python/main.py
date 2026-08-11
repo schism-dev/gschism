@@ -643,9 +643,13 @@ if __name__ == "__main__":
                 pd['globalNodeIndices'], pd['globalElemIndices'], pd['globalSideIndices'],
                 localNodeIndices, localElemIndices, localSideIndices,
                 localNodePart, localElemPart, localSidePart,
+                solver.csr_data(ipart), 
                 drag, roughness, rmanning, kb, sigma_lcl)
     print(f"HERE populateNodes2")
-    cufunc.populateNodes2()
+    cufunc.populateNodes2(
+            pd['localNodeNeighNodesStart'],
+            solver.csr_indices(ipart),
+            solver.csr_indptr(ipart),)
 
     # Phase 2: all sides
     for ipart, pd in enumerate(partPopulate):
