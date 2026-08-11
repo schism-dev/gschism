@@ -76,7 +76,7 @@ getNodeVarFunc = None
 getSideVarFunc = None
 
 setupCGSolver = None
-setupMultiGPUCGSolver = None
+# setupMultiGPUCGSolver = None XXX REMOVE?
 solverCopyResult = None
 # test = None
 
@@ -130,7 +130,7 @@ def initializeCudaFunctions(sizes):
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
-    global setupCGSolver, setupMultiGPUCGSolver, solverCopyResult, ul0ComputeDryElements, ul0ComputeDryNodes
+    global setupCGSolver, solverCopyResult, ul0ComputeDryElements, ul0ComputeDryNodes
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix, returnX, returnB
@@ -218,7 +218,7 @@ def initializeCudaFunctions(sizes):
         # test = mod.get_function('test', sizes, kernel_type='global')
 
         setupCGSolver            = mod.get_function('setupCGSolver', sizes, kernel_type='nodes')
-        setupMultiGPUCGSolver    = mod.get_function('setupMultiGPUCGSolver', sizes, kernel_type='nodes')
+        # setupMultiGPUCGSolver    = mod.get_function('setupMultiGPUCGSolver', sizes, kernel_type='nodes') XXX REMOVE?
         solverCopyResult         = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
 
     except Exception as e:

@@ -1797,7 +1797,7 @@ extern "C" {
 
 
    __global__ void setupCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
-   __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
+   // __global__ void setupMultiGPUCGSolver(double* data_d, double* b_d, int* indices, int* indptr);
 
 
 }
