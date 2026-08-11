@@ -6226,6 +6226,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
+   double *crs_data,
    double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
@@ -6237,12 +6238,13 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
+                       crs_data,
                        drag, roughness, rmanning, kb, localSigma);
 }  
 
-extern "C" __global__ void populateNodes2(void) {
+extern "C" __global__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
 
-   mesh->populateNodes2();
+   mesh->populateNodes2(localNodeNeighNodesStart, crs_indices, crs_indptr);
 }
 
 
