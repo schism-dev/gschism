@@ -481,7 +481,7 @@ class PCGSolverMultiGPU:
                 cufunc.scatterXToMesh(self.x_m[m])
 
 
-    def solveMultiGPU(self, rtol=1e-5, maxiter=None, ensureSymmetric=False):
+    def solve(self, rtol=1e-5, maxiter=None, ensureSymmetric=False):
 
         self.extrapolateGuess()
 
