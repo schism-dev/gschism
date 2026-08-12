@@ -645,11 +645,15 @@ if __name__ == "__main__":
                 localNodeIndices, localElemIndices, localSideIndices,
                 localNodePart, localElemPart, localSidePart,
                 drag, roughness, rmanning, kb, sigma_lcl)
-    print(f"HERE populateNodes2")
-    cufunc.populateNodes2(
-            pd['localNodeNeighNodesStart'],
-            solver.csr_indices(ipart),
-            solver.csr_indptr(ipart),)
+
+    
+    for ipart, pd in enumerate(partPopulate):
+        print(f"HERE device {ipart} populateNodes2")
+        with cp.cuda.Device(pd['device_id']):
+            cufunc.populateNodes2(
+                    pd['localNodeNeighNodesStart'],
+                    solver.csr_indices(ipart),
+                    solver.csr_indptr(ipart))
 
     # Phase 2: all sides
     for ipart, pd in enumerate(partPopulate):

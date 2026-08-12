@@ -1929,6 +1929,8 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    const int rowStart = idxNodeLocalStart + i; // +i is to account for the diagonal element.
    node.coeffRow = crs_data + rowStart; 
 
+   node.csrSlot = nodePermutationSort + idxNodeLocalStart;
+
 
 
    const int idxElemStart = nodeNeighElemsStart[iglobal];
