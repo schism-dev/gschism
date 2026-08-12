@@ -639,11 +639,11 @@ if __name__ == "__main__":
                 pd['nodeCoordsPart'], pd['nodeCoords_llPart'], pd['use_ll'], pd['windRotateAnglePart'],
                 nodeNeighNodesStart, nodeNeighNodes,
                 nodeNeighElemsStart, nodeNeighElems,
+                partNodePermutationSortMem[ipart], solver.csr_data(ipart),
                 pd['localNodeNeighNodesStart'], pd['localNodeNeighElemsStart'],
                 pd['globalNodeIndices'], pd['globalElemIndices'], pd['globalSideIndices'],
                 localNodeIndices, localElemIndices, localSideIndices,
                 localNodePart, localElemPart, localSidePart,
-                solver.csr_data(ipart), 
                 drag, roughness, rmanning, kb, sigma_lcl)
     print(f"HERE populateNodes2")
     cufunc.populateNodes2(
