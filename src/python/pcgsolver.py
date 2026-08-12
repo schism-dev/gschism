@@ -485,6 +485,15 @@ class PCGSolverMultiGPU:
 
         self.extrapolateGuess()
 
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                d = self.A_m[m].diagonal(self.nodeOffset[m])
+                print(m, "||b||", float(cp.linalg.norm(self.b_m[m])),
+                    "nnz(data)", int(cp.count_nonzero(self.data_m[m])),
+                    "min|diag|", float(cp.min(cp.abs(d))),
+                    "num zero diag", int(cp.sum(d == 0)),
+                    "indices min/max", int(self.indices_m[m].min()), int(self.indices_m[m].max()))
+
         self.gatherBFromMesh()
 
         self.computeResiduals()          # r_m = b_m - A_m @ x (gathered)
