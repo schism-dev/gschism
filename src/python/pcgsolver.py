@@ -509,6 +509,24 @@ class PCGSolverMultiGPU:
         self.rollHistory()
         return iters
 
+    def checkSolution(self, label=""):
+        """True residual after solve: ||b - A x|| / ||b|| (and absolute norms)."""
+        self.gather_x()
+        self.spmv(self.desc_x)  # q_m = A_m @ x
+        rnorm2 = np.float64(0.0)
+        bnorm2 = np.float64(0.0)
+        for m, device_id in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(device_id):
+                r = self.b_m[m] - self.q_m[m]
+                rnorm2 += np.float64(cublas.dotc(r, r))
+                bnorm2 += np.float64(cublas.dotc(self.b_m[m], self.b_m[m]))
+        rnorm = np.sqrt(rnorm2)
+        bnorm = np.sqrt(bnorm2)
+        rel = rnorm / bnorm if bnorm > 0 else rnorm
+        print(f"[PCG check{(' ' + label) if label else ''}] "
+            f"||r||={rnorm:.6e}  ||b||={bnorm:.6e}  ||r||/||b||={rel:.6e}")
+        return rel
+
 
     def csr_data(self, m):      return self.data_m[m]
     def csr_indices(self, m):   return self.indices_m[m]

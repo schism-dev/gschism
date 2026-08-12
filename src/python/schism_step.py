@@ -39,7 +39,7 @@ def solveWaveEquation(solver, maxIter=1000, tol=1e-12, ):
     time1 = time.time()
   
     its = solver.solve(rtol=tol, maxiter=maxIter)
-
+    solver.checkSolution() # XXXXXXXX
     time2 = time.time()
     print(f"Time to setup and solve: {time2 - time1:.3f} , iterations: {its}")
 
