@@ -1604,12 +1604,11 @@ struct Mesh {
                        nodes(nodesPtr), elems(elemsPtr), sides(sidesPtr),
                        localNodeData(nodesMem), localElemData(elemsMem), localSideData(sidesMem),
                        nodeNeighNodes(localNodeNeighNodesMem), nodeNeighElems(localNodeNeighElemsMem),
-                       nodePermutationSort(localNodePermutationSortMem),
+                       nodePermutationSort(localNodePermutationSortMem), coeffMatrixMem(partCoeffMatrixMem),
                        localNodeBoundaryMem(localNodeBoundaryMem), localSideBoundaryMem(localSideBoundaryMem),
                        localSegmentMem(localSegmentMem),
                        h_c(h_c), h_s(h_s), theta_b(theta_b), theta_f(theta_f), sigma(sigma), ztot(ztot),
                        cs(cs), dcs(dcs),
-                       coeffMatrixMem(partCoeffMatrixMem),  // XXX REMOVE?
                        landBoundarySegment(plandSegMem),
                        landBoundaryNode(plandNodeBndMem)
    {
@@ -1633,12 +1632,11 @@ struct Mesh {
                   double *wind_rotate_angle, 
                   int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                   int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
-                  int16_t *nodePermutationSort,
+                  int16_t *nodePermutationSort, double *crs_data,
                   int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *crs_data, 
                   double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
    __device__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,

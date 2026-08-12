@@ -1900,12 +1900,11 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     double *wind_rotate_angle, 
                                     int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
                                     int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
-                                    int16_t *nodePermutationSort, 
+                                    int16_t *nodePermutationSort, double *crs_data,
                                     int *localNodeNeighNodesStart, int *localNodeNeighElemsStart, 
                                     int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
-                                    int *localNodePart,     int *localElemPart,     int *localSidePart,
-                                    double *crs_data, 
+                                    int *localNodePart,     int *localElemPart,     int *localSidePart, 
                                     double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
 
    NODE(pnode);  
@@ -6221,24 +6220,22 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    double *node_coords, double *node_coords_ll, bool use_ll, double *wind_rotate_angle, 
    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
-   int16_t *nodePermutationSort,
+   int16_t *nodePermutationSort, double *crs_data,
    int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
-   double *crs_data,
    double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
                        nodeNeighNodesStart, nodeNeighNodesIndices,
                        nodeNeighElemsStart, nodeNeighElemsIndices,
-                       nodePermutationSort,
+                       nodePermutationSort, crs_data,
                        localNodeNeighNodesStart, localNodeNeighElemsStart,
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       crs_data,
                        drag, roughness, rmanning, kb, localSigma);
 }  
 
