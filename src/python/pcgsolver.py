@@ -485,6 +485,10 @@ class PCGSolverMultiGPU:
 
         self.extrapolateGuess()
 
+        print("N_m", self.N_m,
+            "N_total", self.N_total,
+            "sum(N_m)", sum(self.N_m),
+            "indices max", [int(self.indices_m[m].max()) for m in range(self.numParts)])
         for m, device_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(device_id):
                 d = self.A_m[m].diagonal(self.nodeOffset[m])
