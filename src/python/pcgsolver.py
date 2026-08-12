@@ -346,12 +346,12 @@ class PCGSolverMultiGPU:
 
     def gatherP(self):
         """Gather full p from local p_m pieces."""
-        self.gather(self.p, self.p_m)
+        self.gatherVector(self.p, self.p_m)
 
 
     def gather_x(self):
         """Gather full x from local x_m pieces."""
-        self.gather(self.x, self.x_m)
+        self.gatherVector(self.x, self.x_m)
 
 
     def spmv(self, desc_in):
