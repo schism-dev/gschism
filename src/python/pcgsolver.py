@@ -494,12 +494,15 @@ class PCGSolverMultiGPU:
         atol = self.computeAtol(rtol)    # all-reduce of norms
         rho = 0.0
         for iters in range(maxiter):
+            print(f"PCG iter {iters}, atol: {atol}, rho: {rho}")
             self.applyPreconditioner()   # z_m = invD_m * r_m
             rhoNew = self.dotRZ()        # sum_m r_m · z_m
+            print(f"PCG iter {iters}, rhoNew: {rhoNew}")
             self.updateP(rhoNew, rho)    # p_m = z_m + beta p_m
             self.gatherP()
             self.mulA()                  # q_m = A_m @ p
             alpha = rhoNew / self.dotPQ()
+            print(f"PCG iter {iters}, alpha: {alpha}")
             self.axpyUpdate(alpha)       # x_m, r_m
             rho = rhoNew
             if self.residualBelow(atol):
