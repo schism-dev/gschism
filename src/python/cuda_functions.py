@@ -78,6 +78,8 @@ getSideVarFunc = None
 setupCGSolver = None
 # setupMultiGPUCGSolver = None XXX REMOVE?
 solverCopyResult = None
+gatherBFromMesh = None
+scatterXToMesh = None
 # test = None
 
 
@@ -130,7 +132,7 @@ def initializeCudaFunctions(sizes):
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
-    global setupCGSolver, solverCopyResult, ul0ComputeDryElements, ul0ComputeDryNodes
+    global setupCGSolver, solverCopyResult, gatherBFromMesh, scatterXToMesh, ul0ComputeDryElements, ul0ComputeDryNodes
     global updateBedDeformation, shapiroFilter1, shapiroFilter2
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix, returnX, returnB
@@ -220,6 +222,8 @@ def initializeCudaFunctions(sizes):
         setupCGSolver            = mod.get_function('setupCGSolver', sizes, kernel_type='nodes')
         # setupMultiGPUCGSolver    = mod.get_function('setupMultiGPUCGSolver', sizes, kernel_type='nodes') XXX REMOVE?
         solverCopyResult         = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
+        gatherBFromMesh          = mod.get_function('gatherBFromMesh', sizes, kernel_type='global')
+        scatterXToMesh           = mod.get_function('scatterXToMesh', sizes, kernel_type='global')
 
     except Exception as e:
         print(f"Error getting CUDA functions: {e}")
