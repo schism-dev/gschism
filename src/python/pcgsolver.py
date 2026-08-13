@@ -323,6 +323,11 @@ class PCGSolverMultiGPU:
 
     def gatherVector(self, full, local):
         """Gather full[dest] on every GPU from local[src] pieces (packed by partition)."""
+        # Make sure all source partitions finished writing before peer copies.
+        for src_id in self.configCuda.devices:
+            with cp.cuda.Device(src_id):
+                cp.cuda.Stream.null.synchronize()
+
         for dest_m, dest_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dest_id):
                 for src_m, src_id in enumerate(self.configCuda.devices):
@@ -397,13 +402,14 @@ class PCGSolverMultiGPU:
                 cp.subtract(self.b_m[m], self.q_m[m], out=self.r_m[m])
 
 
+    def norm2Sum(self, a_m):
+        """||a|| = sqrt(sum_m a_m · a_m)."""
+        return np.sqrt(self.dotSum(a_m, a_m))
+
+
     def computeAtol(self, rtol):
-        """atol = rtol * ||r|| with ||r||^2 = sum_m r_m · r_m."""
-        rnorm2 = np.float64(0.0)
-        for m, device_id in enumerate(self.configCuda.devices):
-            with cp.cuda.Device(device_id):
-                rnorm2 += np.float64(cublas.dotc(self.r_m[m], self.r_m[m]))
-        return rtol * np.sqrt(rnorm2)
+        """atol = rtol * ||b|| (stable across timesteps; matches checkSolution)."""
+        return rtol * self.norm2Sum(self.b_m)
 
 
     def computeInvDiag(self):
@@ -491,6 +497,8 @@ class PCGSolverMultiGPU:
             maxiter = self.N_total * 10
 
         self.gatherBFromMesh()
+        self.computeInvDiag()
+        atol = self.computeAtol(rtol)
 
         print("N_m", self.N_m,
             "N_total", self.N_total,
@@ -505,14 +513,13 @@ class PCGSolverMultiGPU:
                     "num zero diag", int(cp.sum(d == 0)),
                     "indices min/max", int(self.indices_m[m].min()), int(self.indices_m[m].max()))
 
-        # atol from previous x vs new A, b (same order as single-GPU PCGSolver)
-        self.computeResiduals()
-        self.computeInvDiag()
-        atol = self.computeAtol(rtol)
-
         self.extrapolateGuess()
         self.computeResiduals()          # r_m = b_m - A_m @ x_guess
+        r0 = self.norm2Sum(self.r_m)
+        print(f"PCG: ||r0||={r0:.6e}  atol={atol:.6e}  ||b||={self.norm2Sum(self.b_m):.6e}")
+
         rho = 0.0
+        iters = 0
         for iters in range(maxiter):
             print(f"PCG iter {iters}, atol: {atol}, rho: {rho}")
             self.applyPreconditioner()   # z_m = invD_m * r_m
@@ -530,6 +537,7 @@ class PCGSolverMultiGPU:
 
         self.scatterXToMesh()
         self.rollHistory()
+        print(f"PCG: iters={iters}  ||r0||={r0:.6e}  atol={atol:.6e}")
         return iters
 
     def checkSolution(self, label=""):
