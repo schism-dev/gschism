@@ -402,6 +402,7 @@ class PCGSolverMultiGPU:
                 rnorm2 += np.float64(cublas.dotc(self.r_m[m], self.r_m[m]))
         return rtol * np.sqrt(rnorm2)
 
+
     def computeInvDiag(self):
         """invD_m = 1.0 / A_m.diagonal() (gathers full A first)."""
 
@@ -482,6 +483,9 @@ class PCGSolverMultiGPU:
 
 
     def solve(self, rtol=1e-5, maxiter=None, ensureSymmetric=False):
+
+        if maxiter is None:
+            maxiter = self.N_total * 10
 
         self.extrapolateGuess()
 
