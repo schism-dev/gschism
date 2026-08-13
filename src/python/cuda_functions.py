@@ -147,7 +147,7 @@ def initializeCudaFunctions(sizes):
     try:
         populateMesh                        = mod.get_function('populateMesh',                        sizes, kernel_type='global,onlycurrent')
         populateNodes                       = mod.get_function('populateNodes',                       sizes, kernel_type='nodes,onlycurrent')
-        populateNodes2                      = mod.get_function('populateNodes2',                      sizes, kernel_type='nodes')
+        populateNodes2                      = mod.get_function('populateNodes2',                      sizes, kernel_type='nodes,onlycurrent')
         populateSides                       = mod.get_function('populateSides',                       sizes, kernel_type='sides,onlycurrent')
         populateElements                    = mod.get_function('populateElements',                    sizes, kernel_type='elements,onlycurrent')
         populateBoundaryNodes               = mod.get_function('populateBoundaryNodes',               sizes, kernel_type='nodeBnd,onlycurrent')
