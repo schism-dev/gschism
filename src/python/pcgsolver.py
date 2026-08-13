@@ -378,7 +378,10 @@ class PCGSolverMultiGPU:
 
 
     def extrapolateGuess(self):
-        """Parabolic initial guess from previous solutions; zero local search direction."""
+        """Parabolic initial guess from previous solutions; zero local search direction.
+
+        Call after computeAtol() so atol is based on the previous x, not this guess.
+        """
         for m, device_id in enumerate(self.configCuda.devices):
             with cp.cuda.Device(device_id):
                 self.x_m[m][:] = 3.0 * self.x0_m[m] - 3.0 * self.x1_m[m] + self.x2_m[m]
@@ -487,8 +490,6 @@ class PCGSolverMultiGPU:
         if maxiter is None:
             maxiter = self.N_total * 10
 
-        self.extrapolateGuess()
-
         self.gatherBFromMesh()
 
         print("N_m", self.N_m,
@@ -504,13 +505,13 @@ class PCGSolverMultiGPU:
                     "num zero diag", int(cp.sum(d == 0)),
                     "indices min/max", int(self.indices_m[m].min()), int(self.indices_m[m].max()))
 
-
-
-        self.computeResiduals()          # r_m = b_m - A_m @ x (gathered)
-
+        # atol from previous x vs new A, b (same order as single-GPU PCGSolver)
+        self.computeResiduals()
         self.computeInvDiag()
+        atol = self.computeAtol(rtol)
 
-        atol = self.computeAtol(rtol)    # all-reduce of norms
+        self.extrapolateGuess()
+        self.computeResiduals()          # r_m = b_m - A_m @ x_guess
         rho = 0.0
         for iters in range(maxiter):
             print(f"PCG iter {iters}, atol: {atol}, rho: {rho}")
