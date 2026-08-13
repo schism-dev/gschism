@@ -2091,7 +2091,7 @@ __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_ind
       int16_t idx = 0;
 
       //Takes care of the diagonal element.
-      if (node->idx < col) ++idx;          
+      if (node->packedIndex() < col) ++idx;          
 
       for (int j = 0; j < node->numNodes; ++j) if (node->nodes[j]->packedIndex() < col) ++idx;
       csrSlot[i] = idx;
