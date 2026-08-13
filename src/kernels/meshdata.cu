@@ -2087,7 +2087,7 @@ __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_ind
    // Simply count the number of nodes with a smaller global index than the current node.
    // It accounts for the diagonal element.
    for (int i = 0; i < node->numNodes; ++i) {
-      const int col = packedIndex();
+      const int col = node->nodes[i]->packedIndex();
       int16_t idx = 0;
 
       //Takes care of the diagonal element.
