@@ -1635,6 +1635,19 @@ if (iter == 38) {printf("*****iter = %d, time_rm = %.17f\n", iter, time_rm); ret
 
 
 
+__device__ __forceinline__ int Node::localIndex() const {
+   // Returns the local index of the node in the partition
+   // Local index is just the offset from the start of the partition's node memory
+   return int(this - mesh->nodes[part]);
+}
+
+
+__device__ __forceinline__ int Node::packedIndex() const {
+   // Returns the packed index of the node
+   // Packed index is the index of the partition-block matrices and vectors.
+   return nodeOffsetPerPartition[part] + localIndex();
+}
+
 
 __device__ double Node::sigmaTransitionDepth(void) const { return min(depth, mesh->h_s); }  
 
@@ -2074,20 +2087,20 @@ __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_ind
    // Simply count the number of nodes with a smaller global index than the current node.
    // It accounts for the diagonal element.
    for (int i = 0; i < node->numNodes; ++i) {
-      const int col = node->nodes[i]->idx;
+      const int col = packedIndex();
       int16_t idx = 0;
 
       //Takes care of the diagonal element.
       if (node->idx < col) ++idx;          
 
-      for (int j = 0; j < node->numNodes; ++j) if (node->nodes[j]->idx < col) ++idx;
+      for (int j = 0; j < node->numNodes; ++j) if (node->nodes[j]->packedIndex() < col) ++idx;
       csrSlot[i] = idx;
    }
 
    // Find the diagonal element in the CRS matrix.
    int16_t idxDiag = 0;
    for (int j = 0; j < node->numNodes; ++j)
-      if (node->nodes[j]->idx < node->idx) ++idxDiag;
+      if (node->nodes[j]->packedIndex() < node->packedIndex()) ++idxDiag;
 
    node->coeffDiag = &(node->coeffRow[idxDiag]);
 
@@ -2100,12 +2113,10 @@ __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_ind
 
    // Fills crs_indices array using the per-partition indexing.
    const int d = (int)(node->coeffDiag - node->coeffRow);
-   crs_indices[rowStart + d] = nodeOffsetPerPartition[node->part] + localIdx;  
+   crs_indices[rowStart + d] = node->packedIndex();  
    for (int j = 0; j < node->numNodes; ++j) {
       Node *nb = node->nodes[j];
-      Node *nbMemStart = nodes[nb->part];
-      const int neighborLocalIdx = nb - nbMemStart;
-      crs_indices[rowStart + node->csrSlot[j]] = nodeOffsetPerPartition[nb->part] + neighborLocalIdx;
+      crs_indices[rowStart + node->csrSlot[j]] = nb->packedIndex();
    }
 
 

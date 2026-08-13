@@ -1389,6 +1389,9 @@ struct Node {
 
 
 
+   __device__ __forceinline__ int localIndex() const;
+   __device__ __forceinline__ int packedIndex() const;
+
 
    __device__ void setWind(Vector2 &u) {
    // Sets the wind vector taking into account the mesh angle
