@@ -222,8 +222,8 @@ def initializeCudaFunctions(sizes):
         setupCGSolver            = mod.get_function('setupCGSolver', sizes, kernel_type='nodes')
         # setupMultiGPUCGSolver    = mod.get_function('setupMultiGPUCGSolver', sizes, kernel_type='nodes') XXX REMOVE?
         solverCopyResult         = mod.get_function('solverCopyResult', sizes, kernel_type='nodes')
-        gatherBFromMesh          = mod.get_function('gatherBFromMesh', sizes, kernel_type='nodes')
-        scatterXToMesh           = mod.get_function('scatterXToMesh', sizes, kernel_type='nodes')
+        gatherBFromMesh          = mod.get_function('gatherBFromMesh', sizes, kernel_type='nodes,onlycurrent')
+        scatterXToMesh           = mod.get_function('scatterXToMesh', sizes, kernel_type='nodes,onlycurrent')
 
     except Exception as e:
         print(f"Error getting CUDA functions: {e}")

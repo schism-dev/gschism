@@ -489,6 +489,8 @@ class PCGSolverMultiGPU:
 
         self.extrapolateGuess()
 
+        self.gatherBFromMesh()
+
         print("N_m", self.N_m,
             "N_total", self.N_total,
             "sum(N_m)", sum(self.N_m),
@@ -502,7 +504,7 @@ class PCGSolverMultiGPU:
                     "num zero diag", int(cp.sum(d == 0)),
                     "indices min/max", int(self.indices_m[m].min()), int(self.indices_m[m].max()))
 
-        self.gatherBFromMesh()
+
 
         self.computeResiduals()          # r_m = b_m - A_m @ x (gathered)
 
