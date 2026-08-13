@@ -292,7 +292,7 @@ class PCGSolverMultiGPU:
                 self.r_m[m]    = cp.zeros(Nm, dtype=cp.float64)
                 self.z_m[m]    = cp.zeros(Nm, dtype=cp.float64)
                 self.p_m[m]    = cp.zeros(Nm, dtype=cp.float64)
-                self.q_m[m]    = cp.emzerospty(Nm, dtype=cp.float64)
+                self.q_m[m]    = cp.zeros(Nm, dtype=cp.float64)
                 self.x_m[m]    = cp.zeros(Nm, dtype=cp.float64)
                 self.x0_m[m]   = cp.zeros(Nm, dtype=cp.float64)
                 self.x1_m[m]   = cp.zeros(Nm, dtype=cp.float64)
