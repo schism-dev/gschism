@@ -41,8 +41,8 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         raise ValueError(f"Invalid ics = {namelist.opt.ics}, not in [1, 2]")
 
     nGPUs = len(numPartNodes)  # or deviceCount
-    offsets = [numPartNodes[0]]
-    for n in numPartNodes[1:]:
+    offsets = [0]
+    for n in numPartNodes[:-1]:
         offsets.append(offsets[-1] + int(n))
 
     # Define mapping of template placeholders to values

@@ -2098,9 +2098,15 @@ __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_ind
    const int rowNNZ = node->numNodes + 1;        // +1 is to account for the diagonal element.
    crs_indptr[localIdx] = rowStart;
 
+   // Fills crs_indices array using the per-partition indexing.
    const int d = (int)(node->coeffDiag - node->coeffRow);
-   crs_indices[rowStart + d] = node->idx;  
-   for (int j = 0; j < node->numNodes; ++j) crs_indices[rowStart + node->csrSlot[j]] = node->nodes[j]->idx;
+   crs_indices[rowStart + d] = nodeOffsetPerPartition[node->part] + localIdx;  
+   for (int j = 0; j < node->numNodes; ++j) {
+      Node *nb = node->nodes[j];
+      Node *nbMemStart = nodes[nb->part];
+      const int neighborLocalIdx = nb - nbMemStart;
+      crs_indices[rowStart + node->csrSlot[j]] = nodeOffsetPerPartition[nb->part] + neighborLocalIdx;
+   }
 
 
 }
