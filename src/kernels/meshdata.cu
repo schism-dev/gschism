@@ -2086,6 +2086,8 @@ __device__ void Mesh::populateNodes2(int *localNodeNeighNodesStart, int *crs_ind
 
    // Simply count the number of nodes with a smaller global index than the current node.
    // It accounts for the diagonal element.
+   // packedIndex is a special type of global index in which nodes are counted in the order as the
+   // local index, but taking into account all the partitions (in order).
    for (int i = 0; i < node->numNodes; ++i) {
       const int col = node->nodes[i]->packedIndex();
       int16_t idx = 0;

@@ -51,7 +51,7 @@ def writeOutput(it, core, opt):
     nspool  = core.nspool
     dt      = core.dt
     timesPerFile = ihfskip // nspool
-
+    return
     if (it % nspool) != 0:
         return
 
