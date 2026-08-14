@@ -99,56 +99,43 @@ def getNodeVar(varName, k=-1):
     if not is3D and k != -1:
         raise ValueError("k cannot be provided for 2D variables")
 
-    # Gets information about the location and size of the variable in the GPU memory
-    # [This should be lists for each device]
-    offset      = cp.zeros(1, dtype=cp.uint64)   
-    addr        = cp.zeros(1, dtype=cp.uint64)
-    sizeNode    = cp.zeros(1, dtype=cp.uint64)
-    sizeType    = cp.zeros(1, dtype=cp.uint64)
-    cufunc.getNodeVarAddr(varCode, addr, offset, sizeNode, sizeType)
-    sizeNode = sizeNode.item()
-
-    if offset.get() != cp.uint32(cp.int32(-1)):
-        # If offset is not -1, then the variable is directly mapped in memory
-
-        if varType == 'double':
-            if is3D:
-                shape = (nvrt, numNodes)
-                strides = (8, sizeNode)  # 8 bytes for double, then stride for next element
-            else:
-                shape = (numNodes,)
-                strides = (sizeNode,)
-            dtype = cp.float64
-        elif varType == 'Vector2':
-            if is3D:
-                shape = (2, nvrt, numNodes)  # XXXXX  check 2*nvrt
-                strides = (8, 16, sizeNode)  # 8 bytes for double, then 8*nvrt for next level, then stride for next element
-            else:
-                shape = (2, numNodes)
-                strides = (8, sizeNode)
-            dtype = cp.float64
-        elif varType == 'int' or varType == 'bool':
-            if is3D:
-                shape = (nvrt, numNodes)
-                strides = (4, sizeNode)  # 4 bytes for int, then stride for next element
-            else:
-                shape = (numNodes,)
-                strides = (sizeNode,)
-            dtype = cp.int32
-        else:
-            raise ValueError(f"Invalid variable type: {varType}")
-            
-        view = cp.ndarray(shape=shape, dtype=dtype, strides=strides, order='F',
-                          memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(addr.item() + offset.item(), 0, owner=None), 0)) 
-
-        return view
-
-    elif varName == "outputCoords":
-            res = cp.zeros((2, numNodes), dtype=cp.float64, order='F')
-            cufunc.getNodeVarFunc(varCode, res)
-            return res
+    # bytes written per local node (must match the kernel)
+    if varType == 'double':
+        nbytes = 8 * (nvrt if is3D else 1)
+        dtype = np.float64
+    elif varType == 'Vector2':
+        nbytes = 16 * (nvrt if is3D else 1)
+        dtype = np.float64
+    elif varType in ('int', 'bool'):
+        nbytes = 4 * (nvrt if is3D else 1)
+        dtype = np.int32
     else:
-        raise ValueError(f"Variable {varName} is not mapped in memory")    
+        raise ValueError(varType)
+
+    # Gathers the variable from every device in configCuda.devices into the pre-allocated scratch array
+    result = None
+    for m, device_id in enumerate(configCuda.devices):
+        # Gets the global indices of the nodes on the current device. This will be used to scatter the variable from packed
+        # indices to global indices.
+        gidx = nodeGlobalIndices[m]
+        nPartition = len(gidx)  # number of nodes on the current device
+
+        # Kernels put the variable from the device into the scratch array (in packed index order)
+        # partPacked is a view of size (nPartition, nComp) and type dtype into the scratch array.
+        # It is ordered in packed index order (local partition index).
+        with cp.cuda.Device(device_id):
+            cufunc.getNodeVar(varCode, scratch[m], k)
+            partPacked = scratch[m][:nPartition * nbytes].view(dtype).get().reshape(nPartition, -1) 
+
+        # copies the variable from the scratch array to the result array (in global index order)
+        if result is None:
+            result = np.empty((numNodes, partPacked.shape[1]), dtype=dtype)
+        result[gidx, :] = partPacked
+
+    # match old writeOutput layout if needed, e.g. Vector2 (2, n)
+    if varType == 'Vector2' and not is3D:
+        return result.T.copy()
+    return result.squeeze() 
 
 
 def getSideVar(varName, k=-1):

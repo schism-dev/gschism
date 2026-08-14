@@ -6459,6 +6459,18 @@ extern "C" __global__ void getSideVarFunc(int varCode, double *res) {
 }
 
 
+extern "C" __global__ void getNodeVar(int varCode, void *res) {
+   // Copies the value of a variable/function defined by varCode from the node to the result array
+   // The caller is responsible for allocating the result with the correct size.
+
+   NODE(node);
+
+   // switch (varCode) 
+}
+
+
+
+
 extern "C" __global__ void getNodeVarFunc(int varCode, double *res) {
 
    NODE(node);
