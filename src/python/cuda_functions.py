@@ -210,9 +210,9 @@ def initializeCudaFunctions(sizes):
         returnB                             = mod.get_function('returnB',                             sizes, kernel_type='global')
 
         getSideBndVar                       = mod.get_function('getSideBndVar',                       sizes, kernel_type='sideBnd')
-        getElementVarAddr                   = mod.get_function('getElementVarAddr',                   sizes, kernel_type='global')
-        getSideVarAddr                      = mod.get_function('getSideVarAddr',                      sizes, kernel_type='global')
-        getNodeVarAddr                      = mod.get_function('getNodeVarAddr',                      sizes, kernel_type='global')
+        getElementVarAddr                   = mod.get_function('getElementVarAddr',                   sizes, kernel_type='global,onlycurrent')
+        getSideVarAddr                      = mod.get_function('getSideVarAddr',                      sizes, kernel_type='global,onlycurrent')
+        getNodeVarAddr                      = mod.get_function('getNodeVarAddr',                      sizes, kernel_type='global,onlycurrent')
         getElementVarFunc                   = mod.get_function('getElementVarFunc',                   sizes, kernel_type='elements')
         getNodeVarFunc                      = mod.get_function('getNodeVarFunc',                      sizes, kernel_type='nodes')
         getSideVarFunc                      = mod.get_function('getSideVarFunc',                      sizes, kernel_type='sides')
