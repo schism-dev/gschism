@@ -27,130 +27,142 @@ import python.cuda_functions as cufunc
 from python.schism_consts import varInfoDict
 
 
-# Global mesh sizes (full grid, all partitions).
-numNodes = 0
-numElements = 0
-numSides = 0
-numSideBnds = 0
-nvrt = 0
 
 # Per-partition global ids: nodeGlobalIndices[m][i] = global node id of local node i on GPU m.
 # Set by initGlobalIndices (required for both single- and multi-GPU).
-nodeGlobalIndices = None
-elemGlobalIndices = None
-sideGlobalIndices = None
 
 
-def init(nNodes, nElements, nSides, nSideBnds, numVrt):
-    """Store full-mesh dimensions and vertical level count."""
-    global numNodes, numElements, numSides, numSideBnds, nvrt
-    numNodes = nNodes
-    numElements = nElements
-    numSides = nSides
-    numSideBnds = nSideBnds
-    nvrt = numVrt
+
+class DeviceToHost:
+    def __init__(self, nNodes, nElements, nSides, nSideBnds, numVrt, 
+                 globalNodeIndices, globalElemIndices, globalSideIndices, configCuda):
+        """Store full-mesh dimensions and vertical level count."""
+        self.numNodes = nNodes
+        self.numElements = nElements
+        self.numSides = nSides
+        self.numSideBnds = nSideBnds
+        self.nvrt = numVrt
+        self.configCuda = configCuda
+
+        # Allocate buffers for each device. These will store a variable in packed index order.
+        self.bufferGPU = []   
+        self.bufferCPU = []
+        for m, device_id in enumerate(self.configCuda.devices):
+            nMax = max(len(self.nodeGlobalIndices[m]),
+                       len(self.elemGlobalIndices[m]),
+                       len(self.sideGlobalIndices[m]))
+            maxFieldBytes = 16  # worst case is vector2
+            with cp.cuda.Device(device_id):                
+                self.bufferGPU.append(cp.empty(nMax*maxFieldBytes, dtype=cp.uint8))
+                self.bufferCPU.append(np.empty(nMax*maxFieldBytes, dtype=np.uint8))
+
+        # Allocate a single result buffer for the final assembly.
+        totScratchBytes = sum(len(buffer) for buffer in self.bufferCPU)
+        self.result = np.empty(totScratchBytes, dtype=np.uint8)
+
+        # Per-partition global SCHISM indices for scatter after GPU read.
+        self.globalNodeIndices = [np.asarray(a, dtype=np.int32) for a in globalNodeIndices]
+        self.globalElemIndices = [np.asarray(a, dtype=np.int32) for a in globalElemIndices]
+        self.globalSideIndices = [np.asarray(a, dtype=np.int32) for a in globalSideIndices]
 
 
-def initGlobalIndices(nodeIndices, elemIndices, sideIndices):
-    """
-    Per-partition global SCHISM indices for scatter after GPU read.
-
-    nodeIndices[m] is a 1D int array of length np_m (global node id of each local node on GPU m).
-    Same pattern for elemIndices and sideIndices.
-
-    Called once from main after partPopulate. With one GPU, nodeIndices is a one-element list
-    (e.g. [np.arange(numNodes)]). With several GPUs, one entry per device from globalNodeIndices.
-    """
-    global nodeGlobalIndices, elemGlobalIndices, sideGlobalIndices
-    nodeGlobalIndices = [np.asarray(a, dtype=np.int32) for a in nodeIndices]
-    elemGlobalIndices = [np.asarray(a, dtype=np.int32) for a in elemIndices]
-    sideGlobalIndices = [np.asarray(a, dtype=np.int32) for a in sideIndices]
 
 
-def getViewLayout(varType, is3D, numItems, structSize, kind):
-    """
-    Shape, strides, and dtype for a CuPy ndarray view into a struct array on one device.
+    def getViewLayout(self, varType, is3D, numItems, structSize, kind):
+        """
+        Shape, strides, and dtype for a CuPy ndarray view into a struct array on one device.
 
-    kind is "node", "side", or "element".
-    structSize is sizeof(Node), sizeof(Side), or sizeof(Element) in bytes.
-    numItems is the local count on that device (np, ns, or ne), not the global count.
+        kind is "node", "side", or "element".
+        structSize is sizeof(Node), sizeof(Side), or sizeof(Element) in bytes.
+        numItems is the local count on that device (np, ns, or ne), not the global count.
 
-    Returns (shape, strides, dtype).
-    """
-    raise NotImplementedError
-
-
-def getNodeVar(varName, k=-1):
-    """
-    Read a nodal field from all GPU partitions into one host array.
-
-    varName must appear in varInfoDict (e.g. "eta", "depth", "outputCoords").
-    k selects a vertical level for 3D fields; must be -1 for 2D fields.
-
-    Returns a NumPy array in global node order (length numNodes along the last axis).
-    """
-
-    varInfo = varInfoDict[varName]
-    varCode = list(varInfoDict.keys()).index(varName)
-    varType = varInfo['type']
-    is3D = varInfo['is3D']
+        Returns (shape, strides, dtype).
+        """
+        raise NotImplementedError
 
 
-    if not is3D and k != -1:
-        raise ValueError("k cannot be provided for 2D variables")
+    def varLayout(self, varName, k=-1):
+        """
+        Packed field layout from varInfoDict.
 
-    # bytes written per local node (must match the kernel)
-    if varType == 'double':
-        nbytes = 8 * (nvrt if is3D else 1)
-        dtype = np.float64
-    elif varType == 'Vector2':
-        nbytes = 16 * (nvrt if is3D else 1)
-        dtype = np.float64
-    elif varType in ('int', 'bool'):
-        nbytes = 4 * (nvrt if is3D else 1)
-        dtype = np.int32
-    else:
-        raise ValueError(varType)
+        Returns (varCode, varType, is3D, nbytes, dtype, numComponents).
+        nbytes is bytes written per local entity and must match the kernel.
+        """
+        varInfo = varInfoDict[varName]
+        varCode = list(varInfoDict.keys()).index(varName)
+        varType = varInfo['type']
+        is3D = varInfo['is3D']
 
-    # Gathers the variable from every device in configCuda.devices into the pre-allocated scratch array
-    result = None
-    for m, device_id in enumerate(configCuda.devices):
-        # Gets the global indices of the nodes on the current device. This will be used to scatter the variable from packed
-        # indices to global indices.
-        gidx = nodeGlobalIndices[m]
-        nPartition = len(gidx)  # number of nodes on the current device
+        if not is3D and k != -1:
+            raise ValueError("k cannot be provided for 2D variables")
 
-        # Kernels put the variable from the device into the scratch array (in packed index order)
-        # partPacked is a view of size (nPartition, nComp) and type dtype into the scratch array.
-        # It is ordered in packed index order (local partition index).
-        with cp.cuda.Device(device_id):
-            cufunc.getNodeVar(varCode, scratch[m], k)
-            partPacked = scratch[m][:nPartition * nbytes].view(dtype).get().reshape(nPartition, -1) 
+        if varType == 'double':
+            nbytes = 8
+            dtype = np.float64
+            numComponents = 1
+        elif varType == 'Vector2':
+            nbytes = 16
+            dtype = np.float64
+            numComponents = 2
+        elif varType in ('int', 'bool'):
+            nbytes = 4
+            dtype = np.int32
+            numComponents = 1
+        else:
+            raise ValueError(varType)
 
-        # copies the variable from the scratch array to the result array (in global index order)
-        if result is None:
-            result = np.empty((numNodes, partPacked.shape[1]), dtype=dtype)
-        result[gidx, :] = partPacked
-
-    # match old writeOutput layout if needed, e.g. Vector2 (2, n)
-    if varType == 'Vector2' and not is3D:
-        return result.T.copy()
-    return result.squeeze() 
+        return varCode, varType, is3D, nbytes, dtype, numComponents
 
 
-def getSideVar(varName, k=-1):
-    """
-    Read a side field from all GPU partitions into one host array.
+    def getVar(self, varName, k, globalIndices, numItems, kernel):
+        """
+        Read a field from all GPU partitions into one host array in global SCHISM order.
 
-    Returns a NumPy array in global side order (length numSides along the last axis).
-    """
-    raise NotImplementedError
+        globalIndices[m] maps local packed index on device m to the global id.
+        numItems is the full-mesh count (numNodes / numSides / numElements).
+        kernel writes the packed local field into bufferGPU[m].
+        """
+        varCode, varType, is3D, nbytes, dtype, numComponents = self.varLayout(varName, k)
+        result = self.result[:numItems * nbytes].view(dtype).reshape(numItems, numComponents)
+
+        for m, device_id in enumerate(self.configCuda.devices):
+            gidx = globalIndices[m]
+            sizePart = len(gidx)
+
+            with cp.cuda.Device(device_id):
+                kernel(varCode, self.bufferGPU[m], k)
+                cp.asnumpy(self.bufferGPU[m][:sizePart*nbytes], out=self.bufferCPU[m][:sizePart*nbytes])
+
+            arrayPart = self.bufferCPU[m][:sizePart * nbytes].view(dtype).reshape(sizePart, numComponents)
+            result[gidx] = arrayPart
+
+        if varType == 'Vector2' and not is3D:
+            return result.T
+        return result.squeeze()
 
 
-def getElementVar(varName, k=-1):
-    """
-    Read an element field from all GPU partitions into one host array.
+    def getNodeVar(self, varName, k=-1):
+        """
+        Read a nodal field from all GPU partitions into one host array.
 
-    Returns a NumPy array in global element order (length numElements along the last axis).
-    """
-    raise NotImplementedError
+        Returns a NumPy array in global node order (length numNodes along the last axis).
+        """
+        return self.getVar(varName, k, self.globalNodeIndices, self.numNodes, cufunc.getNodeVar)
+
+
+    def getSideVar(self, varName, k=-1):
+        """
+        Read a side field from all GPU partitions into one host array.
+
+        Returns a NumPy array in global side order (length numSides along the last axis).
+        """
+        return self.getVar(varName, k, self.globalSideIndices, self.numSides, cufunc.getSideVar)
+
+
+    def getElementVar(self, varName, k=-1):
+        """
+        Read an element field from all GPU partitions into one host array.
+
+        Returns a NumPy array in global element order (length numElements along the last axis).
+        """
+        return self.getVar(varName, k, self.globalElemIndices, self.numElements, cufunc.getElementVar)

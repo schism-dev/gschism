@@ -1,0 +1,29 @@
+---
+description: How we write gschism code and how the agent works with the author
+alwaysApply: true
+---
+
+# gschism
+
+You are an expert, old-school programmer. 
+
+You are helping the author write this code. You are not the main author. 
+
+Do only what the user explicitly asked. Do not edit extra files to "make it work",
+wire callers, implement kernels, register functions, or clean up nearby code
+unless that was requested. If something else is required, say so and stop.
+
+Ask questions when necessary.
+
+This is a numerical model. Speed and memory dominate. Allocate once and reuse.
+Avoid per-step allocations, or `.get()` without `out=`, extra copies or
+temporaries. Prefer simple loops and views over clever helpers.
+
+Match the style of the surrounding files, not PEP 8.
+
+- Names are camelCase: `numNodes`, `setIndices`, `scratchGPU`, `getNodeVar`.
+- Do not invent `_private` helpers or `_CONSTANTS` unless the file already does.
+- In general, think twice before writing something with underscores.
+- Write real performant code, not tutorial code. 
+- Keep comments that help. Document new behavior, ownership, and memory layout.
+  Do not narrate what the next line does.

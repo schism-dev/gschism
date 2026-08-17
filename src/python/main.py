@@ -12,7 +12,10 @@ from python.pcgsolver import PCGSolver, PCGSolverMultiGPU
 from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 import iop.cudaKernelWrapper as ckw
-import iop.gpu2cpu as gpu2cpu
+import iop.deviceToHost.DeviceToHost as DeviceToHost
+import iop.deviceToHost.getNodeVar as getNodeVar
+import iop.deviceToHost.getElemVar as getElemVar
+import iop.deviceToHost.getSideVar as getSideVar
 
 pool = cp.cuda.MemoryPool()
 cp.cuda.set_allocator(pool.malloc)
@@ -718,16 +721,17 @@ if __name__ == "__main__":
     
 
     # initialize the module for bringing memory from the GPU to the CPU
-    nodeIdx, elemIdx, sideIdx = [], [], []
+    globalNodeIndices = []
+    globalElemIndices = []
+    globalSideIndices = []
     for pd in partPopulate:
-        with cp.cuda.Device(pd['device_id']):
-            nodeIdx.append(pd['globalNodeIndices'].get())
-            elemIdx.append(pd['globalElemIndices'].get())
-            sideIdx.append(pd['globalSideIndices'].get())
-
-    gpu2cpu.init(numNodes, numElements, numSides, numPartBoundarySides, nvrt)
-    gpu2cpu.initGlobalIndices(nodeIdx, elemIdx, sideIdx)
-
+        globalNodeIndices.append(pd['globalNodeIndices'])
+        globalElemIndices.append(pd['globalElemIndices'])
+        globalSideIndices.append(pd['globalSideIndices'])
+    dtoh = DeviceToHost(numNodes, numElements, numSides, numPartBoundarySides, nvrt, 
+                        globalNodeIndices, globalElemIndices, globalSideIndices, 
+                        ckw.configCuda)
+    
 
 
     ntime, nrec = schism_init(namelist.core, namelist.opt)
