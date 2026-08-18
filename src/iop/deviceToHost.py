@@ -48,9 +48,9 @@ class DeviceToHost:
         self.bufferGPU = []   
         self.bufferCPU = []
         for m, device_id in enumerate(self.configCuda.devices):
-            nMax = max(len(self.nodeGlobalIndices[m]),
-                       len(self.elemGlobalIndices[m]),
-                       len(self.sideGlobalIndices[m]))
+            nMax = max(len(globalNodeIndices[m]),
+                       len(globalElemIndices[m]),
+                       len(globalSideIndices[m]))
             maxFieldBytes = 16  # worst case is vector2
             with cp.cuda.Device(device_id):                
                 self.bufferGPU.append(cp.empty(nMax*maxFieldBytes, dtype=cp.uint8))
@@ -61,9 +61,9 @@ class DeviceToHost:
         self.result = np.empty(totScratchBytes, dtype=np.uint8)
 
         # Per-partition global SCHISM indices for scatter after GPU read.
-        self.globalNodeIndices = [np.asarray(a, dtype=np.int32) for a in globalNodeIndices]
-        self.globalElemIndices = [np.asarray(a, dtype=np.int32) for a in globalElemIndices]
-        self.globalSideIndices = [np.asarray(a, dtype=np.int32) for a in globalSideIndices]
+        self.globalNodeIndices = [cp.asnumpy(a).astype(np.int32, copy=False) for a in globalNodeIndices]
+        self.globalElemIndices = [cp.asnumpy(a).astype(np.int32, copy=False) for a in globalElemIndices]
+        self.globalSideIndices = [cp.asnumpy(a).astype(np.int32, copy=False) for a in globalSideIndices]
 
 
 

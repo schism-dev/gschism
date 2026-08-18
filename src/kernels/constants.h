@@ -14,7 +14,7 @@ constexpr int nPartitions = nGPUs;
 // Nodes owned by each partition
 constexpr int numNodesPerPartition[nPartitions] = {1457889};
 // Cumulative counts: offset[0]=numNodesPerPartition[0], offset[p]=offset[p-1]+numNodesPerPartition[p]
-constexpr int nodeOffsetPerPartition[nPartitions] = {1457889};
+constexpr int nodeOffsetPerPartition[nPartitions] = {0};
 
 constexpr int ivcor = 1;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates

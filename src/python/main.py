@@ -12,10 +12,8 @@ from python.pcgsolver import PCGSolver, PCGSolverMultiGPU
 from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 import iop.cudaKernelWrapper as ckw
-import iop.deviceToHost.DeviceToHost as DeviceToHost
-import iop.deviceToHost.getNodeVar as getNodeVar
-import iop.deviceToHost.getElemVar as getElemVar
-import iop.deviceToHost.getSideVar as getSideVar
+from iop.deviceToHost import DeviceToHost
+
 
 pool = cp.cuda.MemoryPool()
 cp.cuda.set_allocator(pool.malloc)
