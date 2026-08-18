@@ -74,6 +74,9 @@ getNodeVarAddr = None
 getElementVarFunc = None
 getNodeVarFunc = None
 getSideVarFunc = None
+getNodeVar = None
+getSideVar = None
+getElementVar = None
 
 setupCGSolver = None
 # setupMultiGPUCGSolver = None XXX REMOVE?
@@ -142,6 +145,7 @@ def initializeCudaFunctions(sizes):
     global getSideBndVar
     global getElementVarAddr, getSideVarAddr, getNodeVarAddr
     global getElementVarFunc, getNodeVarFunc, getSideVarFunc
+    global getNodeVar, getSideVar, getElementVar
 
     # Get kernel functions with better error handling
     try:
@@ -216,6 +220,9 @@ def initializeCudaFunctions(sizes):
         getElementVarFunc                   = mod.get_function('getElementVarFunc',                   sizes, kernel_type='elements')
         getNodeVarFunc                      = mod.get_function('getNodeVarFunc',                      sizes, kernel_type='nodes')
         getSideVarFunc                      = mod.get_function('getSideVarFunc',                      sizes, kernel_type='sides')
+        getNodeVar                          = mod.get_function('getNodeVar',                          sizes, kernel_type='nodes,onlycurrent')
+        getSideVar                          = mod.get_function('getSideVar',                          sizes, kernel_type='sides,onlycurrent')
+        getElementVar                       = mod.get_function('getElementVar',                       sizes, kernel_type='elements,onlycurrent')
 
         # test = mod.get_function('test', sizes, kernel_type='global')
 
