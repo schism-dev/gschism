@@ -256,6 +256,11 @@ if __name__ == "__main__":
     if numPartitions == 1:
         N = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.
         NNZ = nodeNeighNodes[0].size + N   # The total number of non-zero matrix elements is the number of node neighbors plus the number of nodes.
+
+        solver = PCGSolverMultiGPU(ckw.configCuda, N, NNZ.tolist())
+        print(f"Row-block NNZ = {NNZ.tolist()}, N = {N}")
+
+        raise Exception("REMOVE THIS")
         solver = PCGSolver(N, NNZ)
         print(f"Matrix size = {N}, total number of non-zero matrix elements = {NNZ}")
 
