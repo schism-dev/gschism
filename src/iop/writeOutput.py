@@ -42,7 +42,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 
 
 
-def writeOutput(it, core, opt):
+def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     # Write the output files
     global dataC, dataU, dataV, dataW, dataZ, dataWElem, fileNum, sizeNode, outputTime
     
@@ -82,26 +82,26 @@ def writeOutput(it, core, opt):
     # Horizontal geometric variables are only written once per file
     if idxTime == 0:
 
-        xy_cpu = monitor.getNodeVar("outputCoords").get()
+        xy_cpu = dtoh.getNodeVar("outputCoords")
         dataC.variables['SCHISM_hgrid_node_x'][:] = xy_cpu[0, :]
         dataC.variables['SCHISM_hgrid_node_y'][:] = xy_cpu[1, :]
         del xy_cpu
 
-        xy_cpu = monitor.getSideVar("outputCoords").get()
+        xy_cpu = dtoh.getSideVar("outputCoords")
         dataC.variables['SCHISM_hgrid_edge_x'][:] = xy_cpu[0, :]
         dataC.variables['SCHISM_hgrid_edge_y'][:] = xy_cpu[1, :]
         del xy_cpu
 
-        xy_cpu = monitor.getElementVar("outputCoords").get()
+        xy_cpu = dtoh.getElementVar("outputCoords")
         dataC.variables['SCHISM_hgrid_face_x'][:] = xy_cpu[0, :]
         dataC.variables['SCHISM_hgrid_face_y'][:] = xy_cpu[1, :]
         del xy_cpu
 
-        view = monitor.getElementVar("FaceIndices")
+        view = dtoh.getElementVar("FaceIndices")
         mask = (view[:,:] != 0)
-        faceIndices_cpu = view.astype(cp.int64).get()
-        firstPointer = view[mask].min().get()
-        mask = mask.get()
+        faceIndices_cpu = view.astype(cp.int64)
+        firstPointer = view[mask].min()
+        mask = mask
         # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
         faceIndices_cpu[mask] = (faceIndices_cpu[mask] - firstPointer)//sizeNode + 1
         faceIndices_cpu[~mask] = -1
@@ -109,15 +109,13 @@ def writeOutput(it, core, opt):
         nSCHISM_hgrid_face_nodes_var[:] = faceIndices_cpu.T
         del faceIndices_cpu, mask
 
-        view = monitor.getSideVar("n1")
-        n1_cpu = view.get()
-        firstPointer = view.min().get()
+        n1_cpu = dtoh.getSideVar("n1")
+        firstPointer = n1_cpu.min()
         # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
         n1_cpu[:] = (n1_cpu - firstPointer)//sizeNode + 1
 
-        view = monitor.getSideVar("n2")
-        n2_cpu = view.get()
-        firstPointer = view.min().get()
+        n2_cpu = dtoh.getSideVar("n2")
+        firstPointer = n2_cpu.min()
         # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
         n2_cpu[:] = (n2_cpu - firstPointer)//sizeNode + 1        
 
@@ -127,14 +125,12 @@ def writeOutput(it, core, opt):
         del n1_cpu, n2_cpu
 
 
-        view = monitor.getNodeVar("depth")
-        depth_cpu = view.get()
+        depth_cpu = dtoh.getNodeVar("depth")
         depth_var = dataC.variables['depth']
         depth_var[:] = depth_cpu
         del depth_cpu
 
-        view = monitor.getNodeVar("kb")
-        kb_cpu = view.get()
+        kb_cpu = dtoh.getNodeVar("kb")
         kb_var = dataC.variables['bottom_index_node']
         kb_var[:] = kb_cpu
         del kb_cpu
@@ -147,35 +143,30 @@ def writeOutput(it, core, opt):
 
     # For each variable, get the data from GPU (using monitor) and store it in the NetCDF file.
     # Explicitly delete the data from CPU after storing it in the NetCDF file.
-    view = monitor.getNodeVar("eta")
-    eta_cpu = view.get()
+    eta_cpu = dtoh.getNodeVar("eta")
     elevation_var = dataC.variables['elevation']
     elevation_var[idxTime, :] = eta_cpu
     del eta_cpu
  
 
-    view = monitor.getNodeVar("u_air")
-    u_air_cpu = view.get()
+    u_air_cpu = dtoh.getNodeVar("u_air")
     windSpeedX_var = dataC.variables['windSpeedX']
     windSpeedX_var[idxTime, :] = u_air_cpu[0, :]
     windSpeedY_var = dataC.variables['windSpeedY']
     windSpeedY_var[idxTime, :] = u_air_cpu[1, :]
     del u_air_cpu
 
-    view = monitor.getNodeVar("isdry")
-    isdry_cpu = view.astype(cp.int32).get()
+    isdry_cpu = dtoh.getNodeVar("isdry")
     dryFlagNode_var = dataC.variables['dryFlagNode']
     dryFlagNode_var[idxTime, :] = isdry_cpu
     del isdry_cpu
 
-    view = monitor.getSideVar("isdry")
-    isdry_cpu = view.astype(cp.int32).get()
+    isdry_cpu = dtoh.getSideVar("isdry")
     dryFlagSide_var = dataC.variables['dryFlagSide']
     dryFlagSide_var[idxTime, :] = isdry_cpu
     del isdry_cpu    
 
-    view = monitor.getElementVar("isdry")
-    isdry_cpu = view.astype(cp.int32).get()
+    isdry_cpu = dtoh.getElementVar("isdry")
     dryFlagElement_var = dataC.variables['dryFlagElement']
     dryFlagElement_var[idxTime, :] = isdry_cpu
     del isdry_cpu    

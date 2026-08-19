@@ -56,7 +56,7 @@ def _saveDataThread(data, numFile):
 
 
 
-def writeOutput(it, core, opt):
+def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     # Write the output files
     global sizeNode, save_thread
 
