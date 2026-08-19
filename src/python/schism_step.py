@@ -147,7 +147,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
 
 
-    # computeTurbulence()                # Lines 2663-3839
+    cufunc.computeTurbulence()                # Lines 2663-3839
 
 
     # Horizontal viscosity, implemented as a filter (also Shapiro filter)
