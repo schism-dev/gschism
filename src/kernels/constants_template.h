@@ -16,6 +16,8 @@ constexpr int numNodesPerPartition[nPartitions] = {__NUM_NODES_PER_PARTITION__};
 // Cumulative counts: offset[0]=numNodesPerPartition[0], offset[p]=offset[p-1]+numNodesPerPartition[p]
 constexpr int nodeOffsetPerPartition[nPartitions] = {__NODE_OFFSET_PER_PARTITION__};
 
+
+
 constexpr int ivcor = __IVCOR__;              // Vertical coordinate system
 constexpr int ics = __ICS__;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = __IMM__;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)

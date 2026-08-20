@@ -2027,6 +2027,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
    for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
    for (int k = 0; k < nvrt; k++) node.dfv[k] = dfv0;   // XXXX 
+   for (int k = 0; k < nvrt; k++) node.dfh[k] = dfh0;   // XXXX (does it need to exist when transport is not enabled?)
 
    
    // Links the node to the boundary information
@@ -2544,6 +2545,173 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 }
 
 
+
+
+
+constexpr TurbulenceModel turbulenceModel = static_cast<TurbulenceModel>(itur);
+
+
+template<TurbulenceModel turbulenceModel>
+__device__ __forceinline__ void computeTurbulenceModel(Node *node);
+
+
+template<>
+__device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::Constant>(Node *node) { 
+   // Constant turbulence model
+   // Does nothing since dfv and dfh are already set  in the initialization.
+}
+
+template<>
+__device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Node *node) { 
+   // Mellor-Yamada-Galperin & Umlauf-Burchard scheme
+
+   const int kb = node->kb;
+   
+   // For dry or 2D nodes, vertical viscosity and diffusivity are set to their minimum values.
+   if (node->isDry || node->is2D()) {
+
+      const double diffmin = node->turb->diffmin;
+
+      for (int k = kb; k < nvrt; k++) {
+         node->turb->q2[k] = q2min;
+         node->turb->xl[k] = xlmin2;
+         node->turb->dfv[k]  = diffmin;
+         node->turb->dfh[k]  = diffmin;
+         node->turb->dfq1[k] = diffmin;
+         node->turb->dfq2[k] = diffmin;
+
+      }
+
+      return;
+   }
+
+   assert(node->rho >= -98.0 && "Impossible: dry 2"); /// XXX Not sure what this message means/
+   
+   // After here we know that the node is wet and has at least 2 layers.
+
+   const double zTopCanopy = node->zTopCanopy();
+
+   for (int k = kb + 1; k < nvrt; k++) {
+
+      const double dz = node->Dz(k);
+      const double rho_c = 0.5*(node->rho[k] + node->rho[k-1]);
+      
+      const double du_dz   = (node->u2[k].x - node->u2[k-1].x)/dz;
+      const double dv_dz   = (node->u2[k].y - node->u2[k-1].y)/dz;
+      const double drho_dz = (node->rho[k] - node->rho[k-1])/dz;
+
+      // Turbulence production terms
+      const double shearbt = du_dz*du_dz + dv_dz*dv_dz;
+
+      const double rzbt = (grav/rho_c)*drho_dz;
+
+      const double q2ha = (node->turb->q2[k] + node->turb->q2[k-1]) / 2.0;
+      const double xlha = (node->turb->xl[k] + node->turb->xl[k-1]) / 2.0;
+
+!       Error: use ufg?
+        zt=znl(kbp(j),j)+veg_h(j) !top of SAV
+        do k=kbp(j)+1,nvrt
+          dzz(k)=znl(k,j)-znl(k-1,j)
+          dudz=(uu2(k,j)-uu2(k-1,j))/dzz(k)
+          dvdz=(vv2(k,j)-vv2(k-1,j))/dzz(k)
+          shearbt(k)=dudz**2+dvdz**2 !@ half levels
+          !if(Two_phase_mix==1) then !Tsinghua group
+          rzbt(k)=2.d0*grav/(prho(k,j)+prho(k-1,j))*(prho(k,j)-prho(k-1,j))/dzz(k) 
+          !else
+          !  rzbt(k)=grav/rho0*(prho(k,j)-prho(k-1,j))/dzz(k)
+          !endif
+          q2ha(k)=(q2(k,j)+q2(k-1,j))/2.d0
+          xlha(k)=(xl(k,j)+xl(k-1,j))/2.d0
+
+          !SAV production term \alpha*|u|^3*Hev()
+          veg_prod(k)=0.d0 !init @half level
+          if(iveg/=0.and.zt>znl(k-1,j)) then !partial or full veg layer
+            zz1=min(zt,znl(k,j))
+            zrat=(zz1-znl(k-1,j))/(znl(k,j)-znl(k-1,j)) !\in (0,1]
+            ub2=(1.d0-zrat)*uu2(k-1,j)+zrat*uu2(k,j) !@top of canopy
+            vb2=(1.d0-zrat)*vv2(k-1,j)+zrat*vv2(k,j)
+            vmag2=sqrt(ub2*ub2+vb2*vb2)             
+            vmag1=sqrt(uu2(k-1,j)**2.d0+vv2(k-1,j)**2.d0)
+            !veg_prod(k)=veg_alpha(j)*(vmag1**3.d0+vmag2**3.d0)/2.d0
+            !=0 at places with no veg
+            veg_prod(k)=(veg_alpha3D(k,j)+veg_alpha3D(k-1,j))*0.5d0*(vmag1**3.d0+vmag2**3.d0)/2.d0
+          endif !iveg
+
+!         Compute c_psi_3
+          if(icompute_cpsi3==0) then !use constants
+            if(mid.eq.'MY') then
+              cpsi3(k)=0.9d0
+            else !GLS models
+              if(rzbt(k)>0) then !unstable
+                cpsi3(k)=1.d0
+              else !stable
+                select case(mid)
+                  case('KL')
+                    cpsi3(k)=2.53d0
+                  case('KE')
+                    cpsi3(k)=-0.52d0
+                  case('KW')
+                    cpsi3(k)=-0.58d0
+                  case('UB')
+                    cpsi3(k)=0.1d0
+                  case default
+                    write(errmsg,*)'Unknown closure model:',mid
+                    call parallel_abort(errmsg)
+                end select
+              endif
+            endif !mid
+          else !icompute_cpsi3/=0: compute cpsi3(minus)
+            if(rzbt(k)>0) then !unstable
+              !In turbulence.F90: cpsi3plus=(1.5-ce3plus)*gen_n+gen_m
+              cpsi3(k)=0.5d0*rnub+rmub
+            else
+              cpsi3(k)=cpsi3_comp
+            endif !rzbt
+          endif !icompute_cpsi3
+
+!         Wall proximity function      
+          if(mid.eq.'MY'.or.mid.eq.'KL') then
+            zctr2=(znl(k,j)+znl(k-1,j))/2.d0
+            dists=eta2(j)-zctr2
+            distb=zctr2+dp(j)
+            if(dists==0.d0.or.distb==0.d0) then
+              write(errmsg,*)'Zero in proximity function:',j,k
+              call parallel_abort(errmsg)
+            endif
+            fwall=1.d0+1.33d0*(xlha(k)/0.4d0/distb)**2.d0+0.25d0*(xlha(k)/0.4d0/dists)**2.d0
+            cpsi2p(k)=fwall*cpsi2 !F_wall*cpsi2
+          else !other GLS
+            cpsi2p(k)=cpsi2
+          endif
+        enddo !k=kbp(j)+1,nvrt
+!        rzbt(kbp(j))=0 !for Galperin's clipping
+
+!        write(90,*)'WOW1',it,j
+
+!	Compute upper bound for xl 
+        do k=kbp(j)+1,nvrt
+          dists=eta2(j)-znl(k,j)
+          distb=znl(k,j)+dp(j)
+!          if(k==kbp(j)) then
+!            xlmax(k)=max(xlmin2(j),dzz(k+1)*0.4_rkind)
+          if(k==nvrt) then
+            xlmax(k)=max(xlmin2(j),dzz(k)*0.4_rkind)
+          else !internal layers
+            xlmax(k)=0.4d0*min(dists,distb)
+          endif
+!          xlmax(k)=max(0.4_rkind*min(dists,distb),xlmin2(j)) !can be very small
+!          xlmax(k)=0.4*dists*distb/(dps(j)+etam)
+!          xlmax(k)=0.4*min(dp(j)+eta2(j),xlmax00)
+          if(xlmax(k)<=0.d0) then
+            write(errmsg,*)'Dist<0 in MY-G',j,k,eta2(j)+dp(j),dists,distb
+            call parallel_abort(errmsg)
+          endif
+        enddo !k
+}
+
+
+
+
 extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Setup coefficient matrix, sparsem, for the shallow water wave equation
    // No elevation essential b.c. are imposed yet but other b.c. is imposed
@@ -3029,19 +3197,17 @@ extern "C" {
 template<int nc>
 __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
 
-// Solves a tridiagonal system. It was adapted from "Numerical Recipes in FORTRAN (pp.43 ).
+// Solves a tridiagonal system. Adapted from Numerical Recipes in FORTRAN (pp.43).
 //
-// a,b,c,rhs: input vectors and are not modified by this program.
-// b is the main diagonal, a below and c above. a(1) and c(n) are not used.
-// rhs is the r.h.s.
-// n: actual rank of the system.
-// rows in u() and rhs();
-// u: output with nc columns (transposed to rows)
-// gam: a working array.
+// Although this is a general function, it is used only for equations on vertical levels.
+// nc is the number of components in each unknown: 1 for a scalar, 2 for Vector2.
+// It is not really for nc independent RHS vectors. We only use it for scalar and Vector2.
+// Vector2 is stored as adjacent (x, y), so index of level j, component l is j*nc + l.
 //
-// NOTES:
-// This is a template function that allows for different numbers of columns in the rhs vector.
-// [n, nc] is the shape of Fortran-type arrays rhs and u.
+// a, b, c, rhs: inputs, not modified. gam: work array of length n.
+// a, b, c are the three diagonals (b = main). a[0] and c[n-1] are unused.
+// n: rank of the system (number of vertical levels in the 3D momentum solve).
+// rhs, u: length n*nc, packed C order (n levels, nc components per level).
 
    assert(n >= 1       && "TRIDAG: n must be >= 1");
    assert(b[0] != 0.0  && "TRIDAG: b[0]=0");
@@ -3050,6 +3216,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
    if constexpr (nc == 1) {
       u[0] = rhs[0]/bet;
    } else {
+      #pragma unroll
       for (int l = 0; l < nc; l++) u[l] = rhs[l]/bet;
    }
 
@@ -3062,6 +3229,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
       if constexpr (nc == 1) {
          u[j] = (rhs[j] - a[j]*u[j - 1])/bet;
       } else {
+         #pragma unroll
          for (int l = 0; l < nc; l++) {
             u[j*nc + l] = (rhs[j*nc + l] - a[j]*u[(j - 1)*nc + l])/bet;
          }
@@ -3839,12 +4007,11 @@ extern "C" {
    }
 
    __global__ void computeBottomDragVegetation(void) {
-      // UNFINISHED. CHECK THIS:
+      // UNFINISHED. CHECK THIS: XXXXX
       // How many kernels are needed? Why so many for loops?
       // Is the loop on sides needed?
 
       NODE(node);
-
 
       const int    kb      = node->kb;
       const double htot    = node->htot2(); 
@@ -3966,6 +4133,18 @@ extern "C" {
       } // if iveg
 
    }
+
+
+   __global__ void computeTurbulence(void) {
+
+      NODE(node);
+
+      // Calls the templated function to compute the turbulence model parameters.
+      // turbulenceModel is just a class enum version of itur.
+      computeTurbulenceModel<turbulenceModel>(node);
+      
+   }
+
 
    __global__ void computeVegetationAndDragParameters(void) {
       // Computes the vegetation and drag model parameters:

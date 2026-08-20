@@ -69,6 +69,7 @@ __device__ __forceinline__ Bool4 operator&(Bool4 a, Bool4 b) { return Bool4{(uns
 __device__ __forceinline__ Bool4 operator|(Bool4 a, Bool4 b) { return Bool4{(unsigned int)(a.m | b.m)}; }
 
 
+
 // Union to store different types of variables in the same memory location. This is used to define temporary 
 // variables that can be used to store different types of variables.
 union TempVar {
@@ -409,6 +410,31 @@ __inline__ __device__ void Error(const char* msg) {
 
 struct Tracers {
     double tracer[N_TRACERS];
+};
+
+// ----------------------------- Turbulence -----------------------------
+
+
+enum class TurbulenceModel : int {
+   VertVarying  = -1,
+   HorzVarying  = -2,
+   Constant     =  0,
+   Pacanowski   =  2,
+   GLS          =  3,
+   GOTM         =  4,
+   SedimentMix  =  5,
+};
+
+template<TurbulenceModel Model>
+struct Turbulence {};   
+
+// GLS turbulence model
+template<>
+struct Turbulence<TurbulenceModel::GLS> {
+   double q2[nvrt]
+   double xl[nvrt];
+   double dfq1[nvrt];
+   double dfq2[nvrt];
 };
 
 // ------------------------------LocalSigma------------------------------
@@ -1331,6 +1357,7 @@ struct Node {
 
    double rho[nvrt];     // Density
    double dfv[nvrt];     // Vertical viscosity
+   double dfh[nvrt];     // Horizontal viscosity  XXXX (does it need to exist when transport is not enabled?)
 
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep

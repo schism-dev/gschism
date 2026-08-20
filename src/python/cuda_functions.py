@@ -30,6 +30,7 @@ computeTimeRamps = None
 computeBedDeformation = None
 computeTidalPotential = None
 computeBottomDragVegetation = None
+computeTurbulence = None
 computeVegetationAndDragParameters = None
 computeElevationBoundaryConditions = None
 computeHorizontalViscosity = None
@@ -131,7 +132,7 @@ def initializeCudaFunctions(sizes):
     global scaleGravity, computeTimeRamps, setWinds
     global computeBedDeformation, computeTidalPotential
     global getBoundaryConditions, computeFlowBcVelocities, resetBoundaryAreas, computeBoundaryAreas
-    global computeBottomDragVegetation, computeVegetationAndDragParameters
+    global computeBottomDragVegetation, computeVegetationAndDragParameters, computeTurbulence
     global computeElevationBoundaryConditions, computeVerticallyIntegratedVelocity, computeHorizontalViscosity, computeDensityCubicSplines
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
@@ -167,6 +168,7 @@ def initializeCudaFunctions(sizes):
         resetBoundaryAreas                  = mod.get_function('resetBoundaryAreas',                  sizes, kernel_type='sideBnd')
         computeBoundaryAreas                = mod.get_function('computeBoundaryAreas',                sizes, kernel_type='sideBnd')
         computeBottomDragVegetation         = mod.get_function('computeBottomDragVegetation',         sizes, kernel_type='nodes')
+        computeTurbulence                   = mod.get_function('computeTurbulence',                   sizes, kernel_type='nodes')
         computeVegetationAndDragParameters  = mod.get_function('computeVegetationAndDragParameters',  sizes, kernel_type='sides')
         computeElevationBoundaryConditions  = mod.get_function('computeElevationBoundaryConditions',  sizes, kernel_type='nodeBnd')
         computeHorizontalViscosity          = mod.get_function('computeHorizontalViscosity',          sizes, kernel_type='sides')

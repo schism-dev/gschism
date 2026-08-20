@@ -3878,6 +3878,11 @@ printf("node[%d]->eta2 = %f, qel = %f\n", node->idx, node->eta2, node->qel);
 
    }
 
+
+   __global__ void computeTurbulence(void) {
+      
+   }
+
    __global__ void computeVegetationAndDragParameters(void) {
       // Computes the vegetation and drag model parameters:
       // chi, \tilde\chi, beta, \breve{H}
