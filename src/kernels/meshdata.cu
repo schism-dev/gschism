@@ -2565,6 +2565,9 @@ template<>
 __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Node *node) { 
    // Mellor-Yamada-Galperin & Umlauf-Burchard scheme
 
+   // Solves the following PDEs:
+
+
    const int kb = node->kb;
    const bool isVeg = node->iveg;
 #ifdef XXXXXX   
@@ -2574,23 +2577,25 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double diffmin = node->turb->diffmin;
 
       for (int k = kb; k < nvrt; k++) {
-         node->turb->q2[k] = q2min;
-         node->turb->xl[k] = xlmin2;
+         node->turb->q2[k]   = q2min;
+         node->turb->xl[k]   = xlmin2;
          node->turb->dfv[k]  = diffmin;
          node->turb->dfh[k]  = diffmin;
-         node->turb->dfq1[k] = diffmin;
-         node->turb->dfq2[k] = diffmin;
-
+         node->turb->nu_k[k] = diffmin;
+         node->turb->nu_l[k] = diffmin;
       }
 
       return;
    }
 
-   assert(node->rho >= -98.0 && "Impossible: dry 2"); /// XXX Not sure what this message means/
+   assert(node->rho >= -98.0 && "Impossible: dry 2"); /// XXX JMG: Not sure what this message means.
    
    // After here we know that the node is wet and has at least 2 layers.
 
+
    const double zTopCanopy = node->zTopCanopy();
+
+
 
    for (int k = kb + 1; k < nvrt; k++) {
 
@@ -2598,19 +2603,15 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double dz = node->Dz(k);
       const double rho_c = 0.5*(node->rho[k] + node->rho[k-1]);
       
-      const double du_dz   = (node->u2[k].x - node->u2[k-1].x)/dz;
-      const double dv_dz   = (node->u2[k].y - node->u2[k-1].y)/dz;
+      const Vector2 du_dz   = (node->u2[k] - node->u2[k-1])/dz;
       const double drho_dz = (node->rho[k] - node->rho[k-1])/dz;
 
       // Turbulence production/dissipation terms
-      const double M2 = du_dz*du_dz + dv_dz*dv_dz; // Shear production term
+      const double M2 = norm2(du_dz);              // Shear production term
 
       const double N2 = (grav/rho_c)*drho_dz;      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
 
-      // half level turbulence quantities
-      // q2 is defined as 2K (TKE) and xl is \Psi, the length scale (see documentation)
-      const double q2ha = 0.5*(node->turb->q2[k] + node->turb->q2[k-1]);
-      const double xlha = 0.5*(node->turb->xl[k] + node->turb->xl[k-1]);
+
 
       node->turb->veg_prod[k] = 0.0;
 
@@ -2722,71 +2723,256 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
    xlfs = max(xlmin2, xlsc0*node->Dz(ivrt)*kappa)
 
-   // Solves the tridiagonal system for q2
+   // The way this code works is that the computation and assembly of the tridiagonal system is divided in two parts,
+   // a part that includes layers k+1 and k and another part that includes layers k and k-1.
+   // This is a FEM formulation of the PDEs.
+   
+
+   // Solves the tridiagonal system for q2 
    const int nqdim = nvrt - kb; 
-   for (int k = kb + 1; k < nvrt; k++) {
-      const int kin = k - kb; // row #
+   for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
+
       alow[kin]=0.0;
       bdia[kin]=0.0;
       cupp[kin]=0.0;
       gam2[kin]=0.0;
 
-      if (k < nvrt - 1) { // internal layers
 
-            tmp=(dfq1(k+1,j)+dfq1(k,j))/2.d0*dt/dzz(k+1)
-            bdia(kin) += dzz(k+1)/3.0 + tmp
-            cupp(kin) += dzz(k+1)/6.0 - tmp
-            gam2(kin) += dzz(k+1)/6.0*(2.0*q2(k,j) + q2(k+1,j))
 
-            // Production/dissipation terms
-            const double prod = (dfv(k+1,j)+dfv(k,j))/2.d0*shearbt(k+1)+veg_cfk*veg_prod(k+1) //add SAV
-            const double buoy = (dfh(k+1,j)+dfh(k,j))/2.d0*rzbt(k+1);
-            const double diss = pow<3>(cmiu0)*sqrt(q2ha(k+1))/xlha(k+1)*dzz(k+1)/6.0; //diss/k
+      if (k < ivrt) { // Non-surface layers
 
-            if(prod + buoy >= 0.0) { // Net production
-              gam2(kin) += dt*dzz(k+1)/2.0*(prod+buoy)
-            } else { // Net dissipation
-              tmp=dt*dzz(k+1)/6.d0*(prod+buoy)/q2ha(k+1)
-              bdia[kin] -= 2.0*tmp
-              cupp[kin] -= tmp
-            }
-            
-            
-            bdia(kin)=bdia(kin)+dt*diss*2.d0
-            cupp(kin)=cupp(kin)+dt*diss
-          endif
+         // Turbulence quantities at half levels (cell [c]enter)
+         // q2 is defined as 2K (TKE) and xl is \Psi, the length scale (see documentation)
+         const double q2_c   = 0.5*(node->turb->q2[k+1]   + node->turb->q2[k]);
+         const double xl_c   = 0.5*(node->turb->xl[k+1]   + node->turb->xl[k]);
+         const double nu_k_c = 0.5*(node->turb->nu_k[k+1] + node->turb->nu_k[k]);
+         const double dfv_c  = 0.5*(node->turb->dfv[k+1]  + node->turb->dfv[k]);
+         const double dfh_c  = 0.5*(node->turb->dfh[k+1]  + node->turb->dfh[k]);
+         const double dz = node->Dz(k+1);
 
-          if(k>kbp(j)+1) then
-            tmp=(dfq1(k,j)+dfq1(k-1,j))/2.d0*dt/dzz(k)
-            bdia(kin)=bdia(kin)+dzz(k)/3.d0+tmp
-            alow(kin)=alow(kin)+dzz(k)/6.d0-tmp
-            gam2(kin)=gam2(kin)+dzz(k)/6.d0*(2.d0*q2(k,j)+q2(k-1,j))
-            prod=(dfv(k,j)+dfv(k-1,j))/2.d0*shearbt(k)+veg_cfk*veg_prod(k)
-            buoy=(dfh(k,j)+dfh(k-1,j))/2.d0*rzbt(k)
-            if(prod+buoy>=0.d0) then
-              gam2(kin)=gam2(kin)+dt*dzz(k)/2.d0*(prod+buoy)
-            else
-              tmp=dt*dzz(k)/6.d0*(prod+buoy)/q2ha(k)
-              bdia(kin)=bdia(kin)-2.d0*tmp
-              alow(kin)=alow(kin)-tmp
-            endif
-            diss=cmiu0**3.d0*sqrt(q2ha(k))/xlha(k)*dzz(k)/6.d0 !diss/k
-            bdia(kin)=bdia(kin)+dt*diss*2.d0
-            alow(kin)=alow(kin)+dt*diss
-          endif
-        enddo !k=kbp(j)+1,nvrt
+
+         bdia[kin] += dz/3.0 + nu_k_c
+         cupp[kin] += dz/6.0 - nu_k_c
+         gam2[kin] += dz/6.0*(2.0*node->turb->q2[k] + node->turb->q2[k+1])
+
+         // Production/dissipation terms
+         const double prod = dfv_c*shearbt(k+1) + veg_cfk*veg_prod(k+1) //add SAV
+         const double buoy = dfh_c*rzbt(k+1);
+         const double diss = pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
+
+         if(prod + buoy >= 0.0) { // Net production
+            gam2[kin] += dt*dz/2.0*(prod + buoy)
+         } else { // Net dissipation
+            const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
+            bdia[kin] -= 2.0*tmp
+            cupp[kin] -= tmp
+         }
+         
+         
+         bdia[kin] += 2.0*dt*diss
+         cupp[kin] += dt*diss
+
+      }
+
+      if (k > kb + 1) { // Non-bottom layers
+
+         // Turbulence quantities at half levels
+         // q2 is defined as 2K (TKE) and xl is \Psi, the length scale (see documentation)
+         const double q2_c  = 0.5*(node->turb->q2[k]  + node->turb->q2[k-1]);
+         const double xl_c  = 0.5*(node->turb->xl[k]  + node->turb->xl[k-1]);
+         const double dfv_c = 0.5*(node->turb->dfv[k] + node->turb->dfv[k-1]);
+         const double dfh_c = 0.5*(node->turb->dfh[k] + node->turb->dfh[k-1]);
+
+         const double dz = node->Dz(k);
+
+         const double nu_k_c = 0.5*(node->turb->nu_k[k] + node->turb->nu_k[k-1]);
+         bdia[kin] += dz/3.0 + nu_k_c
+         alow[kin] += dz/6.0 - nu_k_c
+         gam2[kin] += dz/6.0*(2.0*node->turb->q2[k] + node->turb->q2[k-1])
+
+         // Production/dissipation terms
+         const double prod = *node->turb->shearbt[k] + node->turb->veg_cfk*node->turb->veg_prod[k]
+         const double buoy = (node->turb->dfh[k] + node->turb->dfh[k-1])/2.0*node->turb->rzbt[k]
+         const double diss = pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; // diss/k
+
+         if (prod + buoy >= 0.0) { // Net production
+            gam2[kin] += dt*dz/2.0*(prod+buoy)
+         } else { // Net dissipation
+            tmp=dt*dz/6.0*(prod + buoy)/q2_c
+            bdia[kin] -= 2.0*tmp
+            alow[kin] -= tmp
+         }
+         
+         bdia[kin] += 2.0*dt*diss
+         alow[kin] += dt*diss
+      }
+   } // for k
 
    // Solves for q2 at new level
-        call tridag_sch(nvrt,1,nqdim,1,alow,bdia,cupp,gam2,soln2,gam)
-        q2tmp(nvrt)=q2fs
-        !Extrapolate to bottom mainly for diffusivities
-        q2tmp(kbp(j):kbp(j)+1)=q2bot
-        do k=kbp(j)+2,nvrt-1
-          kin=k-kbp(j) !+1
+   tridag_sch(nvrt,1,nqdim,1,alow,bdia,cupp,gam2,soln2,gam)
 
-          q2tmp(k)=max(soln2(kin),q2min)
+   q2tmp(nvrt)=q2fs
+   // Extrapolate to bottom mainly for diffusivities
+   q2tmp(kbp(j):kbp(j)+1)=q2bot
+   for (int k = kb + 2; k < ivrt; k++) {
+      // Internal layers only
+      const int kin = k - kb; // row #
 
-        enddo !k
+      q2tmp(k)=max(soln2(kin),q2min)
+
+   }
+
+
+   // Solves the tridiagonal system for xl
+   for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
+
+      alow[kin] = 0.0;
+      bdia[kin] = 0.0;
+      cupp[kin] = 0.0;
+      gam2[kin] = 0.0;
+
+      if (k < ivrt) { // Non-surface layers
+
+         const double q2_c   = 0.5*(node->turb->q2[k+1]   + node->turb->q2[k]);
+         const double xl_c   = 0.5*(node->turb->xl[k+1]   + node->turb->xl[k]);
+         const double nu_l_c = 0.5*(node->turb->nu_l[k+1] + node->turb->nu_l[k]);
+         const double dfv_c  = 0.5*(node->turb->dfv[k+1]  + node->turb->dfv[k]);
+         const double dfh_c  = 0.5*(node->turb->dfh[k+1]  + node->turb->dfh[k]);
+
+         const double dz = node->Dz(k+1);
+
+         const double psi_n  = pow(cmiu0, rpub)*pow(q2(k,j),   rmub)*pow(xl(k,j),   rnub) // psi^n_{j,k}
+         const double psi_n1 = pow(cmiu0, rpub)*pow(q2(k+1,j), rmub)*pow(xl(k+1,j), rnub) // psi^n_{j,k+1}
+         const double psi_c = 0.5*(psi_n + psi_n1);
+
+         bdia[kin] += dz/3.0 + nu_l_c
+         cupp[kin] += dz/6.0 - nu_l_c
+         gam2[kin] += dz/6.0*(2.0*psi_n + psi_n1)
+
+         // Production/dissipation terms
+         const double prod = cpsi1*dfv_c*shearbt(k+1)+veg_cfpsi*veg_prod(k+1) //add SAV
+         const double buoy = cpsi3*dfh_c*rzbt(k+1);
+         const double diss = cpsi2p(k+1)*pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
+ 
+
+         if(prod + buoy >= 0.0) { // Net production
+            gam2[kin] += dt*dz/2.0*(prod + buoy)*psi_c/q2_c;
+         } else { // Net dissipation
+            const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
+            bdia[kin] -= 2.0*tmp
+            cupp[kin] -= tmp
+         }
+         
+         
+         bdia[kin] += 2.0*dt*diss
+         cupp[kin] += dt*diss
+
+   
+      } else { //k=nvrt
+
+         // BC XXXX DO here or elsewhere XXXX?
+         bdia(kin)=bdia(kin)+0.4d0*rnub*dt*dfq2(k,j)/xl(k,j)
+      }
+
+      if (k > kb + 1) { Non-bottom layers
+
+         const double q2_c   = 0.5*(node->turb->q2[k]   + node->turb->q2[k-1]);
+         const double xl_c   = 0.5*(node->turb->xl[k]   + node->turb->xl[k-1]);
+         const double nu_l_c = 0.5*(node->turb->nu_l[k] + node->turb->nu_l[k-1]);
+         const double dfv_c  = 0.5*(node->turb->dfv[k]  + node->turb->dfv[k-1]);
+         const double dfh_c  = 0.5*(node->turb->dfh[k]  + node->turb->dfh[k-1]);
+         const double dz = node->Dz(k);
+
+         const double psi_n  = pow(cmiu0, rpub)*pow(q2(k,j),   rmub)*pow(xl(k,j),   rnub) // psi^n_{j,k}
+         const double psi_n1 = pow(cmiu0, rpub)*pow(q2(k-1,j), rmub)*pow(xl(k-1,j), rnub) // psi^n_{j,k-1}
+         const double psi_c = 0.5*(psi_n + psi_n1);
+
+         bdia[kin] += dz/3.0 + nu_l_c
+         cupp[kin] += dz/6.0 - nu_l_c
+         gam2[kin] += dz/6.0*(2.0*psi_n + psi_n1)
+
+         // Production/dissipation terms
+         const double prod = cpsi1*dfv_c*shearbt(k)+veg_cfpsi*veg_prod(k) //add SAV
+         const double buoy = cpsi3*dfh_c*rzbt(k);
+         const double diss = cpsi2p(k)*pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
+
+
+         if(prod + buoy >= 0.0) { // Net production
+            gam2[kin] += dt*dz/2.0*(prod + buoy)*psi_c/q2_c;
+         } else { // Net dissipation
+            const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
+            bdia[kin] -= 2.0*tmp
+            cupp[kin] -= tmp
+         }
+         
+         
+         bdia[kin] += 2.0*dt*diss
+         cupp[kin] += dt*diss
+
+      }
+
+
+
+      !	Soln for q2l and xl at new level
+      tridag_sch(nvrt,1,nqdim,1,alow,bdia,cupp,gam2,soln2,gam)
+
+
+
+      for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
+
+         const double q2l = max(soln2(kin), psimin)
+
+         if (k==ivrt) {
+            xltmp(k) = xlfs;
+         } else if (k== kb+1) {
+            xltmp(k) = xlbot;
+         } else {
+            xltmp(k) = (q2l*cmiu0**(-rpub)*q2tmp(k)**(-rmub))**(1.d0/rnub)
+         }
+
+         // Galperin's clipping 
+         if (rzbt(k)<0.0) {
+            const double upper = sqrt(-0.56*q2tmp(k)/rzbt(k));
+            xltmp(k) = min(xltmp(k),upper);
+         }
+
+         // Max. length based on dissipation; xlmin2 prevails
+         const double xl_max = pow(cmiu0*sqrt(q2tmp(k)), 3.0)/eps_min;
+         xltmp(k) = max(xlmin2(j), min(xl_max, xltmp(k)));
+
+         //	  Impose max. depth limit
+         xltmp(k) = max(xlmin2(j), min(xltmp(k), xlmax(k)));
+
+         q2(k,j)=q2tmp(k)
+         xl(k,j)=xltmp(k)
+
+         assert(q2(k,j) >= 0.0 && "Negative q2");
+      } // for k
+
+      // Extrapolate q2, xl to bottom mainly for diffusivities
+      q2(kbp(j),j)=q2(kbp(j)+1,j)
+      xl(kbp(j),j)=xl(kbp(j)+1,j)
+
+      // Compute vertical diffusivities at new time
+      for (int k = kb; k < nvrt; k++) {
+          call asm(j,k,vd,td,qd1,qd2)
+          dfv(k,j)=min(diffmax(j),max(diffmin(j),vd))
+          dfh(k,j)=min(diffmax(j),max(diffmin(j),td))
+          dfq1(k,j)=min(diffmax(j),max(diffmin(j),qd1))
+          dfq2(k,j)=min(diffmax(j),max(diffmin(j),qd2))
+
+
+      }
+
+      // Extend
+      for (int k = 0; k < kb; k++) {
+         q2(k,j) = q2(kb,j);
+         xl(k,j) = xl(kb,j);
+         dfv(k,j) = dfv(kb,j);
+         dfh(k,j) = dfh(kb,j);
+         dfq1(k,j) = dfq1(kb,j);
+         dfq2(k,j) = dfq2(kb,j);
+      }
 
 #endif
       

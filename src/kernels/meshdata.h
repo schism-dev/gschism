@@ -443,8 +443,9 @@ template<>
 struct Turbulence<TurbulenceModel::GLS> {
    double q2[nvrt]
    double xl[nvrt];
-   double dfq1[nvrt];
-   double dfq2[nvrt];
+   double nu_k[nvrt]; // Vertical diffusivity for TKE (q2)
+   double nu_l[nvrt]; // Vertical diffusivity for length scale (xl)
+   
 
    double veg_prod[nvrt];
 };
