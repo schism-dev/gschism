@@ -2566,7 +2566,8 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    // Mellor-Yamada-Galperin & Umlauf-Burchard scheme
 
    const int kb = node->kb;
-   
+   const bool isVeg = node->iveg;
+#ifdef XXXXXX   
    // For dry or 2D nodes, vertical viscosity and diffusivity are set to their minimum values.
    if (node->isDry || node->is2D()) {
 
@@ -2593,6 +2594,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
    for (int k = kb + 1; k < nvrt; k++) {
 
+      const double z  = node->z(k);
       const double dz = node->Dz(k);
       const double rho_c = 0.5*(node->rho[k] + node->rho[k-1]);
       
@@ -2600,113 +2602,195 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double dv_dz   = (node->u2[k].y - node->u2[k-1].y)/dz;
       const double drho_dz = (node->rho[k] - node->rho[k-1])/dz;
 
-      // Turbulence production terms
-      const double shearbt = du_dz*du_dz + dv_dz*dv_dz;
+      // Turbulence production/dissipation terms
+      const double M2 = du_dz*du_dz + dv_dz*dv_dz; // Shear production term
 
-      const double rzbt = (grav/rho_c)*drho_dz;
+      const double N2 = (grav/rho_c)*drho_dz;      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
 
-      const double q2ha = (node->turb->q2[k] + node->turb->q2[k-1]) / 2.0;
-      const double xlha = (node->turb->xl[k] + node->turb->xl[k-1]) / 2.0;
+      // half level turbulence quantities
+      // q2 is defined as 2K (TKE) and xl is \Psi, the length scale (see documentation)
+      const double q2ha = 0.5*(node->turb->q2[k] + node->turb->q2[k-1]);
+      const double xlha = 0.5*(node->turb->xl[k] + node->turb->xl[k-1]);
 
-!       Error: use ufg?
-        zt=znl(kbp(j),j)+veg_h(j) !top of SAV
-        do k=kbp(j)+1,nvrt
-          dzz(k)=znl(k,j)-znl(k-1,j)
-          dudz=(uu2(k,j)-uu2(k-1,j))/dzz(k)
-          dvdz=(vv2(k,j)-vv2(k-1,j))/dzz(k)
-          shearbt(k)=dudz**2+dvdz**2 !@ half levels
-          !if(Two_phase_mix==1) then !Tsinghua group
-          rzbt(k)=2.d0*grav/(prho(k,j)+prho(k-1,j))*(prho(k,j)-prho(k-1,j))/dzz(k) 
-          !else
-          !  rzbt(k)=grav/rho0*(prho(k,j)-prho(k-1,j))/dzz(k)
-          !endif
-          q2ha(k)=(q2(k,j)+q2(k-1,j))/2.d0
-          xlha(k)=(xl(k,j)+xl(k-1,j))/2.d0
+      node->turb->veg_prod[k] = 0.0;
 
-          !SAV production term \alpha*|u|^3*Hev()
-          veg_prod(k)=0.d0 !init @half level
-          if(iveg/=0.and.zt>znl(k-1,j)) then !partial or full veg layer
-            zz1=min(zt,znl(k,j))
-            zrat=(zz1-znl(k-1,j))/(znl(k,j)-znl(k-1,j)) !\in (0,1]
-            ub2=(1.d0-zrat)*uu2(k-1,j)+zrat*uu2(k,j) !@top of canopy
-            vb2=(1.d0-zrat)*vv2(k-1,j)+zrat*vv2(k,j)
-            vmag2=sqrt(ub2*ub2+vb2*vb2)             
-            vmag1=sqrt(uu2(k-1,j)**2.d0+vv2(k-1,j)**2.d0)
-            !veg_prod(k)=veg_alpha(j)*(vmag1**3.d0+vmag2**3.d0)/2.d0
-            !=0 at places with no veg
-            veg_prod(k)=(veg_alpha3D(k,j)+veg_alpha3D(k-1,j))*0.5d0*(vmag1**3.d0+vmag2**3.d0)/2.d0
-          endif !iveg
+      if constexpr(isVeg && z < zTopCanopy) { // partial or full veg layer
 
-!         Compute c_psi_3
-          if(icompute_cpsi3==0) then !use constants
-            if(mid.eq.'MY') then
-              cpsi3(k)=0.9d0
-            else !GLS models
-              if(rzbt(k)>0) then !unstable
-                cpsi3(k)=1.d0
-              else !stable
-                select case(mid)
-                  case('KL')
-                    cpsi3(k)=2.53d0
-                  case('KE')
-                    cpsi3(k)=-0.52d0
-                  case('KW')
-                    cpsi3(k)=-0.58d0
-                  case('UB')
-                    cpsi3(k)=0.1d0
-                  case default
-                    write(errmsg,*)'Unknown closure model:',mid
-                    call parallel_abort(errmsg)
-                end select
-              endif
-            endif !mid
-          else !icompute_cpsi3/=0: compute cpsi3(minus)
-            if(rzbt(k)>0) then !unstable
-              !In turbulence.F90: cpsi3plus=(1.5-ce3plus)*gen_n+gen_m
-              cpsi3(k)=0.5d0*rnub+rmub
+         const double zz1=min(zTopCanopy, z);
+
+         const double zrat=(zz1 - node->z(k - 1))/dz // \in (0,1]
+
+         const Vector2 ub2 = (1.0 - zrat)*node->u2[k-1]+zrat*node->u2[k] // @top of canopy
+
+         const double vmag2 = length(ub2);
+         const double vmag1 = length(node->u2[k-1]);
+
+         node->turb->veg_prod[k] = 0.25*node->turb->veg_alpha3D[k]*(pow<3>(vmag1) + pow<3>(vmag2));
+      } 
+
+      const double cpsi3 = node->turb->cpsi3(k);
+
+      // // Compute c_psi_3, the coefficient of the N^2 term in the \Psi equation
+      // if constexpr(icompute_cpsi3==0) { // use constants
+      //    if(mid.eq.'MY') {
+      //       cpsi3(k)=0.9d0
+      //    } else { // GLS models
+
+      //       if(N2(k)>0) { // unstable
+      //          cpsi3(k)=1.d0
+      //       } else { // stable
+
+      //          select case(mid)
+      //          case('KL')
+      //             cpsi3(k)=2.53d0
+      //          case('KE')
+      //             cpsi3(k)=-0.52d0
+      //          case('KW')
+      //             cpsi3(k)=-0.58d0
+      //          case('UB')
+      //             cpsi3(k)=0.1d0
+      //          case default
+      //             write(errmsg,*)'Unknown closure model:',mid
+      //             call parallel_abort(errmsg)
+      //          end select
+      //       }
+      //    } // mid
+      // } else { //icompute_cpsi3/=0: compute cpsi3(minus)
+      //   if(N2(k)>0) { // unstable
+      //     // In turbulence.F90: cpsi3plus=(1.5-ce3plus)*gen_n+gen_m
+      //     cpsi3(k)=0.5d*rnub+rmub
+      //   } else {
+      //     cpsi3(k)=cpsi3_comp
+      //   } // N2
+      // endif !icompute_cpsi3
+
+
+      
+
+      // Wall proximity function
+      const double cpsi2p = node->turb->cpsi2p(k);
+
+         //  if(mid.eq.'MY'.or.mid.eq.'KL') then
+         //    zctr2=(znl(k,j)+znl(k-1,j))/2.d0
+         //    dists=eta2(j)-zctr2
+         //    distb=zctr2+dp(j)
+         //    if(dists==0.d0.or.distb==0.d0) then
+         //      write(errmsg,*)'Zero in proximity function:',j,k
+         //      call parallel_abort(errmsg)
+         //    endif
+         //    fwall=1.d0+1.33d0*(xlha(k)/0.4d0/distb)**2.d0+0.25d0*(xlha(k)/0.4d0/dists)**2.d0
+         //    cpsi2p(k)=fwall*cpsi2 !F_wall*cpsi2
+         //  else !other GLS
+         //    cpsi2p(k)=cpsi2
+         //  endif
+
+   }
+
+   // Compute upper bound for xl 
+   const double eta2  = node->eta2;
+   const double depth = node->depth;
+   for (int k = kb + 1; k < nvrt; k++) {
+      const double z = node->z[k];
+
+      // Distances to the surface and bottom
+      const double dist_s = eta2 - z;
+      const double dist_b = z + depth;
+
+      // Distance to the closest "wall" (either surface or bottom).  
+      // In the top layer, it is the size of the layer.
+      const double min_dist = (k==nvrt)?node->Dz(ivrt):min(dist_s, dist_b); 
+      assert(min_dist > 0.0 && "Invalid minimum distance");
+
+      // Limits the mixing length by the maximum eddy that the closest "wall" allows.
+      xlmax(k)=0.kappa*min_dist;
+   }
+
+   // B.C. (computed using values from previous time except wind)
+   // At the surface
+   constexpr double c0 = pow(16.6, 2.0/3.0); 
+   constexpr double Cd = node->Cd; // Drag coefficient
+   const double sqU2 = norm2(node->u2[kb + 1]);
+   const double modTau = length(node->tau);
+
+   const double q2fs  = max(0.5*c0*modTau,  q2min); // Eq. (10) of Zhang & Baptista (2008)
+   const double q2bot = max(0.5*c0*Cd*sqU2, q2min);
+
+   // Bottom mixing length (T. Guérin)
+   xlbot=max(xlmin2(j),min(2.5, xlsc0*node->Dz(kb + 1))*kappa) //"2.5" to prevent over-mixing
+
+   // Surface mixing length (T. Guérin)
+
+   xlfs = max(xlmin2, xlsc0*node->Dz(ivrt)*kappa)
+
+   // Solves the tridiagonal system for q2
+   const int nqdim = nvrt - kb; 
+   for (int k = kb + 1; k < nvrt; k++) {
+      const int kin = k - kb; // row #
+      alow[kin]=0.0;
+      bdia[kin]=0.0;
+      cupp[kin]=0.0;
+      gam2[kin]=0.0;
+
+      if (k < nvrt - 1) { // internal layers
+
+            tmp=(dfq1(k+1,j)+dfq1(k,j))/2.d0*dt/dzz(k+1)
+            bdia(kin) += dzz(k+1)/3.0 + tmp
+            cupp(kin) += dzz(k+1)/6.0 - tmp
+            gam2(kin) += dzz(k+1)/6.0*(2.0*q2(k,j) + q2(k+1,j))
+
+            // Production/dissipation terms
+            const double prod = (dfv(k+1,j)+dfv(k,j))/2.d0*shearbt(k+1)+veg_cfk*veg_prod(k+1) //add SAV
+            const double buoy = (dfh(k+1,j)+dfh(k,j))/2.d0*rzbt(k+1);
+            const double diss = pow<3>(cmiu0)*sqrt(q2ha(k+1))/xlha(k+1)*dzz(k+1)/6.0; //diss/k
+
+            if(prod + buoy >= 0.0) { // Net production
+              gam2(kin) += dt*dzz(k+1)/2.0*(prod+buoy)
+            } else { // Net dissipation
+              tmp=dt*dzz(k+1)/6.d0*(prod+buoy)/q2ha(k+1)
+              bdia[kin] -= 2.0*tmp
+              cupp[kin] -= tmp
+            }
+            
+            
+            bdia(kin)=bdia(kin)+dt*diss*2.d0
+            cupp(kin)=cupp(kin)+dt*diss
+          endif
+
+          if(k>kbp(j)+1) then
+            tmp=(dfq1(k,j)+dfq1(k-1,j))/2.d0*dt/dzz(k)
+            bdia(kin)=bdia(kin)+dzz(k)/3.d0+tmp
+            alow(kin)=alow(kin)+dzz(k)/6.d0-tmp
+            gam2(kin)=gam2(kin)+dzz(k)/6.d0*(2.d0*q2(k,j)+q2(k-1,j))
+            prod=(dfv(k,j)+dfv(k-1,j))/2.d0*shearbt(k)+veg_cfk*veg_prod(k)
+            buoy=(dfh(k,j)+dfh(k-1,j))/2.d0*rzbt(k)
+            if(prod+buoy>=0.d0) then
+              gam2(kin)=gam2(kin)+dt*dzz(k)/2.d0*(prod+buoy)
             else
-              cpsi3(k)=cpsi3_comp
-            endif !rzbt
-          endif !icompute_cpsi3
-
-!         Wall proximity function      
-          if(mid.eq.'MY'.or.mid.eq.'KL') then
-            zctr2=(znl(k,j)+znl(k-1,j))/2.d0
-            dists=eta2(j)-zctr2
-            distb=zctr2+dp(j)
-            if(dists==0.d0.or.distb==0.d0) then
-              write(errmsg,*)'Zero in proximity function:',j,k
-              call parallel_abort(errmsg)
+              tmp=dt*dzz(k)/6.d0*(prod+buoy)/q2ha(k)
+              bdia(kin)=bdia(kin)-2.d0*tmp
+              alow(kin)=alow(kin)-tmp
             endif
-            fwall=1.d0+1.33d0*(xlha(k)/0.4d0/distb)**2.d0+0.25d0*(xlha(k)/0.4d0/dists)**2.d0
-            cpsi2p(k)=fwall*cpsi2 !F_wall*cpsi2
-          else !other GLS
-            cpsi2p(k)=cpsi2
+            diss=cmiu0**3.d0*sqrt(q2ha(k))/xlha(k)*dzz(k)/6.d0 !diss/k
+            bdia(kin)=bdia(kin)+dt*diss*2.d0
+            alow(kin)=alow(kin)+dt*diss
           endif
         enddo !k=kbp(j)+1,nvrt
-!        rzbt(kbp(j))=0 !for Galperin's clipping
 
-!        write(90,*)'WOW1',it,j
+   // Solves for q2 at new level
+        call tridag_sch(nvrt,1,nqdim,1,alow,bdia,cupp,gam2,soln2,gam)
+        q2tmp(nvrt)=q2fs
+        !Extrapolate to bottom mainly for diffusivities
+        q2tmp(kbp(j):kbp(j)+1)=q2bot
+        do k=kbp(j)+2,nvrt-1
+          kin=k-kbp(j) !+1
 
-!	Compute upper bound for xl 
-        do k=kbp(j)+1,nvrt
-          dists=eta2(j)-znl(k,j)
-          distb=znl(k,j)+dp(j)
-!          if(k==kbp(j)) then
-!            xlmax(k)=max(xlmin2(j),dzz(k+1)*0.4_rkind)
-          if(k==nvrt) then
-            xlmax(k)=max(xlmin2(j),dzz(k)*0.4_rkind)
-          else !internal layers
-            xlmax(k)=0.4d0*min(dists,distb)
-          endif
-!          xlmax(k)=max(0.4_rkind*min(dists,distb),xlmin2(j)) !can be very small
-!          xlmax(k)=0.4*dists*distb/(dps(j)+etam)
-!          xlmax(k)=0.4*min(dp(j)+eta2(j),xlmax00)
-          if(xlmax(k)<=0.d0) then
-            write(errmsg,*)'Dist<0 in MY-G',j,k,eta2(j)+dp(j),dists,distb
-            call parallel_abort(errmsg)
-          endif
+          q2tmp(k)=max(soln2(kin),q2min)
+
         enddo !k
+
+#endif
+      
+
 }
 
 
@@ -4609,7 +4693,7 @@ extern "C" {
 
    __global__ void solveMomentumEquations(double time) {
 
-      double alow[nvrt], cupp[nvrt], bdia[nvrt];
+      double alow[nvrt], cupp[nvrt], bdia[nvrt]; // a = low, c = up, b = diag
       Vector2 rrhs[nvrt], u[nvrt], soln[nvrt], gam[nvrt];
 
       SIDE(side);

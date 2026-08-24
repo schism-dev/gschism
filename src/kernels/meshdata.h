@@ -15,6 +15,8 @@ constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
 
+constexpr double kappa = 0.4; // von Karman constant
+
 // eta coordinates of the nodes (idxNode = 0,1,2,3)
 __device__ __forceinline__ double eta_n(int idxNode) {
    // bit1: 0 -> -1, 1 -> +1
@@ -425,6 +427,14 @@ enum class TurbulenceModel : int {
    SedimentMix  =  5,
 };
 
+enum class TurbulenceSubmodel : int {
+   MY           =  0, // Mellor-Yamada-Galperin & Umlauf-Burchard scheme
+   KL           =  1, // K-L 
+   KE           =  2, // Kantha-Clayson
+   KW           =  3, // Kantha-Clayson-Weatherly
+   UB           =  4, // Umlauf-Burchard
+};
+
 template<TurbulenceModel Model>
 struct Turbulence {};   
 
@@ -435,6 +445,8 @@ struct Turbulence<TurbulenceModel::GLS> {
    double xl[nvrt];
    double dfq1[nvrt];
    double dfq2[nvrt];
+
+   double veg_prod[nvrt];
 };
 
 // ------------------------------LocalSigma------------------------------
@@ -1508,6 +1520,8 @@ struct Node {
    __inline__ __device__ Vector3 uvw2(int k) const { return {u2[k].x, u2[k].y, w2[k]}; }
 
    __inline__ __device__ bool isDry2(void) const { return htot2() <= h0; } // isDry, but updated to use eta2
+   __inline__ __device__ bool is2D(void) const { assert(kb <= nvrt - 2); return kb == nvrt - 2; }
+   __inline__ __device__ bool is3D(void) const { assert(kb <= nvrt - 2); return kb <  nvrt - 2; }   
 
    __inline__ __device__ bool isBnd(void) const { return nodeBnd != nullptr; } // True if the node is a boundary node
    // __inline__ __device__ int numElements(void) const { return isNbd() ? numElements - 1 : numElements; } // Number of elements that are connected to this node
