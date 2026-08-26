@@ -428,11 +428,11 @@ enum class TurbulenceModel : int {
 };
 
 enum class TurbulenceSubmodel : int {
-   MY           =  0, // Mellor-Yamada-Galperin & Umlauf-Burchard scheme
-   KL           =  1, // K-L 
-   KE           =  2, // Kantha-Clayson
-   KW           =  3, // Kantha-Clayson-Weatherly
-   UB           =  4, // Umlauf-Burchard
+   MellorYamada   =  0, 
+   KL             =  1,
+   KE             =  2, 
+   KW             =  3,
+   UmlaufBurchard =  4, 
 };
 
 template<TurbulenceModel Model>
@@ -441,14 +441,218 @@ struct Turbulence {};
 // GLS turbulence model
 template<>
 struct Turbulence<TurbulenceModel::GLS> {
-   double q2[nvrt]
+   using enum TurbulenceSubmodel;
+
+   double q2[nvrt];
    double xl[nvrt];
    double nu_k[nvrt]; // Vertical diffusivity for TKE (q2)
    double nu_l[nvrt]; // Vertical diffusivity for length scale (xl)
    
+   
 
-   double veg_prod[nvrt];
-};
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double cpsi1() const {
+      if      constexpr (Sub == MellorYamada)   return 0.9;
+      else if constexpr (Sub == KL)             return 0.9;
+      else if constexpr (Sub == KE)             return 1.44;
+      else if constexpr (Sub == KW)             return 0.555;
+      else if constexpr (Sub == UmlaufBurchard) return 1.0;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double cpsi2() const {
+      // Returns coefficient cpsi2 for the dissipation term in the GLS turbulence model
+      if      constexpr (Sub == MellorYamada)   return 0.5;
+      else if constexpr (Sub == KL)             return 0.5;
+      else if constexpr (Sub == KE)             return 1.92;
+      else if constexpr (Sub == KW)             return 0.833;
+      else if constexpr (Sub == UmlaufBurchard) return 1.22;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ double Fwall(double xl_c, double dist_s, double dist_b) const {
+      
+      // Returns wall proximity function F_wall for the dissipation term in the GLS turbulence model
+      // dist_s, dist_b: distances from the layer midpoint to free surface and bed.
+      if constexpr (Sub == MellorYamada || Sub == KL) {
+
+         assert(dist_s != 0.0 && dist_b != 0.0 && "Zero in proximity function");
+
+         return 1.0 + 1.33*pow<2>((1.0/kappa)*xl_c/dist_b) + 0.25*pow<2>((1.0/kappa)*xl_c/dist_s);
+
+
+      } else {
+         return 1.0; // Other GLS submodels
+
+      }
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ double cpsi3(double N2) const {
+
+      // Returns coefficient cpsi3 for the buoyancy production/dissipation term in the GLS turbulence model
+      // Remember that N2 is the signed square of the Brunt-Väisälä frequency
+
+      if constexpr(icompute_cpsi3 != 0) { assert(false && "compute_cpsi3 not implemented for icompute_cpsi3!=0"); return 0.0; }
+
+      if constexpr (Sub == MellorYamada) {
+         return 0.9;   
+
+      } else { // Other GLS submodels
+
+
+         if (N2 > 0.0) { // unstable (inverse stratification)
+            return 1.0;   
+
+         } else { // stable (regular stratification)
+
+            if      constexpr (Sub == KL)             return 2.53;
+            else if constexpr (Sub == KE)             return -0.52;
+            else if constexpr (Sub == KW)             return -0.58;
+            else if constexpr (Sub == UmlaufBurchard) return  0.1;
+            else { assert(false && "unknown submodel"); return 0.0; }
+         }
+
+      } //if constexpr (Sub == TurbulenceSubmodel::MY)
+
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double rpub() const {
+      if      constexpr (Sub == MellorYamada)   return  0.0;
+      else if constexpr (Sub == KL)             return  0.0;
+      else if constexpr (Sub == KE)             return  3.0;
+      else if constexpr (Sub == KW)             return -1.0;
+      else if constexpr (Sub == UmlaufBurchard) return  2.0;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double rmub() const {
+      if      constexpr (Sub == MellorYamada)   return 1.0;
+      else if constexpr (Sub == KL)             return 1.0;
+      else if constexpr (Sub == KE)             return 1.5;
+      else if constexpr (Sub == KW)             return 0.5;
+      else if constexpr (Sub == UmlaufBurchard) return 1.0;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double rnub() const {
+      if      constexpr (Sub == MellorYamada)   return  1.0;
+      else if constexpr (Sub == KL)             return  1.0;
+      else if constexpr (Sub == KE)             return -1.0;
+      else if constexpr (Sub == KW)             return -1.0;
+      else if constexpr (Sub == UmlaufBurchard) return -0.67;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double schk() const {
+      if      constexpr (Sub == KL)             return 2.44;
+      else if constexpr (Sub == KE)             return 1.0;
+      else if constexpr (Sub == KW)             return 2.0;
+      else if constexpr (Sub == UmlaufBurchard) return 0.8;
+      else { assert(false && "schk not set for this submodel"); return 0.0; }
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double schpsi() const {
+      if      constexpr (Sub == KL)             return 2.44;
+      else if constexpr (Sub == KE)             return 1.3;
+      else if constexpr (Sub == KW)             return 2.0;
+      else if constexpr (Sub == UmlaufBurchard) return 1.07;
+      else { assert(false && "schpsi not set for this submodel"); return 0.0; }
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double q2min() const {
+      if constexpr (Sub == MellorYamada || Sub == KL)
+         return 5.0e-6;
+      else
+         return 7.6e-6; // Warner et al., OM 2005
+   }
+
+   template<TurbulenceSubmodel Sub>
+   __device__ __forceinline__ constexpr double psimin() const {
+      if constexpr (Sub == MellorYamada || Sub == TurbulenceSubmodel::KL)
+         return 1.0e-8;
+      else
+         return 1.0e-12; // Warner et al., OM 2005
+   }
+
+   __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const {
+
+      if constexpr(isVeg) {
+         
+         const double zbot = node->z[k-1]; // Bottom of the current layer.
+         const double zTopCanopy = node->zTopCanopy();
+
+         if (zbot < zTopCanopy) { // This means that the current level is within the vegetation layer, either partially or fully
+
+            const double ztop = node->z[k];   // Top of the current layer.
+ 
+            // Fraction of the current layer that is within the vegetation layer. zrat \in (0,1]
+            // Where 1 means that the current level is fully within the vegetation layer.
+            const double zrat = (min(zTopCanopy, ztop) - zbot)/(ztop - zbot) 
+
+            // Velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
+            const Vector2 ub2_top = (1.0 - zrat)*node->u2[k-1] + zrat*node->u2[k] // @top of canopy
+
+            // Magnitude of the velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
+            // and at the bottom of the layer.
+            const double vmag_top = length(ub2_top);
+            const double vmag_bot = length(node->u2[k-1]);
+
+            // Volume-averaged velocity cubed.
+            const double vmag3 = 0.5*(pow<3>(vmag_top) + pow<3>(vmag_bot));
+
+            // Vegetation alpha at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
+            // and at the bottom of the layer.
+            const double veg_alpha3D_top = (1.0 - zrat)*node->veg_alpha3D[k-1] + zrat*node->veg_alpha3D[k];
+            const double veg_alpha3D_bot = node->veg_alpha3D[k-1];
+
+            // Volume-averaged vegetation alpha cubed.
+            const double veg_alpha3D = 0.5*(veg_alpha3D_top + veg_alpha3D_bot);
+
+            return veg_alpha3D*vmag3;
+         } 
+         else {
+            // The current level is not within the vegetation layer, so the production is 0.
+            return 0.0;
+         }
+      } else {
+
+         // If no vegetation, the production is 0.
+         return 0.0;
+      }
+
+   };
+
+   __device__ __forceinline__ double maxMixingLength(Node *node, int k) const {
+   // Compute upper bound for the turbulent mixing length based on the distance to the closest "wall" (either surface or bottom).
+
+      const double z = node->z[k];
+      const double eta2 = node->eta2;
+      const double depth = node->depth;
+
+      // Distances to the surface and bottom
+      const double dist_s = eta2 - z;
+      const double dist_b = z + depth;
+
+      // Distance to the closest "wall" (either surface or bottom).  
+      // In the top layer, it is the size of the layer.
+      const double min_dist = (k==nvrt)?node->Dz(ivrt):min(dist_s, dist_b); 
+      assert(min_dist > 0.0 && "Invalid minimum distance");
+
+      // The limit of the mixing length is the maximum eddy that the closest "wall" allows.
+      return kappa*min_dist;
+   }
+
+}
+
 
 // ------------------------------LocalSigma------------------------------
 
@@ -458,7 +662,7 @@ struct LocalSigma {};
 template<>
 struct LocalSigma<2> {
    __device__ double operator[](int k) const { return 0.0; }
-   __device__ double& operator[](int k) { assert(false && "LocalSigma<2>: operator[] not implemented"); return (double &)*((double *)nullptr); }
+   __device__ double& operator[](int k) { assert(false && "LocalSigma<2>: by reference operator[] not implemented"); return (double &)*((double *)nullptr); }
 };
 
 template<>

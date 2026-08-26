@@ -2566,19 +2566,32 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    // Mellor-Yamada-Galperin & Umlauf-Burchard scheme
 
    // Solves the following PDEs:
-
+   //
+   //    dq2/dt = d/dz(nu_k*dq2/dz) + 2*(Prod - diss + Buoy)
+   //    dxl/dt = d/dz(nu_l*dxl/dz) + 2*(l/q2)*(cpsi1*Prod - cpsi2*Fw*diss + cpsi3*Buoy)
+   //
+   // Where q2 is defined as 2K (2*TKE) and xl is \Psi, the length scale (see documentation) and Fw is the wall proximity function.
+   //
+   // The equations are solved using a linear *vertical* FEM formulation.
+   // Elements are linear functions defined on a layer (the interval between two vertical levels).
+   // The shape functions are triangular functions composed of two linear functions over consecutive intervals.
+   
+   
 
    const int kb = node->kb;
-   const bool isVeg = node->iveg;
+
+
 #ifdef XXXXXX   
+
    // For dry or 2D nodes, vertical viscosity and diffusivity are set to their minimum values.
    if (node->isDry || node->is2D()) {
 
+      // Minimum diffusivity at each node. In some cases, it is node-dependent (read from file).
       const double diffmin = node->turb->diffmin;
 
       for (int k = kb; k < nvrt; k++) {
-         node->turb->q2[k]   = q2min;
-         node->turb->xl[k]   = xlmin2;
+         node->turb->q2[k]   = turb->q2min();
+         node->turb->xl[k]   = turb->psimin();
          node->turb->dfv[k]  = diffmin;
          node->turb->dfh[k]  = diffmin;
          node->turb->nu_k[k] = diffmin;
@@ -2593,11 +2606,35 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    // After here we know that the node is wet and has at least 2 layers.
 
 
-   const double zTopCanopy = node->zTopCanopy();
+   const double eta2       = node->eta2;
+   const double depth      = node->depth;
+   const double Cd         = node->Cd; // Drag coefficient
+
+   constexpr double c0 = pow(16.6, 2.0/3.0); 
+   
+   const double sqU2 = norm2(node->u2[kb + 1]);
+   const double modTau = length(node->tau);
+
+   const double rpub = node->turb->rpub();
+   const double rmub = node->turb->rmub();
+   const double rnub = node->turb->rnub();
+   const double cpsi1 = node->turb->cpsi1();
+   const double cpsi2 = node->turb->cpsi2();
+   // cpsi3 is computed later because it depends on k
 
 
+   // Assemble the tridiagonal system for q2
+   const int nqdim = nvrt - kb; 
 
-   for (int k = kb + 1; k < nvrt; k++) {
+   // Initialize the tridiagonal system
+   for (int kin = 0; kin < nqdim; kin++) {
+      alow[kin]=0.0;
+      bdia[kin]=0.0;
+      cupp[kin]=0.0;
+      gam2[kin]=0.0; 
+   }
+   
+   for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
 
       const double z  = node->z(k);
       const double dz = node->Dz(k);
@@ -2611,188 +2648,71 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
       const double N2 = (grav/rho_c)*drho_dz;      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
 
+      const double vegProd = node->vegTurbProduction(node, k);
+
+      const double cpsi3 = node->turb->cpsi3(N2); 
+      const double Fwall = node->turb->Fwall(node->turb->xl[k], dist_s, dist_b);
+
+      const double maxMixingLength = node->maxMixingLength(node, k);
 
 
-      node->turb->veg_prod[k] = 0.0;
+      // Turbulence quantities at half levels (cell [c]enter)
+      const double q2_c   = 0.5*(node->turb->q2[k+1]   + node->turb->q2[k]);
+      const double xl_c   = 0.5*(node->turb->xl[k+1]   + node->turb->xl[k]);
+      const double nu_k_c = 0.5*(node->turb->nu_k[k+1] + node->turb->nu_k[k]);
+      const double dfv_c  = 0.5*(node->turb->dfv[k+1]  + node->turb->dfv[k]);
+      const double dfh_c  = 0.5*(node->turb->dfh[k+1]  + node->turb->dfh[k]);
+      const double dz = node->Dz(k+1);
 
-      if constexpr(isVeg && z < zTopCanopy) { // partial or full veg layer
-
-         const double zz1=min(zTopCanopy, z);
-
-         const double zrat=(zz1 - node->z(k - 1))/dz // \in (0,1]
-
-         const Vector2 ub2 = (1.0 - zrat)*node->u2[k-1]+zrat*node->u2[k] // @top of canopy
-
-         const double vmag2 = length(ub2);
-         const double vmag1 = length(node->u2[k-1]);
-
-         node->turb->veg_prod[k] = 0.25*node->turb->veg_alpha3D[k]*(pow<3>(vmag1) + pow<3>(vmag2));
-      } 
-
-      const double cpsi3 = node->turb->cpsi3(k);
-
-      // // Compute c_psi_3, the coefficient of the N^2 term in the \Psi equation
-      // if constexpr(icompute_cpsi3==0) { // use constants
-      //    if(mid.eq.'MY') {
-      //       cpsi3(k)=0.9d0
-      //    } else { // GLS models
-
-      //       if(N2(k)>0) { // unstable
-      //          cpsi3(k)=1.d0
-      //       } else { // stable
-
-      //          select case(mid)
-      //          case('KL')
-      //             cpsi3(k)=2.53d0
-      //          case('KE')
-      //             cpsi3(k)=-0.52d0
-      //          case('KW')
-      //             cpsi3(k)=-0.58d0
-      //          case('UB')
-      //             cpsi3(k)=0.1d0
-      //          case default
-      //             write(errmsg,*)'Unknown closure model:',mid
-      //             call parallel_abort(errmsg)
-      //          end select
-      //       }
-      //    } // mid
-      // } else { //icompute_cpsi3/=0: compute cpsi3(minus)
-      //   if(N2(k)>0) { // unstable
-      //     // In turbulence.F90: cpsi3plus=(1.5-ce3plus)*gen_n+gen_m
-      //     cpsi3(k)=0.5d*rnub+rmub
-      //   } else {
-      //     cpsi3(k)=cpsi3_comp
-      //   } // N2
-      // endif !icompute_cpsi3
+      // The integral of the shape function products are:
+      // integral of (phi_i*phi_i)dz = dz/3.0,   integral of (phi_i*phi_i+1)dz = dz/6.0
+      // integral of (phi_i'*phi_i+1')dz = 1/dz, integral of (phi_i'*phi_i+1')dz = -1/dz
+      const double p11 = dz/3.0;
+      const double p12 = dz/6.0;
+      const double d11 =  1.0/dz;
+      const double d12 = -1.0/dz;
 
 
-      
+      // The way this code works is that the computation and assembly of the tridiagonal system is divided in two parts,
+      // into the two elements that are adjacent to the current level. (the full shape function is a triangular function
+      // composed of two linear functions.)   
+      // Each interfal contributes to two rows of the tridiagonal system.
+      if (k < ivrt) { 
 
-      // Wall proximity function
-      const double cpsi2p = node->turb->cpsi2p(k);
-
-         //  if(mid.eq.'MY'.or.mid.eq.'KL') then
-         //    zctr2=(znl(k,j)+znl(k-1,j))/2.d0
-         //    dists=eta2(j)-zctr2
-         //    distb=zctr2+dp(j)
-         //    if(dists==0.d0.or.distb==0.d0) then
-         //      write(errmsg,*)'Zero in proximity function:',j,k
-         //      call parallel_abort(errmsg)
-         //    endif
-         //    fwall=1.d0+1.33d0*(xlha(k)/0.4d0/distb)**2.d0+0.25d0*(xlha(k)/0.4d0/dists)**2.d0
-         //    cpsi2p(k)=fwall*cpsi2 !F_wall*cpsi2
-         //  else !other GLS
-         //    cpsi2p(k)=cpsi2
-         //  endif
-
-   }
-
-   // Compute upper bound for xl 
-   const double eta2  = node->eta2;
-   const double depth = node->depth;
-   for (int k = kb + 1; k < nvrt; k++) {
-      const double z = node->z[k];
-
-      // Distances to the surface and bottom
-      const double dist_s = eta2 - z;
-      const double dist_b = z + depth;
-
-      // Distance to the closest "wall" (either surface or bottom).  
-      // In the top layer, it is the size of the layer.
-      const double min_dist = (k==nvrt)?node->Dz(ivrt):min(dist_s, dist_b); 
-      assert(min_dist > 0.0 && "Invalid minimum distance");
-
-      // Limits the mixing length by the maximum eddy that the closest "wall" allows.
-      xlmax(k)=0.kappa*min_dist;
-   }
-
-   // B.C. (computed using values from previous time except wind)
-   // At the surface
-   constexpr double c0 = pow(16.6, 2.0/3.0); 
-   constexpr double Cd = node->Cd; // Drag coefficient
-   const double sqU2 = norm2(node->u2[kb + 1]);
-   const double modTau = length(node->tau);
-
-   const double q2fs  = max(0.5*c0*modTau,  q2min); // Eq. (10) of Zhang & Baptista (2008)
-   const double q2bot = max(0.5*c0*Cd*sqU2, q2min);
-
-   // Bottom mixing length (T. Guérin)
-   xlbot=max(xlmin2(j),min(2.5, xlsc0*node->Dz(kb + 1))*kappa) //"2.5" to prevent over-mixing
-
-   // Surface mixing length (T. Guérin)
-
-   xlfs = max(xlmin2, xlsc0*node->Dz(ivrt)*kappa)
-
-   // The way this code works is that the computation and assembly of the tridiagonal system is divided in two parts,
-   // a part that includes layers k+1 and k and another part that includes layers k and k-1.
-   // This is a FEM formulation of the PDEs.
-   
-
-   // Solves the tridiagonal system for q2 
-   const int nqdim = nvrt - kb; 
-   for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
-
-      alow[kin]=0.0;
-      bdia[kin]=0.0;
-      cupp[kin]=0.0;
-      gam2[kin]=0.0;
-
-
-
-      if (k < ivrt) { // Non-surface layers
-
-         // Turbulence quantities at half levels (cell [c]enter)
-         // q2 is defined as 2K (TKE) and xl is \Psi, the length scale (see documentation)
-         const double q2_c   = 0.5*(node->turb->q2[k+1]   + node->turb->q2[k]);
-         const double xl_c   = 0.5*(node->turb->xl[k+1]   + node->turb->xl[k]);
-         const double nu_k_c = 0.5*(node->turb->nu_k[k+1] + node->turb->nu_k[k]);
-         const double dfv_c  = 0.5*(node->turb->dfv[k+1]  + node->turb->dfv[k]);
-         const double dfh_c  = 0.5*(node->turb->dfh[k+1]  + node->turb->dfh[k]);
-         const double dz = node->Dz(k+1);
-
-
-         bdia[kin] += dz/3.0 + nu_k_c
-         cupp[kin] += dz/6.0 - nu_k_c
-         gam2[kin] += dz/6.0*(2.0*node->turb->q2[k] + node->turb->q2[k+1])
+         bdia[kin - 1] += p11 + dt*d11*nu_k_c;
+         cupp[kin - 1] += p12 + dt*d12*nu_k_c;
+         gam2[kin - 1] += p11*node->turb->q2[k] + p12*node->turb->q2[k+1];
 
          // Production/dissipation terms
-         const double prod = dfv_c*shearbt(k+1) + veg_cfk*veg_prod(k+1) //add SAV
+         const double prod = dfv_c*M2 + veg_cfk*veg_prod(k+1) //add SAV
          const double buoy = dfh_c*rzbt(k+1);
          const double diss = pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
 
          if(prod + buoy >= 0.0) { // Net production
-            gam2[kin] += dt*dz/2.0*(prod + buoy)
+            gam2[kin - 1] += dt*dz/2.0*(prod + buoy)
          } else { // Net dissipation
             const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
-            bdia[kin] -= 2.0*tmp
-            cupp[kin] -= tmp
+            bdia[kin - 1] -= 2.0*tmp
+            cupp[kin - 1] -= tmp
          }
          
          
-         bdia[kin] += 2.0*dt*diss
-         cupp[kin] += dt*diss
+         bdia[kin - 1] += 2.0*dt*diss
+         cupp[kin - 1] += dt*diss
 
       }
 
-      if (k > kb + 1) { // Non-bottom layers
+      if (k > kb + 1) { // Non-bottom layers. This works with nodes k and k+1.
 
-         // Turbulence quantities at half levels
-         // q2 is defined as 2K (TKE) and xl is \Psi, the length scale (see documentation)
-         const double q2_c  = 0.5*(node->turb->q2[k]  + node->turb->q2[k-1]);
-         const double xl_c  = 0.5*(node->turb->xl[k]  + node->turb->xl[k-1]);
-         const double dfv_c = 0.5*(node->turb->dfv[k] + node->turb->dfv[k-1]);
-         const double dfh_c = 0.5*(node->turb->dfh[k] + node->turb->dfh[k-1]);
+  
 
-         const double dz = node->Dz(k);
-
-         const double nu_k_c = 0.5*(node->turb->nu_k[k] + node->turb->nu_k[k-1]);
-         bdia[kin] += dz/3.0 + nu_k_c
-         alow[kin] += dz/6.0 - nu_k_c
-         gam2[kin] += dz/6.0*(2.0*node->turb->q2[k] + node->turb->q2[k-1])
+         bdia[kin] += p11 + dt*d11*nu_k_c
+         alow[kin] += p12 + dt*d12*nu_k_c
+         gam2[kin] += p11*node->turb->q2[k] + p12*node->turb->q2[k-1];
 
          // Production/dissipation terms
-         const double prod = *node->turb->shearbt[k] + node->turb->veg_cfk*node->turb->veg_prod[k]
-         const double buoy = (node->turb->dfh[k] + node->turb->dfh[k-1])/2.0*node->turb->rzbt[k]
+         const double prod = dfv_c*M2 + node->turb->veg_cfk*node->turb->veg_prod[k]
+         const double buoy = dfh_c*N2;
          const double diss = pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; // diss/k
 
          if (prod + buoy >= 0.0) { // Net production
@@ -2811,7 +2731,15 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    // Solves for q2 at new level
    tridag_sch(nvrt,1,nqdim,1,alow,bdia,cupp,gam2,soln2,gam)
 
-   q2tmp(nvrt)=q2fs
+
+   // B.C. (computed using values from previous time except wind)
+
+   const double q2srf  = max(0.5*c0*modTau,  q2min); // Eq. (10) of Zhang & Baptista (2008)
+   const double q2bot = max(0.5*c0*Cd*sqU2, q2min);
+
+
+
+   q2tmp(nvrt) = q2srf
    // Extrapolate to bottom mainly for diffusivities
    q2tmp(kbp(j):kbp(j)+1)=q2bot
    for (int k = kb + 2; k < ivrt; k++) {
@@ -2832,6 +2760,8 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       gam2[kin] = 0.0;
 
       if (k < ivrt) { // Non-surface layers
+
+ 
 
          const double q2_c   = 0.5*(node->turb->q2[k+1]   + node->turb->q2[k]);
          const double xl_c   = 0.5*(node->turb->xl[k+1]   + node->turb->xl[k]);
@@ -2917,13 +2847,16 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       tridag_sch(nvrt,1,nqdim,1,alow,bdia,cupp,gam2,soln2,gam)
 
 
+      // B.C. for the mixing lengths: Bottom and surface (T. Guérin)
+      const double xlbot = max(xlmin2(j),min(2.5, xlsc0*node->Dz(kb + 1))*kappa) //"2.5" to prevent over-mixing
+      const double xlsrf = max(xlmin2, xlsc0*node->Dz(ivrt)*kappa)
 
       for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
 
          const double q2l = max(soln2(kin), psimin)
 
          if (k==ivrt) {
-            xltmp(k) = xlfs;
+            xltmp(k) = xlsrf;
          } else if (k== kb+1) {
             xltmp(k) = xlbot;
          } else {
