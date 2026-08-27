@@ -417,6 +417,10 @@ struct Tracers {
 // ----------------------------- Turbulence -----------------------------
 
 
+
+constexpr double veg_cfk   = 0.07; //Shimizu & Tsujimoto (1994)
+constexpr double veg_cfpsi = 0.16;
+
 enum class TurbulenceModel : int {
    VertVarying  = -1,
    HorzVarying  = -2,
@@ -445,38 +449,37 @@ struct Turbulence<TurbulenceModel::GLS> {
 
    double q2[nvrt];
    double xl[nvrt];
-   double nu_k[nvrt]; // Vertical diffusivity for TKE (q2)
-   double nu_l[nvrt]; // Vertical diffusivity for length scale (xl)
+   double nu_q2[nvrt]; // Vertical diffusivity for TKE (q2)
+   double nu_xl[nvrt]; // Vertical diffusivity for length scale (xl)
    
    
 
-   template<TurbulenceSubmodel Sub>
    __device__ __forceinline__ constexpr double cpsi1() const {
-      if      constexpr (Sub == MellorYamada)   return 0.9;
-      else if constexpr (Sub == KL)             return 0.9;
-      else if constexpr (Sub == KE)             return 1.44;
-      else if constexpr (Sub == KW)             return 0.555;
-      else if constexpr (Sub == UmlaufBurchard) return 1.0;
+      if      constexpr (turbSubmodel == MellorYamada)   return 0.9;
+      else if constexpr (turbSubmodel == KL)             return 0.9;
+      else if constexpr (turbSubmodel == KE)             return 1.44;
+      else if constexpr (turbSubmodel == KW)             return 0.555;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 1.0;
       else { assert(false && "unknown submodel"); return 0.0; }
    }
 
-   template<TurbulenceSubmodel Sub>
+   
    __device__ __forceinline__ constexpr double cpsi2() const {
       // Returns coefficient cpsi2 for the dissipation term in the GLS turbulence model
-      if      constexpr (Sub == MellorYamada)   return 0.5;
-      else if constexpr (Sub == KL)             return 0.5;
-      else if constexpr (Sub == KE)             return 1.92;
-      else if constexpr (Sub == KW)             return 0.833;
-      else if constexpr (Sub == UmlaufBurchard) return 1.22;
+      if      constexpr (turbSubmodel == MellorYamada)   return 0.5;
+      else if constexpr (turbSubmodel == KL)             return 0.5;
+      else if constexpr (turbSubmodel == KE)             return 1.92;
+      else if constexpr (turbSubmodel == KW)             return 0.833;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 1.22;
       else { assert(false && "unknown submodel"); return 0.0; }
    }
 
-   template<TurbulenceSubmodel Sub>
+
    __device__ __forceinline__ double Fwall(double xl_c, double dist_s, double dist_b) const {
       
       // Returns wall proximity function F_wall for the dissipation term in the GLS turbulence model
       // dist_s, dist_b: distances from the layer midpoint to free surface and bed.
-      if constexpr (Sub == MellorYamada || Sub == KL) {
+      if constexpr (turbSubmodel == MellorYamada || turbSubmodel == KL) {
 
          assert(dist_s != 0.0 && dist_b != 0.0 && "Zero in proximity function");
 
@@ -489,7 +492,6 @@ struct Turbulence<TurbulenceModel::GLS> {
       }
    }
 
-   template<TurbulenceSubmodel Sub>
    __device__ __forceinline__ double cpsi3(double N2) const {
 
       // Returns coefficient cpsi3 for the buoyancy production/dissipation term in the GLS turbulence model
@@ -497,7 +499,7 @@ struct Turbulence<TurbulenceModel::GLS> {
 
       if constexpr(icompute_cpsi3 != 0) { assert(false && "compute_cpsi3 not implemented for icompute_cpsi3!=0"); return 0.0; }
 
-      if constexpr (Sub == MellorYamada) {
+      if constexpr (turbSubmodel == MellorYamada) {
          return 0.9;   
 
       } else { // Other GLS submodels
@@ -508,82 +510,84 @@ struct Turbulence<TurbulenceModel::GLS> {
 
          } else { // stable (regular stratification)
 
-            if      constexpr (Sub == KL)             return 2.53;
-            else if constexpr (Sub == KE)             return -0.52;
-            else if constexpr (Sub == KW)             return -0.58;
-            else if constexpr (Sub == UmlaufBurchard) return  0.1;
+            if      constexpr (turbSubmodel == KL)             return 2.53;
+            else if constexpr (turbSubmodel == KE)             return -0.52;
+            else if constexpr (turbSubmodel == KW)             return -0.58;
+            else if constexpr (turbSubmodel == UmlaufBurchard) return  0.1;
             else { assert(false && "unknown submodel"); return 0.0; }
          }
 
-      } //if constexpr (Sub == TurbulenceSubmodel::MY)
+      } //if constexpr (turbSubmodel == TurbulenceSubmodel::MY)
 
    }
 
-   template<TurbulenceSubmodel Sub>
+   
    __device__ __forceinline__ constexpr double rpub() const {
-      if      constexpr (Sub == MellorYamada)   return  0.0;
-      else if constexpr (Sub == KL)             return  0.0;
-      else if constexpr (Sub == KE)             return  3.0;
-      else if constexpr (Sub == KW)             return -1.0;
-      else if constexpr (Sub == UmlaufBurchard) return  2.0;
+      if      constexpr (turbSubmodel == MellorYamada)   return  0.0;
+      else if constexpr (turbSubmodel == KL)             return  0.0;
+      else if constexpr (turbSubmodel == KE)             return  3.0;
+      else if constexpr (turbSubmodel == KW)             return -1.0;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return  2.0;
       else { assert(false && "unknown submodel"); return 0.0; }
    }
 
-   template<TurbulenceSubmodel Sub>
+
    __device__ __forceinline__ constexpr double rmub() const {
-      if      constexpr (Sub == MellorYamada)   return 1.0;
-      else if constexpr (Sub == KL)             return 1.0;
-      else if constexpr (Sub == KE)             return 1.5;
-      else if constexpr (Sub == KW)             return 0.5;
-      else if constexpr (Sub == UmlaufBurchard) return 1.0;
+      if      constexpr (turbSubmodel == MellorYamada)   return 1.0;
+      else if constexpr (turbSubmodel == KL)             return 1.0;
+      else if constexpr (turbSubmodel == KE)             return 1.5;
+      else if constexpr (turbSubmodel == KW)             return 0.5;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 1.0;
       else { assert(false && "unknown submodel"); return 0.0; }
    }
 
-   template<TurbulenceSubmodel Sub>
+
    __device__ __forceinline__ constexpr double rnub() const {
-      if      constexpr (Sub == MellorYamada)   return  1.0;
-      else if constexpr (Sub == KL)             return  1.0;
-      else if constexpr (Sub == KE)             return -1.0;
-      else if constexpr (Sub == KW)             return -1.0;
-      else if constexpr (Sub == UmlaufBurchard) return -0.67;
+      if      constexpr (turbSubmodel == MellorYamada)   return  1.0;
+      else if constexpr (turbSubmodel == KL)             return  1.0;
+      else if constexpr (turbSubmodel == KE)             return -1.0;
+      else if constexpr (turbSubmodel == KW)             return -1.0;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return -0.67;
       else { assert(false && "unknown submodel"); return 0.0; }
    }
 
-   template<TurbulenceSubmodel Sub>
+
    __device__ __forceinline__ constexpr double schk() const {
-      if      constexpr (Sub == KL)             return 2.44;
-      else if constexpr (Sub == KE)             return 1.0;
-      else if constexpr (Sub == KW)             return 2.0;
-      else if constexpr (Sub == UmlaufBurchard) return 0.8;
+      if      constexpr (turbSubmodel == KL)             return 2.44;
+      else if constexpr (turbSubmodel == KE)             return 1.0;
+      else if constexpr (turbSubmodel == KW)             return 2.0;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 0.8;
       else { assert(false && "schk not set for this submodel"); return 0.0; }
    }
 
-   template<TurbulenceSubmodel Sub>
+
    __device__ __forceinline__ constexpr double schpsi() const {
-      if      constexpr (Sub == KL)             return 2.44;
-      else if constexpr (Sub == KE)             return 1.3;
-      else if constexpr (Sub == KW)             return 2.0;
-      else if constexpr (Sub == UmlaufBurchard) return 1.07;
+      if      constexpr (turbSubmodel == KL)             return 2.44;
+      else if constexpr (turbSubmodel == KE)             return 1.3;
+      else if constexpr (turbSubmodel == KW)             return 2.0;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 1.07;
       else { assert(false && "schpsi not set for this submodel"); return 0.0; }
    }
 
-   template<TurbulenceSubmodel Sub>
+
    __device__ __forceinline__ constexpr double q2min() const {
-      if constexpr (Sub == MellorYamada || Sub == KL)
+      if constexpr (turbSubmodel == MellorYamada || turbSubmodel == KL)
          return 5.0e-6;
       else
          return 7.6e-6; // Warner et al., OM 2005
    }
 
-   template<TurbulenceSubmodel Sub>
+
    __device__ __forceinline__ constexpr double psimin() const {
-      if constexpr (Sub == MellorYamada || Sub == TurbulenceSubmodel::KL)
+      if constexpr (turbSubmodel == MellorYamada || turbSubmodel == TurbulenceSubmodel::KL)
          return 1.0e-8;
       else
          return 1.0e-12; // Warner et al., OM 2005
    }
 
    __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const {
+
+      // Returns the turbulence production due to vegetation averaged over the current layer.
 
       if constexpr(isVeg) {
          

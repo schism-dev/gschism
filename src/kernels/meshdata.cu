@@ -2567,8 +2567,8 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
    // Solves the following PDEs:
    //
-   //    dq2/dt = d/dz(nu_k*dq2/dz) + 2*(Prod - diss + Buoy)
-   //    dxl/dt = d/dz(nu_l*dxl/dz) + 2*(l/q2)*(cpsi1*Prod - cpsi2*Fw*diss + cpsi3*Buoy)
+   //    dq2/dt = d/dz(nu_q2*dq2/dz) + 2*(Prod - diss + Buoy)
+   //    dxl/dt = d/dz(nu_xl*dxl/dz) + 2*(l/q2)*(cpsi1*Prod - cpsi2*Fw*diss + cpsi3*Buoy)
    //
    // Where q2 is defined as 2K (2*TKE) and xl is \Psi, the length scale (see documentation) and Fw is the wall proximity function.
    //
@@ -2579,7 +2579,24 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    
 
    const int kb = node->kb;
+   const int nqrows = nvrt - kb - 1; // Number of rows of the tridiagonal system
 
+   double alow_q[nvrt], alow_l[nvrt];
+   double bdia_q[nvrt], bdia_l[nvrt];
+   double cupp_q[nvrt], cupp_l[nvrt];
+   double rhs_q [nvrt], rhs_l [nvrt];
+   
+   // Initialize the tridiagonal system
+   for (int kin = 0; kin < nqrows; kin++) {
+      alow_q[kin]=0.0;
+      bdia_q[kin]=0.0;
+      cupp_q[kin]=0.0;
+      rhs_q [kin]=0.0; 
+      alow_l[kin]=0.0;
+      bdia_l[kin]=0.0;
+      cupp_l[kin]=0.0;
+      rhs_l [kin]=0.0; 
+   }
 
 #ifdef XXXXXX   
 
@@ -2590,12 +2607,12 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double diffmin = node->turb->diffmin;
 
       for (int k = kb; k < nvrt; k++) {
-         node->turb->q2[k]   = turb->q2min();
-         node->turb->xl[k]   = turb->psimin();
-         node->turb->dfv[k]  = diffmin;
-         node->turb->dfh[k]  = diffmin;
-         node->turb->nu_k[k] = diffmin;
-         node->turb->nu_l[k] = diffmin;
+         node->turb->q2[k]    = turb->q2min();
+         node->turb->xl[k]    = turb->psimin();
+         node->turb->dfv[k]   = diffmin;
+         node->turb->dfh[k]   = diffmin;
+         node->turb->nu_q2[k] = diffmin;
+         node->turb->nu_xl[k] = diffmin;
       }
 
       return;
@@ -2615,128 +2632,179 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    const double sqU2 = norm2(node->u2[kb + 1]);
    const double modTau = length(node->tau);
 
-   const double rpub = node->turb->rpub();
-   const double rmub = node->turb->rmub();
-   const double rnub = node->turb->rnub();
-   const double cpsi1 = node->turb->cpsi1();
-   const double cpsi2 = node->turb->cpsi2();
+   // Get the turbulence model
+   const Turbulence &turb = node->turb;
+
+   const double cpsi1 = turb.cpsi1();
+   const double cpsi2 = turb.cpsi2();
    // cpsi3 is computed later because it depends on k
 
 
-   // Assemble the tridiagonal system for q2
-   const int nqdim = nvrt - kb; 
+   // Assemble the tridiagonal system
+   // -------------------------------
 
-   // Initialize the tridiagonal system
-   for (int kin = 0; kin < nqdim; kin++) {
-      alow[kin]=0.0;
-      bdia[kin]=0.0;
-      cupp[kin]=0.0;
-      gam2[kin]=0.0; 
-   }
-   
-   for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
+   // Loop over each vertical layer (interval between two vertical levels)
+   // Each interval is an element of the vertical FEM formulation.
+   // Two shape functions are defined over each interval. In this function we well call them
+   // p1 and p2. The derivatives of the shape functions are called d1 and d2.
+   // In general, inside the loops, 1 refers to the lower level and 2 refers to the upper level.
+   //
+   // Each interval contributes to two rows (vertical levels) of the tridiagonal system.
+   // Both systems of equations are assembled in the same loop.
+   for (int k = kb + 1, kin = 0; k < ivrt; k++, kin++) {
 
-      const double z  = node->z(k);
-      const double dz = node->Dz(k);
-      const double rho_c = 0.5*(node->rho[k] + node->rho[k-1]);
+      // Indices for the *rows* of the tridiagonal system.
+      const int k1 = k - kb - 1; // Zero at k = kb + 1
+      const int k2 = k - kb;     // One at k = kb + 1
+
+      // Get the properties of the current interval.
+      const double z  = node->z(k); // bottom level of the interval
+      const double dz = node->Dz(k + 1);
+      const double rho_c = 0.5*(node->rho[k] + node->rho[k+1]);
       
-      const Vector2 du_dz   = (node->u2[k] - node->u2[k-1])/dz;
-      const double drho_dz = (node->rho[k] - node->rho[k-1])/dz;
+      const Vector2 du_dz   = (node->u2[k+1] - node->u2[k])/dz;
+      const double drho_dz = (node->rho[k+1] - node->rho[k])/dz;
 
-      // Turbulence production/dissipation terms
+      // Turbulence production/dissipation terms (at the center of the interval).
+      
       const double M2 = norm2(du_dz);              // Shear production term
 
       const double N2 = (grav/rho_c)*drho_dz;      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
 
-      const double vegProd = node->vegTurbProduction(node, k);
+      const double vegProd = turb.vegTurbProduction(node, k + 1);
 
-      const double cpsi3 = node->turb->cpsi3(N2); 
-      const double Fwall = node->turb->Fwall(node->turb->xl[k], dist_s, dist_b);
-
-      const double maxMixingLength = node->maxMixingLength(node, k);
+      const double cpsi3 = turb.cpsi3(N2); 
 
 
       // Turbulence quantities at half levels (cell [c]enter)
-      const double q2_c   = 0.5*(node->turb->q2[k+1]   + node->turb->q2[k]);
-      const double xl_c   = 0.5*(node->turb->xl[k+1]   + node->turb->xl[k]);
-      const double nu_k_c = 0.5*(node->turb->nu_k[k+1] + node->turb->nu_k[k]);
-      const double dfv_c  = 0.5*(node->turb->dfv[k+1]  + node->turb->dfv[k]);
-      const double dfh_c  = 0.5*(node->turb->dfh[k+1]  + node->turb->dfh[k]);
-      const double dz = node->Dz(k+1);
+      const double q2_1     = turb.q2[k];
+      const double q2_2     = turb.q2[k+1];
+      const double xl_1     = turb.xl[k];
+      const double xl_2     = turb.xl[k+1];
+      const double q2_c    = 0.5*(q2_2    + q2_1);
+      const double xl_c    = 0.5*(xl_2    + xl_1);
+      const double nu_q2_c = 0.5*(turb.nu_q2[k] + turb.nu_q2[k+1]);
+      const double nu_xl_c = 0.5*(turb.nu_xl[k] + turb.nu_xl[k+1]);
+      const double dfv_c   = 0.5*(turb.dfv[k]   + turb.dfv[k+1]);
+      const double dfh_c   = 0.5*(turb.dfh[k]   + turb.dfh[k+1]);
 
-      // The integral of the shape function products are:
+      const double zmid = 0.5*(node->z[k] + node->z[k+1]);
+      const double Fwall = turb.Fwall(xl_c, eta2 - zmid, zmid + depth);
+
+
+      // Integral of the shape function products:
       // integral of (phi_i*phi_i)dz = dz/3.0,   integral of (phi_i*phi_i+1)dz = dz/6.0
       // integral of (phi_i'*phi_i+1')dz = 1/dz, integral of (phi_i'*phi_i+1')dz = -1/dz
-      const double p11 = dz/3.0;
-      const double p12 = dz/6.0;
-      const double d11 =  1.0/dz;
-      const double d12 = -1.0/dz;
+      const double p1p1 = dz/3.0;
+      const double p1p2 = dz/6.0;
+      const double d1d1 =  1.0/dz;
+      const double d1d2 = -1.0/dz;
 
+      // Equation for q2
+      // ---------------
 
-      // The way this code works is that the computation and assembly of the tridiagonal system is divided in two parts,
-      // into the two elements that are adjacent to the current level. (the full shape function is a triangular function
-      // composed of two linear functions.)   
-      // Each interfal contributes to two rows of the tridiagonal system.
-      if (k < ivrt) { 
+      // First row (of the two rows that the interval contributes to)
+      bdia_q[k1] += p1p1 + dt*d1p1*nu_q2_c;
+      cupp_q[k1] += p1p2 + dt*d1p2*nu_q2_c;
+      rhs_q [k1] += p1p1*q2_1 + p1p2*q2_2;
 
-         bdia[kin - 1] += p11 + dt*d11*nu_k_c;
-         cupp[kin - 1] += p12 + dt*d12*nu_k_c;
-         gam2[kin - 1] += p11*node->turb->q2[k] + p12*node->turb->q2[k+1];
+      // Production/dissipation terms
+      const double prod = dfv_c*M2 + veg_cfk*vegProd;
+      const double buoy = dfh_c*N2;
+      const double diss = pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
 
-         // Production/dissipation terms
-         const double prod = dfv_c*M2 + veg_cfk*veg_prod(k+1) //add SAV
-         const double buoy = dfh_c*rzbt(k+1);
-         const double diss = pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
-
-         if(prod + buoy >= 0.0) { // Net production
-            gam2[kin - 1] += dt*dz/2.0*(prod + buoy)
-         } else { // Net dissipation
-            const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
-            bdia[kin - 1] -= 2.0*tmp
-            cupp[kin - 1] -= tmp
-         }
-         
-         
-         bdia[kin - 1] += 2.0*dt*diss
-         cupp[kin - 1] += dt*diss
-
-      }
-
-      if (k > kb + 1) { // Non-bottom layers. This works with nodes k and k+1.
-
+      if(prod + buoy >= 0.0) { // Net production
+         rhs_q[k1] += dt*dz/2.0*(prod + buoy);
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
+         bdia_q[k1] -= 2.0*tmp;
+         cupp_q[k1] -= tmp;
+      }      
+      
+      bdia_q[k1] += 2.0*dt*diss;
+      cupp_q[k1] += dt*diss;
+      
   
+      // Second row (of the two rows that the interval contributes to)
+      bdia_q[k2] += p1p1 + dt*d1p1*nu_q2_c;
+      alow_q[k2] += p1p2 + dt*d1p2*nu_q2_c;
+      rhs_q [k2] += p1p1*q2_2 + p1p2*q2_1;
 
-         bdia[kin] += p11 + dt*d11*nu_k_c
-         alow[kin] += p12 + dt*d12*nu_k_c
-         gam2[kin] += p11*node->turb->q2[k] + p12*node->turb->q2[k-1];
-
-         // Production/dissipation terms
-         const double prod = dfv_c*M2 + node->turb->veg_cfk*node->turb->veg_prod[k]
-         const double buoy = dfh_c*N2;
-         const double diss = pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; // diss/k
-
-         if (prod + buoy >= 0.0) { // Net production
-            gam2[kin] += dt*dz/2.0*(prod+buoy)
-         } else { // Net dissipation
-            tmp=dt*dz/6.0*(prod + buoy)/q2_c
-            bdia[kin] -= 2.0*tmp
-            alow[kin] -= tmp
-         }
-         
-         bdia[kin] += 2.0*dt*diss
-         alow[kin] += dt*diss
+      if (prod + buoy >= 0.0) { // Net production
+         rhs_q[k2] += dt*dz/2.0*(prod+buoy);
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
+         bdia_q[k2] -= 2.0*tmp;
+         alow_q[k2] -= tmp;
       }
-   } // for k
+      
+      bdia_q[k2] += 2.0*dt*diss;
+      alow_q[k2] += dt*diss;
+
+
+      // Equation for xl
+      // ---------------
+
+      const double rpub = turb.rpub();
+      const double rmub = turb.rmub();
+      const double rnub = turb.rnub();
+      const double psi_n1 = pow(cmiu0, rpub)*pow(q2_1, rmub)*pow(xl_1, rnub); // psi^n_{j,k}
+      const double psi_n2 = pow(cmiu0, rpub)*pow(q2_2, rmub)*pow(xl_2, rnub); // psi^n_{j,k+1}
+      const double psi_c = 0.5*(psi_n1 + psi_n2);
+
+      bdia_l[k1] += p1p1 + dt*d1p1*nu_xl_c;
+      cupp_l[k1] += p1p2 + dt*d1p2*nu_xl_c;
+      rhs_l [k1] += p1p1*psi_n1 + p1p2*psi_n2;
+
+      // Production/dissipation terms
+      const double prod_xl = cpsi1*dfv_c*M2 + veg_cfpsi*vegProd;
+      const double buoy_xl = cpsi3*dfh_c*N2;
+      const double diss_xl = cpsi2*Fwall*pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
+ 
+
+      if(prod_xl + buoy_xl >= 0.0) { // Net production
+         rhs_l[k1] += dt*dz/2.0*(prod_xl + buoy_xl)*psi_c/q2_c;
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod_xl + buoy_xl)/q2_c;
+         bdia_l[k1] -= 2.0*tmp;
+         cupp_l[k1] -= tmp;
+      }
+                  
+      bdia_l[k1] += 2.0*dt*diss_xl;
+      cupp_l[k1] += dt*diss_xl;
+
+      // row k2 (upper)
+      bdia_l[k2] += p1p1 + dt*d1p1*nu_xl_c;
+      alow_l[k2] += p1p2 + dt*d1p2*nu_xl_c;
+      rhs_l [k2] += p1p1*psi_n2 + p1p2*psi_n1;
+
+      if (prod_xl + buoy_xl >= 0.0) { // Net production
+         rhs_l[k2] += dt*dz/2.0*(prod_xl + buoy_xl)*psi_c/q2_c;
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod_xl + buoy_xl)/q2_c;
+         bdia_l[k2] -= 2.0*tmp;
+         alow_l[k2] -= tmp;
+      }
+
+      // Production/dissipation terms
+      bdia_l[k2] += 2.0*dt*diss_xl;
+      alow_l[k2] += dt*diss_xl;
+
+   }
+
+   // BC
+
+   bdia_l[ivrt] = kappa*rnub*dt*turb.nu_xl[ivrt]/turb.xl[ivrt];
+
 
    // Solves for q2 at new level
-   tridag_sch(nvrt,1,nqdim,1,alow,bdia,cupp,gam2,soln2,gam)
+   tridag_sch(nvrt,1,nqrows,1,alow_q,bdia_q,cupp_q,rhs_q,soln2,gam)
 
 
    // B.C. (computed using values from previous time except wind)
 
-   const double q2srf  = max(0.5*c0*modTau,  q2min); // Eq. (10) of Zhang & Baptista (2008)
+   const double q2srf = max(0.5*c0*modTau,  q2min); // Eq. (10) of Zhang & Baptista (2008)
    const double q2bot = max(0.5*c0*Cd*sqU2, q2min);
-
 
 
    q2tmp(nvrt) = q2srf
@@ -2751,161 +2819,70 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    }
 
 
-   // Solves the tridiagonal system for xl
+ 
+   // Solves for q2.
+   tridag_sch(nvrt,1,nqrows,1,alow,bdia,cupp,rhs_l,soln2,gam)
+
+
+   // B.C. for the mixing lengths: Bottom and surface (T. Guérin)
+   const double xlbot = max(xlmin2(j),min(2.5, xlsc0*node->Dz(kb + 1))*kappa) //"2.5" to prevent over-mixing
+   const double xlsrf = max(xlmin2, xlsc0*node->Dz(ivrt)*kappa)
+
    for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
 
-      alow[kin] = 0.0;
-      bdia[kin] = 0.0;
-      cupp[kin] = 0.0;
-      gam2[kin] = 0.0;
+      const double q2l = max(soln2(kin), psimin)
 
-      if (k < ivrt) { // Non-surface layers
-
- 
-
-         const double q2_c   = 0.5*(node->turb->q2[k+1]   + node->turb->q2[k]);
-         const double xl_c   = 0.5*(node->turb->xl[k+1]   + node->turb->xl[k]);
-         const double nu_l_c = 0.5*(node->turb->nu_l[k+1] + node->turb->nu_l[k]);
-         const double dfv_c  = 0.5*(node->turb->dfv[k+1]  + node->turb->dfv[k]);
-         const double dfh_c  = 0.5*(node->turb->dfh[k+1]  + node->turb->dfh[k]);
-
-         const double dz = node->Dz(k+1);
-
-         const double psi_n  = pow(cmiu0, rpub)*pow(q2(k,j),   rmub)*pow(xl(k,j),   rnub) // psi^n_{j,k}
-         const double psi_n1 = pow(cmiu0, rpub)*pow(q2(k+1,j), rmub)*pow(xl(k+1,j), rnub) // psi^n_{j,k+1}
-         const double psi_c = 0.5*(psi_n + psi_n1);
-
-         bdia[kin] += dz/3.0 + nu_l_c
-         cupp[kin] += dz/6.0 - nu_l_c
-         gam2[kin] += dz/6.0*(2.0*psi_n + psi_n1)
-
-         // Production/dissipation terms
-         const double prod = cpsi1*dfv_c*shearbt(k+1)+veg_cfpsi*veg_prod(k+1) //add SAV
-         const double buoy = cpsi3*dfh_c*rzbt(k+1);
-         const double diss = cpsi2p(k+1)*pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
- 
-
-         if(prod + buoy >= 0.0) { // Net production
-            gam2[kin] += dt*dz/2.0*(prod + buoy)*psi_c/q2_c;
-         } else { // Net dissipation
-            const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
-            bdia[kin] -= 2.0*tmp
-            cupp[kin] -= tmp
-         }
-         
-         
-         bdia[kin] += 2.0*dt*diss
-         cupp[kin] += dt*diss
-
-   
-      } else { //k=nvrt
-
-         // BC XXXX DO here or elsewhere XXXX?
-         bdia(kin)=bdia(kin)+0.4d0*rnub*dt*dfq2(k,j)/xl(k,j)
+      if (k==ivrt) {
+         xltmp(k) = xlsrf;
+      } else if (k== kb+1) {
+         xltmp(k) = xlbot;
+      } else {
+         xltmp(k) = (q2l*cmiu0**(-rpub)*q2tmp(k)**(-rmub))**(1.d0/rnub)
       }
 
-      if (k > kb + 1) { Non-bottom layers
-
-         const double q2_c   = 0.5*(node->turb->q2[k]   + node->turb->q2[k-1]);
-         const double xl_c   = 0.5*(node->turb->xl[k]   + node->turb->xl[k-1]);
-         const double nu_l_c = 0.5*(node->turb->nu_l[k] + node->turb->nu_l[k-1]);
-         const double dfv_c  = 0.5*(node->turb->dfv[k]  + node->turb->dfv[k-1]);
-         const double dfh_c  = 0.5*(node->turb->dfh[k]  + node->turb->dfh[k-1]);
-         const double dz = node->Dz(k);
-
-         const double psi_n  = pow(cmiu0, rpub)*pow(q2(k,j),   rmub)*pow(xl(k,j),   rnub) // psi^n_{j,k}
-         const double psi_n1 = pow(cmiu0, rpub)*pow(q2(k-1,j), rmub)*pow(xl(k-1,j), rnub) // psi^n_{j,k-1}
-         const double psi_c = 0.5*(psi_n + psi_n1);
-
-         bdia[kin] += dz/3.0 + nu_l_c
-         cupp[kin] += dz/6.0 - nu_l_c
-         gam2[kin] += dz/6.0*(2.0*psi_n + psi_n1)
-
-         // Production/dissipation terms
-         const double prod = cpsi1*dfv_c*shearbt(k)+veg_cfpsi*veg_prod(k) //add SAV
-         const double buoy = cpsi3*dfh_c*rzbt(k);
-         const double diss = cpsi2p(k)*pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
-
-
-         if(prod + buoy >= 0.0) { // Net production
-            gam2[kin] += dt*dz/2.0*(prod + buoy)*psi_c/q2_c;
-         } else { // Net dissipation
-            const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
-            bdia[kin] -= 2.0*tmp
-            cupp[kin] -= tmp
-         }
-         
-         
-         bdia[kin] += 2.0*dt*diss
-         cupp[kin] += dt*diss
-
+      // Galperin's clipping 
+      if (rzbt(k)<0.0) {
+         const double upper = sqrt(-0.56*q2tmp(k)/rzbt(k));
+         xltmp(k) = min(xltmp(k),upper);
       }
 
+      // Max. length based on dissipation; xlmin2 prevails
+      const double xl_max = pow(cmiu0*sqrt(q2tmp(k)), 3.0)/eps_min;
+      xltmp(k) = max(xlmin2(j), min(xl_max, xltmp(k)));
+
+      //	  Impose max. depth limit
+      xltmp(k) = max(xlmin2(j), min(xltmp(k), xlmax(k)));
+
+      q2(k,j)=q2tmp(k)
+      xl(k,j)=xltmp(k)
+
+      assert(q2(k,j) >= 0.0 && "Negative q2");
+   } // for k
+
+   // Extrapolate q2, xl to bottom mainly for diffusivities
+   q2(kbp(j),j)=q2(kbp(j)+1,j)
+   xl(kbp(j),j)=xl(kbp(j)+1,j)
+
+   // Compute vertical diffusivities at new time
+   for (int k = kb; k < nvrt; k++) {
+         call asm(j,k,vd,td,qd1,qd2)
+         dfv(k,j)=min(diffmax(j),max(diffmin(j),vd))
+         dfh(k,j)=min(diffmax(j),max(diffmin(j),td))
+         dfq1(k,j)=min(diffmax(j),max(diffmin(j),qd1))
+         dfq2(k,j)=min(diffmax(j),max(diffmin(j),qd2))
 
 
-      !	Soln for q2l and xl at new level
-      tridag_sch(nvrt,1,nqdim,1,alow,bdia,cupp,gam2,soln2,gam)
+   }
 
-
-      // B.C. for the mixing lengths: Bottom and surface (T. Guérin)
-      const double xlbot = max(xlmin2(j),min(2.5, xlsc0*node->Dz(kb + 1))*kappa) //"2.5" to prevent over-mixing
-      const double xlsrf = max(xlmin2, xlsc0*node->Dz(ivrt)*kappa)
-
-      for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
-
-         const double q2l = max(soln2(kin), psimin)
-
-         if (k==ivrt) {
-            xltmp(k) = xlsrf;
-         } else if (k== kb+1) {
-            xltmp(k) = xlbot;
-         } else {
-            xltmp(k) = (q2l*cmiu0**(-rpub)*q2tmp(k)**(-rmub))**(1.d0/rnub)
-         }
-
-         // Galperin's clipping 
-         if (rzbt(k)<0.0) {
-            const double upper = sqrt(-0.56*q2tmp(k)/rzbt(k));
-            xltmp(k) = min(xltmp(k),upper);
-         }
-
-         // Max. length based on dissipation; xlmin2 prevails
-         const double xl_max = pow(cmiu0*sqrt(q2tmp(k)), 3.0)/eps_min;
-         xltmp(k) = max(xlmin2(j), min(xl_max, xltmp(k)));
-
-         //	  Impose max. depth limit
-         xltmp(k) = max(xlmin2(j), min(xltmp(k), xlmax(k)));
-
-         q2(k,j)=q2tmp(k)
-         xl(k,j)=xltmp(k)
-
-         assert(q2(k,j) >= 0.0 && "Negative q2");
-      } // for k
-
-      // Extrapolate q2, xl to bottom mainly for diffusivities
-      q2(kbp(j),j)=q2(kbp(j)+1,j)
-      xl(kbp(j),j)=xl(kbp(j)+1,j)
-
-      // Compute vertical diffusivities at new time
-      for (int k = kb; k < nvrt; k++) {
-          call asm(j,k,vd,td,qd1,qd2)
-          dfv(k,j)=min(diffmax(j),max(diffmin(j),vd))
-          dfh(k,j)=min(diffmax(j),max(diffmin(j),td))
-          dfq1(k,j)=min(diffmax(j),max(diffmin(j),qd1))
-          dfq2(k,j)=min(diffmax(j),max(diffmin(j),qd2))
-
-
-      }
-
-      // Extend
-      for (int k = 0; k < kb; k++) {
-         q2(k,j) = q2(kb,j);
-         xl(k,j) = xl(kb,j);
-         dfv(k,j) = dfv(kb,j);
-         dfh(k,j) = dfh(kb,j);
-         dfq1(k,j) = dfq1(kb,j);
-         dfq2(k,j) = dfq2(kb,j);
-      }
+   // Extend
+   for (int k = 0; k < kb; k++) {
+      q2(k,j) = q2(kb,j);
+      xl(k,j) = xl(kb,j);
+      dfv(k,j) = dfv(kb,j);
+      dfh(k,j) = dfh(kb,j);
+      dfq1(k,j) = dfq1(kb,j);
+      dfq2(k,j) = dfq2(kb,j);
+   }
 
 #endif
       
@@ -4248,9 +4225,6 @@ extern "C" {
       // Compute vegetation parameters
       //--------------------------------
 
-      // SAV constants
-      constexpr double veg_cfk   = 0.07; //Shimizu & Tsujimoto (1994)
-      constexpr double veg_cfpsi = 0.16;
 
       // Add vertical variation to veg_alpha and compute vertical mean etc.
       if constexpr(iveg == 1) { //  Vertical variation specified by functions
