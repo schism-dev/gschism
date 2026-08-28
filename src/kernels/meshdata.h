@@ -447,10 +447,10 @@ template<>
 struct Turbulence<TurbulenceModel::GLS> {
    using enum TurbulenceSubmodel;
 
-   double q2[nvrt];
-   double xl[nvrt];
-   double nu_q2[nvrt]; // Vertical diffusivity for TKE (q2)
-   double nu_xl[nvrt]; // Vertical diffusivity for length scale (xl)
+   double tke[nvrt];    // TKE
+   double mxl[nvrt];    // mixing length for GLS
+   double nu_tke[nvrt]; // Vertical diffusivity for TKE 
+   double nu_phi[nvrt]; // Vertical diffusivity for generic length scale variable (phi)
    
    
 
@@ -475,15 +475,27 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ double Fwall(double xl_c, double dist_s, double dist_b) const {
+   __device__ __forceinline__ double Fwall(Node *node, int k, double mxl_c) const {
+
       
-      // Returns wall proximity function F_wall for the dissipation term in the GLS turbulence model
-      // dist_s, dist_b: distances from the layer midpoint to free surface and bed.
+      // Returns wall proximity function F_wall for the dissipation term in the GLS turbulence model.
+      // k is the layer bottom index.
+
+
+
       if constexpr (turbSubmodel == MellorYamada || turbSubmodel == KL) {
 
-         assert(dist_s != 0.0 && dist_b != 0.0 && "Zero in proximity function");
+         const double z_c = 0.5*(node->z[k] + node->z[k+1]);
+         const double eta2 = node->eta2;
+         const double depth = node->depth;
+   
+         // Distances from the layer midpoint to the surface and bottom
+         const double dist_s = eta2 - z_c;
+         const double dist_b = z_c + depth;
 
-         return 1.0 + 1.33*pow<2>((1.0/kappa)*xl_c/dist_b) + 0.25*pow<2>((1.0/kappa)*xl_c/dist_s);
+         assert(dist_s != 0.0 && dist_b != 0.0 && "Zero in proximity function");         
+
+         return 1.0 + 1.33*pow<2>((1.0/kappa)*mxl_c/dist_b) + 0.25*pow<2>((1.0/kappa)*mxl_c/dist_s);
 
 
       } else {
@@ -570,7 +582,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ constexpr double q2min() const {
+   __device__ __forceinline__ constexpr double tkemin() const {
       if constexpr (turbSubmodel == MellorYamada || turbSubmodel == KL)
          return 5.0e-6;
       else
@@ -583,6 +595,12 @@ struct Turbulence<TurbulenceModel::GLS> {
          return 1.0e-8;
       else
          return 1.0e-12; // Warner et al., OM 2005
+   }
+
+   __device__ __forceinline__ double mxlmin(double depth) const {
+      // Fortran xlmin2(i) = 2*q2min*0.1*max(h0,dp(i)). Mixing-length floor.
+      // Independent of psimin(); do not invert one to get the other.
+      return 2.0 * tkemin() * 0.1 * max(h0, depth);
    }
 
    __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const {
@@ -653,6 +671,17 @@ struct Turbulence<TurbulenceModel::GLS> {
 
       // The limit of the mixing length is the maximum eddy that the closest "wall" allows.
       return kappa*min_dist;
+   }
+
+
+   // Conversions between the generic length-scale variable Phi and the mixing length mxl.
+   __device__ __forceinline__ double phiFromMxl(double tke, double mxl) const {
+      return pow(cmiu0, rpub()) * pow(tke, rmub()) * pow(mxl, rnub());
+   }
+
+
+   __device__ __forceinline__ double mxlFromPhi(double tke, double phi) const {
+      return pow(phi * pow(cmiu0, -rpub()) * pow(tke, -rmub()), 1.0/rnub());
    }
 
 }

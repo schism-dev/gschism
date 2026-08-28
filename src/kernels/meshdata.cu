@@ -2567,35 +2567,39 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
    // Solves the following PDEs:
    //
-   //    dq2/dt = d/dz(nu_q2*dq2/dz) + 2*(Prod - diss + Buoy)
-   //    dxl/dt = d/dz(nu_xl*dxl/dz) + 2*(l/q2)*(cpsi1*Prod - cpsi2*Fw*diss + cpsi3*Buoy)
+   //    dK/dt = d/dz(nu_q2*dK/dz) + 2*(Prod - diss + Buoy)
+   //    dPhi/dt = d/dz(nu_xl*dPhi/dz) + 2*(l/q2)*(cpsi1*Prod - cpsi2*Fw*diss + cpsi3*Buoy)
    //
-   // Where q2 is defined as 2K (2*TKE) and xl is \Psi, the length scale (see documentation) and Fw is the wall proximity function.
+   // Where K is TKE and Phi is the GLS generic length-scale variable, and Fw is the wall proximity function.
+   // In the code we call them tke and phi. However, we don't store phi, we store mxl (mixing length).
+   // They are related by the equation: Phi = cpsi2*Fw*sqrt(K/cpsi3), but it can be confusing, so be careful.
    //
    // The equations are solved using a linear *vertical* FEM formulation.
    // Elements are linear functions defined on a layer (the interval between two vertical levels).
    // The shape functions are triangular functions composed of two linear functions over consecutive intervals.
    
    
-
+   // Get the turbulence model
+   Turbulence &turb = node->turb;
+     
    const int kb = node->kb;
    const int nqrows = nvrt - kb - 1; // Number of rows of the tridiagonal system
 
-   double alow_q[nvrt], alow_l[nvrt];
-   double bdia_q[nvrt], bdia_l[nvrt];
-   double cupp_q[nvrt], cupp_l[nvrt];
-   double rhs_q [nvrt], rhs_l [nvrt];
+   double alow_tke[nvrt], alow_phi[nvrt];
+   double bdia_tke[nvrt], bdia_phi[nvrt];
+   double cupp_tke[nvrt], cupp_phi[nvrt];
+   double rhs_tke [nvrt], rhs_phi [nvrt];
    
    // Initialize the tridiagonal system
    for (int kin = 0; kin < nqrows; kin++) {
-      alow_q[kin]=0.0;
-      bdia_q[kin]=0.0;
-      cupp_q[kin]=0.0;
-      rhs_q [kin]=0.0; 
-      alow_l[kin]=0.0;
-      bdia_l[kin]=0.0;
-      cupp_l[kin]=0.0;
-      rhs_l [kin]=0.0; 
+      alow_tke[kin]=0.0;
+      bdia_tke[kin]=0.0;
+      cupp_tke[kin]=0.0;
+      rhs_tke [kin]=0.0; 
+      alow_phi[kin]=0.0;
+      bdia_phi[kin]=0.0;
+      cupp_phi[kin]=0.0;
+      rhs_phi [kin]=0.0; 
    }
 
 #ifdef XXXXXX   
@@ -2604,15 +2608,15 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    if (node->isDry || node->is2D()) {
 
       // Minimum diffusivity at each node. In some cases, it is node-dependent (read from file).
-      const double diffmin = node->turb->diffmin;
+      const double diffmin = turb.diffmin;
 
       for (int k = kb; k < nvrt; k++) {
-         node->turb->q2[k]    = turb->q2min();
-         node->turb->xl[k]    = turb->psimin();
-         node->turb->dfv[k]   = diffmin;
-         node->turb->dfh[k]   = diffmin;
-         node->turb->nu_q2[k] = diffmin;
-         node->turb->nu_xl[k] = diffmin;
+         turb.tke[k]    = turb.tkemin();
+         turb.mxl[k]    = turb.mxlmin(node->depth);
+         node->dfv[k]    = diffmin;
+         node->dfh[k]    = diffmin;
+         turb.nu_tke[k] = diffmin;
+         turb.nu_phi[k] = diffmin;
       }
 
       return;
@@ -2632,8 +2636,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    const double sqU2 = norm2(node->u2[kb + 1]);
    const double modTau = length(node->tau);
 
-   // Get the turbulence model
-   const Turbulence &turb = node->turb;
+ 
 
    const double cpsi1 = turb.cpsi1();
    const double cpsi2 = turb.cpsi2();
@@ -2677,20 +2680,17 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
 
       // Turbulence quantities at half levels (cell [c]enter)
-      const double q2_1     = turb.q2[k];
-      const double q2_2     = turb.q2[k+1];
-      const double xl_1     = turb.xl[k];
-      const double xl_2     = turb.xl[k+1];
-      const double q2_c    = 0.5*(q2_2    + q2_1);
-      const double xl_c    = 0.5*(xl_2    + xl_1);
-      const double nu_q2_c = 0.5*(turb.nu_q2[k] + turb.nu_q2[k+1]);
-      const double nu_xl_c = 0.5*(turb.nu_xl[k] + turb.nu_xl[k+1]);
-      const double dfv_c   = 0.5*(turb.dfv[k]   + turb.dfv[k+1]);
-      const double dfh_c   = 0.5*(turb.dfh[k]   + turb.dfh[k+1]);
-
-      const double zmid = 0.5*(node->z[k] + node->z[k+1]);
-      const double Fwall = turb.Fwall(xl_c, eta2 - zmid, zmid + depth);
-
+      const double tke_1     = turb.tke[k];
+      const double tke_2     = turb.tke[k+1];
+      const double mxl_1     = turb.mxl[k];
+      const double mxl_2     = turb.mxl[k+1];
+      const double tke_c     = 0.5*(tke_1 + tke_2);
+      const double mxl_c     = 0.5*(mxl_1 + mxl_2);
+      const double nu_tke_c  = 0.5*(turb.nu_tke[k] + turb.nu_tke[k+1]);
+      const double nu_phi_c  = 0.5*(turb.nu_phi[k] + turb.nu_phi[k+1]);
+      const double dfv_c     = 0.5*(turb.dfv[k]    + turb.dfv[k+1]);
+      const double dfh_c     = 0.5*(turb.dfh[k]    + turb.dfh[k+1]);
+      const double Fwall_c   = turb.Fwall(node, k, mxl_c);
 
       // Integral of the shape function products:
       // integral of (phi_i*phi_i)dz = dz/3.0,   integral of (phi_i*phi_i+1)dz = dz/6.0
@@ -2700,46 +2700,47 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double d1d1 =  1.0/dz;
       const double d1d2 = -1.0/dz;
 
-      // Equation for q2
+      // Production/dissipation related terms
+      const double prod = dfv_c*M2 + veg_cfk*vegProd;
+      const double buoy = dfh_c*N2;
+      const double diss = pow<3>(cmiu0)*sqrt(tke_c)/mxl_c*dz/6.0; //diss/k
+
+      // Equation for tke
       // ---------------
 
       // First row (of the two rows that the interval contributes to)
-      bdia_q[k1] += p1p1 + dt*d1p1*nu_q2_c;
-      cupp_q[k1] += p1p2 + dt*d1p2*nu_q2_c;
-      rhs_q [k1] += p1p1*q2_1 + p1p2*q2_2;
+      bdia_tke[k1] += p1p1 + dt*d1d1*nu_tke_c;
+      cupp_tke[k1] += p1p2 + dt*d1d2*nu_tke_c;
+      rhs_tke [k1] += p1p1*tke_1 + p1p2*tke_2;
 
-      // Production/dissipation terms
-      const double prod = dfv_c*M2 + veg_cfk*vegProd;
-      const double buoy = dfh_c*N2;
-      const double diss = pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
 
       if(prod + buoy >= 0.0) { // Net production
-         rhs_q[k1] += dt*dz/2.0*(prod + buoy);
+         rhs_tke[k1] += dt*dz/2.0*(prod + buoy);
       } else { // Net dissipation
-         const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
-         bdia_q[k1] -= 2.0*tmp;
-         cupp_q[k1] -= tmp;
+         const double tmp = dt*dz/6.0*(prod + buoy)/tke_c;
+         bdia_tke[k1] -= 2.0*tmp;
+         cupp_tke[k1] -= tmp;
       }      
       
-      bdia_q[k1] += 2.0*dt*diss;
-      cupp_q[k1] += dt*diss;
+      bdia_tke[k1] += 2.0*dt*diss;
+      cupp_tke[k1] += dt*diss;
       
   
       // Second row (of the two rows that the interval contributes to)
-      bdia_q[k2] += p1p1 + dt*d1p1*nu_q2_c;
-      alow_q[k2] += p1p2 + dt*d1p2*nu_q2_c;
-      rhs_q [k2] += p1p1*q2_2 + p1p2*q2_1;
+      bdia_tke[k2] += p1p1 + dt*d1d1*nu_tke_c;
+      alow_tke[k2] += p1p2 + dt*d1d2*nu_tke_c;
+      rhs_tke [k2] += p1p1*tke_2 + p1p2*tke_1;
 
       if (prod + buoy >= 0.0) { // Net production
-         rhs_q[k2] += dt*dz/2.0*(prod+buoy);
+         rhs_tke[k2] += dt*dz/2.0*(prod+buoy);
       } else { // Net dissipation
-         const double tmp = dt*dz/6.0*(prod + buoy)/q2_c;
-         bdia_q[k2] -= 2.0*tmp;
-         alow_q[k2] -= tmp;
+         const double tmp = dt*dz/6.0*(prod + buoy)/tke_c;
+         bdia_tke[k2] -= 2.0*tmp;
+         alow_tke[k2] -= tmp;
       }
       
-      bdia_q[k2] += 2.0*dt*diss;
-      alow_q[k2] += dt*diss;
+      bdia_tke[k2] += 2.0*dt*diss;
+      alow_tke[k2] += dt*diss;
 
 
       // Equation for xl
@@ -2748,47 +2749,48 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double rpub = turb.rpub();
       const double rmub = turb.rmub();
       const double rnub = turb.rnub();
-      const double psi_n1 = pow(cmiu0, rpub)*pow(q2_1, rmub)*pow(xl_1, rnub); // psi^n_{j,k}
-      const double psi_n2 = pow(cmiu0, rpub)*pow(q2_2, rmub)*pow(xl_2, rnub); // psi^n_{j,k+1}
-      const double psi_c = 0.5*(psi_n1 + psi_n2);
+      const double psi_1 = turb.phiFromMxl(tke_1, mxl_1); 
+      const double psi_2 = turb.phiFromMxl(tke_2, mxl_2); 
+      const double psi_c = 0.5*(psi_1 + psi_2);
 
-      bdia_l[k1] += p1p1 + dt*d1p1*nu_xl_c;
-      cupp_l[k1] += p1p2 + dt*d1p2*nu_xl_c;
-      rhs_l [k1] += p1p1*psi_n1 + p1p2*psi_n2;
+      // Production/dissipation related terms
+      const double prod_phi = cpsi1*dfv_c*M2 + veg_cfpsi*vegProd;
+      const double buoy_phi = cpsi3*dfh_c*N2;
+      const double diss_phi = cpsi2*Fwall_c*pow<3>(cmiu0)*sqrt(tke_c)/mxl_c*dz/6.0; //diss/k
+
+      bdia_phi[k1] += p1p1 + dt*d1d1*nu_phi_c;
+      cupp_phi[k1] += p1p2 + dt*d1d2*nu_phi_c;
+      rhs_phi [k1] += p1p1*psi_1 + p1p2*psi_2;
+
+      if (prod_phi + buoy_phi >= 0.0) { // Net production
+         rhs_phi[k1] += dt*dz/2.0*(prod_phi + buoy_phi)*psi_c/tke_c;
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod_phi + buoy_phi)/tke_c;
+         bdia_phi[k1] -= 2.0*tmp;
+         cupp_phi[k1] -= tmp;
+      }
 
       // Production/dissipation terms
-      const double prod_xl = cpsi1*dfv_c*M2 + veg_cfpsi*vegProd;
-      const double buoy_xl = cpsi3*dfh_c*N2;
-      const double diss_xl = cpsi2*Fwall*pow<3>(cmiu0)*sqrt(q2_c)/xl_c*dz/6.0; //diss/k
+      bdia_phi[k1] += 2.0*dt*diss_phi;
+      cupp_phi[k1] += dt*diss_phi;
  
 
-      if(prod_xl + buoy_xl >= 0.0) { // Net production
-         rhs_l[k1] += dt*dz/2.0*(prod_xl + buoy_xl)*psi_c/q2_c;
-      } else { // Net dissipation
-         const double tmp = dt*dz/6.0*(prod_xl + buoy_xl)/q2_c;
-         bdia_l[k1] -= 2.0*tmp;
-         cupp_l[k1] -= tmp;
-      }
-                  
-      bdia_l[k1] += 2.0*dt*diss_xl;
-      cupp_l[k1] += dt*diss_xl;
-
       // row k2 (upper)
-      bdia_l[k2] += p1p1 + dt*d1p1*nu_xl_c;
-      alow_l[k2] += p1p2 + dt*d1p2*nu_xl_c;
-      rhs_l [k2] += p1p1*psi_n2 + p1p2*psi_n1;
+      bdia_phi[k2] += p1p1 + dt*d1d1*nu_phi_c;
+      alow_phi[k2] += p1p2 + dt*d1d2*nu_phi_c;
+      rhs_phi [k2] += p1p1*psi_2 + p1p2*psi_1;
 
-      if (prod_xl + buoy_xl >= 0.0) { // Net production
-         rhs_l[k2] += dt*dz/2.0*(prod_xl + buoy_xl)*psi_c/q2_c;
+      if (prod_phi + buoy_phi >= 0.0) { // Net production
+         rhs_phi[k2] += dt*dz/2.0*(prod_phi + buoy_phi)*psi_c/tke_c;
       } else { // Net dissipation
-         const double tmp = dt*dz/6.0*(prod_xl + buoy_xl)/q2_c;
-         bdia_l[k2] -= 2.0*tmp;
-         alow_l[k2] -= tmp;
+         const double tmp = dt*dz/6.0*(prod_phi + buoy_phi)/tke_c;
+         bdia_phi[k2] -= 2.0*tmp;
+         alow_phi[k2] -= tmp;
       }
 
       // Production/dissipation terms
-      bdia_l[k2] += 2.0*dt*diss_xl;
-      alow_l[k2] += dt*diss_xl;
+      bdia_phi[k2] += 2.0*dt*diss_phi;
+      alow_phi[k2] += dt*diss_phi;
 
    }
 
