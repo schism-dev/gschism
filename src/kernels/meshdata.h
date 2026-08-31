@@ -534,7 +534,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
    
-   __device__ __forceinline__ constexpr double rpub() const {
+   __device__ __forceinline__ constexpr double rpub(void) const {
       if      constexpr (turbSubmodel == MellorYamada)   return  0.0;
       else if constexpr (turbSubmodel == KL)             return  0.0;
       else if constexpr (turbSubmodel == KE)             return  3.0;
@@ -544,7 +544,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ constexpr double rmub() const {
+   __device__ __forceinline__ constexpr double rmub(void) const {
       if      constexpr (turbSubmodel == MellorYamada)   return 1.0;
       else if constexpr (turbSubmodel == KL)             return 1.0;
       else if constexpr (turbSubmodel == KE)             return 1.5;
@@ -554,7 +554,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ constexpr double rnub() const {
+   __device__ __forceinline__ constexpr double rnub(void) const {
       if      constexpr (turbSubmodel == MellorYamada)   return  1.0;
       else if constexpr (turbSubmodel == KL)             return  1.0;
       else if constexpr (turbSubmodel == KE)             return -1.0;
@@ -564,7 +564,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ constexpr double schk() const {
+   __device__ __forceinline__ constexpr double schk(void) const {
       if      constexpr (turbSubmodel == KL)             return 2.44;
       else if constexpr (turbSubmodel == KE)             return 1.0;
       else if constexpr (turbSubmodel == KW)             return 2.0;
@@ -573,7 +573,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ constexpr double schpsi() const {
+   __device__ __forceinline__ constexpr double schpsi(void) const {
       if      constexpr (turbSubmodel == KL)             return 2.44;
       else if constexpr (turbSubmodel == KE)             return 1.3;
       else if constexpr (turbSubmodel == KW)             return 2.0;
@@ -582,7 +582,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ constexpr double tkemin() const {
+   __device__ __forceinline__ constexpr double tkemin(void) const {
       if constexpr (turbSubmodel == MellorYamada || turbSubmodel == KL)
          return 5.0e-6;
       else
@@ -590,18 +590,20 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ constexpr double psimin() const {
+   __device__ __forceinline__ constexpr double psimin(void) const {
       if constexpr (turbSubmodel == MellorYamada || turbSubmodel == TurbulenceSubmodel::KL)
          return 1.0e-8;
       else
          return 1.0e-12; // Warner et al., OM 2005
    }
 
-   __device__ __forceinline__ double mxlmin(double depth) const {
-      // Fortran xlmin2(i) = 2*q2min*0.1*max(h0,dp(i)). Mixing-length floor.
+
+   __device__ __forceinline__ double mxlmin(Node *node) const {
+      // Minimum mixing length for levels below the surface.
       // Independent of psimin(); do not invert one to get the other.
-      return 2.0 * tkemin() * 0.1 * max(h0, depth);
+      return 2.0 * tkemin() * 0.1 * max(h0, node->depth);
    }
+
 
    __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const {
 
@@ -651,7 +653,64 @@ struct Turbulence<TurbulenceModel::GLS> {
          return 0.0;
       }
 
-   };
+   }
+
+
+   __device__ void computeDiffusivities(Node *node) {
+      // Eddy viscosity/diffusivity from the algebraic stability functions (stability_model).
+      // Writes node->dfv, node->dfh (diffusivities for momentum/tracers) and nu_tke, nu_phi (diffusivities for TKE/phi).
+
+      const int kb = node->kb;
+
+      for (int k = kb; k < nvrt; k++) {
+         const double tke = node->tke[k];
+         const double mxl = node->mxl[k];
+         const double u = sqrt(tke);  // Characteristic velocity
+         const double lu = mxl*u;     // Characteristic diffusivity 
+
+         // vertical gradient of density (homogeneous Neumann boundary conditions at the surface and bottom).
+         double drho_dz = 0.0;
+         if (k > kb && k < ivrt) {
+            drho_dz = (node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
+         }
+
+         const double N2 = grav/node->rho[k]*drho_dz; // Brunt-Väisälä frequency
+
+         // Tsinghua group       
+         const double Gh = clamp(0.5*mxl*mxl*N2/tke, -0.28, 0.0233);
+
+         double sh, sm, cmiu, cmiup, cmiu1, cmiu2;
+         if constexpr (stability_model == StabilityModel::Galperin) {
+            sh = 0.49393/(1.0-34.676*Gh);
+            sm = (0.39327-3.0858*Gh)/(1.0-34.676*Gh)/(1.0-6.1272*Gh);
+            cmiu  = sqrt(2.0)*sm;
+            cmiup = sqrt(2.0)*sh;
+            cmiu1 = sqrt(2.0)*0.2;
+            cmiu2 = sqrt(2.0)*0.2;
+
+         } else if constexpr (stability_model == 'KanthaClayson') {  // Kantha and Clayson
+            // Warner's paper has problem
+            //  Ghp=(Gh-(Gh-0.02)**2)/(Gh+0.0233-0.04) !smoothing
+            Ghp = Gh;
+            sh = 0.4939/(1.0 - 30.19*Ghp);
+            sm = (0.392 + 17.07*sh*Ghp)/(1.0-6.127*Ghp);
+            cmiu  = sqrt(2.0)*sm;
+            cmiup = sqrt(2.0)*sh;
+            cmiu1 = cmiu/schk;
+            cmiu2 = cmiu/schpsi;
+
+         } else {
+            assert(false && "Unknown ASM");
+
+         }
+
+         node->dfv[k]  = cmiu  * lu;
+         node->dfh[k]  = cmiup * lu;
+         nu_tke[k]     = cmiu1 * lu;
+         nu_phi[k]     = cmiu2 * lu;
+      }
+   }
+
 
    __device__ __forceinline__ double maxMixingLength(Node *node, int k) const {
    // Compute upper bound for the turbulent mixing length based on the distance to the closest "wall" (either surface or bottom).

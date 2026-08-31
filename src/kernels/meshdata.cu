@@ -2602,7 +2602,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       rhs_phi [kin]=0.0; 
    }
 
-#ifdef XXXXXX   
+
 
    // For dry or 2D nodes, vertical viscosity and diffusivity are set to their minimum values.
    if (node->isDry || node->is2D()) {
@@ -2626,7 +2626,8 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    
    // After here we know that the node is wet and has at least 2 layers.
 
-
+   double solution[nvrt], gam[nvrt];
+   
    const double eta2       = node->eta2;
    const double depth      = node->depth;
    const double Cd         = node->Cd; // Drag coefficient
@@ -2795,98 +2796,86 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    }
 
    // BC
+   bdia_phi[0]          += kappa * turb.rnub() * dt * turb.nu_phi[kb + 1] / turb.mxl[kb + 1];
+   bdia_phi[nqrows - 1] += kappa * turb.rnub() * dt * turb.nu_phi[ivrt]   / turb.mxl[ivrt];
 
-   bdia_l[ivrt] = kappa*rnub*dt*turb.nu_xl[ivrt]/turb.xl[ivrt];
 
-
-   // Solves for q2 at new level
-   tridag_sch(nvrt,1,nqrows,1,alow_q,bdia_q,cupp_q,rhs_q,soln2,gam)
+   // Solves for tke.
+   tridag_sch<1>(nqrows, alow_tke, bdia_tke, cupp_tke, rhs_tke, solution, gam);
 
 
    // B.C. (computed using values from previous time except wind)
+   const double tkesrf = max(0.5*c0*modTau,  turb.tkemin()); // Eq. (10) of Zhang & Baptista (2008)
+   const double tkebot = max(0.5*c0*Cd*sqU2, turb.tkemin());
 
-   const double q2srf = max(0.5*c0*modTau,  q2min); // Eq. (10) of Zhang & Baptista (2008)
-   const double q2bot = max(0.5*c0*Cd*sqU2, q2min);
 
-
-   q2tmp(nvrt) = q2srf
-   // Extrapolate to bottom mainly for diffusivities
-   q2tmp(kbp(j):kbp(j)+1)=q2bot
-   for (int k = kb + 2; k < ivrt; k++) {
-      // Internal layers only
-      const int kin = k - kb; // row #
-
-      q2tmp(k)=max(soln2(kin),q2min)
-
+   // Update TKE.
+   turb.tke[kb]     = tkebot;
+   turb.tke[kb + 1] = tkebot;
+   turb.tke[ivrt]   = tkesrf;
+   for (int k = kb + 2, kin = 1; k < ivrt; k++, kin++) {
+      turb.tke[k] = max(solution[kin], turb.tkemin());
    }
+
 
 
  
-   // Solves for q2.
-   tridag_sch(nvrt,1,nqrows,1,alow,bdia,cupp,rhs_l,soln2,gam)
+   // Solves for phi.
+   tridag_sch<1>(nqrows, alow_phi, bdia_phi, cupp_phi, rhs_phi, solution, gam);
 
 
    // B.C. for the mixing lengths: Bottom and surface (T. Guérin)
-   const double xlbot = max(xlmin2(j),min(2.5, xlsc0*node->Dz(kb + 1))*kappa) //"2.5" to prevent over-mixing
-   const double xlsrf = max(xlmin2, xlsc0*node->Dz(ivrt)*kappa)
+   const double mxlbot = max(turb.mxlmin(node), kappa*min(2.5, xlsc0*node->Dz(kb + 1))) //"2.5" to prevent over-mixing
+   const double mxlsrf = max(turb.mxlmin(node), xlsc0*node->Dz(ivrt)*kappa)
 
-   for (int k = kb + 1, kin = 0; k < nvrt; k++, kin++) {
+   turb.mxl[0]    = mxlbot;
+   turb.mxl[ivrt] = mxlsrf;
+   for (int k = kb + 1, kin = 1; k < ivrt; k++, kin++) {
+      turb.mxl[k] = max(soln2(kin), turb.mxlmin(node));
 
-      const double q2l = max(soln2(kin), psimin)
+      const double N2 = (grav/rho_c)*drho_dz;      // Brunt-Väisälä frequency 
 
-      if (k==ivrt) {
-         xltmp(k) = xlsrf;
-      } else if (k== kb+1) {
-         xltmp(k) = xlbot;
-      } else {
-         xltmp(k) = (q2l*cmiu0**(-rpub)*q2tmp(k)**(-rmub))**(1.d0/rnub)
-      }
+      // Galperin's clipping
+      if (N2 < 0.0) {
+         const double upper = sqrt(-0.56*turb.tke[k]/N2);
+         turb.mxl[k] = min(turb.mxl[k], upper);
+      }   
 
-      // Galperin's clipping 
-      if (rzbt(k)<0.0) {
-         const double upper = sqrt(-0.56*q2tmp(k)/rzbt(k));
-         xltmp(k) = min(xltmp(k),upper);
-      }
 
-      // Max. length based on dissipation; xlmin2 prevails
-      const double xl_max = pow(cmiu0*sqrt(q2tmp(k)), 3.0)/eps_min;
-      xltmp(k) = max(xlmin2(j), min(xl_max, xltmp(k)));
 
-      //	  Impose max. depth limit
-      xltmp(k) = max(xlmin2(j), min(xltmp(k), xlmax(k)));
+      // Max. mixing length based on dissipation; mxlmin prevails
+      const double mxlmax_dissip = pow<3>(cmiu0*sqrt(turb.tke[k]))/turb.eps_min;
 
-      q2(k,j)=q2tmp(k)
-      xl(k,j)=xltmp(k)
+      // Combined max. mixing length including geometric limit
+      const double mxlmax = min(turb.maxMixingLength(node, k), mxlmax_dissip);
 
-      assert(q2(k,j) >= 0.0 && "Negative q2");
+      // Clamp the mixing length between the minimum and maximum values
+      turb.mxl[k] = clamp(turb.mxl[k], turb.mxlmin(node), mxlmax);
+
+      assert(turb.tke[k] >= 0 && "Negative TKE");
+
+
    } // for k
 
+
    // Extrapolate q2, xl to bottom mainly for diffusivities
-   q2(kbp(j),j)=q2(kbp(j)+1,j)
-   xl(kbp(j),j)=xl(kbp(j)+1,j)
+   turb.tke[kb] = turb.tke[kb + 1];
+   turb.mxl[kb] = turb.mxl[kb + 1];
+
 
    // Compute vertical diffusivities at new time
-   for (int k = kb; k < nvrt; k++) {
-         call asm(j,k,vd,td,qd1,qd2)
-         dfv(k,j)=min(diffmax(j),max(diffmin(j),vd))
-         dfh(k,j)=min(diffmax(j),max(diffmin(j),td))
-         dfq1(k,j)=min(diffmax(j),max(diffmin(j),qd1))
-         dfq2(k,j)=min(diffmax(j),max(diffmin(j),qd2))
+   node->computeDiffusivities();
 
-
-   }
-
-   // Extend
+   // make all the variables uniform below the bottom level kb
    for (int k = 0; k < kb; k++) {
-      q2(k,j) = q2(kb,j);
-      xl(k,j) = xl(kb,j);
-      dfv(k,j) = dfv(kb,j);
-      dfh(k,j) = dfh(kb,j);
-      dfq1(k,j) = dfq1(kb,j);
-      dfq2(k,j) = dfq2(kb,j);
+      node->tke[k] = node->tke[kb];
+      node->mxl[k] = node->mxl[kb];
+      node->dfv[k] = node->dfv[kb];
+      node->dfh[k] = node->dfh[kb];
+      node->nu_tke[k] = node->nu_tke[kb];
+      node->nu_phi[k] = node->nu_phi[kb];
    }
 
-#endif
       
 
 }
