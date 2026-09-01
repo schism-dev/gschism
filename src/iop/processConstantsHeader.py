@@ -108,6 +108,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__DZB_MIN__': (namelist.opt.dzb_min, 'namelist.opt'),
         '__H0__': (namelist.opt.h0, 'namelist.opt'),
         '__ITUR__': (namelist.opt.itur, 'namelist.opt'),
+        '__ICOMPUTE_CPSI3__': (namelist.opt.icompute_cpsi3, 'namelist.opt'),
         '__TURB_SUBMODEL__': (turbSubmodelVal, 'namelist.opt.mid'),
         '__STABILITY_MODEL__': (stabilityModelVal, 'namelist.opt.stab'),
         '__ISLIP__': (namelist.opt.islip, 'namelist.opt'),

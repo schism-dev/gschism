@@ -140,6 +140,7 @@ def readParam(pathNamelist):
         'mid': 'KL',
         'stab': 'KC',
         'xlsc0': 0.1,
+        'icompute_cpsi3': 0,
 
         # Time and initialization
         'ibcc_mean': 0,

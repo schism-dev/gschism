@@ -16,6 +16,7 @@ constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
 
 constexpr double kappa = 0.4; // von Karman constant
+constexpr double cmiu0 = sqrt(0.3);
 
 // eta coordinates of the nodes (idxNode = 0,1,2,3)
 __device__ __forceinline__ double eta_n(int idxNode) {
@@ -577,18 +578,9 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
    
-   __device__ __forceinline__ double N2_c(int k) const {
-      // Brunt-Väisälä frequency at the center of the layer between levels k-1 and k.
-      const double rho_c = 0.5*(rho[k] + rho[k-1]);
-      return (grav/rho_c)*(rho[k] - rho[k-1])/Dz(k);
-   }
+   __device__ __forceinline__ double N2_c(Node *node, int k) const;
 
-   
-   __device__ __forceinline__ double N2(int k) const {
-      // Brunt-Väisälä frequency at level k.
-      if (k <= kb || k >= ivrt) return 0.0;
-      return (grav/rho[k])*(rho[k+1] - rho[k-1])/(z[k+1] - z[k-1]);
-   }
+   __device__ __forceinline__ double N2(Node *node, int k) const;
 
 
    __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const;

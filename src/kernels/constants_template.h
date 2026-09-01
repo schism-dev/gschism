@@ -60,6 +60,7 @@ constexpr int ihydraulics = __IHYDRAULICS__; // Option of including hydraulics
 constexpr int nhtblocks = 0;                 // Number of hydraulic structures (zero for the moment)
 constexpr int ibc = __IBC__;                 // Option to include baroclinic term (0 means yes)
 constexpr int itur = __ITUR__;               // Turbulence closure model
+constexpr int icompute_cpsi3 = __ICOMPUTE_CPSI3__;  // 0: use tabulated cpsi3; !=0: compute (not implemented)
 constexpr int islip = __ISLIP__;             // Option to include slip horizontal boundary conditions
 constexpr int iupwind_mom = __IUPWIND_MOM__; // Option on how to include upwind momentum advection
 constexpr int ihorcon = __IHORCON__;         // Option to include horizontal viscosity

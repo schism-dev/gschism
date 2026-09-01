@@ -2548,6 +2548,20 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 
 
 
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::N2_c(Node *node, int k) const {
+   // Brunt-Väisälä frequency at the center of the layer between levels k-1 and k.
+   const double rho_c = 0.5*(node->rho[k] + node->rho[k-1]);
+   return (grav/rho_c)*(node->rho[k] - node->rho[k-1])/node->Dz(k);
+}
+
+
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::N2(Node *node, int k) const {
+   // Brunt-Väisälä frequency at level k.
+   if (k <= node->kb || k >= ivrt) return 0.0;
+   return (grav/node->rho[k])*(node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
+}
+
+
 __device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::Fwall(Node *node, int k, double mxl_c) const {
 
    
@@ -2840,7 +2854,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       
       const double M2 = norm2(du_dz);              // Shear production term
 
-      const double N2 = turb.N2_c(k);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
+      const double N2 = turb.N2_c(node, k);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
 
       const double vegProd = turb.vegTurbProduction(node, k + 1);
 
@@ -3000,7 +3014,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    for (int k = kb + 2, kin = 1; k < ivrt; k++, kin++) {
       turb.mxl[k] = turb.mxlFromPhi(turb.tke[k], max(solution[kin], turb.psimin()))
 
-      const double N2 = turb.N2_c(k);      // Brunt-Väisälä frequency 
+      const double N2 = turb.N2_c(node, k);      // Brunt-Väisälä frequency 
 
       // Galperin's clipping
       if (N2 < 0.0) {
