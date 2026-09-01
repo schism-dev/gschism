@@ -416,6 +416,15 @@ struct Tracers {
     double tracer[N_TRACERS];
 };
 
+
+// Forward declarations
+struct Side;
+struct Element;
+struct Node;
+struct Mesh;
+struct NodeBoundary;
+
+
 // ----------------------------- Turbulence -----------------------------
 
 
@@ -945,12 +954,7 @@ struct Frame<2> {
 };
 
 
-// Forward declarations
-struct Side;
-struct Element;
-struct Node;
-struct Mesh;
-struct NodeBoundary;
+
 
 void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned int color = 0x0000FFu, char marker = 'o', int width = 1, int dashLen = 0, int label = -1);
 
