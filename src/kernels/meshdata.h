@@ -16,7 +16,7 @@ constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
 
 constexpr double kappa = 0.4; // von Karman constant
-constexpr double cmiu0 = sqrt(0.3);
+constexpr double cmiu0 = 0.5477225575; // sqrt(0.3);
 
 // eta coordinates of the nodes (idxNode = 0,1,2,3)
 __device__ __forceinline__ double eta_n(int idxNode) {
@@ -605,7 +605,7 @@ struct Turbulence<TurbulenceModel::GLS> {
 
 // ------------------------------LocalSigma------------------------------
 
-template<int IVCOR>
+template<int ivcor>
 struct LocalSigma {};   
 
 template<>
