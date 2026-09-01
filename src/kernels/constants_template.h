@@ -11,6 +11,36 @@ constexpr int N_TRACERS = __N_TRACERS__;
 constexpr int nGPUs = __N_GPUS__; // nGPUs is always equal to the number of partitions.
 constexpr int nPartitions = nGPUs;
 
+// Turbulence model and submodel
+enum class TurbulenceModel : int {
+   VertVarying  = -1,
+   HorzVarying  = -2,
+   Constant     =  0,
+   Pacanowski   =  2,
+   GLS          =  3,
+   GOTM         =  4,
+   SedimentMix  =  5,
+};
+
+enum class TurbulenceSubmodel : int {
+   MellorYamada   = 0,
+   KL             = 1,
+   KE             = 2,
+   KW             = 3,
+   UmlaufBurchard = 4,
+};
+
+enum class StabilityModel : int {
+   Galperin      = 0,   // stab = 'GA'
+   KanthaClayson = 1,   // stab = 'KC'
+};
+
+
+constexpr TurbulenceModel turbulenceModel = static_cast<TurbulenceModel>(itur);
+constexpr TurbulenceSubmodel turbSubmodel = static_cast<TurbulenceSubmodel>(__TURB_SUBMODEL__);
+constexpr StabilityModel stabilityModel   = static_cast<StabilityModel>(__STABILITY_MODEL__);
+
+
 // Nodes owned by each partition
 constexpr int numNodesPerPartition[nPartitions] = {__NUM_NODES_PER_PARTITION__};
 // Cumulative counts: offset[0]=numNodesPerPartition[0], offset[p]=offset[p-1]+numNodesPerPartition[p]

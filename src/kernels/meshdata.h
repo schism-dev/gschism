@@ -714,7 +714,7 @@ struct Turbulence<TurbulenceModel::GLS> {
          const double Gh = clamp(0.5*mxl*mxl*N2/tke, -0.28, 0.0233);
 
          double sh, sm, cmiu, cmiup, cmiu1, cmiu2;
-         if constexpr (stability_model == StabilityModel::Galperin) {
+         if constexpr (stability_model == Galperin) {
             sh = 0.49393/(1.0-34.676*Gh);
             sm = (0.39327-3.0858*Gh)/(1.0-34.676*Gh)/(1.0-6.1272*Gh);
             cmiu  = sqrt(2.0)*sm;
@@ -722,7 +722,7 @@ struct Turbulence<TurbulenceModel::GLS> {
             cmiu1 = sqrt(2.0)*0.2;
             cmiu2 = sqrt(2.0)*0.2;
 
-         } else if constexpr (stability_model == 'KanthaClayson') {  // Kantha and Clayson
+         } else if constexpr (stability_model == KanthaClayson) {  // Kantha and Clayson
             // Warner's paper has problem
             //  Ghp=(Gh-(Gh-0.02)**2)/(Gh+0.0233-0.04) !smoothing
             Ghp = Gh;

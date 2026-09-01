@@ -40,6 +40,16 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
     else:
         raise ValueError(f"Invalid ics = {namelist.opt.ics}, not in [1, 2]")
 
+    # Turbulence submodel and stability model
+    turbSubmodelMap = {'MY': 0, 'KL': 1, 'KE': 2, 'KW': 3, 'UB': 4}
+    stabilityModelMap = {'GA': 0, 'KC': 1}
+    mid  = namelist.opt.mid.strip().upper()
+    stab = namelist.opt.stab.strip().upper()
+    if mid not in turbSubmodelMap:
+        raise ValueError(f"Invalid mid = {namelist.opt.mid!r}, expected one of {list(turbSubmodelMap)}")
+    if stab not in stabilityModelMap:
+        raise ValueError(f"Invalid stab = {namelist.opt.stab!r}, expected one of {list(stabilityModelMap)}")    
+
     nGPUs = len(numPartNodes)  # or deviceCount
     offsets = [0]
     for n in numPartNodes[:-1]:
