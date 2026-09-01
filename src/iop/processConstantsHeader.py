@@ -56,6 +56,8 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
             raise ValueError(f"Invalid stab = {namelist.opt.stab!r}, expected one of {list(stabilityModelMap)}")
         stabilityModelVal = stabilityModelMap[stab]
 
+    
+
     nGPUs = len(numPartNodes)  # or deviceCount
     offsets = [0]
     for n in numPartNodes[:-1]:
@@ -106,6 +108,8 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__DZB_MIN__': (namelist.opt.dzb_min, 'namelist.opt'),
         '__H0__': (namelist.opt.h0, 'namelist.opt'),
         '__ITUR__': (namelist.opt.itur, 'namelist.opt'),
+        '__TURB_SUBMODEL__': (turbSubmodelVal, 'namelist.opt.mid'),
+        '__STABILITY_MODEL__': (stabilityModelVal, 'namelist.opt.stab'),
         '__ISLIP__': (namelist.opt.islip, 'namelist.opt'),
         '__IUPWIND_MOM__': (namelist.opt.iupwind_mom, 'namelist.opt'),
         '__IHORCON__': (namelist.opt.ihorcon, 'namelist.opt'),
