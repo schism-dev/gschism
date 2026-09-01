@@ -2608,13 +2608,13 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    if (node->isDry || node->is2D()) {
 
       // Minimum diffusivity at each node. In some cases, it is node-dependent (read from file).
-      const double diffmin = turb.diffmin;
+      const double diffmin = turb.diffmin();
 
-      for (int k = kb; k < nvrt; k++) {
+      for (int k = 0; k < nvrt; k++) {
          turb.tke[k]    = turb.tkemin();
          turb.mxl[k]    = turb.mxlmin(node->depth);
-         node->dfv[k]    = diffmin;
-         node->dfh[k]    = diffmin;
+         node->dfv[k]   = diffmin;
+         node->dfh[k]   = diffmin;
          turb.nu_tke[k] = diffmin;
          turb.nu_phi[k] = diffmin;
       }
@@ -2622,7 +2622,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       return;
    }
 
-   assert(node->rho >= -98.0 && "Impossible: dry 2"); /// XXX JMG: Not sure what this message means.
+   assert(node->rho[0] >= -98.0 && "Impossible: dry 2"); /// XXX JMG: Do I need to fill these centinel values?
    
    // After here we know that the node is wet and has at least 2 layers.
 
@@ -2673,7 +2673,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       
       const double M2 = norm2(du_dz);              // Shear production term
 
-      const double N2 = (grav/rho_c)*drho_dz;      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
+      const double N2 = turb.N2_c(k);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
 
       const double vegProd = turb.vegTurbProduction(node, k + 1);
 
@@ -2828,12 +2828,12 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    const double mxlbot = max(turb.mxlmin(node), kappa*min(2.5, xlsc0*node->Dz(kb + 1))) //"2.5" to prevent over-mixing
    const double mxlsrf = max(turb.mxlmin(node), xlsc0*node->Dz(ivrt)*kappa)
 
-   turb.mxl[0]    = mxlbot;
+   turb.mxl[kb+1]    = mxlbot;
    turb.mxl[ivrt] = mxlsrf;
-   for (int k = kb + 1, kin = 1; k < ivrt; k++, kin++) {
-      turb.mxl[k] = max(soln2(kin), turb.mxlmin(node));
+   for (int k = kb + 2, kin = 1; k < ivrt; k++, kin++) {
+      turb.mxl[k] = turb.mxlFromPhi(turb.tke[k], max(solution[kin], turb.psimin()))
 
-      const double N2 = (grav/rho_c)*drho_dz;      // Brunt-Väisälä frequency 
+      const double N2 = turb.N2_c(k);      // Brunt-Väisälä frequency 
 
       // Galperin's clipping
       if (N2 < 0.0) {

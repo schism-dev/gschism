@@ -146,11 +146,13 @@ __device__ __forceinline__ double pow<3>(double x) {
 
 
 __device__ __forceinline__ double clamp(double x, double minval, double maxval) {
-    return fmin(fmax(x, minval), maxval);
+   assert(minval <= maxval && "clamp: minval > maxval");
+   return fmin(fmax(x, minval), maxval);
 }
 
 __device__ __forceinline__ int clamp(int x, int minval, int maxval) {
-    return max(minval, min(x, maxval));
+   assert(minval <= maxval && "clamp: minval > maxval");
+   return max(minval, min(x, maxval));
 }
 
 
@@ -604,6 +606,29 @@ struct Turbulence<TurbulenceModel::GLS> {
       return 2.0 * tkemin() * 0.1 * max(h0, node->depth);
    }
 
+   __device__ __forceinline__ double diffmin(void) const {
+      // XXXXXXXX: This is a placeholder.
+      return 1.0e-6;
+   }
+
+   __device__ __forceinline__ double diffmax(void) const {
+      return 1.0;
+   }
+
+   
+   __device__ __forceinline__ double N2_c(int k) const {
+      // Brunt-Väisälä frequency at the center of the layer between levels k-1 and k.
+      const double rho_c = 0.5*(rho[k] + rho[k-1]);
+      return (grav/rho_c)*(rho[k] - rho[k-1])/Dz(k);
+   }
+
+   
+   __device__ __forceinline__ double N2(int k) const {
+      // Brunt-Väisälä frequency at level k.
+      if (k <= kb || k >= ivrt) return 0.0;
+      return (grav/rho[k])*(rho[k+1] - rho[k-1])/(z[k+1] - z[k-1]);
+   }
+
 
    __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const {
 
@@ -674,7 +699,7 @@ struct Turbulence<TurbulenceModel::GLS> {
             drho_dz = (node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
          }
 
-         const double N2 = grav/node->rho[k]*drho_dz; // Brunt-Väisälä frequency
+         const double N2 = node->N2(k); // Brunt-Väisälä frequency
 
          // Tsinghua group       
          const double Gh = clamp(0.5*mxl*mxl*N2/tke, -0.28, 0.0233);
@@ -704,10 +729,12 @@ struct Turbulence<TurbulenceModel::GLS> {
 
          }
 
-         node->dfv[k]  = cmiu  * lu;
-         node->dfh[k]  = cmiup * lu;
-         nu_tke[k]     = cmiu1 * lu;
-         nu_phi[k]     = cmiu2 * lu;
+         const double diffmin = node->diffmin();
+         const double diffmax = node->diffmax();
+         node->dfv[k] = clamp(cmiu  * lu, diffmin, diffmax);
+         node->dfh[k] = clamp(cmiup * lu, diffmin, diffmax);
+         nu_tke[k]    = clamp(cmiu1 * lu, diffmin, diffmax);
+         nu_phi[k]    = clamp(cmiu2 * lu, diffmin, diffmax);
       }
    }
 
@@ -725,7 +752,7 @@ struct Turbulence<TurbulenceModel::GLS> {
 
       // Distance to the closest "wall" (either surface or bottom).  
       // In the top layer, it is the size of the layer.
-      const double min_dist = (k==nvrt)?node->Dz(ivrt):min(dist_s, dist_b); 
+      const double min_dist = (k==ivrt)?node->Dz(ivrt):min(dist_s, dist_b); 
       assert(min_dist > 0.0 && "Invalid minimum distance");
 
       // The limit of the mixing length is the maximum eddy that the closest "wall" allows.
