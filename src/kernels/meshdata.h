@@ -432,23 +432,6 @@ struct NodeBoundary;
 constexpr double veg_cfk   = 0.07; //Shimizu & Tsujimoto (1994)
 constexpr double veg_cfpsi = 0.16;
 
-enum class TurbulenceModel : int {
-   VertVarying  = -1,
-   HorzVarying  = -2,
-   Constant     =  0,
-   Pacanowski   =  2,
-   GLS          =  3,
-   GOTM         =  4,
-   SedimentMix  =  5,
-};
-
-enum class TurbulenceSubmodel : int {
-   MellorYamada   =  0, 
-   KL             =  1,
-   KE             =  2, 
-   KW             =  3,
-   UmlaufBurchard =  4, 
-};
 
 template<TurbulenceModel Model>
 struct Turbulence {};   

@@ -38,7 +38,7 @@ enum class StabilityModel : int {
 };
 
 
-constexpr TurbulenceModel turbulenceModel = static_cast<TurbulenceModel>(itur);
+constexpr TurbulenceModel turbulenceModel = static_cast<TurbulenceModel>(__ITUR__);
 constexpr TurbulenceSubmodel turbSubmodel = static_cast<TurbulenceSubmodel>(__TURB_SUBMODEL__);
 constexpr StabilityModel stabilityModel   = static_cast<StabilityModel>(__STABILITY_MODEL__);
 
