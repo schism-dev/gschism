@@ -469,34 +469,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ double Fwall(Node *node, int k, double mxl_c) const {
-
-      
-      // Returns wall proximity function F_wall for the dissipation term in the GLS turbulence model.
-      // k is the layer bottom index.
-
-
-
-      if constexpr (turbSubmodel == MellorYamada || turbSubmodel == KL) {
-
-         const double z_c = 0.5*(node->z[k] + node->z[k+1]);
-         const double eta2 = node->eta2;
-         const double depth = node->depth;
-   
-         // Distances from the layer midpoint to the surface and bottom
-         const double dist_s = eta2 - z_c;
-         const double dist_b = z_c + depth;
-
-         assert(dist_s != 0.0 && dist_b != 0.0 && "Zero in proximity function");         
-
-         return 1.0 + 1.33*pow<2>((1.0/kappa)*mxl_c/dist_b) + 0.25*pow<2>((1.0/kappa)*mxl_c/dist_s);
-
-
-      } else {
-         return 1.0; // Other GLS submodels
-
-      }
-   }
+   __device__ __forceinline__ double Fwall(Node *node, int k, double mxl_c) const;
 
    __device__ __forceinline__ double cpsi3(double N2) const {
 
@@ -592,11 +565,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ double mxlmin(Node *node) const {
-      // Minimum mixing length for levels below the surface.
-      // Independent of psimin(); do not invert one to get the other.
-      return 2.0 * tkemin() * 0.1 * max(h0, node->depth);
-   }
+   __device__ __forceinline__ double mxlmin(Node *node) const;
 
    __device__ __forceinline__ double diffmin(void) const {
       // XXXXXXXX: This is a placeholder.
@@ -622,134 +591,11 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const {
+   __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const;
 
-      // Returns the turbulence production due to vegetation averaged over the current layer.
+   __device__ void computeDiffusivities(Node *node);
 
-      if constexpr(isVeg) {
-         
-         const double zbot = node->z[k-1]; // Bottom of the current layer.
-         const double zTopCanopy = node->zTopCanopy();
-
-         if (zbot < zTopCanopy) { // This means that the current level is within the vegetation layer, either partially or fully
-
-            const double ztop = node->z[k];   // Top of the current layer.
- 
-            // Fraction of the current layer that is within the vegetation layer. zrat \in (0,1]
-            // Where 1 means that the current level is fully within the vegetation layer.
-            const double zrat = (min(zTopCanopy, ztop) - zbot)/(ztop - zbot) 
-
-            // Velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
-            const Vector2 ub2_top = (1.0 - zrat)*node->u2[k-1] + zrat*node->u2[k] // @top of canopy
-
-            // Magnitude of the velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
-            // and at the bottom of the layer.
-            const double vmag_top = length(ub2_top);
-            const double vmag_bot = length(node->u2[k-1]);
-
-            // Volume-averaged velocity cubed.
-            const double vmag3 = 0.5*(pow<3>(vmag_top) + pow<3>(vmag_bot));
-
-            // Vegetation alpha at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
-            // and at the bottom of the layer.
-            const double veg_alpha3D_top = (1.0 - zrat)*node->veg_alpha3D[k-1] + zrat*node->veg_alpha3D[k];
-            const double veg_alpha3D_bot = node->veg_alpha3D[k-1];
-
-            // Volume-averaged vegetation alpha cubed.
-            const double veg_alpha3D = 0.5*(veg_alpha3D_top + veg_alpha3D_bot);
-
-            return veg_alpha3D*vmag3;
-         } 
-         else {
-            // The current level is not within the vegetation layer, so the production is 0.
-            return 0.0;
-         }
-      } else {
-
-         // If no vegetation, the production is 0.
-         return 0.0;
-      }
-
-   }
-
-
-   __device__ void computeDiffusivities(Node *node) {
-      // Eddy viscosity/diffusivity from the algebraic stability functions (stability_model).
-      // Writes node->dfv, node->dfh (diffusivities for momentum/tracers) and nu_tke, nu_phi (diffusivities for TKE/phi).
-
-      const int kb = node->kb;
-
-      for (int k = kb; k < nvrt; k++) {
-         const double tke = node->tke[k];
-         const double mxl = node->mxl[k];
-         const double u = sqrt(tke);  // Characteristic velocity
-         const double lu = mxl*u;     // Characteristic diffusivity 
-
-         // vertical gradient of density (homogeneous Neumann boundary conditions at the surface and bottom).
-         double drho_dz = 0.0;
-         if (k > kb && k < ivrt) {
-            drho_dz = (node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
-         }
-
-         const double N2 = node->N2(k); // Brunt-Väisälä frequency
-
-         // Tsinghua group       
-         const double Gh = clamp(0.5*mxl*mxl*N2/tke, -0.28, 0.0233);
-
-         double sh, sm, cmiu, cmiup, cmiu1, cmiu2;
-         if constexpr (stability_model == Galperin) {
-            sh = 0.49393/(1.0-34.676*Gh);
-            sm = (0.39327-3.0858*Gh)/(1.0-34.676*Gh)/(1.0-6.1272*Gh);
-            cmiu  = sqrt(2.0)*sm;
-            cmiup = sqrt(2.0)*sh;
-            cmiu1 = sqrt(2.0)*0.2;
-            cmiu2 = sqrt(2.0)*0.2;
-
-         } else if constexpr (stability_model == KanthaClayson) {  // Kantha and Clayson
-            // Warner's paper has problem
-            //  Ghp=(Gh-(Gh-0.02)**2)/(Gh+0.0233-0.04) !smoothing
-            Ghp = Gh;
-            sh = 0.4939/(1.0 - 30.19*Ghp);
-            sm = (0.392 + 17.07*sh*Ghp)/(1.0-6.127*Ghp);
-            cmiu  = sqrt(2.0)*sm;
-            cmiup = sqrt(2.0)*sh;
-            cmiu1 = cmiu/schk;
-            cmiu2 = cmiu/schpsi;
-
-         } else {
-            assert(false && "Unknown ASM");
-
-         }
-
-         const double diffmin = node->diffmin();
-         const double diffmax = node->diffmax();
-         node->dfv[k] = clamp(cmiu  * lu, diffmin, diffmax);
-         node->dfh[k] = clamp(cmiup * lu, diffmin, diffmax);
-         nu_tke[k]    = clamp(cmiu1 * lu, diffmin, diffmax);
-         nu_phi[k]    = clamp(cmiu2 * lu, diffmin, diffmax);
-      }
-   }
-
-
-   __device__ __forceinline__ double maxMixingLength(Node *node, int k) const {
-   // Compute upper bound for the turbulent mixing length based on the distance to the closest "wall" (either surface or bottom).
-
-      const double z = node->z[k];
-      const double eta2 = node->eta2;
-      const double depth = node->depth;
-
-      // Distances to the surface and bottom
-      const double dist_s = eta2 - z;
-      const double dist_b = z + depth;
-
-      // Distance to the closest "wall" (either surface or bottom).  
-      // In the top layer, it is the size of the layer.
-      const double min_dist = (k==ivrt)?node->Dz(ivrt):min(dist_s, dist_b); 
-      assert(min_dist > 0.0 && "Invalid minimum distance");
-
-      // The limit of the mixing length is the maximum eddy that the closest "wall" allows.
-      return kappa*min_dist;
-   }
+   __device__ __forceinline__ double maxMixingLength(Node *node, int k) const;
 
 
    // Conversions between the generic length-scale variable Phi and the mixing length mxl.
