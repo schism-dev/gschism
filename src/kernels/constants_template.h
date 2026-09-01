@@ -13,26 +13,28 @@ constexpr int nPartitions = nGPUs;
 
 // Turbulence model and submodel
 enum class TurbulenceModel : int {
-   VertVarying  = -1,
-   HorzVarying  = -2,
-   Constant     =  0,
-   Pacanowski   =  2,
-   GLS          =  3,
-   GOTM         =  4,
-   SedimentMix  =  5,
+    VertVarying  = -1,
+    HorzVarying  = -2,
+    Constant     =  0,
+    Pacanowski   =  2,
+    GLS          =  3,
+    GOTM         =  4,
+    SedimentMix  =  5,
 };
 
 enum class TurbulenceSubmodel : int {
-   MellorYamada   = 0,
-   KL             = 1,
-   KE             = 2,
-   KW             = 3,
-   UmlaufBurchard = 4,
+    NotSet         = -1,
+    MellorYamada   = 0,
+    KL             = 1,
+    KE             = 2,
+    KW             = 3,
+    UmlaufBurchard = 4,
 };
 
 enum class StabilityModel : int {
-   Galperin      = 0,   // stab = 'GA'
-   KanthaClayson = 1,   // stab = 'KC'
+    NotSet       = -1,
+    Galperin      = 0,   // stab = 'GA'
+    KanthaClayson = 1,   // stab = 'KC'
 };
 
 
