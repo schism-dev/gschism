@@ -2757,7 +2757,8 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    
    
    // Get the turbulence model
-   Turbulence<TurbulenceModel::GLS> &turb = node->turb;
+   // reinterpret_cast is used to avoid stupid compiler errors.
+   Turbulence<TurbulenceModel::GLS> &turb = reinterpret_cast<Turbulence<TurbulenceModel::GLS>&>(node->turb);
      
    const int kb = node->kb;
    const int nqrows = nvrt - kb - 1; // Number of rows of the tridiagonal system
@@ -3002,8 +3003,8 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
 
    // B.C. for the mixing lengths: Bottom and surface (T. Guérin)
-   const double mxlbot = max(turb.mxlmin(node), kappa*min(2.5, xlsc0*node->Dz(kb + 1))); //"2.5" to prevent over-mixing
-   const double mxlsrf = max(turb.mxlmin(node), xlsc0*node->Dz(ivrt)*kappa);
+   const double mxlbot = max(turb.mxlmin(depth), kappa*min(2.5, xlsc0*node->Dz(kb + 1))); //"2.5" to prevent over-mixing
+   const double mxlsrf = max(turb.mxlmin(depth), xlsc0*node->Dz(ivrt)*kappa);
 
    turb.mxl[kb+1] = mxlbot;
    turb.mxl[ivrt] = mxlsrf;
@@ -3027,7 +3028,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double mxlmax = min(turb.maxMixingLength(node, k), mxlmax_dissip);
 
       // Clamp the mixing length between the minimum and maximum values
-      turb.mxl[k] = clamp(turb.mxl[k], turb.mxlmin(node), mxlmax);
+      turb.mxl[k] = clamp(turb.mxl[k], turb.mxlmin(depth), mxlmax);
 
       assert(turb.tke[k] >= 0 && "Negative TKE");
 
@@ -3045,10 +3046,10 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
    // make all the variables uniform below the bottom level kb
    for (int k = 0; k < kb; k++) {
+      node->dfv[k] = node->dfv[kb];
+      node->dfh[k] = node->dfh[kb];
       turb.tke[k] = turb.tke[kb];
       turb.mxl[k] = turb.mxl[kb];
-      turb.dfv[k] = turb.dfv[kb];
-      turb.dfh[k] = turb.dfh[kb];
       turb.nu_tke[k] = turb.nu_tke[kb];
       turb.nu_phi[k] = turb.nu_phi[kb];
    }
