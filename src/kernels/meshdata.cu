@@ -7030,10 +7030,10 @@ extern "C" __global__ void getSideVar(int varCode, void *res, int k) {
          break;
       }
       case (int)VarCode::n1:
-         *(uint64_t *)((char *)res + idx_side * 8) = (uint64_t)side->n1;
+         *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)side->n1;
          break;
       case (int)VarCode::n2:
-         *(uint64_t *)((char *)res + idx_side * 8) = (uint64_t)side->n2;
+         *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)side->n2;
          break;
       case (int)VarCode::isdry:
          *(int *)((char *)res + idx_side * 4) = (int)side->isDry;
@@ -7054,9 +7054,9 @@ extern "C" __global__ void getElementVar(int varCode, void *res, int k) {
          break;
       }
       case (int)VarCode::FaceIndices: {
-         uint64_t *out = (uint64_t *)((char *)res + idx_elem * 32);
+         uintptr_t *out = (uintptr_t *)((char *)res + idx_elem * 32);
          for (int j = 0; j < 4; j++)
-            out[j] = (uint64_t)elem->nodes[j];
+            out[j] = (uintptr_t)elem->nodes[j];
          break;
       }
       case (int)VarCode::isdry:
