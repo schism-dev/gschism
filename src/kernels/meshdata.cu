@@ -2614,7 +2614,7 @@ __device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::vegTurbProdu
 
          // Fraction of the current layer that is within the vegetation layer. zrat \in (0,1]
          // Where 1 means that the current level is fully within the vegetation layer.
-         const double zrat = (min(zTopCanopy, ztop) - zbot)/(ztop - zbot) 
+         const double zrat = (min(zTopCanopy, ztop) - zbot)/(ztop - zbot);
 
          // Velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
          const Vector2 ub2_top = (1.0 - zrat)*node->u2[k-1] + zrat*node->u2[k]; // @top of canopy
@@ -2657,8 +2657,8 @@ __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *nod
    const int kb = node->kb;
 
    for (int k = kb; k < nvrt; k++) {
-      const double tke = node->turb.tke[k];
-      const double mxl = node->turb.mxl[k];
+      const double tke = tke[k];
+      const double mxl = mxl[k];
       const double u = sqrt(tke);  // Characteristic velocity
       const double lu = mxl*u;     // Characteristic diffusivity 
 
@@ -2668,7 +2668,7 @@ __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *nod
          drho_dz = (node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
       }
 
-      const double N2 = node->turb.N2(node, k); // Brunt-Väisälä frequency
+      const double N2 = N2(node, k); // Brunt-Väisälä frequency
 
       // Tsinghua group       
       const double Gh = clamp(0.5*mxl*mxl*N2/tke, -0.28, 0.0233);
@@ -3043,16 +3043,16 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
 
    // Compute vertical diffusivities at new time
-   node->computeDiffusivities();
+   turb.computeDiffusivities(node);
 
    // make all the variables uniform below the bottom level kb
    for (int k = 0; k < kb; k++) {
-      node->tke[k] = node->tke[kb];
-      node->mxl[k] = node->mxl[kb];
-      node->dfv[k] = node->dfv[kb];
-      node->dfh[k] = node->dfh[kb];
-      node->nu_tke[k] = node->nu_tke[kb];
-      node->nu_phi[k] = node->nu_phi[kb];
+      turb.tke[k] = turb.tke[kb];
+      turb.mxl[k] = turb.mxl[kb];
+      turb.dfv[k] = turb.dfv[kb];
+      turb.dfh[k] = turb.dfh[kb];
+      turb.nu_tke[k] = turb.nu_tke[kb];
+      turb.nu_phi[k] = turb.nu_phi[kb];
    }
 
       
