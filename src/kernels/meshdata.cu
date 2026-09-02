@@ -2757,7 +2757,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    
    
    // Get the turbulence model
-   Turbulence &turb = node->turb;
+   Turbulence<TurbulenceModel::GLS> &turb = node->turb;
      
    const int kb = node->kb;
    const int nqrows = nvrt - kb - 1; // Number of rows of the tridiagonal system
