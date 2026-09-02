@@ -23,7 +23,7 @@ enum class TurbulenceModel : int {
 };
 
 enum class TurbulenceSubmodel : int {
-    NotSet         = -1,
+    TurbNotSet     = -1,
     MellorYamada   = 0,
     KL             = 1,
     KE             = 2,
@@ -32,7 +32,7 @@ enum class TurbulenceSubmodel : int {
 };
 
 enum class StabilityModel : int {
-    NotSet       = -1,
+    StabNotSet    = -1,
     Galperin      = 0,   // stab = 'GA'
     KanthaClayson = 1,   // stab = 'KC'
 };

@@ -43,8 +43,8 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
     # Turbulence submodel and stability model
     turbSubmodelMap = {'MY': 0, 'KL': 1, 'KE': 2, 'KW': 3, 'UB': 4}
     stabilityModelMap = {'GA': 0, 'KC': 1}
-    turbSubmodelVal = -1      # TurbulenceSubmodel::NotSet
-    stabilityModelVal = -1    # StabilityModel::NotSet
+    turbSubmodelVal = -1      # TurbulenceSubmodel::TurbNotSet
+    stabilityModelVal = -1    # StabilityModel::StabNotSet
     if hasattr(namelist.opt, 'mid') and namelist.opt.mid is not None:
         mid = str(namelist.opt.mid).strip().upper()
         if mid not in turbSubmodelMap:

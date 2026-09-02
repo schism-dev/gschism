@@ -2698,12 +2698,10 @@ __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *nod
 
       }
 
-      const double diffmin = node->turb.diffmin();
-      const double diffmax = node->turb.diffmax();
-      node->dfv[k] = clamp(cmiu  * lu, diffmin, diffmax);
-      node->dfh[k] = clamp(cmiup * lu, diffmin, diffmax);
-      nu_tke[k]    = clamp(cmiu1 * lu, diffmin, diffmax);
-      nu_phi[k]    = clamp(cmiu2 * lu, diffmin, diffmax);
+      node->dfv[k] = clamp(cmiu  * lu, diffmin(), diffmax());
+      node->dfh[k] = clamp(cmiup * lu, diffmin(), diffmax());
+      nu_tke[k]    = clamp(cmiu1 * lu, diffmin(), diffmax());
+      nu_phi[k]    = clamp(cmiu2 * lu, diffmin(), diffmax());
    }
 }
 
@@ -2811,7 +2809,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    const double depth      = node->depth;
    const double Cd         = node->Cd; // Drag coefficient
 
-   constexpr double c0 = pow(16.6, 2.0/3.0); 
+   constexpr double c0 = 6.50736836993; //pow(16.6, 2.0/3.0); 
    
    const double sqU2 = norm2(node->u2[kb + 1]);
    const double modTau = length(node->tau);
@@ -2841,7 +2839,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const int k2 = k - kb;     // One at k = kb + 1
 
       // Get the properties of the current interval.
-      const double z  = node->z(k); // bottom level of the interval
+      const double z  = node->z[k]; // bottom level of the interval
       const double dz = node->Dz(k + 1);
       const double rho_c = 0.5*(node->rho[k] + node->rho[k+1]);
       
@@ -3004,13 +3002,13 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
 
    // B.C. for the mixing lengths: Bottom and surface (T. Guérin)
-   const double mxlbot = max(turb.mxlmin(node), kappa*min(2.5, xlsc0*node->Dz(kb + 1))) //"2.5" to prevent over-mixing
-   const double mxlsrf = max(turb.mxlmin(node), xlsc0*node->Dz(ivrt)*kappa)
+   const double mxlbot = max(turb.mxlmin(node), kappa*min(2.5, xlsc0*node->Dz(kb + 1))); //"2.5" to prevent over-mixing
+   const double mxlsrf = max(turb.mxlmin(node), xlsc0*node->Dz(ivrt)*kappa);
 
-   turb.mxl[kb+1]    = mxlbot;
+   turb.mxl[kb+1] = mxlbot;
    turb.mxl[ivrt] = mxlsrf;
    for (int k = kb + 2, kin = 1; k < ivrt; k++, kin++) {
-      turb.mxl[k] = turb.mxlFromPhi(turb.tke[k], max(solution[kin], turb.psimin()))
+      turb.mxl[k] = turb.mxlFromPhi(turb.tke[k], max(solution[kin], turb.psimin()));
 
       const double N2 = turb.N2_c(node, k);      // Brunt-Väisälä frequency 
 

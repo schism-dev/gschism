@@ -96,6 +96,11 @@ __device__ double *rMr_new;
 __device__ double *pAp;
 
 
+
+template<int nc>
+__device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
+
+
 // Simple math functions ---------------------------------------------------------------------------
 
 __device__ __forceinline__ void solveQuadratic(double A, double B, double C, double &x1, double &x2) {
