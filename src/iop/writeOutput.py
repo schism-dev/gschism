@@ -107,7 +107,7 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
         faceIndices_cpu[mask] = (faceIndices_cpu[mask] - firstPointer)//sizeNode + 1
         faceIndices_cpu[~mask] = -1
         nSCHISM_hgrid_face_nodes_var = dataC.variables['SCHISM_hgrid_face_nodes']
-        nSCHISM_hgrid_face_nodes_var[:] = faceIndices_cpu.T
+        nSCHISM_hgrid_face_nodes_var[:] = faceIndices_cpu
         del faceIndices_cpu, mask
 
         n1_cpu = dtoh.getSideVar("n1")
