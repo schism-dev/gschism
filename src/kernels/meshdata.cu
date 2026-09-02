@@ -7014,6 +7014,37 @@ extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
       case (int)VarCode::isdry:
          *(int *)((char *)res + idx_node * 4) = (int)node->isDry;
          break;
+      case (int)VarCode::u: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 16);
+         if (k >= 0) {
+            out[0] = node->u2[k].x;
+            out[1] = node->u2[k].y;
+         } else {
+            for (int lev = 0; lev < nvrt; lev++) {
+               out[lev*2    ] = node->u2[lev].x;
+               out[lev*2 + 1] = node->u2[lev].y;
+            }
+         }
+         break;
+      }
+      case (int)VarCode::z: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->z[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->z[lev];
+         break;
+      }
+      case (int)VarCode::w: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->w2[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->w2[lev];
+         break;
+      }
    }
 }
 
@@ -7062,6 +7093,15 @@ extern "C" __global__ void getElementVar(int varCode, void *res, int k) {
       case (int)VarCode::isdry:
          *(int *)((char *)res + idx_elem * 4) = (int)elem->isDry;
          break;
+      case (int)VarCode::w: {
+         double *out = (double *)((char *)res + idx_elem * nvrt * 8);
+         if (k >= 0)
+            out[0] = elem->w[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = elem->w[lev];
+         break;
+      }
    }
 }
 

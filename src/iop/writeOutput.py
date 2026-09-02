@@ -2,7 +2,6 @@ import os
 import cupy as cp
 import numpy as np
 import netCDF4 as nc
-import debug.monitor as monitor 
 import time 
 from iop.deviceToHost import DeviceToHost
 
@@ -142,7 +141,7 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
         
     
 
-    # For each variable, get the data from GPU (using monitor) and store it in the NetCDF file.
+    # For each variable, get the data from GPU and store it in the NetCDF file.
     # Explicitly delete the data from CPU after storing it in the NetCDF file.
     eta_cpu = dtoh.getNodeVar("eta")
     elevation_var = dataC.variables['elevation']
@@ -172,18 +171,12 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     dryFlagElement_var[idxTime, :] = isdry_cpu
     del isdry_cpu    
 
-    view = monitor.getNodeVar("u")
-    u_cpu = view[0,:,:].get()
-    v_cpu = view[1,:,:].get()
+    uv = dtoh.getNodeVar("u")
+    u_cpu = uv[0, :, :]
+    v_cpu = uv[1, :, :]
 
-    import gc
-    gc.collect()
-    print(cp.get_default_memory_pool().used_bytes() / 1e6, "MB in CuPy pool")
-    cp.get_default_memory_pool().free_all_blocks()
-
-    return
     # Mask depth layers above kb (dry/above bed) as NaN
-    kb_cpu = monitor.getNodeVar("kb").get()
+    kb_cpu = dtoh.getNodeVar("kb")
     nvrt_u = u_cpu.shape[0]
     k_2d = np.arange(nvrt_u, dtype=kb_cpu.dtype)[:, np.newaxis]
     mask_above_kb = k_2d < kb_cpu[np.newaxis, :]
@@ -197,21 +190,18 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     horizontalVelY_var[idxTime, :, :] = v_cpu.T
     del u_cpu, v_cpu
 
-    view = monitor.getNodeVar("z")
-    z_cpu = view.get()
+    z_cpu = dtoh.getNodeVar("z")
     zCoordinates_var = dataZ.variables['zCoordinates']
     zCoordinates_var[idxTime, :, :] = z_cpu.T
     del z_cpu
 
-    view = monitor.getNodeVar("w")
-    w_cpu = view.get()
+    w_cpu = dtoh.getNodeVar("w")
     verticalVel_var = dataW.variables['verticalVelocity']
     verticalVel_var[idxTime, :, :] = w_cpu.T
     del w_cpu
 
 
-    view = monitor.getElementVar("w")
-    w_cpu = view.get()
+    w_cpu = dtoh.getElementVar("w")
     verticalVelElem_var = dataWElem.variables['verticalVelAtElement']
     verticalVelElem_var[idxTime, :, :] = w_cpu.T
     del w_cpu

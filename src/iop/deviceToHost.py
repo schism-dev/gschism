@@ -52,7 +52,7 @@ class DeviceToHost:
             nMax = max(len(globalNodeIndices[m]),
                        len(globalElemIndices[m]),
                        len(globalSideIndices[m]))
-            maxFieldBytes = 32  # worst case is FaceIndices (4 x uint64)
+            maxFieldBytes = max(32, numVrt * 16)  # 3D Vector2 is the largest packed field
             with cp.cuda.Device(device_id):                
                 self.bufferGPU.append(cp.empty(nMax*maxFieldBytes, dtype=cp.uint8))
                 self.bufferCPU.append(np.empty(nMax*maxFieldBytes, dtype=np.uint8))
@@ -97,14 +97,16 @@ class DeviceToHost:
         if not is3D and k != -1:
             raise ValueError("k cannot be provided for 2D variables")
 
+        levels = self.nvrt if (is3D and k == -1) else 1
+
         if varType == 'double':
-            nbytes = 8
+            nbytes = 8 * levels
             dtype = np.float64
-            numComponents = 1
+            numComponents = levels
         elif varType == 'Vector2':
-            nbytes = 16
+            nbytes = 16 * levels
             dtype = np.float64
-            numComponents = 2
+            numComponents = 2 * levels
         elif varType in ('int', 'bool'):
             nbytes = 4
             dtype = np.int32
@@ -132,7 +134,13 @@ class DeviceToHost:
         kernel writes the packed local field into bufferGPU[m].
         """
         varCode, varType, is3D, nbytes, dtype, numComponents = self.varLayout(varName, k)
-        result = self.result[:numItems * nbytes].view(dtype).reshape(numItems, numComponents)
+        raw = self.result[:numItems * nbytes].view(dtype)
+        if is3D and varType == 'Vector2':
+            result = raw.reshape(numItems, self.nvrt, 2)
+        elif is3D and varType == 'double':
+            result = raw.reshape(numItems, self.nvrt)
+        else:
+            result = raw.reshape(numItems, numComponents)
 
         for m, device_id in enumerate(self.configCuda.devices):
             gidx = globalIndices[m]
@@ -142,10 +150,20 @@ class DeviceToHost:
                 kernel(varCode, self.bufferGPU[m], k)
                 cp.asnumpy(self.bufferGPU[m][:sizePart*nbytes], out=self.bufferCPU[m][:sizePart*nbytes])
 
-            arrayPart = self.bufferCPU[m][:sizePart * nbytes].view(dtype).reshape(sizePart, numComponents)
+            partRaw = self.bufferCPU[m][:sizePart * nbytes].view(dtype)
+            if is3D and varType == 'Vector2':
+                arrayPart = partRaw.reshape(sizePart, self.nvrt, 2)
+            elif is3D and varType == 'double':
+                arrayPart = partRaw.reshape(sizePart, self.nvrt)
+            else:
+                arrayPart = partRaw.reshape(sizePart, numComponents)
             result[gidx] = arrayPart
 
         if varType == 'Vector2' and not is3D:
+            return result.T
+        if is3D and varType == 'Vector2':
+            return result.transpose(2, 1, 0)
+        if is3D and varType == 'double':
             return result.T
         return result.squeeze()
 
