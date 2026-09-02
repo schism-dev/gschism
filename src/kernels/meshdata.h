@@ -600,7 +600,7 @@ struct Turbulence<TurbulenceModel::GLS> {
       return pow(phi * pow(cmiu0, -rpub()) * pow(tke, -rmub()), 1.0/rnub());
    }
 
-}
+};
 
 
 // ------------------------------LocalSigma------------------------------
