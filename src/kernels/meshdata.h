@@ -98,7 +98,7 @@ __device__ double *pAp;
 
 
 template<int nc>
-__device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
+__device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam);
 
 
 // Simple math functions ---------------------------------------------------------------------------
