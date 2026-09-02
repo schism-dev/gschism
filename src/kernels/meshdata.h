@@ -605,7 +605,7 @@ struct Turbulence<TurbulenceModel::GLS> {
 
 // ------------------------------LocalSigma------------------------------
 
-template<int ivcor>
+template<int IVCOR>
 struct LocalSigma {};   
 
 template<>
