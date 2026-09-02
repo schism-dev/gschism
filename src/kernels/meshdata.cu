@@ -3022,7 +3022,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
 
 
       // Max. mixing length based on dissipation; mxlmin prevails
-      const double mxlmax_dissip = pow<3>(cmiu0*sqrt(turb.tke[k]))/turb.eps_min;
+      const double mxlmax_dissip = pow<3>(cmiu0*sqrt(turb.tke[k]))/turb.epsmin();
 
       // Combined max. mixing length including geometric limit
       const double mxlmax = min(turb.maxMixingLength(node, k), mxlmax_dissip);

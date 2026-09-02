@@ -571,6 +571,9 @@ struct Turbulence<TurbulenceModel::GLS> {
          return 1.0e-12; // Warner et al., OM 2005
    }
 
+   __device__ __forceinline__ constexpr double epsmin(void) const {
+      return 1.0e-12;  // GOTM/SCHISM default; floor for dissipative length cap
+   }
 
    __device__ __forceinline__ double mxlmin(double depth) const;
 
