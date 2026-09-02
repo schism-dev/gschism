@@ -2657,8 +2657,8 @@ __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *nod
    const int kb = node->kb;
 
    for (int k = kb; k < nvrt; k++) {
-      const double tke = tke[k];
-      const double mxl = mxl[k];
+      const double tke = this->tke[k];
+      const double mxl = this->mxl[k];
       const double u = sqrt(tke);  // Characteristic velocity
       const double lu = mxl*u;     // Characteristic diffusivity 
 
@@ -2668,7 +2668,7 @@ __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *nod
          drho_dz = (node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
       }
 
-      const double N2 = N2(node, k); // Brunt-Väisälä frequency
+      const double N2 =this->N2(node, k); // Brunt-Väisälä frequency
 
       // Tsinghua group       
       const double Gh = clamp(0.5*mxl*mxl*N2/tke, -0.28, 0.0233);
