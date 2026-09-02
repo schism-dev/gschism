@@ -52,7 +52,7 @@ class DeviceToHost:
             nMax = max(len(globalNodeIndices[m]),
                        len(globalElemIndices[m]),
                        len(globalSideIndices[m]))
-            maxFieldBytes = 16  # worst case is vector2
+            maxFieldBytes = 32  # worst case is FaceIndices (4 x uint64)
             with cp.cuda.Device(device_id):                
                 self.bufferGPU.append(cp.empty(nMax*maxFieldBytes, dtype=cp.uint8))
                 self.bufferCPU.append(np.empty(nMax*maxFieldBytes, dtype=np.uint8))
@@ -108,6 +108,14 @@ class DeviceToHost:
         elif varType in ('int', 'bool'):
             nbytes = 4
             dtype = np.int32
+            numComponents = 1
+        elif varType == 'FaceIndices':
+            nbytes = 32
+            dtype = np.uint64
+            numComponents = 4
+        elif varType == 'pointer':
+            nbytes = 8
+            dtype = np.uint64
             numComponents = 1
         else:
             raise ValueError(varType)

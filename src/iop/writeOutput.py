@@ -100,7 +100,7 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
 
         view = dtoh.getElementVar("FaceIndices")
         mask = (view[:,:] != 0)
-        faceIndices_cpu = view.astype(cp.int64)
+        faceIndices_cpu = view.astype(np.int64)
         firstPointer = view[mask].min()
         mask = mask
         # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)

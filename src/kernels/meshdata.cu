@@ -6987,17 +6987,82 @@ extern "C" __global__ void getSideVarFunc(int varCode, double *res) {
 extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
    // Packed local order into res. Caller allocates sizePart * nbytes.
    NODE(node);
-   // switch (varCode)
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords: {
+         const Point2 coords = node->outputCoords();
+         double *out = (double *)((char *)res + idx_node * 16);
+         out[0] = coords.x;
+         out[1] = coords.y;
+         break;
+      }
+      case (int)VarCode::depth:
+         *(double *)((char *)res + idx_node * 8) = node->depth;
+         break;
+      case (int)VarCode::kb:
+         *(int *)((char *)res + idx_node * 4) = (int)node->kb;
+         break;
+      case (int)VarCode::eta:
+         *(double *)((char *)res + idx_node * 8) = node->eta2;
+         break;
+      case (int)VarCode::u_air: {
+         double *out = (double *)((char *)res + idx_node * 16);
+         out[0] = node->u_air.x;
+         out[1] = node->u_air.y;
+         break;
+      }
+      case (int)VarCode::isdry:
+         *(int *)((char *)res + idx_node * 4) = (int)node->isDry;
+         break;
+   }
 }
 
 
 extern "C" __global__ void getSideVar(int varCode, void *res, int k) {
    SIDE(side);
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords: {
+         const Point2 coords = side->outputCoords();
+         double *out = (double *)((char *)res + idx_side * 16);
+         out[0] = coords.x;
+         out[1] = coords.y;
+         break;
+      }
+      case (int)VarCode::n1:
+         *(uint64_t *)((char *)res + idx_side * 8) = (uint64_t)side->n1;
+         break;
+      case (int)VarCode::n2:
+         *(uint64_t *)((char *)res + idx_side * 8) = (uint64_t)side->n2;
+         break;
+      case (int)VarCode::isdry:
+         *(int *)((char *)res + idx_side * 4) = (int)side->isDry;
+         break;
+   }
 }
 
 
 extern "C" __global__ void getElementVar(int varCode, void *res, int k) {
    ELEM(elem);
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords: {
+         const Point2 coords = elem->outputCoords();
+         double *out = (double *)((char *)res + idx_elem * 16);
+         out[0] = coords.x;
+         out[1] = coords.y;
+         break;
+      }
+      case (int)VarCode::FaceIndices: {
+         uint64_t *out = (uint64_t *)((char *)res + idx_elem * 32);
+         for (int j = 0; j < 4; j++)
+            out[j] = (uint64_t)elem->nodes[j];
+         break;
+      }
+      case (int)VarCode::isdry:
+         *(int *)((char *)res + idx_elem * 4) = (int)elem->isDry;
+         break;
+   }
 }
 
 
