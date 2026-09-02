@@ -441,6 +441,7 @@ struct Turbulence {};
 template<>
 struct Turbulence<TurbulenceModel::GLS> {
    using enum TurbulenceSubmodel;
+   using enum StabilityModel;
 
    double tke[nvrt];    // TKE
    double mxl[nvrt];    // mixing length for GLS
@@ -566,7 +567,7 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
 
-   __device__ __forceinline__ double mxlmin(Node *node) const;
+   __device__ __forceinline__ double mxlmin(double depth) const;
 
    __device__ __forceinline__ double diffmin(void) const {
       // XXXXXXXX: This is a placeholder.
@@ -1519,6 +1520,8 @@ struct Node {
    double rho[nvrt];     // Density
    double dfv[nvrt];     // Vertical viscosity
    double dfh[nvrt];     // Horizontal viscosity  XXXX (does it need to exist when transport is not enabled?)
+
+   Turbulence<turbulenceModel> turb;
 
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep

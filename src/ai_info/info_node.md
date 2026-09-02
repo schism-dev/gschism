@@ -27,7 +27,7 @@ Dynamic variables updated during the simulation time-stepping.
 - **`u2[nvrt]`, `w2[nvrt]`**: Horizontal (`u2`) and vertical (`w2`) velocity components at each vertical level.
 - **`utmp[nvrt]`**: Temporary storage for velocity calculations.
 - **`rho[nvrt]`**: Density at each vertical level.
-- **`dfv[nvrt]`**: Vertical viscosity at each vertical level.
+- **`dfv[nvrt], dfh[nvrt]`**: Turbulent diffusivities for momentum/tracers at each vertical level.
 - **`tracers[nvrt]`**: Tracer concentrations at each vertical level.
 - **`dav`**: Depth-averaged velocity vector.
 - **`ETP`, `pr`, `grav2`**: Earth Tidal Potential, air pressure, and local gravity.

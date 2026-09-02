@@ -148,7 +148,9 @@ constexpr double velmin_btrack_sq = velmin_btrack*velmin_btrack;
 
 constexpr int nadv = __NADV__; // Advection flag
 
-constexpr double dfv0 = __DFV0__; 
+constexpr double dfv0 = __DFV0__; // turbulent diffusion for momentum
+constexpr double dfh0 = __DFH0__; // turbulent diffusion for tracers
+constexpr double xlsc0 = __XLSC0__; // surface/bottom mixing length scale (itur=3,5)
 
 constexpr double dzb_min = __DZB_MIN__; // Min. bottom boundary layer thickness [m]
 

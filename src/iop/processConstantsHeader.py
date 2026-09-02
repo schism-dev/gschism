@@ -101,6 +101,8 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__RMAXVEL__': (namelist.opt.rmaxvel, 'namelist.opt'),
         '__RHO0__': (namelist.opt.rho0, 'namelist.opt'),
         '__DFV0__': (namelist.opt.dfv0, 'namelist.opt'),
+        '__DFH0__': (namelist.opt.dfh0, 'namelist.opt'),
+        '__XLSC0__': (namelist.opt.xlsc0, 'namelist.opt'),
         '__DTB_MIN__': (namelist.opt.dtb_min, 'namelist.opt'),
         '__DTB_MAX__': (namelist.opt.dtb_max, 'namelist.opt'),
         '__NADV__': (namelist.opt.nadv, 'namelist.opt'),

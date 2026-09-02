@@ -2592,10 +2592,10 @@ __device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::Fwall(Node *
 }
 
 
-__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::mxlmin(Node *node) const {
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::mxlmin(double depth) const {
    // Minimum mixing length for levels below the surface.
    // Independent of psimin(); do not invert one to get the other.
-   return 2.0 * tkemin() * 0.1 * max(h0, node->depth);
+   return 2.0 * tkemin() * 0.1 * max(h0, depth);
 }
 
 
@@ -2603,7 +2603,7 @@ __device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::vegTurbProdu
 
    // Returns the turbulence production due to vegetation averaged over the current layer.
 
-   if constexpr(isVeg) {
+   if constexpr(iveg == 1) {
       
       const double zbot = node->z[k-1]; // Bottom of the current layer.
       const double zTopCanopy = node->zTopCanopy();
@@ -2617,7 +2617,7 @@ __device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::vegTurbProdu
          const double zrat = (min(zTopCanopy, ztop) - zbot)/(ztop - zbot) 
 
          // Velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
-         const Vector2 ub2_top = (1.0 - zrat)*node->u2[k-1] + zrat*node->u2[k] // @top of canopy
+         const Vector2 ub2_top = (1.0 - zrat)*node->u2[k-1] + zrat*node->u2[k]; // @top of canopy
 
          // Magnitude of the velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
          // and at the bottom of the layer.
@@ -2651,14 +2651,14 @@ __device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::vegTurbProdu
 
 
 __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *node) {
-   // Eddy viscosity/diffusivity from the algebraic stability functions (stability_model).
+   // Eddy viscosity/diffusivity from the algebraic stability functions (stabilityModel).
    // Writes node->dfv, node->dfh (diffusivities for momentum/tracers) and nu_tke, nu_phi (diffusivities for TKE/phi).
 
    const int kb = node->kb;
 
    for (int k = kb; k < nvrt; k++) {
-      const double tke = node->tke[k];
-      const double mxl = node->mxl[k];
+      const double tke = node->turb.tke[k];
+      const double mxl = node->turb.mxl[k];
       const double u = sqrt(tke);  // Characteristic velocity
       const double lu = mxl*u;     // Characteristic diffusivity 
 
@@ -2668,13 +2668,13 @@ __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *nod
          drho_dz = (node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
       }
 
-      const double N2 = node->N2(k); // Brunt-Väisälä frequency
+      const double N2 = node->turb.N2(node, k); // Brunt-Väisälä frequency
 
       // Tsinghua group       
       const double Gh = clamp(0.5*mxl*mxl*N2/tke, -0.28, 0.0233);
 
       double sh, sm, cmiu, cmiup, cmiu1, cmiu2;
-      if constexpr (stability_model == Galperin) {
+      if constexpr (stabilityModel == Galperin) {
          sh = 0.49393/(1.0-34.676*Gh);
          sm = (0.39327-3.0858*Gh)/(1.0-34.676*Gh)/(1.0-6.1272*Gh);
          cmiu  = sqrt(2.0)*sm;
@@ -2682,24 +2682,24 @@ __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *nod
          cmiu1 = sqrt(2.0)*0.2;
          cmiu2 = sqrt(2.0)*0.2;
 
-      } else if constexpr (stability_model == KanthaClayson) {  // Kantha and Clayson
+      } else if constexpr (stabilityModel == KanthaClayson) {  // Kantha and Clayson
          // Warner's paper has problem
          //  Ghp=(Gh-(Gh-0.02)**2)/(Gh+0.0233-0.04) !smoothing
-         Ghp = Gh;
+         const double Ghp = Gh;  /// XXXXX needed?
          sh = 0.4939/(1.0 - 30.19*Ghp);
          sm = (0.392 + 17.07*sh*Ghp)/(1.0-6.127*Ghp);
          cmiu  = sqrt(2.0)*sm;
          cmiup = sqrt(2.0)*sh;
-         cmiu1 = cmiu/schk;
-         cmiu2 = cmiu/schpsi;
+         cmiu1 = cmiu/schk();
+         cmiu2 = cmiu/schpsi();
 
       } else {
          assert(false && "Unknown ASM");
 
       }
 
-      const double diffmin = node->diffmin();
-      const double diffmax = node->diffmax();
+      const double diffmin = node->turb.diffmin();
+      const double diffmax = node->turb.diffmax();
       node->dfv[k] = clamp(cmiu  * lu, diffmin, diffmax);
       node->dfh[k] = clamp(cmiup * lu, diffmin, diffmax);
       nu_tke[k]    = clamp(cmiu1 * lu, diffmin, diffmax);
@@ -2728,8 +2728,6 @@ __device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::maxMixingLen
    return kappa*min_dist;
 }
 
-
-constexpr TurbulenceModel turbulenceModel = static_cast<TurbulenceModel>(itur);
 
 
 template<TurbulenceModel turbulenceModel>
@@ -2870,8 +2868,8 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double mxl_c     = 0.5*(mxl_1 + mxl_2);
       const double nu_tke_c  = 0.5*(turb.nu_tke[k] + turb.nu_tke[k+1]);
       const double nu_phi_c  = 0.5*(turb.nu_phi[k] + turb.nu_phi[k+1]);
-      const double dfv_c     = 0.5*(turb.dfv[k]    + turb.dfv[k+1]);
-      const double dfh_c     = 0.5*(turb.dfh[k]    + turb.dfh[k+1]);
+      const double dfv_c     = 0.5*(node->dfv[k]   + node->dfv[k+1]);
+      const double dfh_c     = 0.5*(node->dfh[k]   + node->dfh[k+1]);
       const double Fwall_c   = turb.Fwall(node, k, mxl_c);
 
       // Integral of the shape function products:
