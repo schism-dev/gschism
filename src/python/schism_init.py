@@ -14,7 +14,7 @@ from python.schism_consts import *
 from python.schism_consts import *
 
 
-def readNamelist(in_dir):
+def readNamelist(in_dir):  # XXXXXXXXXXX REPEATED?????
     # Reads the namelist file params.nml
     nml = readParam(in_dir)
 
