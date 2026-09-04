@@ -98,27 +98,13 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
         del xy_cpu
 
         view = dtoh.getElementVar("FaceIndices")
-        mask = (view[:,:] != 0)
         faceIndices_cpu = view.astype(np.int64)
-        firstPointer = view[mask].min()
-        mask = mask
-        # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
-        faceIndices_cpu[mask] = (faceIndices_cpu[mask] - firstPointer)//sizeNode + 1
-        faceIndices_cpu[~mask] = -1
         nSCHISM_hgrid_face_nodes_var = dataC.variables['SCHISM_hgrid_face_nodes']
         nSCHISM_hgrid_face_nodes_var[:] = faceIndices_cpu
-        del faceIndices_cpu, mask
+        del faceIndices_cpu
 
         n1_cpu = dtoh.getSideVar("n1")
-        firstPointer = n1_cpu.min()
-        # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
-        n1_cpu[:] = (n1_cpu - firstPointer)//sizeNode + 1
-
         n2_cpu = dtoh.getSideVar("n2")
-        firstPointer = n2_cpu.min()
-        # To convert pointers to indices, we subtract the first pointer and then divide by the size of the node and add 1 (for 1-indexing)
-        n2_cpu[:] = (n2_cpu - firstPointer)//sizeNode + 1        
-
         nSCHISM_hgrid_edge_nodes_var = dataC.variables['SCHISM_hgrid_edge_nodes']
         nSCHISM_hgrid_edge_nodes_var[:, 0] = n1_cpu
         nSCHISM_hgrid_edge_nodes_var[:, 1] = n2_cpu
