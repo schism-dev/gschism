@@ -168,7 +168,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
         # if it >= 0:
         #     monitor.plotMesh()        
 
-        cp.cuda.Device().synchronize()
+        cp.cuda.Device().synchronize() # XXXX needed? There are other synchronize calls inside backtrackAllNodes
         # if it >= 69:
         #     res = monitor.plotMesh()
         #     if not res:
