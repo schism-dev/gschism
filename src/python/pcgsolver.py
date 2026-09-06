@@ -324,8 +324,8 @@ class PCGSolverMultiGPU:
     def gatherVector(self, full, local):
         """Gather full[dest] on every GPU from local[src] pieces (packed by partition)."""
         # Make sure all source partitions finished writing before peer copies.
-        for src_id in self.configCuda.devices:
-            with cp.cuda.Device(src_id):
+        for devId in self.configCuda.devices:
+            with cp.cuda.Device(devId):
                 cp.cuda.Stream.null.synchronize()
 
         for dest_m, dest_id in enumerate(self.configCuda.devices):
@@ -346,6 +346,11 @@ class PCGSolverMultiGPU:
                             dst.nbytes,
                             cp.cuda.get_current_stream().ptr,
                         )
+
+
+        # Synchronize after all peer copies are enqueued
+        for devId in self.configCuda.devices:
+            with cp.cuda.Device(devId):
                 cp.cuda.Stream.null.synchronize()
 
 
