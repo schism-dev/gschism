@@ -93,7 +93,11 @@ class CudaKernelWrapper:
                     num_blocks = (self.num_items + self.threads_per_block - 1) // self.threads_per_block
                     print(f">>>>>*** 2 launching on device {device_id}, num_blocks = {num_blocks}, threads_per_block = {self.threads_per_block}")
                     self.kernel_func((num_blocks,), (self.threads_per_block,), args)
-                    if not async_launch:
+
+
+            if not async_launch:
+                for device_id in configCuda.devices:
+                    with cp.cuda.Device(device_id):
                         cp.cuda.Stream.null.synchronize()
 
     def async_(self, *args, **kwargs):
