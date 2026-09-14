@@ -253,7 +253,7 @@ if __name__ == "__main__":
     
 
     # Initialize the solver
-    if numPartitions == 1:
+    if numPartitions <= -1:  # I have REMOVED THIS XXXXX
         N = nodeCoords.shape[1] # The size of the matrix is equal to the number of nodes.
         NNZ = nodeNeighNodes[0].size + N   # The total number of non-zero matrix elements is the number of node neighbors plus the number of nodes.
 
