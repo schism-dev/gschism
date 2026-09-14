@@ -52,13 +52,26 @@ class DeviceToHost:
             nMax = max(len(globalNodeIndices[m]),
                        len(globalElemIndices[m]),
                        len(globalSideIndices[m]))
-            maxFieldBytes = max(32, numVrt * 16)  # 3D Vector2 is the largest packed field
+            # Diagnostic: old expression (can overflow if numVrt is np.int32)
+            maxFieldBytesOld = max(32, numVrt * 16)
+            prodOld = nMax * maxFieldBytesOld
+            print(f"DeviceToHost buf m={m}: numVrt={numVrt!r} type={type(numVrt).__name__} "
+                  f"dtype={getattr(numVrt, 'dtype', None)}; "
+                  f"nMax={nMax!r} type={type(nMax).__name__}; "
+                  f"maxFieldBytesOld={maxFieldBytesOld!r} type={type(maxFieldBytesOld).__name__} "
+                  f"dtype={getattr(maxFieldBytesOld, 'dtype', None)}; "
+                  f"prodOld={prodOld!r} type={type(prodOld).__name__} "
+                  f"dtype={getattr(prodOld, 'dtype', None)}; "
+                  f"int32_max={np.iinfo(np.int32).max} prod_gt_int32={int(prodOld) > np.iinfo(np.int32).max}")
+            maxFieldBytes = max(32, int(numVrt) * 16)  # 3D Vector2 is the largest packed field
+            # int(): nMax*maxFieldBytes can exceed int32 (full mesh on one GPU)
+            nBytes = int(nMax) * int(maxFieldBytes)
             with cp.cuda.Device(device_id):                
-                self.bufferGPU.append(cp.empty(nMax*maxFieldBytes, dtype=cp.uint8))
-                self.bufferCPU.append(np.empty(nMax*maxFieldBytes, dtype=np.uint8))
+                self.bufferGPU.append(cp.empty(nBytes, dtype=cp.uint8))
+                self.bufferCPU.append(np.empty(nBytes, dtype=np.uint8))
 
         # Allocate a single result buffer for the final assembly.
-        totScratchBytes = sum(len(buffer) for buffer in self.bufferCPU)
+        totScratchBytes = int(sum(len(buffer) for buffer in self.bufferCPU))
         self.result = np.empty(totScratchBytes, dtype=np.uint8)
 
         # Per-partition global SCHISM indices for scatter after GPU read.
