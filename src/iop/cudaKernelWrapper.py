@@ -22,7 +22,7 @@ def initCudaDeviceConfig():
 
     # THIS IS FOR TESTING ONLY XXXXXXX
     if VISTA:
-        devices = (0, 1)
+        devices = (0, )
     else:
         devices = (0,)
 
