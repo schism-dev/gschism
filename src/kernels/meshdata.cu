@@ -2851,7 +2851,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       
       const double M2 = norm2(du_dz);              // Shear production term
 
-      const double N2 = turb.N2_c(node, k);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
+      const double N2 = turb.N2_c(node, k + 1);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
 
       const double vegProd = turb.vegTurbProduction(node, k + 1);
 
@@ -7043,6 +7043,24 @@ extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
          else
             for (int lev = 0; lev < nvrt; lev++)
                out[lev] = node->w2[lev];
+         break;
+      }
+      case (int)VarCode::dfh: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->dfh[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->dfh[lev];
+         break;
+      }
+      case (int)VarCode::dfv: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->dfv[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->dfv[lev];
          break;
       }
    }

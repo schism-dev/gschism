@@ -1,6 +1,6 @@
 // BEGIN INCLUDE: constants.h
 #define USE_LOCALIZED_SIGMA
-#define DO_NOT_USE_FRAMES
+#define USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 constexpr double rad2deg = 180.0/3.14159265358979323846;
@@ -12,13 +12,47 @@ constexpr int N_TRACERS = 2;
 constexpr int nGPUs = 1; // nGPUs is always equal to the number of partitions.
 constexpr int nPartitions = nGPUs;
 
+// Turbulence model and submodel
+enum class TurbulenceModel : int {
+    VertVarying  = -1,
+    HorzVarying  = -2,
+    Constant     =  0,
+    Pacanowski   =  2,
+    GLS          =  3,
+    GOTM         =  4,
+    SedimentMix  =  5,
+};
+
+enum class TurbulenceSubmodel : int {
+    TurbNotSet     = -1,
+    MellorYamada   = 0,
+    KL             = 1,
+    KE             = 2,
+    KW             = 3,
+    UmlaufBurchard = 4,
+};
+
+enum class StabilityModel : int {
+    StabNotSet    = -1,
+    Galperin      = 0,   // stab = 'GA'
+    KanthaClayson = 1,   // stab = 'KC'
+};
+
+
+constexpr TurbulenceModel turbulenceModel = static_cast<TurbulenceModel>(3);
+constexpr TurbulenceSubmodel turbSubmodel = static_cast<TurbulenceSubmodel>(1);
+constexpr StabilityModel stabilityModel   = static_cast<StabilityModel>(1);
+
+
 // Nodes owned by each partition
-constexpr int numNodesPerPartition[nPartitions] = {1457889};
+constexpr int numNodesPerPartition[nPartitions] = {20641};
 // Cumulative counts: offset[0]=numNodesPerPartition[0], offset[p]=offset[p-1]+numNodesPerPartition[p]
 constexpr int nodeOffsetPerPartition[nPartitions] = {0};
 
+
+
 constexpr int ivcor = 1;              // Vertical coordinate system
-constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
+constexpr int ics = 2;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
 constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
@@ -26,7 +60,8 @@ constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stabi
 constexpr int ihydraulics = 0; // Option of including hydraulics
 constexpr int nhtblocks = 0;                 // Number of hydraulic structures (zero for the moment)
 constexpr int ibc = 1;                 // Option to include baroclinic term (0 means yes)
-constexpr int itur = 0;               // Turbulence closure model
+constexpr int itur = 3;               // Turbulence closure model
+constexpr int icompute_cpsi3 = 0;  // 0: use tabulated cpsi3; !=0: compute (not implemented)
 constexpr int islip = 0;             // Option to include slip horizontal boundary conditions
 constexpr int iupwind_mom = 0; // Option on how to include upwind momentum advection
 constexpr int ihorcon = 0;         // Option to include horizontal viscosity
@@ -36,10 +71,10 @@ constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
 constexpr int ncor = 1;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
+constexpr double sfea0 = 46.25*deg2rad; // Reference latitude for Coriolis force
 constexpr int nws = 2;               // Option to include wind forcing
-constexpr double wtiminc = 3600;    // Time increment for wind forcing
-constexpr int iwind_form = 1; // Option to include wind forcing
+constexpr double wtiminc = 90;    // Time increment for wind forcing
+constexpr int iwind_form = 0; // Option to include wind forcing
 constexpr int iwindoff = 0;     // Option to include wind forcing
 constexpr double drampwind = 1; // Option to include wind forcing
 
@@ -61,8 +96,8 @@ constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometri
 constexpr double veg_lai = 1; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 8;            // Number of tidal potential components
-constexpr double tip_dp = 50;   // cut-off depth for applying tidal potential
+constexpr int ntip = 0;            // Number of tidal potential components
+constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
 
 // Boundary forcing frequencies
 constexpr int nbfr = 8;            // Number of boundary forcing frequencies
@@ -83,46 +118,48 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 50; // Number of vertical levels
+constexpr int nvrt    = 46; // Number of vertical levels
 constexpr int nzlev   = 0; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 50; // Number of sigma levels (in contrast to z levels)
+constexpr int nsiglev = 46; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;
 constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
-constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 43; // Number of land boundary segments
-constexpr int mnlnd = 28091; // Maximum number of nodes per land boundary segment
+constexpr int nope  = 4; // Number of open boundary segments
+constexpr int mnond = 88; // Maximum number of nodes per open boundary segment
+constexpr int nland = 19; // Number of land boundary segments
+constexpr int mnlnd = 875; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
 
-constexpr double thetai = 1;
+constexpr double thetai = 0.502;
 
-constexpr double rmaxvel = 4; // Maximum velocity for the x-component
+constexpr double rmaxvel = 10; // Maximum velocity for the x-component
 constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
 constexpr double rho0 = 1000; // [kg/m^3]
-constexpr double dtb_min = 10; 
+constexpr double dtb_min = 15; 
 constexpr double dtb_max = 30; 
 constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
 constexpr double velmin_btrack_sq = velmin_btrack*velmin_btrack;
 
 constexpr int nadv = 1; // Advection flag
 
-constexpr double dfv0 = 0.01; 
+constexpr double dfv0 = 0.01; // turbulent diffusion for momentum
+constexpr double dfh0 = 0.0001; // turbulent diffusion for tracers
+constexpr double xlsc0 = 0.1; // surface/bottom mixing length scale (itur=3,5)
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 120;  // Time step  XXX 
+constexpr double dt = 90;  // Time step  XXX 
 
-constexpr double h0 = 0.0001;  // Minimum water depth for wetting and drying [m]
+constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
-enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, island=15, ifltype=16, elbc=17, isdry=18, eta=19, area=20, qel=21, depth=22, radius=23, len=24, lonlat=25, kb=26, n1=27, n2=28, idx=29, htot=30, gradPr=31, gradEta1=32, gradEta2=33, gradETP=34, FaceIndices=35, u_air=36, outputCoords=37}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, dfh=15, dfv=16, island=17, ifltype=18, elbc=19, isdry=20, eta=21, area=22, qel=23, depth=24, radius=25, len=26, lonlat=27, kb=28, n1=29, n2=30, idx=31, htot=32, gradPr=33, gradEta1=34, gradEta2=35, gradETP=36, FaceIndices=37, u_air=38, outputCoords=39}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 using int16_t = short;
@@ -141,6 +178,9 @@ constexpr double eps = 1.019e-2; // Nudging factor XXX WHY THIS VALUE?
 
 constexpr double grav        = 9.81;      // [m/s^2]
 constexpr double omega_e     = 7.292e-5;  // [1/s]
+
+constexpr double kappa = 0.4; // von Karman constant
+constexpr double cmiu0 = 0.5477225575; // sqrt(0.3);
 
 // eta coordinates of the nodes (idxNode = 0,1,2,3)
 __device__ __forceinline__ double eta_n(int idxNode) {
@@ -196,6 +236,7 @@ __device__ __forceinline__ Bool4 operator&(Bool4 a, Bool4 b) { return Bool4{(uns
 __device__ __forceinline__ Bool4 operator|(Bool4 a, Bool4 b) { return Bool4{(unsigned int)(a.m | b.m)}; }
 
 
+
 // Union to store different types of variables in the same memory location. This is used to define temporary 
 // variables that can be used to store different types of variables.
 union TempVar {
@@ -217,6 +258,11 @@ extern "C" __global__ void initTidalHarmonicConstituents(double *_amig, double *
 __device__ double *rMr_old;
 __device__ double *rMr_new;
 __device__ double *pAp;
+
+
+
+template<int nc>
+__device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam);
 
 
 // Simple math functions ---------------------------------------------------------------------------
@@ -270,11 +316,13 @@ __device__ __forceinline__ double pow<3>(double x) {
 
 
 __device__ __forceinline__ double clamp(double x, double minval, double maxval) {
-    return fmin(fmax(x, minval), maxval);
+   assert(minval <= maxval && "clamp: minval > maxval");
+   return fmin(fmax(x, minval), maxval);
 }
 
 __device__ __forceinline__ int clamp(int x, int minval, int maxval) {
-    return max(minval, min(x, maxval));
+   assert(minval <= maxval && "clamp: minval > maxval");
+   return max(minval, min(x, maxval));
 }
 
 
@@ -538,6 +586,196 @@ struct Tracers {
     double tracer[N_TRACERS];
 };
 
+
+// Forward declarations
+struct Side;
+struct Element;
+struct Node;
+struct Mesh;
+struct NodeBoundary;
+
+
+// ----------------------------- Turbulence -----------------------------
+
+
+
+constexpr double veg_cfk   = 0.07; //Shimizu & Tsujimoto (1994)
+constexpr double veg_cfpsi = 0.16;
+
+
+template<TurbulenceModel Model>
+struct Turbulence {};   
+
+// GLS turbulence model
+template<>
+struct Turbulence<TurbulenceModel::GLS> {
+   using enum TurbulenceSubmodel;
+   using enum StabilityModel;
+
+   double tke[nvrt];    // TKE
+   double mxl[nvrt];    // mixing length for GLS
+   double nu_tke[nvrt]; // Vertical diffusivity for TKE 
+   double nu_phi[nvrt]; // Vertical diffusivity for generic length scale variable (phi)
+   
+   
+
+   __device__ __forceinline__ constexpr double cpsi1() const {
+      if      constexpr (turbSubmodel == MellorYamada)   return 0.9;
+      else if constexpr (turbSubmodel == KL)             return 0.9;
+      else if constexpr (turbSubmodel == KE)             return 1.44;
+      else if constexpr (turbSubmodel == KW)             return 0.555;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 1.0;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+   
+   __device__ __forceinline__ constexpr double cpsi2() const {
+      // Returns coefficient cpsi2 for the dissipation term in the GLS turbulence model
+      if      constexpr (turbSubmodel == MellorYamada)   return 0.5;
+      else if constexpr (turbSubmodel == KL)             return 0.5;
+      else if constexpr (turbSubmodel == KE)             return 1.92;
+      else if constexpr (turbSubmodel == KW)             return 0.833;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 1.22;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+
+   __device__ __forceinline__ double Fwall(Node *node, int k, double mxl_c) const;
+
+   __device__ __forceinline__ double cpsi3(double N2) const {
+
+      // Returns coefficient cpsi3 for the buoyancy production/dissipation term in the GLS turbulence model
+      // Remember that N2 is the signed square of the Brunt-Väisälä frequency
+
+      if constexpr(icompute_cpsi3 != 0) { assert(false && "compute_cpsi3 not implemented for icompute_cpsi3!=0"); return 0.0; }
+
+      if constexpr (turbSubmodel == MellorYamada) {
+         return 0.9;   
+
+      } else { // Other GLS submodels
+
+
+         if (N2 > 0.0) { // unstable (inverse stratification)
+            return 1.0;   
+
+         } else { // stable (regular stratification)
+
+            if      constexpr (turbSubmodel == KL)             return 2.53;
+            else if constexpr (turbSubmodel == KE)             return -0.52;
+            else if constexpr (turbSubmodel == KW)             return -0.58;
+            else if constexpr (turbSubmodel == UmlaufBurchard) return  0.1;
+            else { assert(false && "unknown submodel"); return 0.0; }
+         }
+
+      } //if constexpr (turbSubmodel == TurbulenceSubmodel::MY)
+
+   }
+
+   
+   __device__ __forceinline__ constexpr double rpub(void) const {
+      if      constexpr (turbSubmodel == MellorYamada)   return  0.0;
+      else if constexpr (turbSubmodel == KL)             return  0.0;
+      else if constexpr (turbSubmodel == KE)             return  3.0;
+      else if constexpr (turbSubmodel == KW)             return -1.0;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return  2.0;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+
+   __device__ __forceinline__ constexpr double rmub(void) const {
+      if      constexpr (turbSubmodel == MellorYamada)   return 1.0;
+      else if constexpr (turbSubmodel == KL)             return 1.0;
+      else if constexpr (turbSubmodel == KE)             return 1.5;
+      else if constexpr (turbSubmodel == KW)             return 0.5;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 1.0;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+
+   __device__ __forceinline__ constexpr double rnub(void) const {
+      if      constexpr (turbSubmodel == MellorYamada)   return  1.0;
+      else if constexpr (turbSubmodel == KL)             return  1.0;
+      else if constexpr (turbSubmodel == KE)             return -1.0;
+      else if constexpr (turbSubmodel == KW)             return -1.0;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return -0.67;
+      else { assert(false && "unknown submodel"); return 0.0; }
+   }
+
+
+   __device__ __forceinline__ constexpr double schk(void) const {
+      if      constexpr (turbSubmodel == KL)             return 2.44;
+      else if constexpr (turbSubmodel == KE)             return 1.0;
+      else if constexpr (turbSubmodel == KW)             return 2.0;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 0.8;
+      else { assert(false && "schk not set for this submodel"); return 0.0; }
+   }
+
+
+   __device__ __forceinline__ constexpr double schpsi(void) const {
+      if      constexpr (turbSubmodel == KL)             return 2.44;
+      else if constexpr (turbSubmodel == KE)             return 1.3;
+      else if constexpr (turbSubmodel == KW)             return 2.0;
+      else if constexpr (turbSubmodel == UmlaufBurchard) return 1.07;
+      else { assert(false && "schpsi not set for this submodel"); return 0.0; }
+   }
+
+
+   __device__ __forceinline__ constexpr double tkemin(void) const {
+      if constexpr (turbSubmodel == MellorYamada || turbSubmodel == KL)
+         return 5.0e-6;
+      else
+         return 7.6e-6; // Warner et al., OM 2005
+   }
+
+
+   __device__ __forceinline__ constexpr double psimin(void) const {
+      if constexpr (turbSubmodel == MellorYamada || turbSubmodel == TurbulenceSubmodel::KL)
+         return 1.0e-8;
+      else
+         return 1.0e-12; // Warner et al., OM 2005
+   }
+
+   __device__ __forceinline__ constexpr double epsmin(void) const {
+      return 1.0e-12;  // GOTM/SCHISM default; floor for dissipative length cap
+   }
+
+   __device__ __forceinline__ double mxlmin(double depth) const;
+
+   __device__ __forceinline__ double diffmin(void) const {
+      // XXXXXXXX: This is a placeholder.
+      return 1.0e-6;
+   }
+
+   __device__ __forceinline__ double diffmax(void) const {
+      return 1.0;
+   }
+
+   
+   __device__ __forceinline__ double N2_c(Node *node, int k) const;
+
+   __device__ __forceinline__ double N2(Node *node, int k) const;
+
+
+   __device__ __forceinline__ double vegTurbProduction(Node *node, int k) const;
+
+   __device__ void computeDiffusivities(Node *node);
+
+   __device__ __forceinline__ double maxMixingLength(Node *node, int k) const;
+
+
+   // Conversions between the generic length-scale variable Phi and the mixing length mxl.
+   __device__ __forceinline__ double phiFromMxl(double tke, double mxl) const {
+      return pow(cmiu0, rpub()) * pow(tke, rmub()) * pow(mxl, rnub());
+   }
+
+
+   __device__ __forceinline__ double mxlFromPhi(double tke, double phi) const {
+      return pow(phi * pow(cmiu0, -rpub()) * pow(tke, -rmub()), 1.0/rnub());
+   }
+
+};
+
+
 // ------------------------------LocalSigma------------------------------
 
 template<int IVCOR>
@@ -546,7 +784,7 @@ struct LocalSigma {};
 template<>
 struct LocalSigma<2> {
    __device__ double operator[](int k) const { return 0.0; }
-   __device__ double& operator[](int k) { assert(false && "LocalSigma<2>: operator[] not implemented"); return (double &)*((double *)nullptr); }
+   __device__ double& operator[](int k) { assert(false && "LocalSigma<2>: by reference operator[] not implemented"); return (double &)*((double *)nullptr); }
 };
 
 template<>
@@ -710,12 +948,7 @@ struct Frame<2> {
 };
 
 
-// Forward declarations
-struct Side;
-struct Element;
-struct Node;
-struct Mesh;
-struct NodeBoundary;
+
 
 void showPoints(Point3 x1, Point3 x2, int jlev, const Side *origSide, unsigned int color = 0x0000FFu, char marker = 'o', int width = 1, int dashLen = 0, int label = -1);
 
@@ -1458,6 +1691,9 @@ struct Node {
 
    double rho[nvrt];     // Density
    double dfv[nvrt];     // Vertical viscosity
+   double dfh[nvrt];     // Horizontal viscosity  XXXX (does it need to exist when transport is not enabled?)
+
+   Turbulence<turbulenceModel> turb;
 
    double eta1; // Elevation at nodes at previous timestep
    double eta2; // Elevation at nodes at current timestep
@@ -1608,6 +1844,8 @@ struct Node {
    __inline__ __device__ Vector3 uvw2(int k) const { return {u2[k].x, u2[k].y, w2[k]}; }
 
    __inline__ __device__ bool isDry2(void) const { return htot2() <= h0; } // isDry, but updated to use eta2
+   __inline__ __device__ bool is2D(void) const { assert(kb <= nvrt - 2); return kb == nvrt - 2; }
+   __inline__ __device__ bool is3D(void) const { assert(kb <= nvrt - 2); return kb <  nvrt - 2; }   
 
    __inline__ __device__ bool isBnd(void) const { return nodeBnd != nullptr; } // True if the node is a boundary node
    // __inline__ __device__ int numElements(void) const { return isNbd() ? numElements - 1 : numElements; } // Number of elements that are connected to this node
@@ -3959,6 +4197,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
    for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
    for (int k = 0; k < nvrt; k++) node.dfv[k] = dfv0;   // XXXX 
+   for (int k = 0; k < nvrt; k++) node.dfh[k] = dfh0;   // XXXX (does it need to exist when transport is not enabled?)
 
    
    // Links the node to the boundary information
@@ -4476,6 +4715,522 @@ __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
 }
 
 
+
+
+
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::N2_c(Node *node, int k) const {
+   // Brunt-Väisälä frequency at the center of the layer between levels k-1 and k.
+   const double rho_c = 0.5*(node->rho[k] + node->rho[k-1]);
+   return (grav/rho_c)*(node->rho[k] - node->rho[k-1])/node->Dz(k);
+}
+
+
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::N2(Node *node, int k) const {
+   // Brunt-Väisälä frequency at level k.
+   if (k <= node->kb || k >= ivrt) return 0.0;
+   return (grav/node->rho[k])*(node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
+}
+
+
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::Fwall(Node *node, int k, double mxl_c) const {
+
+   
+   // Returns wall proximity function F_wall for the dissipation term in the GLS turbulence model.
+   // k is the layer bottom index.
+
+
+
+   if constexpr (turbSubmodel == MellorYamada || turbSubmodel == KL) {
+
+      const double z_c = 0.5*(node->z[k] + node->z[k+1]);
+      const double eta2 = node->eta2;
+      const double depth = node->depth;
+
+      // Distances from the layer midpoint to the surface and bottom
+      const double dist_s = eta2 - z_c;
+      const double dist_b = z_c + depth;
+
+      assert(dist_s != 0.0 && dist_b != 0.0 && "Zero in proximity function");         
+
+      return 1.0 + 1.33*pow<2>((1.0/kappa)*mxl_c/dist_b) + 0.25*pow<2>((1.0/kappa)*mxl_c/dist_s);
+
+
+   } else {
+      return 1.0; // Other GLS submodels
+
+   }
+}
+
+
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::mxlmin(double depth) const {
+   // Minimum mixing length for levels below the surface.
+   // Independent of psimin(); do not invert one to get the other.
+   return 2.0 * tkemin() * 0.1 * max(h0, depth);
+}
+
+
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::vegTurbProduction(Node *node, int k) const {
+
+   // Returns the turbulence production due to vegetation averaged over the current layer.
+
+   if constexpr(iveg == 1) {
+      
+      const double zbot = node->z[k-1]; // Bottom of the current layer.
+      const double zTopCanopy = node->zTopCanopy();
+
+      if (zbot < zTopCanopy) { // This means that the current level is within the vegetation layer, either partially or fully
+
+         const double ztop = node->z[k];   // Top of the current layer.
+
+         // Fraction of the current layer that is within the vegetation layer. zrat \in (0,1]
+         // Where 1 means that the current level is fully within the vegetation layer.
+         const double zrat = (min(zTopCanopy, ztop) - zbot)/(ztop - zbot);
+
+         // Velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
+         const Vector2 ub2_top = (1.0 - zrat)*node->u2[k-1] + zrat*node->u2[k]; // @top of canopy
+
+         // Magnitude of the velocity at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
+         // and at the bottom of the layer.
+         const double vmag_top = length(ub2_top);
+         const double vmag_bot = length(node->u2[k-1]);
+
+         // Volume-averaged velocity cubed.
+         const double vmag3 = 0.5*(pow<3>(vmag_top) + pow<3>(vmag_bot));
+
+         // Vegetation alpha at the top of the layer (or the top of the vegetation layer if the current level is partially within the vegetation layer).
+         // and at the bottom of the layer.
+         const double veg_alpha3D_top = (1.0 - zrat)*node->veg_alpha3D[k-1] + zrat*node->veg_alpha3D[k];
+         const double veg_alpha3D_bot = node->veg_alpha3D[k-1];
+
+         // Volume-averaged vegetation alpha cubed.
+         const double veg_alpha3D = 0.5*(veg_alpha3D_top + veg_alpha3D_bot);
+
+         return veg_alpha3D*vmag3;
+      } 
+      else {
+         // The current level is not within the vegetation layer, so the production is 0.
+         return 0.0;
+      }
+   } else {
+
+      // If no vegetation, the production is 0.
+      return 0.0;
+   }
+
+}
+
+
+__device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *node) {
+   // Eddy viscosity/diffusivity from the algebraic stability functions (stabilityModel).
+   // Writes node->dfv, node->dfh (diffusivities for momentum/tracers) and nu_tke, nu_phi (diffusivities for TKE/phi).
+
+   const int kb = node->kb;
+
+   for (int k = kb; k < nvrt; k++) {
+      const double tke = this->tke[k];
+      const double mxl = this->mxl[k];
+      const double u = sqrt(tke);  // Characteristic velocity
+      const double lu = mxl*u;     // Characteristic diffusivity 
+
+      // vertical gradient of density (homogeneous Neumann boundary conditions at the surface and bottom).
+      double drho_dz = 0.0;
+      if (k > kb && k < ivrt) {
+         drho_dz = (node->rho[k+1] - node->rho[k-1])/(node->z[k+1] - node->z[k-1]);
+      }
+
+      const double N2 =this->N2(node, k); // Brunt-Väisälä frequency
+
+      // Tsinghua group       
+      const double Gh = clamp(0.5*mxl*mxl*N2/tke, -0.28, 0.0233);
+
+      double sh, sm, cmiu, cmiup, cmiu1, cmiu2;
+      if constexpr (stabilityModel == Galperin) {
+         sh = 0.49393/(1.0-34.676*Gh);
+         sm = (0.39327-3.0858*Gh)/(1.0-34.676*Gh)/(1.0-6.1272*Gh);
+         cmiu  = sqrt(2.0)*sm;
+         cmiup = sqrt(2.0)*sh;
+         cmiu1 = sqrt(2.0)*0.2;
+         cmiu2 = sqrt(2.0)*0.2;
+
+      } else if constexpr (stabilityModel == KanthaClayson) {  // Kantha and Clayson
+         // Warner's paper has problem
+         //  Ghp=(Gh-(Gh-0.02)**2)/(Gh+0.0233-0.04) !smoothing
+         const double Ghp = Gh;  /// XXXXX needed?
+         sh = 0.4939/(1.0 - 30.19*Ghp);
+         sm = (0.392 + 17.07*sh*Ghp)/(1.0-6.127*Ghp);
+         cmiu  = sqrt(2.0)*sm;
+         cmiup = sqrt(2.0)*sh;
+         cmiu1 = cmiu/schk();
+         cmiu2 = cmiu/schpsi();
+
+      } else {
+         assert(false && "Unknown ASM");
+
+      }
+
+      node->dfv[k] = clamp(cmiu  * lu, diffmin(), diffmax());
+      node->dfh[k] = clamp(cmiup * lu, diffmin(), diffmax());
+      nu_tke[k]    = clamp(cmiu1 * lu, diffmin(), diffmax());
+      nu_phi[k]    = clamp(cmiu2 * lu, diffmin(), diffmax());
+   }
+}
+
+
+__device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::maxMixingLength(Node *node, int k) const {
+// Compute upper bound for the turbulent mixing length based on the distance to the closest "wall" (either surface or bottom).
+
+   const double z = node->z[k];
+   const double eta2 = node->eta2;
+   const double depth = node->depth;
+
+   // Distances to the surface and bottom
+   const double dist_s = eta2 - z;
+   const double dist_b = z + depth;
+
+   // Distance to the closest "wall" (either surface or bottom).  
+   // In the top layer, it is the size of the layer.
+   const double min_dist = (k==ivrt)?node->Dz(ivrt):min(dist_s, dist_b); 
+   assert(min_dist > 0.0 && "Invalid minimum distance");
+
+   // The limit of the mixing length is the maximum eddy that the closest "wall" allows.
+   return kappa*min_dist;
+}
+
+
+
+template<TurbulenceModel turbulenceModel>
+__device__ __forceinline__ void computeTurbulenceModel(Node *node);
+
+
+template<>
+__device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::Constant>(Node *node) { 
+   // Constant turbulence model
+   // Does nothing since dfv and dfh are already set  in the initialization.
+}
+
+template<>
+__device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Node *node) { 
+   // Mellor-Yamada-Galperin & Umlauf-Burchard scheme
+
+   // Solves the following PDEs:
+   //
+   //    dK/dt = d/dz(nu_q2*dK/dz) + 2*(Prod - diss + Buoy)
+   //    dPhi/dt = d/dz(nu_xl*dPhi/dz) + 2*(l/q2)*(cpsi1*Prod - cpsi2*Fw*diss + cpsi3*Buoy)
+   //
+   // Where K is TKE and Phi is the GLS generic length-scale variable, and Fw is the wall proximity function.
+   // In the code we call them tke and phi. However, we don't store phi, we store mxl (mixing length).
+   // They are related by the equation: Phi = cpsi2*Fw*sqrt(K/cpsi3), but it can be confusing, so be careful.
+   //
+   // The equations are solved using a linear *vertical* FEM formulation.
+   // Elements are linear functions defined on a layer (the interval between two vertical levels).
+   // The shape functions are triangular functions composed of two linear functions over consecutive intervals.
+   
+   
+   // Get the turbulence model
+   // reinterpret_cast is used to avoid stupid compiler errors.
+   Turbulence<TurbulenceModel::GLS> &turb = reinterpret_cast<Turbulence<TurbulenceModel::GLS>&>(node->turb);
+     
+   const int kb = node->kb;
+   const int nqrows = nvrt - kb - 1; // Number of rows of the tridiagonal system
+
+   double alow_tke[nvrt], alow_phi[nvrt];
+   double bdia_tke[nvrt], bdia_phi[nvrt];
+   double cupp_tke[nvrt], cupp_phi[nvrt];
+   double rhs_tke [nvrt], rhs_phi [nvrt];
+   
+   // Initialize the tridiagonal system
+   for (int kin = 0; kin < nqrows; kin++) {
+      alow_tke[kin]=0.0;
+      bdia_tke[kin]=0.0;
+      cupp_tke[kin]=0.0;
+      rhs_tke [kin]=0.0; 
+      alow_phi[kin]=0.0;
+      bdia_phi[kin]=0.0;
+      cupp_phi[kin]=0.0;
+      rhs_phi [kin]=0.0; 
+   }
+
+
+
+   // For dry or 2D nodes, vertical viscosity and diffusivity are set to their minimum values.
+   if (node->isDry || node->is2D()) {
+
+      // Minimum diffusivity at each node. In some cases, it is node-dependent (read from file).
+      const double diffmin = turb.diffmin();
+
+      for (int k = 0; k < nvrt; k++) {
+         turb.tke[k]    = turb.tkemin();
+         turb.mxl[k]    = turb.mxlmin(node->depth);
+         node->dfv[k]   = diffmin;
+         node->dfh[k]   = diffmin;
+         turb.nu_tke[k] = diffmin;
+         turb.nu_phi[k] = diffmin;
+      }
+
+      return;
+   }
+
+   assert(node->rho[0] >= -98.0 && "Impossible: dry 2"); /// XXX JMG: Do I need to fill these centinel values?
+   
+   // After here we know that the node is wet and has at least 2 layers.
+
+   double solution[nvrt], gam[nvrt];
+   
+   const double eta2       = node->eta2;
+   const double depth      = node->depth;
+   const double Cd         = node->Cd; // Drag coefficient
+
+   constexpr double c0 = 6.50736836993; //pow(16.6, 2.0/3.0); 
+   
+   const double sqU2 = norm2(node->u2[kb + 1]);
+   const double modTau = length(node->tau);
+
+ 
+
+   const double cpsi1 = turb.cpsi1();
+   const double cpsi2 = turb.cpsi2();
+   // cpsi3 is computed later because it depends on k
+
+
+   // Assemble the tridiagonal system
+   // -------------------------------
+
+   // Loop over each vertical layer (interval between two vertical levels)
+   // Each interval is an element of the vertical FEM formulation.
+   // Two shape functions are defined over each interval. In this function we well call them
+   // p1 and p2. The derivatives of the shape functions are called d1 and d2.
+   // In general, inside the loops, 1 refers to the lower level and 2 refers to the upper level.
+   //
+   // Each interval contributes to two rows (vertical levels) of the tridiagonal system.
+   // Both systems of equations are assembled in the same loop.
+   for (int k = kb + 1, kin = 0; k < ivrt; k++, kin++) {
+
+      // Indices for the *rows* of the tridiagonal system.
+      const int k1 = k - kb - 1; // Zero at k = kb + 1
+      const int k2 = k - kb;     // One at k = kb + 1
+
+      // Get the properties of the current interval.
+      const double z  = node->z[k]; // bottom level of the interval
+      const double dz = node->Dz(k + 1);
+      const double rho_c = 0.5*(node->rho[k] + node->rho[k+1]);
+      
+      const Vector2 du_dz   = (node->u2[k+1] - node->u2[k])/dz;
+      const double drho_dz = (node->rho[k+1] - node->rho[k])/dz;
+
+      // Turbulence production/dissipation terms (at the center of the interval).
+      
+      const double M2 = norm2(du_dz);              // Shear production term
+
+      const double N2 = turb.N2_c(node, k + 1);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
+
+      const double vegProd = turb.vegTurbProduction(node, k + 1);
+
+      const double cpsi3 = turb.cpsi3(N2); 
+
+
+      // Turbulence quantities at half levels (cell [c]enter)
+      const double tke_1     = turb.tke[k];
+      const double tke_2     = turb.tke[k+1];
+      const double mxl_1     = turb.mxl[k];
+      const double mxl_2     = turb.mxl[k+1];
+      const double tke_c     = 0.5*(tke_1 + tke_2);
+      const double mxl_c     = 0.5*(mxl_1 + mxl_2);
+      const double nu_tke_c  = 0.5*(turb.nu_tke[k] + turb.nu_tke[k+1]);
+      const double nu_phi_c  = 0.5*(turb.nu_phi[k] + turb.nu_phi[k+1]);
+      const double dfv_c     = 0.5*(node->dfv[k]   + node->dfv[k+1]);
+      const double dfh_c     = 0.5*(node->dfh[k]   + node->dfh[k+1]);
+      const double Fwall_c   = turb.Fwall(node, k, mxl_c);
+
+      // Integral of the shape function products:
+      // integral of (phi_i*phi_i)dz = dz/3.0,   integral of (phi_i*phi_i+1)dz = dz/6.0
+      // integral of (phi_i'*phi_i+1')dz = 1/dz, integral of (phi_i'*phi_i+1')dz = -1/dz
+      const double p1p1 = dz/3.0;
+      const double p1p2 = dz/6.0;
+      const double d1d1 =  1.0/dz;
+      const double d1d2 = -1.0/dz;
+
+      // Production/dissipation related terms
+      const double prod = dfv_c*M2 + veg_cfk*vegProd;
+      const double buoy = dfh_c*N2;
+      const double diss = pow<3>(cmiu0)*sqrt(tke_c)/mxl_c*dz/6.0; //diss/k
+
+      // Equation for tke
+      // ---------------
+
+      // First row (of the two rows that the interval contributes to)
+      bdia_tke[k1] += p1p1 + dt*d1d1*nu_tke_c;
+      cupp_tke[k1] += p1p2 + dt*d1d2*nu_tke_c;
+      rhs_tke [k1] += p1p1*tke_1 + p1p2*tke_2;
+
+
+      if(prod + buoy >= 0.0) { // Net production
+         rhs_tke[k1] += dt*dz/2.0*(prod + buoy);
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod + buoy)/tke_c;
+         bdia_tke[k1] -= 2.0*tmp;
+         cupp_tke[k1] -= tmp;
+      }      
+      
+      bdia_tke[k1] += 2.0*dt*diss;
+      cupp_tke[k1] += dt*diss;
+      
+  
+      // Second row (of the two rows that the interval contributes to)
+      bdia_tke[k2] += p1p1 + dt*d1d1*nu_tke_c;
+      alow_tke[k2] += p1p2 + dt*d1d2*nu_tke_c;
+      rhs_tke [k2] += p1p1*tke_2 + p1p2*tke_1;
+
+      if (prod + buoy >= 0.0) { // Net production
+         rhs_tke[k2] += dt*dz/2.0*(prod+buoy);
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod + buoy)/tke_c;
+         bdia_tke[k2] -= 2.0*tmp;
+         alow_tke[k2] -= tmp;
+      }
+      
+      bdia_tke[k2] += 2.0*dt*diss;
+      alow_tke[k2] += dt*diss;
+
+
+      // Equation for xl
+      // ---------------
+
+      const double rpub = turb.rpub();
+      const double rmub = turb.rmub();
+      const double rnub = turb.rnub();
+      const double psi_1 = turb.phiFromMxl(tke_1, mxl_1); 
+      const double psi_2 = turb.phiFromMxl(tke_2, mxl_2); 
+      const double psi_c = 0.5*(psi_1 + psi_2);
+
+      // Production/dissipation related terms
+      const double prod_phi = cpsi1*dfv_c*M2 + veg_cfpsi*vegProd;
+      const double buoy_phi = cpsi3*dfh_c*N2;
+      const double diss_phi = cpsi2*Fwall_c*pow<3>(cmiu0)*sqrt(tke_c)/mxl_c*dz/6.0; //diss/k
+
+      bdia_phi[k1] += p1p1 + dt*d1d1*nu_phi_c;
+      cupp_phi[k1] += p1p2 + dt*d1d2*nu_phi_c;
+      rhs_phi [k1] += p1p1*psi_1 + p1p2*psi_2;
+
+      if (prod_phi + buoy_phi >= 0.0) { // Net production
+         rhs_phi[k1] += dt*dz/2.0*(prod_phi + buoy_phi)*psi_c/tke_c;
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod_phi + buoy_phi)/tke_c;
+         bdia_phi[k1] -= 2.0*tmp;
+         cupp_phi[k1] -= tmp;
+      }
+
+      // Production/dissipation terms
+      bdia_phi[k1] += 2.0*dt*diss_phi;
+      cupp_phi[k1] += dt*diss_phi;
+ 
+
+      // row k2 (upper)
+      bdia_phi[k2] += p1p1 + dt*d1d1*nu_phi_c;
+      alow_phi[k2] += p1p2 + dt*d1d2*nu_phi_c;
+      rhs_phi [k2] += p1p1*psi_2 + p1p2*psi_1;
+
+      if (prod_phi + buoy_phi >= 0.0) { // Net production
+         rhs_phi[k2] += dt*dz/2.0*(prod_phi + buoy_phi)*psi_c/tke_c;
+      } else { // Net dissipation
+         const double tmp = dt*dz/6.0*(prod_phi + buoy_phi)/tke_c;
+         bdia_phi[k2] -= 2.0*tmp;
+         alow_phi[k2] -= tmp;
+      }
+
+      // Production/dissipation terms
+      bdia_phi[k2] += 2.0*dt*diss_phi;
+      alow_phi[k2] += dt*diss_phi;
+
+   }
+
+   // BC
+   bdia_phi[0]          += kappa * turb.rnub() * dt * turb.nu_phi[kb + 1] / turb.mxl[kb + 1];
+   bdia_phi[nqrows - 1] += kappa * turb.rnub() * dt * turb.nu_phi[ivrt]   / turb.mxl[ivrt];
+
+
+   // Solves for tke.
+   tridag_sch<1>(nqrows, alow_tke, bdia_tke, cupp_tke, rhs_tke, solution, gam);
+
+
+   // B.C. (computed using values from previous time except wind)
+   const double tkesrf = max(0.5*c0*modTau,  turb.tkemin()); // Eq. (10) of Zhang & Baptista (2008)
+   const double tkebot = max(0.5*c0*Cd*sqU2, turb.tkemin());
+
+
+   // Update TKE.
+   turb.tke[kb]     = tkebot;
+   turb.tke[kb + 1] = tkebot;
+   turb.tke[ivrt]   = tkesrf;
+   for (int k = kb + 2, kin = 1; k < ivrt; k++, kin++) {
+      turb.tke[k] = max(solution[kin], turb.tkemin());
+   }
+
+
+
+ 
+   // Solves for phi.
+   tridag_sch<1>(nqrows, alow_phi, bdia_phi, cupp_phi, rhs_phi, solution, gam);
+
+
+   // B.C. for the mixing lengths: Bottom and surface (T. Guérin)
+   const double mxlbot = max(turb.mxlmin(depth), kappa*min(2.5, xlsc0*node->Dz(kb + 1))); //"2.5" to prevent over-mixing
+   const double mxlsrf = max(turb.mxlmin(depth), xlsc0*node->Dz(ivrt)*kappa);
+
+   turb.mxl[kb+1] = mxlbot;
+   turb.mxl[ivrt] = mxlsrf;
+   for (int k = kb + 2, kin = 1; k < ivrt; k++, kin++) {
+      turb.mxl[k] = turb.mxlFromPhi(turb.tke[k], max(solution[kin], turb.psimin()));
+
+      const double N2 = turb.N2_c(node, k);      // Brunt-Väisälä frequency 
+
+      // Galperin's clipping
+      if (N2 < 0.0) {
+         const double upper = sqrt(-0.56*turb.tke[k]/N2);
+         turb.mxl[k] = min(turb.mxl[k], upper);
+      }   
+
+
+
+      // Max. mixing length based on dissipation; mxlmin prevails
+      const double mxlmax_dissip = pow<3>(cmiu0*sqrt(turb.tke[k]))/turb.epsmin();
+
+      // Combined max. mixing length including geometric limit
+      const double mxlmax = min(turb.maxMixingLength(node, k), mxlmax_dissip);
+
+      // Clamp the mixing length between the minimum and maximum values
+      turb.mxl[k] = clamp(turb.mxl[k], turb.mxlmin(depth), mxlmax);
+
+      assert(turb.tke[k] >= 0 && "Negative TKE");
+
+
+   } // for k
+
+
+   // Extrapolate q2, xl to bottom mainly for diffusivities
+   turb.tke[kb] = turb.tke[kb + 1];
+   turb.mxl[kb] = turb.mxl[kb + 1];
+
+
+   // Compute vertical diffusivities at new time
+   turb.computeDiffusivities(node);
+
+   // make all the variables uniform below the bottom level kb
+   for (int k = 0; k < kb; k++) {
+      node->dfv[k] = node->dfv[kb];
+      node->dfh[k] = node->dfh[kb];
+      turb.tke[k] = turb.tke[kb];
+      turb.mxl[k] = turb.mxl[kb];
+      turb.nu_tke[k] = turb.nu_tke[kb];
+      turb.nu_phi[k] = turb.nu_phi[kb];
+   }
+
+      
+
+}
+
+
+
+
 extern "C" __global__ void setupCoefficientMatrixAndRHS(double time) {
    // Setup coefficient matrix, sparsem, for the shallow water wave equation
    // No elevation essential b.c. are imposed yet but other b.c. is imposed
@@ -4961,19 +5716,17 @@ extern "C" {
 template<int nc>
 __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, double *u, double *gam) {
 
-// Solves a tridiagonal system. It was adapted from "Numerical Recipes in FORTRAN (pp.43 ).
+// Solves a tridiagonal system. Adapted from Numerical Recipes in FORTRAN (pp.43).
 //
-// a,b,c,rhs: input vectors and are not modified by this program.
-// b is the main diagonal, a below and c above. a(1) and c(n) are not used.
-// rhs is the r.h.s.
-// n: actual rank of the system.
-// rows in u() and rhs();
-// u: output with nc columns (transposed to rows)
-// gam: a working array.
+// Although this is a general function, it is used only for equations on vertical levels.
+// nc is the number of components in each unknown: 1 for a scalar, 2 for Vector2.
+// It is not really for nc independent RHS vectors. We only use it for scalar and Vector2.
+// Vector2 is stored as adjacent (x, y), so index of level j, component l is j*nc + l.
 //
-// NOTES:
-// This is a template function that allows for different numbers of columns in the rhs vector.
-// [n, nc] is the shape of Fortran-type arrays rhs and u.
+// a, b, c, rhs: inputs, not modified. gam: work array of length n.
+// a, b, c are the three diagonals (b = main). a[0] and c[n-1] are unused.
+// n: rank of the system (number of vertical levels in the 3D momentum solve).
+// rhs, u: length n*nc, packed C order (n levels, nc components per level).
 
    assert(n >= 1       && "TRIDAG: n must be >= 1");
    assert(b[0] != 0.0  && "TRIDAG: b[0]=0");
@@ -4982,6 +5735,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
    if constexpr (nc == 1) {
       u[0] = rhs[0]/bet;
    } else {
+      #pragma unroll
       for (int l = 0; l < nc; l++) u[l] = rhs[l]/bet;
    }
 
@@ -4994,6 +5748,7 @@ __device__ void tridag_sch(int n, double *a, double *b, double *c, double *rhs, 
       if constexpr (nc == 1) {
          u[j] = (rhs[j] - a[j]*u[j - 1])/bet;
       } else {
+         #pragma unroll
          for (int l = 0; l < nc; l++) {
             u[j*nc + l] = (rhs[j*nc + l] - a[j]*u[(j - 1)*nc + l])/bet;
          }
@@ -5771,12 +6526,11 @@ extern "C" {
    }
 
    __global__ void computeBottomDragVegetation(void) {
-      // UNFINISHED. CHECK THIS:
+      // UNFINISHED. CHECK THIS: XXXXX
       // How many kernels are needed? Why so many for loops?
       // Is the loop on sides needed?
 
       NODE(node);
-
 
       const int    kb      = node->kb;
       const double htot    = node->htot2(); 
@@ -5810,9 +6564,6 @@ extern "C" {
       // Compute vegetation parameters
       //--------------------------------
 
-      // SAV constants
-      constexpr double veg_cfk   = 0.07; //Shimizu & Tsujimoto (1994)
-      constexpr double veg_cfpsi = 0.16;
 
       // Add vertical variation to veg_alpha and compute vertical mean etc.
       if constexpr(iveg == 1) { //  Vertical variation specified by functions
@@ -5898,6 +6649,18 @@ extern "C" {
       } // if iveg
 
    }
+
+
+   __global__ void computeTurbulence(void) {
+
+      NODE(node);
+
+      // Calls the templated function to compute the turbulence model parameters.
+      // turbulenceModel is just a class enum version of itur.
+      computeTurbulenceModel<turbulenceModel>(node);
+      
+   }
+
 
    __global__ void computeVegetationAndDragParameters(void) {
       // Computes the vegetation and drag model parameters:
@@ -6362,7 +7125,7 @@ extern "C" {
 
    __global__ void solveMomentumEquations(double time) {
 
-      double alow[nvrt], cupp[nvrt], bdia[nvrt];
+      double alow[nvrt], cupp[nvrt], bdia[nvrt]; // a = low, c = up, b = diag
       Vector2 rrhs[nvrt], u[nvrt], soln[nvrt], gam[nvrt];
 
       SIDE(side);
@@ -8394,17 +9157,140 @@ extern "C" __global__ void getSideVarFunc(int varCode, double *res) {
 extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
    // Packed local order into res. Caller allocates sizePart * nbytes.
    NODE(node);
-   // switch (varCode)
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords: {
+         const Point2 coords = node->outputCoords();
+         double *out = (double *)((char *)res + idx_node * 16);
+         out[0] = coords.x;
+         out[1] = coords.y;
+         break;
+      }
+      case (int)VarCode::depth:
+         *(double *)((char *)res + idx_node * 8) = node->depth;
+         break;
+      case (int)VarCode::kb:
+         *(int *)((char *)res + idx_node * 4) = (int)node->kb;
+         break;
+      case (int)VarCode::eta:
+         *(double *)((char *)res + idx_node * 8) = node->eta2;
+         break;
+      case (int)VarCode::u_air: {
+         double *out = (double *)((char *)res + idx_node * 16);
+         out[0] = node->u_air.x;
+         out[1] = node->u_air.y;
+         break;
+      }
+      case (int)VarCode::isdry:
+         *(int *)((char *)res + idx_node * 4) = (int)node->isDry;
+         break;
+      case (int)VarCode::u: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 16);
+         if (k >= 0) {
+            out[0] = node->u2[k].x;
+            out[1] = node->u2[k].y;
+         } else {
+            for (int lev = 0; lev < nvrt; lev++) {
+               out[lev*2    ] = node->u2[lev].x;
+               out[lev*2 + 1] = node->u2[lev].y;
+            }
+         }
+         break;
+      }
+      case (int)VarCode::z: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->z[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->z[lev];
+         break;
+      }
+      case (int)VarCode::w: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->w2[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->w2[lev];
+         break;
+      }
+      case (int)VarCode::dfh: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->dfh[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->dfh[lev];
+         break;
+      }
+      case (int)VarCode::dfv: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->dfv[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->dfv[lev];
+         break;
+      }
+   }
 }
 
 
 extern "C" __global__ void getSideVar(int varCode, void *res, int k) {
    SIDE(side);
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords: {
+         const Point2 coords = side->outputCoords();
+         double *out = (double *)((char *)res + idx_side * 16);
+         out[0] = coords.x;
+         out[1] = coords.y;
+         break;
+      }
+      case (int)VarCode::n1:
+         *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n1 != nullptr) ? side->n1->idx + 1 : -1);
+         break;
+      case (int)VarCode::n2:
+         *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n2 != nullptr) ? side->n2->idx + 1 : -1);
+         break;
+      case (int)VarCode::isdry:
+         *(int *)((char *)res + idx_side * 4) = (int)side->isDry;
+         break;
+   }
 }
 
 
 extern "C" __global__ void getElementVar(int varCode, void *res, int k) {
    ELEM(elem);
+
+   switch (varCode) {
+      case (int)VarCode::outputCoords: {
+         const Point2 coords = elem->outputCoords();
+         double *out = (double *)((char *)res + idx_elem * 16);
+         out[0] = coords.x;
+         out[1] = coords.y;
+         break;
+      }
+      case (int)VarCode::FaceIndices: {
+         uintptr_t *out = (uintptr_t *)((char *)res + idx_elem * 32);
+         for (int j = 0; j < 4; j++)
+            out[j] = (j < elem->i34 && elem->nodes[j]) ? elem->nodes[j]->idx + 1 : -1;
+         break;
+      }
+      case (int)VarCode::isdry:
+         *(int *)((char *)res + idx_elem * 4) = (int)elem->isDry;
+         break;
+      case (int)VarCode::w: {
+         double *out = (double *)((char *)res + idx_elem * nvrt * 8);
+         if (k >= 0)
+            out[0] = elem->w[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = elem->w[lev];
+         break;
+      }
+   }
 }
 
 

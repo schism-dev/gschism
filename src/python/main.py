@@ -74,8 +74,8 @@ import python.cuda_functions as cufunc
 if WINDOWS:
     # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b'
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
-    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02e'
-    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02e\gpuoutput'
+    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN05b'
+    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN05b\gpuoutput'
     # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\GPU'
     # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\GPU\gpuoutput'
 
@@ -756,12 +756,12 @@ if __name__ == "__main__":
 
     start_time = time.time()
     time1 = time.time()
-    # for it in range(1, ntime + 1, 1):
-    for it in range(1, 100, 1):
+    for it in range(1, ntime + 1, 1):
+    # for it in range(1, 100, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
-        schism_step_wrapped(it, namelist, bctides, sflux, solver)
+        # schism_step_wrapped(it, namelist, bctides, sflux, solver)
 
-        # schism_step(it, namelist, bctides, sflux, solver)
+        schism_step(it, namelist, bctides, sflux, solver)
 
         writeOutput(dtoh, it, namelist.core, namelist.opt)
         # if it % 100 == 0:

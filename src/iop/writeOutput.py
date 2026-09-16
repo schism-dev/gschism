@@ -20,6 +20,7 @@ dataV = None
 dataW = None
 dataZ = None
 dataWElem = None
+dataVisc = None
 fileNum = 0
 outputTime = 0.0
 
@@ -44,7 +45,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 
 def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     # Write the output files
-    global dataC, dataU, dataV, dataW, dataZ, dataWElem, fileNum, sizeNode, outputTime
+    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, fileNum, sizeNode, outputTime
     
 
     ihfskip = core.ihfskip
@@ -63,12 +64,12 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
             dataZ.close()
             dataW.close() 
             dataWElem.close()
-            pass
+            dataVisc.close()
 
         fileNum += 1
 
         ifile=(it-1)/ihfskip+1
-        dataC, dataU, dataV, dataW, dataZ, dataWElem = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
 
 
     if dataC is None:
@@ -191,6 +192,13 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     verticalVelElem_var = dataWElem.variables['verticalVelAtElement']
     verticalVelElem_var[idxTime, :, :] = w_cpu.T
     del w_cpu
+
+    dfv_cpu = dtoh.getNodeVar("dfv")
+    print(dfv_cpu.shape, np.nanmin(dfv_cpu), np.nanmax(dfv_cpu), np.isnan(dfv_cpu).sum())
+    dfv_cpu[mask_above_kb] = np.nan
+    viscosity_var = dataVisc.variables['viscosity']
+    viscosity_var[idxTime, :, :] = dfv_cpu.T
+    del dfv_cpu
    
 
     time_var = dataC.variables['time']
@@ -211,6 +219,9 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     time_var = dataWElem.variables['time']
     time_var[idxTime] = it*dt
 
+    time_var = dataVisc.variables['time']
+    time_var[idxTime] = it*dt
+
     outputTime += time.perf_counter()
 
 
@@ -224,7 +235,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     The data variable is stored in the global variable data.
     """
 
-    global dataC, dataU, dataV, dataW, dataZ, dataWElem
+    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc
     
     filename = 'out2d_%i.nc' % fileNum
     filenameU = 'horizontalVelX_%i.nc' % fileNum
@@ -232,6 +243,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     filenameW = 'verticalVelocity_%i.nc' % fileNum
     filenameZ = 'zCoordinates_%i.nc' % fileNum
     filenameWElem = 'verticalVelAtElement_%i.nc' % fileNum
+    filenameVisc = 'viscosity_%i.nc' % fileNum
 
     isGeographic = getattr(opt, "ics", 1) == 2
 
@@ -263,6 +275,10 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     if os.path.exists(filepathWElem):
         os.remove(filepathWElem)
 
+    filepathVisc = os.path.join(path, filenameVisc)
+    if os.path.exists(filepathVisc):
+        os.remove(filepathVisc)
+
     # Create the NetCDF files
     dataC = nc.Dataset(filepath,  "w", format="NETCDF4")
     dataU = nc.Dataset(filepathU, "w", format="NETCDF4")
@@ -270,9 +286,10 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     dataW = nc.Dataset(filepathW, "w", format="NETCDF4")
     dataZ = nc.Dataset(filepathZ, "w", format="NETCDF4")
     dataWElem = nc.Dataset(filepathWElem, "w", format="NETCDF4")
+    dataVisc = nc.Dataset(filepathVisc, "w", format="NETCDF4")
     
     # Add dimensions to the file
-    for data in [dataC, dataU, dataV, dataW, dataZ, dataWElem]:
+    for data in [dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc]:
         data.createDimension('nSCHISM_hgrid_node',          nNodes)
         data.createDimension('nSCHISM_hgrid_face',          nElements)
         data.createDimension('nSCHISM_hgrid_edge',          nSides)
@@ -526,11 +543,18 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     zCoordinates.grid_mapping = "crs"
     zCoordinates.mesh = "SCHISM_hgrid"
 
-    
-    return dataC, dataU, dataV, dataW, dataZ, dataWElem
+    viscosity = dataVisc.createVariable(
+        'viscosity', 'f4',
+        ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'),
+        chunksizes=(1, nNodes, nLayers),
+        **paramsCompression,
+    )
+    viscosity.i23d = cp.int32(2)
+    viscosity.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
+    viscosity.location = "node"
+    viscosity.grid_mapping = "crs"
+    viscosity.mesh = "SCHISM_hgrid"
+    viscosity.missing_value = cp.float32(9.96921e36)
 
     
-
-
-
-
+    return dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc
