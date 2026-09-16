@@ -202,7 +202,7 @@ def compile_and_import(module_name, cpp_file):
         )
 
     # Find the compiled shared object file
-    if os.name == 'nt':
+    if os.name == 'nt':  #windows
         module_files = glob.glob(f"{module_name}*.pyd")
     else:
         module_files = glob.glob(f"{module_name}*.so")
