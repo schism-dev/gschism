@@ -4654,7 +4654,7 @@
  4654: 
  4655: found: // Jumped here when the node was found
  4656: 
- 4657:    nodeBnd->isEssentialBC = true;
+ 4657:    nodeBnd->isEssentialBC = (iettype[iseg] != 0);
  4658:    nodeBnd->elbc = 0.0;
  4659: 
  4660:    nodeBnd->segment->ifltype = ifltype[iseg];
@@ -5019,47 +5019,47 @@
  5019:       // Get the properties of the current interval.
  5020:       const double z  = node->z[k]; // bottom level of the interval
  5021:       const double dz = node->Dz(k + 1);
- 5022:       const double rho_c = 0.5*(node->rho[k] + node->rho[k+1]);
- 5023:       
- 5024:       const Vector2 du_dz   = (node->u2[k+1] - node->u2[k])/dz;
- 5025:       const double drho_dz = (node->rho[k+1] - node->rho[k])/dz;
- 5026: 
- 5027:       // Turbulence production/dissipation terms (at the center of the interval).
- 5028:       
- 5029:       const double M2 = norm2(du_dz);              // Shear production term
+ 5022:       
+ 5023:       const Vector2 du_dz_c   = (node->u2[k+1] - node->u2[k])/dz;
+ 5024: 
+ 5025:       // Turbulence production/dissipation terms (at the center of the interval).
+ 5026:       
+ 5027:       const double M2 = norm2(du_dz_c);              // Shear production term
+ 5028: 
+ 5029:       const double N2 = turb.N2_c(node, k + 1);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
  5030: 
- 5031:       const double N2 = turb.N2_c(node, k + 1);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
+ 5031:       const double vegProd = turb.vegTurbProduction(node, k + 1);
  5032: 
- 5033:       const double vegProd = turb.vegTurbProduction(node, k + 1);
+ 5033:       const double cpsi3 = turb.cpsi3(N2); 
  5034: 
- 5035:       const double cpsi3 = turb.cpsi3(N2); 
- 5036: 
- 5037: 
- 5038:       // Turbulence quantities at half levels (cell [c]enter)
- 5039:       const double tke_1     = turb.tke[k];
- 5040:       const double tke_2     = turb.tke[k+1];
- 5041:       const double mxl_1     = turb.mxl[k];
- 5042:       const double mxl_2     = turb.mxl[k+1];
- 5043:       const double tke_c     = 0.5*(tke_1 + tke_2);
- 5044:       const double mxl_c     = 0.5*(mxl_1 + mxl_2);
- 5045:       const double nu_tke_c  = 0.5*(turb.nu_tke[k] + turb.nu_tke[k+1]);
- 5046:       const double nu_phi_c  = 0.5*(turb.nu_phi[k] + turb.nu_phi[k+1]);
- 5047:       const double dfv_c     = 0.5*(node->dfv[k]   + node->dfv[k+1]);
- 5048:       const double dfh_c     = 0.5*(node->dfh[k]   + node->dfh[k+1]);
- 5049:       const double Fwall_c   = turb.Fwall(node, k, mxl_c);
- 5050: 
- 5051:       // Integral of the shape function products:
- 5052:       // integral of (phi_i*phi_i)dz = dz/3.0,   integral of (phi_i*phi_i+1)dz = dz/6.0
- 5053:       // integral of (phi_i'*phi_i+1')dz = 1/dz, integral of (phi_i'*phi_i+1')dz = -1/dz
- 5054:       const double p1p1 = dz/3.0;
- 5055:       const double p1p2 = dz/6.0;
- 5056:       const double d1d1 =  1.0/dz;
- 5057:       const double d1d2 = -1.0/dz;
- 5058: 
- 5059:       // Production/dissipation related terms
- 5060:       const double prod = dfv_c*M2 + veg_cfk*vegProd;
- 5061:       const double buoy = dfh_c*N2;
- 5062:       const double diss = pow<3>(cmiu0)*sqrt(tke_c)/mxl_c*dz/6.0; //diss/k
+ 5035: 
+ 5036:       // Turbulence quantities at half levels (cell [c]enter)
+ 5037:       const double tke_1     = turb.tke[k];
+ 5038:       const double tke_2     = turb.tke[k+1];
+ 5039:       const double mxl_1     = turb.mxl[k];
+ 5040:       const double mxl_2     = turb.mxl[k+1];
+ 5041:       const double tke_c     = 0.5*(tke_1 + tke_2);
+ 5042:       const double mxl_c     = 0.5*(mxl_1 + mxl_2);
+ 5043:       const double nu_tke_c  = 0.5*(turb.nu_tke[k] + turb.nu_tke[k+1]);
+ 5044:       const double nu_phi_c  = 0.5*(turb.nu_phi[k] + turb.nu_phi[k+1]);
+ 5045:       const double dfv_c     = 0.5*(node->dfv[k]   + node->dfv[k+1]);
+ 5046:       const double dfh_c     = 0.5*(node->dfh[k]   + node->dfh[k+1]);
+ 5047:       const double Fwall_c   = turb.Fwall(node, k, mxl_c);
+ 5048: 
+ 5049:       // Integral of the shape function products:
+ 5050:       // integral of (phi_i*phi_i)dz = dz/3.0,   integral of (phi_i*phi_i+1)dz = dz/6.0
+ 5051:       // integral of (phi_i'*phi_i+1')dz = 1/dz, integral of (phi_i'*phi_i+1')dz = -1/dz
+ 5052:       const double p1p1 = dz/3.0;
+ 5053:       const double p1p2 = dz/6.0;
+ 5054:       const double d1d1 =  1.0/dz;
+ 5055:       const double d1d2 = -1.0/dz;
+ 5056: 
+ 5057:       // Production/dissipation related terms
+ 5058:       const double prod = dfv_c*M2 + veg_cfk*vegProd;
+ 5059:       const double buoy = dfh_c*N2;
+ 5060:       const double diss = pow<3>(cmiu0)*sqrt(tke_c)/mxl_c*dz/6.0; //diss/k
+ 5061: 
+ 5062: if (fabs(prod)>0.001) printf("prod: %f, buoy: %f, diss: %f\n", prod, buoy, diss);
  5063: 
  5064:       // Equation for tke
  5065:       // ---------------

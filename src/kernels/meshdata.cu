@@ -2488,7 +2488,7 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
 
 found: // Jumped here when the node was found
 
-   nodeBnd->isEssentialBC = true;
+   nodeBnd->isEssentialBC = (iettype[iseg] != 0);
    nodeBnd->elbc = 0.0;
 
    nodeBnd->segment->ifltype = ifltype[iseg];
@@ -2853,14 +2853,12 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       // Get the properties of the current interval.
       const double z  = node->z[k]; // bottom level of the interval
       const double dz = node->Dz(k + 1);
-      const double rho_c = 0.5*(node->rho[k] + node->rho[k+1]);
       
-      const Vector2 du_dz   = (node->u2[k+1] - node->u2[k])/dz;
-      const double drho_dz = (node->rho[k+1] - node->rho[k])/dz;
+      const Vector2 du_dz_c   = (node->u2[k+1] - node->u2[k])/dz;
 
       // Turbulence production/dissipation terms (at the center of the interval).
       
-      const double M2 = norm2(du_dz);              // Shear production term
+      const double M2 = norm2(du_dz_c);              // Shear production term
 
       const double N2 = turb.N2_c(node, k + 1);      // Brunt-Väisälä frequency (squared, kind of... this is signed), production or dissipation term
 
@@ -2894,6 +2892,8 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double prod = dfv_c*M2 + veg_cfk*vegProd;
       const double buoy = dfh_c*N2;
       const double diss = pow<3>(cmiu0)*sqrt(tke_c)/mxl_c*dz/6.0; //diss/k
+
+if (fabs(prod)>0.001) printf("prod: %f, buoy: %f, diss: %f\n", prod, buoy, diss);
 
       // Equation for tke
       // ---------------
