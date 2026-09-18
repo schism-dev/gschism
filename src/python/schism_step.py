@@ -297,8 +297,8 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
     cufunc.computeNodalHorizontalVelocities1()
     cufunc.computeNodalHorizontalVelocities2()
     pass
-    # cufunc.resetVelocityOpenBndNodes()
-    # cufunc.setVelocityOpenBndNodes()
+    cufunc.resetVelocityOpenBndNodes()
+    cufunc.setVelocityOpenBndNodes()
 
 
 

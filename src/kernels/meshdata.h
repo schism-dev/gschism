@@ -452,6 +452,9 @@ struct Turbulence<TurbulenceModel::GLS> {
    double mxl[nvrt];    // mixing length for GLS
    double nu_tke[nvrt]; // Vertical diffusivity for TKE 
    double nu_phi[nvrt]; // Vertical diffusivity for generic length scale variable (phi)
+
+   double diffmin;  // from diffmin.gr3
+   double diffmax;  // from diffmax.gr3
    
    
 
@@ -576,15 +579,6 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
    __device__ __forceinline__ double mxlmin(double depth) const;
-
-   __device__ __forceinline__ double diffmin(void) const {
-      // XXXXXXXX: This is a placeholder.
-      return 1.0e-6;
-   }
-
-   __device__ __forceinline__ double diffmax(void) const {
-      return 1.0;
-   }
 
    
    __device__ __forceinline__ double N2_c(Node *node, int k) const;
@@ -1456,7 +1450,7 @@ struct NodeBoundary {
       int res = 0;
       if (sideBnd1 != nullptr && sideBnd1->segment == segment) res++;
       if (sideBnd2 != nullptr && sideBnd2->segment == segment) res++;
-printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p\n", res, segment, sideBnd1, sideBnd2);      
+// printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p\n", res, segment, sideBnd1, sideBnd2);      
       return res;
    }
 
@@ -1841,7 +1835,9 @@ struct Mesh {
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
+                  double *drag, double *roughness, double *rmanning, 
+                  double *diffmin, double *diffmax,
+                  int *kb, double *localSigma);
    __device__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
@@ -1872,7 +1868,7 @@ struct Mesh {
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa,
-                                          int *ifltype, int *iettype); 
+                                          int *ifltype, int *iettype, double *qthcon); 
 
    __device__ void populateBoundarySideLinks(void);
 

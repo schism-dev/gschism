@@ -118,10 +118,6 @@ def compile_and_import(module_name, cpp_file):
     else:
         print("Compiling the C++ code...")
 
-        # Get vcpkg root directory
-        vcpkg_root = os.path.expanduser("~/apps/vcpkg")
-
-
         if VISTA:
             METIS_PREFIX = os.environ.get("TACC_METIS_DIR")
             METIS_INC    = os.path.join(METIS_PREFIX, "include")
@@ -147,6 +143,9 @@ def compile_and_import(module_name, cpp_file):
                 )
             ] 
         if WINDOWS:
+
+            # Get vcpkg root directory
+            vcpkg_root = os.path.expanduser("~/apps/vcpkg")  # XXXXX Make this general for any computer!!!
 
             # Define the extension
             ext_modules = [
@@ -297,7 +296,9 @@ if __name__ == "__main__":
     nland, mnlnd = ilnd.shape
     bctides = read_bctides(in_dir, nope, mnond, [1,1,0,0,0,0,0,0,0,0,0,0], [1,2])
 
-
+    if bctides.nfltype > 0:
+        raise NotImplementedError("ifltype=1 (flux.th) is not implemented; use ifltype=2 with a constant flux in bctides.in")
+    
 
 
     [ivcor, nvrt, nzlev, nsiglev], ztot, kb, [h_c, h_s, theta_b, theta_f], sigma_lcl, sigma, cs, dcs = \
@@ -336,7 +337,6 @@ if __name__ == "__main__":
         drag    = np.zeros(nodeCoords.shape[1])
         drag[:] = module.readHGridData(os.path.join(in_dir, 'drag.gr3'), nodeCoords.shape[1], elnode.shape[1])
 
-
     elif nchi == 1:
         roughness    = np.zeros(nodeCoords.shape[1])
         roughness[:] = module.readHGridData(os.path.join(in_dir, 'rough.gr3'), nodeCoords.shape[1], elnode.shape[1])
@@ -348,7 +348,18 @@ if __name__ == "__main__":
     else:
         raise Exception(f"nchi = {nchi} is not a valid option")
 
-        
+    # If necessary, read in the diffmin and diffmax files of maximum and minimum diffusivity
+    diffmin = np.zeros(1)  # For the case they are not read in, we just allocate one element
+    diffmax = np.zeros(1)
+    itur = namelist.opt.itur
+    if itur in (3, 4, 5):
+        nNodes = nodeCoords.shape[1]
+        nElems = elnode.shape[1]
+        diffmin = np.zeros(nNodes)
+        diffmax = np.zeros(nNodes)
+        diffmin[:] = module.readHGridData(os.path.join(in_dir, 'diffmin.gr3'), nNodes, nElems)
+        diffmax[:] = module.readHGridData(os.path.join(in_dir, 'diffmax.gr3'), nNodes, nElems) 
+
     # Generate the constants.h file that will be compiled with the CUDA kernels
     processConstants(namelist, bctides, ivcor, nvrt, nzlev, nsiglev, 
                      nope, mnond, nland, mnlnd,
@@ -392,6 +403,9 @@ if __name__ == "__main__":
     drag                 = cp.array(drag,              dtype=cp.float64, order='F')
     roughness            = cp.array(roughness,         dtype=cp.float64, order='F')
     rmanning             = cp.array(rmanning,          dtype=cp.float64, order='F')
+
+    diffmin              = cp.array(diffmin,           dtype=cp.float64, order='F')
+    diffmax              = cp.array(diffmax,           dtype=cp.float64, order='F')
 
 
 
@@ -651,7 +665,7 @@ if __name__ == "__main__":
                 pd['globalNodeIndices'], pd['globalElemIndices'], pd['globalSideIndices'],
                 localNodeIndices, localElemIndices, localSideIndices,
                 localNodePart, localElemPart, localSidePart,
-                drag, roughness, rmanning, kb, sigma_lcl)
+                drag, roughness, rmanning, diffmin, diffmax, kb, sigma_lcl)
 
     
     for ipart, pd in enumerate(partPopulate):
@@ -720,7 +734,7 @@ if __name__ == "__main__":
                 bctides.emo, bctides.efa,
                 bctides.umo, bctides.ufa,
                 bctides.vmo, bctides.vfa,
-                bctides.ifltype, bctides.iettype)
+                bctides.ifltype, bctides.iettype, bctides.qthcon)
     
 
     # initialize the module for bringing memory from the GPU to the CPU

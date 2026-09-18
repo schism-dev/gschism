@@ -616,6 +616,9 @@ struct Turbulence<TurbulenceModel::GLS> {
    double mxl[nvrt];    // mixing length for GLS
    double nu_tke[nvrt]; // Vertical diffusivity for TKE 
    double nu_phi[nvrt]; // Vertical diffusivity for generic length scale variable (phi)
+
+   double diffmin;  // from diffmin.gr3
+   double diffmax;  // from diffmax.gr3
    
    
 
@@ -740,15 +743,6 @@ struct Turbulence<TurbulenceModel::GLS> {
    }
 
    __device__ __forceinline__ double mxlmin(double depth) const;
-
-   __device__ __forceinline__ double diffmin(void) const {
-      // XXXXXXXX: This is a placeholder.
-      return 1.0e-6;
-   }
-
-   __device__ __forceinline__ double diffmax(void) const {
-      return 1.0;
-   }
 
    
    __device__ __forceinline__ double N2_c(Node *node, int k) const;
@@ -1620,7 +1614,7 @@ struct NodeBoundary {
       int res = 0;
       if (sideBnd1 != nullptr && sideBnd1->segment == segment) res++;
       if (sideBnd2 != nullptr && sideBnd2->segment == segment) res++;
-printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p\n", res, segment, sideBnd1, sideBnd2);      
+// printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p\n", res, segment, sideBnd1, sideBnd2);      
       return res;
    }
 
@@ -2005,7 +1999,9 @@ struct Mesh {
                   int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                   int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
-                  double *drag, double *roughness, double *rmanning, int *kb, double *localSigma);
+                  double *drag, double *roughness, double *rmanning, 
+                  double *diffmin, double *diffmax,
+                  int *kb, double *localSigma);
    __device__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
                   double *node_coords, double *node_coords_ll, bool use_ll,
@@ -2036,7 +2032,7 @@ struct Mesh {
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa,
-                                          int *ifltype, int *iettype); 
+                                          int *ifltype, int *iettype, double *qthcon); 
 
    __device__ void populateBoundarySideLinks(void);
 
@@ -4088,7 +4084,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
                                     int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
                                     int *localNodePart,     int *localElemPart,     int *localSidePart, 
-                                    double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
+                                    double *drag, double *roughness, double *rmanning, 
+                                    double *diffmin, double *diffmax,
+                                    int *kb, double *localSigma) {
 
    NODE(pnode);  
    const int i = idx_node;
@@ -4186,6 +4184,14 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else if constexpr(nchi ==  1) node.rough    = roughness[iglobal];
    else if constexpr(nchi == -1) node.rmanning = rmanning[iglobal];
    else assert(false && "populateNodes: selected nchi not implemented.");
+
+   // If the turbulence model is GLS, GOTM, or SedimentMix, then populate the diffmin and diffmax values read from the files.
+   if constexpr (turbulenceModel == TurbulenceModel::GLS ||
+                 turbulenceModel == TurbulenceModel::GOTM ||
+                 turbulenceModel == TurbulenceModel::SedimentMix) {
+      node.turb.diffmin = diffmin[iglobal];
+      node.turb.diffmax = diffmax[iglobal];
+   }
 
    if constexpr(ivcor == 1) 
    {  
@@ -4625,7 +4631,7 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
                                             double *emo, double *efa, 
                                             double *umo, double *ufa, 
                                             double *vmo, double *vfa,
-                                            int *ifltype, int *iettype) {
+                                            int *ifltype, int *iettype, double *qthcon) {
 
    NODE_BND(nodeBnd);
    const int idx = idx_node_bnd;    
@@ -4653,6 +4659,7 @@ found: // Jumped here when the node was found
 
    nodeBnd->segment->ifltype = ifltype[iseg];
    nodeBnd->segment->iettype = iettype[iseg];
+   nodeBnd->segment->qthcon  = qthcon[iseg];
 
    for (int jfr = 0; jfr < nbfr; jfr++) {
 
@@ -4868,10 +4875,10 @@ __device__ void Turbulence<TurbulenceModel::GLS>::computeDiffusivities(Node *nod
 
       }
 
-      node->dfv[k] = clamp(cmiu  * lu, diffmin(), diffmax());
-      node->dfh[k] = clamp(cmiup * lu, diffmin(), diffmax());
-      nu_tke[k]    = clamp(cmiu1 * lu, diffmin(), diffmax());
-      nu_phi[k]    = clamp(cmiu2 * lu, diffmin(), diffmax());
+      node->dfv[k] = clamp(cmiu  * lu, diffmin, diffmax);
+      node->dfh[k] = clamp(cmiup * lu, diffmin, diffmax);
+      nu_tke[k]    = clamp(cmiu1 * lu, diffmin, diffmax);
+      nu_phi[k]    = clamp(cmiu2 * lu, diffmin, diffmax);
    }
 }
 
@@ -4956,7 +4963,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
    if (node->isDry || node->is2D()) {
 
       // Minimum diffusivity at each node. In some cases, it is node-dependent (read from file).
-      const double diffmin = turb.diffmin();
+      const double diffmin = turb.diffmin;
 
       for (int k = 0; k < nvrt; k++) {
          turb.tke[k]    = turb.tkemin();
@@ -6285,7 +6292,7 @@ extern "C" {
          assert(segment->carea > 0.0 && "computeFlowBcVelocities: dry bnd side");
 
          const double unth0 = segment->qthcon*ramp/segment->carea;
-         
+printf("unth0: %f, qthcon: %f, ramp: %f, carea: %f\n", unth0, segment->qthcon, ramp, segment->carea);         
          for (int k = 0; k < nvrt; k++) sideBnd->ubc[k] += unth0*n;  // This case has no ramp-up
          
       } else if (ifltype == -1) { // Flather 1
@@ -7473,6 +7480,7 @@ extern "C" {
 
             }
             else { // not Flather or 3D radiation
+if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
                side->u2[k] = ubc[k];
 
             } // if (segment->ifltype...
@@ -7989,7 +7997,7 @@ extern "C" {
    // Set velocity to zero for open boundary nodes where the velocity is imposed.
 
       NODE_BND(nodebnd);
-printf("DDDDDDDDDD\n");  // XXXXXXX
+// printf("DDDDDDDDDD\n");  // XXXXXXX
       if (nodebnd->segment != nullptr && nodebnd->segment->ifltype != 0) {
          for (int k = 0; k < nvrt; k++) { nodebnd->node->u2[k] = {0.0, 0.0}; nodebnd->node->w2[k] = 0.0; }  // XXXXXXX
       }
@@ -8011,8 +8019,8 @@ printf("DDDDDDDDDD\n");  // XXXXXXX
             Node *n2 = sidebnd->side->n2;
 
 
-            Vector2 n1_u2(n1->u2[k]);
-            Vector2 n2_u2(n2->u2[k]);
+            Vector2 &n1_u2 = n1->u2[k];
+            Vector2 &n2_u2 = n2->u2[k];
 
             if (n1->nodeBnd->segment == sidebnd->segment) {
                atomicAdd(&(n1_u2.x), sidebnd->side->u2[k].x/n1->nodeBnd->numSidesForAverage());
@@ -8941,7 +8949,9 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
    int *localNodePart,     int *localElemPart,     int *localSidePart,
-   double *drag, double *roughness, double *rmanning, int *kb, double *localSigma) {
+   double *drag, double *roughness, double *rmanning, 
+   double *diffmin, double *diffmax,
+   int *kb, double *localSigma) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
@@ -8952,7 +8962,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning, kb, localSigma);
+                       drag, roughness, rmanning, diffmin, diffmax, kb, localSigma);
 }  
 
 extern "C" __global__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
@@ -9005,8 +9015,8 @@ extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
                                                 double *emo, double *efa, 
                                                 double *umo, double *ufa, 
                                                 double *vmo, double *vfa,
-                                                int *ifltype, int *iettype) {
-   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype);
+                                                int *ifltype, int *iettype, double *qthcon) {
+   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon);
 
 }
 
