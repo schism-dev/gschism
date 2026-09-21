@@ -2019,13 +2019,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else if constexpr(nchi == -1) node.rmanning = rmanning[iglobal];
    else assert(false && "populateNodes: selected nchi not implemented.");
 
-   // If the turbulence model is GLS, GOTM, or SedimentMix, then populate the diffmin and diffmax values read from the files.
-   if constexpr (turbulenceModel == TurbulenceModel::GLS ||
-                 turbulenceModel == TurbulenceModel::GOTM ||
-                 turbulenceModel == TurbulenceModel::SedimentMix) {
-      node.turb.diffmin = diffmin[iglobal];
-      node.turb.diffmax = diffmax[iglobal];
-   }
+   // Populate the diffmin and diffmax values read from the files.
+   // (Only used for GLS, GOTM, and SedimentMix.)
+   node.turb.setDiffLimits(diffmin[iglobal], diffmax[iglobal]);
 
    if constexpr(ivcor == 1) 
    {  

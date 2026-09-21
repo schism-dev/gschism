@@ -440,7 +440,9 @@ constexpr double veg_cfpsi = 0.16;
 
 
 template<TurbulenceModel Model>
-struct Turbulence {};   
+struct Turbulence {
+   __device__ void setDiffLimits(double, double) { assert(false && "setDiffLimits does not exist for this turbulence model"); }
+};   
 
 // GLS turbulence model
 template<>
@@ -456,7 +458,11 @@ struct Turbulence<TurbulenceModel::GLS> {
    double diffmin;  // from diffmin.gr3
    double diffmax;  // from diffmax.gr3
    
-   
+   __device__ void setDiffLimits(double lo, double hi) {
+      diffmin = lo;
+      diffmax = hi;
+   }
+
 
    __device__ __forceinline__ constexpr double cpsi1() const {
       if      constexpr (turbSubmodel == MellorYamada)   return 0.9;

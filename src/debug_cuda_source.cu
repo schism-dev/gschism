@@ -604,7 +604,9 @@ constexpr double veg_cfpsi = 0.16;
 
 
 template<TurbulenceModel Model>
-struct Turbulence {};   
+struct Turbulence {
+   __device__ void setDiffLimits(double, double) { assert(false && "setDiffLimits does not exist for this turbulence model"); }
+};   
 
 // GLS turbulence model
 template<>
@@ -620,7 +622,11 @@ struct Turbulence<TurbulenceModel::GLS> {
    double diffmin;  // from diffmin.gr3
    double diffmax;  // from diffmax.gr3
    
-   
+   __device__ void setDiffLimits(double lo, double hi) {
+      diffmin = lo;
+      diffmax = hi;
+   }
+
 
    __device__ __forceinline__ constexpr double cpsi1() const {
       if      constexpr (turbSubmodel == MellorYamada)   return 0.9;
@@ -4185,13 +4191,9 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    else if constexpr(nchi == -1) node.rmanning = rmanning[iglobal];
    else assert(false && "populateNodes: selected nchi not implemented.");
 
-   // If the turbulence model is GLS, GOTM, or SedimentMix, then populate the diffmin and diffmax values read from the files.
-   if constexpr (turbulenceModel == TurbulenceModel::GLS ||
-                 turbulenceModel == TurbulenceModel::GOTM ||
-                 turbulenceModel == TurbulenceModel::SedimentMix) {
-      node.turb.diffmin = diffmin[iglobal];
-      node.turb.diffmax = diffmax[iglobal];
-   }
+   // Populate the diffmin and diffmax values read from the files.
+   // (Only used for GLS, GOTM, and SedimentMix.)
+   node.turb.setDiffLimits(diffmin[iglobal], diffmax[iglobal]);
 
    if constexpr(ivcor == 1) 
    {  
