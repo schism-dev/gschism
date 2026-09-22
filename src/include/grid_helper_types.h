@@ -75,16 +75,20 @@ struct AdjacencyList {
 template <typename T>
 class Array2D {
 private:
-    T* data;
-    size_t sizeI;
+    T* data; //row vector from 2D array, following row major, of type 'T' (int etc)
+    size_t sizeI; //# of rows
     size_t sizeJ;
 
 public:
+    //constructor, with init for members after : (inside '()') (i.e. this->sizeI=sizeI
     Array2D(size_t sizeI, size_t sizeJ, T fill = 0) : sizeI(sizeI), sizeJ(sizeJ) {
+	 //malloc (C) not working for more complex type like string
         data = (T*)malloc(sizeI * sizeJ * sizeof(T));
+        //function 'fill' data from start to end
         std::fill(data, data + sizeI * sizeJ, fill);
     } 
 
+    //Overloading constructor
     Array2D(void) : data(nullptr), sizeI(0), sizeJ(0) {} 
 
     void resize(size_t sizeI, size_t sizeJ, T fill = 0) {
@@ -102,14 +106,15 @@ public:
         free(data);
     } 
 
-    // Access operator
+    // Access operator (for mutable arrays). Note the ref via '&'
     T& operator()(size_t i, size_t j) {
         ARRAY_BOUNDS_CHECK(i, j, sizeI, sizeJ);
 
         return data[i * sizeJ + j];
     }
 
-    // Const access operator
+    // Const access operator (for immutable arrays). Last 'const' 
+    // means this member function promises not to modify the Array2D object
     const T& operator()(size_t i, size_t j) const {
        ARRAY_BOUNDS_CHECK(i, j, sizeI, sizeJ);
 
@@ -123,7 +128,7 @@ public:
     // Get raw data pointer
     T* data_ptr() { return data; }
     const T* data_ptr() const { return data; }
-};
+}; //Array2D
 
 // 2D array with arbitrary length rows class.
 template <typename T>

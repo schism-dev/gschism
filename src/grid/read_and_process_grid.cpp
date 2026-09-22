@@ -1239,7 +1239,7 @@ printFormatted(ansi::green("******numPartBoundarySides = %d"), numPartBoundarySi
         toPyArray(numPartBoundarySides)
 
     );  
-}
+} //readHGrid
 
 
 py::array_t<double> readHGridData(const std::string& filename, int nNodes, int nElements) {
