@@ -75,16 +75,20 @@ struct AdjacencyList {
 template <typename T>
 class Array2D {
 private:
-    T* data;
-    size_t sizeI;
+    T* data; //row vector from 2D array, following row major, of type 'T' (int etc)
+    size_t sizeI; //# of rows
     size_t sizeJ;
 
 public:
+    //constructor, with init for members after : (inside '()') (i.e. this->sizeI=sizeI
     Array2D(size_t sizeI, size_t sizeJ, T fill = 0) : sizeI(sizeI), sizeJ(sizeJ) {
+	 //malloc (C) not working for more complex type like string
         data = (T*)malloc(sizeI * sizeJ * sizeof(T));
+        //function 'fill' data from start to end
         std::fill(data, data + sizeI * sizeJ, fill);
     } 
 
+    //Overloading constructor
     Array2D(void) : data(nullptr), sizeI(0), sizeJ(0) {} 
 
     void resize(size_t sizeI, size_t sizeJ, T fill = 0) {
@@ -102,14 +106,15 @@ public:
         free(data);
     } 
 
-    // Access operator
+    // Access operator (for mutable arrays). Note the ref via '&'
     T& operator()(size_t i, size_t j) {
         ARRAY_BOUNDS_CHECK(i, j, sizeI, sizeJ);
 
         return data[i * sizeJ + j];
     }
 
-    // Const access operator
+    // Const access operator (for immutable arrays). Last 'const' 
+    // means this member function promises not to modify the Array2D object
     const T& operator()(size_t i, size_t j) const {
        ARRAY_BOUNDS_CHECK(i, j, sizeI, sizeJ);
 
@@ -123,15 +128,15 @@ public:
     // Get raw data pointer
     T* data_ptr() { return data; }
     const T* data_ptr() const { return data; }
-};
+}; //Array2D
 
 // 2D array with arbitrary length rows class.
 template <typename T>
 class ArrayOfRows {
 private:
-    T* data;
-    size_t sizeI;
-    size_t* rowStarts;
+    T* data; //1D
+    size_t sizeI; //# of rows
+    size_t* rowStarts; //array
 
 public:
     ArrayOfRows(size_t sizeI, size_t* rowLengths) : sizeI(sizeI) {
@@ -142,13 +147,14 @@ public:
         for (size_t i = 1; i <= sizeI; i++) {
             rowStarts[i] = rowStarts[i-1] + rowLengths[i-1];
         }
-        data = (T*)malloc(rowStarts[sizeI] * sizeof(T));
+        data = (T*)malloc(rowStarts[sizeI] * sizeof(T)); //last entry not used?
 
         if (data == nullptr || rowStarts == nullptr) {
             throw std::runtime_error("Failed to allocate memory for ArrayOfRows");
         }
     }
 
+    //Alternative constructor (shorthand of above with sizeI inferred)
     ArrayOfRows(const std::vector<size_t>& rowLengths) : ArrayOfRows(rowLengths.size(), rowLengths.data()) {}
 
     ArrayOfRows(void): data(nullptr), sizeI(0), rowStarts(nullptr) {}
@@ -189,6 +195,7 @@ public:
 
     size_t rowSize(size_t i) const { return rowStarts[i+1] - rowStarts[i]; }
     size_t rows() const { return sizeI; }
+    //new31: nonzeroCount should not include the last number?
     size_t nonzeroCount() const { return rowStarts[sizeI]; }
     T* data_ptr() const { return data; }
     size_t* rowStarts_ptr() const { return rowStarts; }
