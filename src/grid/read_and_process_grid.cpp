@@ -13,8 +13,8 @@ constexpr int landNode = -2;
 
 // 
 
-// elnode[4, nElements] -> Global index to the nodes that form the element
-// elside[4, nElements] -> Global index to the sides of the element
+// elnode(4, nElements) -> Global index to the nodes that form the element
+// elside(4, nElements) -> Global index to the sides of the element
 // i34[nElements] -> Number of nodes per element
 // ic3[4, nElements] -> For each element, global index to the other element that shares the side 
 // isdel[2, nSides] -> Global index to the elements that share the side
@@ -694,6 +694,7 @@ void partitionNodesAndSides(int nElements, int nNodes, int nSides,
 template<typename T>
 py::array_t<T> toPyArray(const std::vector<T>& data) {
     auto array = py::array_t<T>(data.size());
+    //Assign to a ptr of type T (i.e., T*)
     auto ptr = static_cast<T*>(array.request().ptr);
     std::copy(data.begin(), data.end(), ptr);
     return array;
@@ -727,6 +728,7 @@ py::tuple toPyArray(const ArrayOfRows<T>& data) {
     auto arrayIndices = py::array_t<T>({static_cast<pybind11::ssize_t>(data.rows() + 1)});
     auto ptrIndices = static_cast<T*>(arrayIndices.request().ptr);
 
+    //new31: check ptrIndices also?
     if (ptr == nullptr) {
         throw std::runtime_error("Failed to allocate memory for Python array");
     }
@@ -856,7 +858,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     
     // Read mesh name
     std::string meshName;
-    std::getline(file, meshName);
+    std::getline(file, meshName); //read 1 line
 
     // Read element and node counts
     int nElements, nNodes, nSides;
@@ -869,7 +871,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     // Initialize arrays for node and element data
     Array2D<double> nodeCoords(3, nNodes);      // [x, y, depth]
     std::vector<int> i34(nElements);    // Number of nodes per element
-    Array2D<int> elnode(4, nElements, -1);  // Node indices for each element
+    Array2D<int> elnode(4, nElements, -1);  // Node indices for each element; init as -1
     Array2D<int> elside(4, nElements, -1);
 
     printFormatted("%s: %i, %s: %i", ansi::blue("n_nodes: ").c_str(), nNodes, ansi::green("n_elements: ").c_str(), nElements); 
@@ -882,7 +884,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
         std::getline(file, line);
         std::istringstream nodeIss(line); 
         int index;
-        nodeIss >> index;  
+        nodeIss >> index; //ID  
 
         try {
             for (int j = 0; j < 3; j++) {

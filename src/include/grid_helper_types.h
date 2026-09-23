@@ -134,9 +134,9 @@ public:
 template <typename T>
 class ArrayOfRows {
 private:
-    T* data;
-    size_t sizeI;
-    size_t* rowStarts;
+    T* data; //1D
+    size_t sizeI; //# of rows
+    size_t* rowStarts; //array
 
 public:
     ArrayOfRows(size_t sizeI, size_t* rowLengths) : sizeI(sizeI) {
@@ -147,13 +147,14 @@ public:
         for (size_t i = 1; i <= sizeI; i++) {
             rowStarts[i] = rowStarts[i-1] + rowLengths[i-1];
         }
-        data = (T*)malloc(rowStarts[sizeI] * sizeof(T));
+        data = (T*)malloc(rowStarts[sizeI] * sizeof(T)); //last entry not used?
 
         if (data == nullptr || rowStarts == nullptr) {
             throw std::runtime_error("Failed to allocate memory for ArrayOfRows");
         }
     }
 
+    //Alternative constructor (shorthand of above with sizeI inferred)
     ArrayOfRows(const std::vector<size_t>& rowLengths) : ArrayOfRows(rowLengths.size(), rowLengths.data()) {}
 
     ArrayOfRows(void): data(nullptr), sizeI(0), rowStarts(nullptr) {}
@@ -194,6 +195,7 @@ public:
 
     size_t rowSize(size_t i) const { return rowStarts[i+1] - rowStarts[i]; }
     size_t rows() const { return sizeI; }
+    //new31: nonzeroCount should not include the last number?
     size_t nonzeroCount() const { return rowStarts[sizeI]; }
     T* data_ptr() const { return data; }
     size_t* rowStarts_ptr() const { return rowStarts; }

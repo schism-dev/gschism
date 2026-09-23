@@ -74,13 +74,14 @@ void print(const std::string& message) {
   py::print(message);
 }
 
+//... receives arbitrary # of arg's
 void printFormatted(const std::string& message, ...) {
   // Print a formatted message to the console.
   char buffer[2048];
-  va_list args;
-  va_start(args, message.c_str());
-  vsnprintf(buffer, sizeof(buffer), message.c_str(), args);
-  va_end(args);
+  va_list args;  //access ... arg's
+  va_start(args, message.c_str()); //copilot says message (no c_str)
+  vsnprintf(buffer, sizeof(buffer), message.c_str(), args); //send to buffer
+  va_end(args); //finish processing
   py::print(std::string(buffer));
 }
 
