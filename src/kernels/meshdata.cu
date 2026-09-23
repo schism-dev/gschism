@@ -2034,6 +2034,12 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
    for (int k = 0; k < nvrt; k++) node.dfv[k] = dfv0;   // XXXX 
    for (int k = 0; k < nvrt; k++) node.dfh[k] = dfh0;   // XXXX (does it need to exist when transport is not enabled?)
+   for (int k = 0; k < nvrt; k++) {
+      node.turb.tke[k]    = node.turb.tkemin();
+      node.turb.mxl[k]    = node.turb.mxlmin(node.depth);
+      node.turb.nu_tke[k] = node.turb.diffmin;
+      node.turb.nu_phi[k] = node.turb.diffmin;
+   }
 
    
    // Links the node to the boundary information
@@ -2889,7 +2895,7 @@ __device__ __forceinline__ void computeTurbulenceModel<TurbulenceModel::GLS>(Nod
       const double buoy = dfh_c*N2;
       const double diss = pow<3>(cmiu0)*sqrt(tke_c)/mxl_c*dz/6.0; //diss/k
 
-if (fabs(prod)>0.001) printf("prod: %f, buoy: %f, diss: %f\n", prod, buoy, diss);
+
 
       // Equation for tke
       // ---------------
@@ -3000,6 +3006,7 @@ if (fabs(prod)>0.001) printf("prod: %f, buoy: %f, diss: %f\n", prod, buoy, diss)
    turb.tke[ivrt]   = tkesrf;
    for (int k = kb + 2, kin = 1; k < ivrt; k++, kin++) {
       turb.tke[k] = max(solution[kin], turb.tkemin());
+// printf("tke[%d]: %f, solution[%d]: %f\n", k, turb.tke[k], kin, solution[kin]);   
    }
 
 
@@ -5025,9 +5032,6 @@ extern "C" {
             
             const int kin = k - (kb + 1);
 
-            // Vertical viscosity at the face center
-            const double dfz = 0.5*(side->dfv(k - 1) + side->dfv(k)); // Vertical average.
-
  
             alow[kin] = 0.0;
             cupp[kin] = 0.0;
@@ -5068,6 +5072,7 @@ extern "C" {
                } // if iveg
 
                const double dzz = side->Dz(k + 1);
+               const double dfz = 0.5*(side->dfv(k) + side->dfv(k + 1)); // Vertical viscosity at the face center
                const double tmp = dt*dfz/dzz;
                assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
 
@@ -5101,6 +5106,7 @@ extern "C" {
                } // if iveg
 
                const double dzz = side->Dz(k);
+               const double dfz = 0.5*(side->dfv(k) + side->dfv(k - 1)); // Vertical viscosity at the face center
                const double tmp = dt*dfz/dzz;
                assert(dzz > 0.0 && "STEP: dzz<=0 in momentum");
 
@@ -7071,6 +7077,24 @@ extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
          else
             for (int lev = 0; lev < nvrt; lev++)
                out[lev] = node->dfv[lev];
+         break;
+      }
+      case (int)VarCode::tke: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->turb.tke[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->turb.tke[lev];
+         break;
+      }
+      case (int)VarCode::mxl: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->turb.mxl[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->turb.mxl[lev];
          break;
       }
    }

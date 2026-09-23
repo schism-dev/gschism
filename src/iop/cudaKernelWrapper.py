@@ -17,14 +17,15 @@ class CudaDeviceConfig:
 
 
 configCuda = None
-def initCudaDeviceConfig():
+def initCudaDeviceConfig(nGpus):
     global configCuda
 
-    # THIS IS FOR TESTING ONLY XXXXXXX
-    if VISTA:
-        devices = (0, )
-    else:
-        devices = (0,)
+    nAvail = cp.cuda.runtime.getDeviceCount()
+    if nGpus < 1:
+        raise ValueError(f"nGpus must be >= 1, got {nGpus}")
+    if nGpus > nAvail:
+        raise ValueError(f"requested {nGpus} GPUs, only {nAvail} available")
+    devices = tuple(range(nGpus))
 
 
     configCuda = CudaDeviceConfig(devices)

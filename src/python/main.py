@@ -60,35 +60,7 @@ from python.schism_init import readNamelist, schism_init
 from python.schism_step import schism_step, solveWaveEquation, computeMeteorologicalForcing
 from python.schism_consts import *
 import python.cuda_functions as cufunc
-
-
-
-
-# # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Test_Btrack_Gausshill'
-# # in_dir = '/media/jmg/Elements/src/tmp/schism_verification_tests/Small_test/Small_grid'
-# in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Small_grid'
-# in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\QuarterAnnulus\Pure_tri'
-# # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN02a'
-
-
-if WINDOWS:
-    # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b'
-    # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN03b\gpuoutput'
-    in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN05b'
-    out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\RUN05b\gpuoutput'
-    # in_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\GPU'
-    # out_dir = r'C:\Users\jmgonzalez\src\schism_test_suit\Test_CORIE_LSC2\Test_CORIE_LSC2\GPU\gpuoutput'
-
-    # out_dir = r'c:\Users\jmgonzalez\src\temp'
-elif VISTA:
-    in_dir = r'/scratch/10922/jmglez/tests/RUN02i'
-    out_dir = r'/scratch/10922/jmglez/tests/RUN02i/gpuoutput'
-    # in_dir = r'/scratch/10922/jmglez/tests/RUN02a'
-    # out_dir = r'/scratch/10922/jmglez/tests/RUN02a/gpuoutput'
-else:
-    raise Exception("Unsupported platform")
-
-
+import argparse
 
 
 # import src.io.readSflux as readSflux
@@ -225,6 +197,23 @@ if __name__ == "__main__":
     # Set paths relative to project root
     cpp_file = os.path.join(project_root, "grid", "read_and_process_grid.cpp")
 
+    # Get the command line arguments
+    parser = argparse.ArgumentParser(description="Run GPU SCHISM on a case directory")
+    parser.add_argument("inDir", help="path to SCHISM case directory")
+    parser.add_argument("--outDir", default=None,
+                        help="output directory (default: inDir/gpuoutput)")
+    parser.add_argument("--nGpus", type=int, default=1, help="number of GPUs (default: 1)")
+    args = parser.parse_args()
+    in_dir = os.path.abspath(args.inDir)
+    if not os.path.isdir(in_dir):
+        parser.error(f"case directory not found: {in_dir}")
+    if args.outDir is None:
+        out_dir = os.path.join(in_dir, "gpuoutput")
+    else:
+        out_dir = os.path.abspath(args.outDir)
+    print("in_dir:", in_dir)
+    print("out_dir:", out_dir)
+
     print("Looking for file at:", os.path.abspath(cpp_file))
     module = compile_and_import("test", cpp_file)
 
@@ -241,7 +230,7 @@ if __name__ == "__main__":
 
     # Initialize the CUDA functions
 
-    configCuda = ckw.initCudaDeviceConfig()
+    configCuda = ckw.initCudaDeviceConfig(args.nGpus)
 
 
     numPartitions = ckw.configCuda.deviceCount

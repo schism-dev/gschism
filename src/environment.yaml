@@ -1,0 +1,21 @@
+name: cupy311
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy=2.0.2
+  - scipy=1.13.1
+  - matplotlib=3.9.4
+  - netcdf4=1.7.2
+  - cftime=1.6.4
+  - pip
+  - pip:
+    - cupy-cuda13x==13.6.0
+    - pybind11==3.0.4
+    - f90nml==1.5.0
+    - line_profiler==5.0.2
+    - Cython==3.2.1
+    - fastrlock==0.8.3
+    - mpi4py==4.1.0
+    - pnetcdf==1.0.0
+    - typing_extensions==4.16.0

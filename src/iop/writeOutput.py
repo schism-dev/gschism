@@ -21,6 +21,8 @@ dataW = None
 dataZ = None
 dataWElem = None
 dataVisc = None
+dataTke = None
+dataMxl = None
 fileNum = 0
 outputTime = 0.0
 
@@ -45,7 +47,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 
 def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     # Write the output files
-    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, fileNum, sizeNode, outputTime
+    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, fileNum, sizeNode, outputTime
     
 
     ihfskip = core.ihfskip
@@ -65,11 +67,13 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
             dataW.close() 
             dataWElem.close()
             dataVisc.close()
+            dataTke.close()
+            dataMxl.close()
 
         fileNum += 1
 
         ifile=(it-1)/ihfskip+1
-        dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
 
 
     if dataC is None:
@@ -199,6 +203,18 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     viscosity_var = dataVisc.variables['viscosity']
     viscosity_var[idxTime, :, :] = dfv_cpu.T
     del dfv_cpu
+
+    tke_cpu = dtoh.getNodeVar("tke")
+    tke_cpu[mask_above_kb] = np.nan
+    tke_var = dataTke.variables['turbulentKineticEner']
+    tke_var[idxTime, :, :] = tke_cpu.T
+    del tke_cpu
+
+    mxl_cpu = dtoh.getNodeVar("mxl")
+    mxl_cpu[mask_above_kb] = np.nan
+    mxl_var = dataMxl.variables['mixingLength']
+    mxl_var[idxTime, :, :] = mxl_cpu.T
+    del mxl_cpu
    
 
     time_var = dataC.variables['time']
@@ -222,6 +238,12 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     time_var = dataVisc.variables['time']
     time_var[idxTime] = it*dt
 
+    time_var = dataTke.variables['time']
+    time_var[idxTime] = it*dt
+
+    time_var = dataMxl.variables['time']
+    time_var[idxTime] = it*dt
+
     outputTime += time.perf_counter()
 
 
@@ -235,7 +257,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     The data variable is stored in the global variable data.
     """
 
-    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc
+    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl
     
     filename = 'out2d_%i.nc' % fileNum
     filenameU = 'horizontalVelX_%i.nc' % fileNum
@@ -244,6 +266,8 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     filenameZ = 'zCoordinates_%i.nc' % fileNum
     filenameWElem = 'verticalVelAtElement_%i.nc' % fileNum
     filenameVisc = 'viscosity_%i.nc' % fileNum
+    filenameTke = 'turbulentKineticEner_%i.nc' % fileNum
+    filenameMxl = 'mixingLength_%i.nc' % fileNum
 
     isGeographic = getattr(opt, "ics", 1) == 2
 
@@ -279,6 +303,14 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     if os.path.exists(filepathVisc):
         os.remove(filepathVisc)
 
+    filepathTke = os.path.join(path, filenameTke)
+    if os.path.exists(filepathTke):
+        os.remove(filepathTke)
+
+    filepathMxl = os.path.join(path, filenameMxl)
+    if os.path.exists(filepathMxl):
+        os.remove(filepathMxl)
+
     # Create the NetCDF files
     dataC = nc.Dataset(filepath,  "w", format="NETCDF4")
     dataU = nc.Dataset(filepathU, "w", format="NETCDF4")
@@ -287,9 +319,11 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     dataZ = nc.Dataset(filepathZ, "w", format="NETCDF4")
     dataWElem = nc.Dataset(filepathWElem, "w", format="NETCDF4")
     dataVisc = nc.Dataset(filepathVisc, "w", format="NETCDF4")
+    dataTke = nc.Dataset(filepathTke, "w", format="NETCDF4")
+    dataMxl = nc.Dataset(filepathMxl, "w", format="NETCDF4")
     
     # Add dimensions to the file
-    for data in [dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc]:
+    for data in [dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl]:
         data.createDimension('nSCHISM_hgrid_node',          nNodes)
         data.createDimension('nSCHISM_hgrid_face',          nElements)
         data.createDimension('nSCHISM_hgrid_edge',          nSides)
@@ -556,5 +590,31 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     viscosity.mesh = "SCHISM_hgrid"
     viscosity.missing_value = cp.float32(9.96921e36)
 
+    turbulentKineticEner = dataTke.createVariable(
+        'turbulentKineticEner', 'f4',
+        ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'),
+        chunksizes=(1, nNodes, nLayers),
+        **paramsCompression,
+    )
+    turbulentKineticEner.i23d = cp.int32(2)
+    turbulentKineticEner.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
+    turbulentKineticEner.location = "node"
+    turbulentKineticEner.grid_mapping = "crs"
+    turbulentKineticEner.mesh = "SCHISM_hgrid"
+    turbulentKineticEner.missing_value = cp.float32(9.96921e36)
+
+    mixingLength = dataMxl.createVariable(
+        'mixingLength', 'f4',
+        ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'),
+        chunksizes=(1, nNodes, nLayers),
+        **paramsCompression,
+    )
+    mixingLength.i23d = cp.int32(2)
+    mixingLength.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
+    mixingLength.location = "node"
+    mixingLength.grid_mapping = "crs"
+    mixingLength.mesh = "SCHISM_hgrid"
+    mixingLength.missing_value = cp.float32(9.96921e36)
+
     
-    return dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc
+    return dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl
