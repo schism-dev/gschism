@@ -359,7 +359,7 @@ if __name__ == "__main__":
     cufunc.initializeCudaKernelManager(project_root)
 
     
-    # convert arrays to cupy
+    # convert arrays to cupy (Numpy arrays may lose mem)
     i34                  = cp.array(i34,               dtype=cp.int32, order='F')
     partElements         = cp.array(partElements,      dtype=cp.int32, order='F')
     partNodes            = cp.array(partNodes,         dtype=cp.int32, order='F')

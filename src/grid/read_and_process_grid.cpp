@@ -728,7 +728,6 @@ py::tuple toPyArray(const ArrayOfRows<T>& data) {
     auto arrayIndices = py::array_t<T>({static_cast<pybind11::ssize_t>(data.rows() + 1)});
     auto ptrIndices = static_cast<T*>(arrayIndices.request().ptr);
 
-    //new31: check ptrIndices also?
     if (ptr == nullptr) {
         throw std::runtime_error("Failed to allocate memory for Python array");
     }
@@ -823,7 +822,7 @@ void countPartitionSizes(
     }
 }
 
-
+//To Numpy arrays first (CPU)
 std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>,    // partElements
            py::array_t<int32_t>,    // partNodes
@@ -848,6 +847,7 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>,    // numPartBoundaryNodes
            py::array_t<int32_t>     // numPartBoundarySides
         >
+//idx_t defined in Metis; need to be consistent here
 readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPartitions, int ncor) {
 
     
@@ -929,7 +929,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     // First pass: count max nodes per segment and verify total
     int mnond = 0;  // max number of nodes per segment
     int nt = 0;     // total node count
-    std::vector<std::vector<int>> segmentNodes;  // temporarily store nodes per segment
+    std::vector<std::vector<int>> segmentNodes;  // temporarily store nodes per segment (2D dynamic container)
 
     // Process open boundary segments
     for (int k = 0; k < nope; k++) {
@@ -958,13 +958,13 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     }
 
     // Allocate arrays for open boundary segments
-    std::vector<int> nond(nope, 0);                    // nodes per segment
-    Array2D<int> iond(nope, mnond, -1);                    // node indices for each segment
-    std::vector<int> isbnd(nNodes, internalNode);      // is boundary 
+    std::vector<int> nond(nope, 0);                    // nodes per segment (init as 0)
+    Array2D<int> iond(nope, mnond, -1);                // node indices for each segment
+    std::vector<int> isbnd(nNodes, internalNode);      // is open boundary 
 
     // Fill the arrays using stored segment_nodes
     for (size_t k = 0; k < segmentNodes.size(); k++) {
-        const auto& nodes = segmentNodes[k];
+        const auto& nodes = segmentNodes[k]; //& is ref/alias, so use . below (not ->)
         int nn = nodes.size();
         nond[k] = nn;
         
@@ -973,7 +973,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
             iond(k, i) = nodes[i];
         }
 
-        // Mark boundary nodes
+        // Mark boundary nodes (new31: last open bnd wins?)
         for (int ip : nodes) {
             isbnd[ip] = k;
         }
@@ -993,12 +993,12 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
 
     // Read land boundary information
     // Read number of land boundary segments and total boundary nodes
-    std::getline(file, line);
-    std::istringstream iss1(line);
+    std::getline(file, line); 
+    std::istringstream iss1(line); //small diff from readInt
     int nland;
     iss1 >> nland;
 
-    std::getline(file, line);
+    std::getline(file, line); 
     std::istringstream iss2(line);
     int nvel;
     iss2 >> nvel;
@@ -1027,6 +1027,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
             nodes[i]--;  // Convert to 0-based indexing
         }
 
+	//Close off island bnd
         if (islandFlag == 1) {
             nodes[nn] = nodes[0];
         }
@@ -1055,7 +1056,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
         
         // Copy node indices
         for (int i = 0; i < nn; i++) {
-            ilnd(k, i) = nodes[i];
+            ilnd(k, i) = nodes[i]; //new31: no closing off island here?
         }
 
         // Mark boundary nodes and check for overlap with open boundaries
