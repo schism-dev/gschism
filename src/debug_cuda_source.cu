@@ -606,6 +606,13 @@ constexpr double veg_cfpsi = 0.16;
 template<TurbulenceModel Model>
 struct Turbulence {
    __device__ void setDiffLimits(double, double) { assert(false && "setDiffLimits does not exist for this turbulence model"); }
+
+   __device__ void init(Node *node) {
+      for (int k = 0; k < nvrt; k++) {
+         node->dfv[k] = dfv0;
+         node->dfh[k] = dfh0;
+      }
+   }
 };   
 
 // GLS turbulence model
@@ -626,6 +633,10 @@ struct Turbulence<TurbulenceModel::GLS> {
       diffmin = lo;
       diffmax = hi;
    }
+
+   // Fortran cold start: q2 = q2min, xl = xlmin2, dfq1 = dfq2 = diffmin.
+   // Call after setDiffLimits. depth is the node depth used by xlmin2.
+   __device__ void init(Node *node);
 
 
    __device__ __forceinline__ constexpr double cpsi1() const {
@@ -4202,16 +4213,13 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
       for (int k = 0; k < nvrt; k++) node.localSigma[k] = localSigma[k + iglobal*nvrt];
    }
 
-   for (int k = 0; k < nvrt; k++) node.rho[k] = rho0;
-   for (int k = 0; k < nvrt; k++) node.z[k] = 0.0;
-   for (int k = 0; k < nvrt; k++) node.dfv[k] = dfv0;   // XXXX 
-   for (int k = 0; k < nvrt; k++) node.dfh[k] = dfh0;   // XXXX (does it need to exist when transport is not enabled?)
    for (int k = 0; k < nvrt; k++) {
-      node.turb.tke[k]    = node.turb.tkemin();
-      node.turb.mxl[k]    = node.turb.mxlmin(node.depth);
-      node.turb.nu_tke[k] = node.turb.diffmin;
-      node.turb.nu_phi[k] = node.turb.diffmin;
+      node.rho[k] = rho0;
+      node.z[k] = -1e20;
    }
+
+   // Initialize the turbulence model including the vertical viscosity/diffusivity
+   node.turb.init(&node);
 
    
    // Links the node to the boundary information
@@ -4781,6 +4789,20 @@ __device__ __forceinline__ double Turbulence<TurbulenceModel::GLS>::mxlmin(doubl
    // Minimum mixing length for levels below the surface.
    // Independent of psimin(); do not invert one to get the other.
    return 2.0 * tkemin() * 0.1 * max(h0, depth);
+}
+
+
+__device__ void Turbulence<TurbulenceModel::GLS>::init(Node *node) {
+   // Whole column, including levels below kb. Matches the Fortran cold start.
+   for (int k = 0; k < nvrt; k++) {
+      tke[k]    = tkemin();
+      mxl[k]    = mxlmin(node->depth);
+      nu_tke[k] = diffmin;
+      nu_phi[k] = diffmin;
+
+      node->dfv[k] = 0.0;
+      node->dfh[k] = 0.0;
+   }
 }
 
 

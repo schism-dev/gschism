@@ -442,6 +442,13 @@ constexpr double veg_cfpsi = 0.16;
 template<TurbulenceModel Model>
 struct Turbulence {
    __device__ void setDiffLimits(double, double) { assert(false && "setDiffLimits does not exist for this turbulence model"); }
+
+   __device__ void init(Node *node) {
+      for (int k = 0; k < nvrt; k++) {
+         node->dfv[k] = dfv0;
+         node->dfh[k] = dfh0;
+      }
+   }
 };   
 
 // GLS turbulence model
@@ -462,6 +469,10 @@ struct Turbulence<TurbulenceModel::GLS> {
       diffmin = lo;
       diffmax = hi;
    }
+
+   // Fortran cold start: q2 = q2min, xl = xlmin2, dfq1 = dfq2 = diffmin.
+   // Call after setDiffLimits. depth is the node depth used by xlmin2.
+   __device__ void init(Node *node);
 
 
    __device__ __forceinline__ constexpr double cpsi1() const {
