@@ -63,6 +63,7 @@ struct AdjacencyList {
     std::vector<idx_t> adjwgt;
     idx_t ntedge;
 
+    //destructor allowed in struct
     ~AdjacencyList() {
         xadj.clear();
         adjncy.clear();
@@ -75,7 +76,7 @@ struct AdjacencyList {
 template <typename T>
 class Array2D {
 private:
-    T* data; //row vector from 2D array, following row major, of type 'T' (int etc)
+    T* data; //row vector from 2D array, stored in row major order, of type 'T' (int etc)
     size_t sizeI; //# of rows
     size_t sizeJ;
 
@@ -107,8 +108,10 @@ public:
     } 
 
     // Access operator (for mutable arrays). Note the ref via '&'
+    // i,j from 0, in row-major format (j varies faster)
+    // new31: elnode(4,ne) would destroy cache efficiency?
     T& operator()(size_t i, size_t j) {
-        ARRAY_BOUNDS_CHECK(i, j, sizeI, sizeJ);
+        ARRAY_BOUNDS_CHECK(i, j, sizeI, sizeJ); //i<sizeI
 
         return data[i * sizeJ + j];
     }
@@ -147,7 +150,7 @@ public:
         for (size_t i = 1; i <= sizeI; i++) {
             rowStarts[i] = rowStarts[i-1] + rowLengths[i-1];
         }
-        data = (T*)malloc(rowStarts[sizeI] * sizeof(T)); //last entry not used?
+        data = (T*)malloc(rowStarts[sizeI] * sizeof(T)); //no extra for next fictitious line
 
         if (data == nullptr || rowStarts == nullptr) {
             throw std::runtime_error("Failed to allocate memory for ArrayOfRows");
@@ -181,13 +184,14 @@ public:
         free(data);
     }
 
-    // Access operator
+    // Access operator (i,j 0-based)
     T& operator()(size_t i, size_t j) {
         assert(i < sizeI && j < rowLengths[i] && i >= 0 && j >= 0);
         return data[rowStarts[i] + j];
     }
 
     // Const access operator
+    // new31: the order here seems right due to row major access
     const T& operator()(size_t i, size_t j) const {
         assert(i < sizeI && j < rowLengths[i] && i >= 0 && j >= 0);
         return data[rowStarts[i] + j];
@@ -195,7 +199,7 @@ public:
 
     size_t rowSize(size_t i) const { return rowStarts[i+1] - rowStarts[i]; }
     size_t rows() const { return sizeI; }
-    //new31: nonzeroCount should not include the last number?
+    //nonzeroCount=rowStarts[sizeI] due to 0-based indexing 
     size_t nonzeroCount() const { return rowStarts[sizeI]; }
     T* data_ptr() const { return data; }
     size_t* rowStarts_ptr() const { return rowStarts; }

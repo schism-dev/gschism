@@ -70,7 +70,7 @@ void buildListsOfElementNeighbors(const Array2D<int>& elnode, const std::vector<
             int vertex = elnode(i, elemIdx);   
 
             // Add element to vertex's connection list
-            const int j = nne[vertex];
+            const int j = nne[vertex]; //j: 0-based
 
             // Add element to vertex's connection list
             nodeNeighElems(vertex, j) = elemIdx;
@@ -81,7 +81,7 @@ void buildListsOfElementNeighbors(const Array2D<int>& elnode, const std::vector<
 
     print("");
 
-}
+} //buildListsOfElementNeighbors
 
 
 void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const std::vector<int>& i34, 
@@ -162,16 +162,16 @@ void buildListsOfNodeNeighbors(const Array2D<int>& elnode, const std::vector<int
                 } else {  // Boundary node
                     // For boundary nodes, add the last node
                     nodeNeighNodes(i, currentCount[i]) = lastNode;
-                    currentCount[i]++;
+                    currentCount[i]++; //this makes currentCount incorrect but it's discarded
                 }
             }
-        }
+        } //for jth elem
 
-    }    
+    } //for node i
 
     print("");
     
-}
+} //buildListsOfNodeNeighbors
 
 
 AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<int>& i34, 
@@ -228,7 +228,7 @@ AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<i
     result.ntedge = ntedge;
 
     // Second pass: build edge list and weights
-    result.xadj[0] = 0;
+    result.xadj[0] = 0; 
 
     for (int ie = 0; ie < nElements; ie++) {
         progressBar("Second pass: edge list and weights", ie, nElements, ansi::MAGENTA, 20);
@@ -246,26 +246,27 @@ AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<i
                     bool found = false;
                     for (int l = result.xadj[ie]; l < result.xadj[ie] + nedge; l++) {
                         if (result.adjncy[l] == je) {
+		            //new31: missing # of levels (nlev)
                             result.adjwgt[l] = (2 * i34[je] - 3);
                             found = true;
                             break;
                         }
-                    }
+                    } //for l
 
                     if (!found) {
                         result.adjncy[result.xadj[ie] + nedge] = je;
-                        result.adjwgt[result.xadj[ie] + nedge] = (2 * i34[je] - 1);
+                        result.adjwgt[result.xadj[ie] + nedge] = (2 * i34[je] - 1); //new31
                         nedge++;
                     }
-                }
-            }
+                } //if je
+            } //for k
         }
         result.xadj[ie + 1] = result.xadj[ie] + nedge;
-    }
+    } //for ie
     print("");
 
     return result;
-}
+} //buildAdjacencyList
 
 
 void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<int>& i34,
@@ -310,7 +311,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                         break;
                     }
                 }
-            }
+            } //for l
 
             // Check orientation
             int je = ic3(k, ie);
@@ -326,8 +327,8 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                     }
                 }
             }
-        }
-    }
+        } //for k
+    } //for ie
     print("");
 
     // Count global number of sides and build global element-side index table
@@ -345,6 +346,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                     elside(j, ie) = ns;
 
                     const int je = ic3(j, ie);
+		    //new31: following check is not needed, as it's same as the check 7 lines above
                     if (je != -1) {  
                         
                         int l = -1;
@@ -367,10 +369,10 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                         // isdel(1, ns) = je;
                     }
                     ns++;
-                }
+                } //if (ie < ic3(j, ie))
   
-            }
-            else
+            } //if internal side
+            else //bnd side
             {
                 elside(j, ie) = ns;
                 ns++;
@@ -396,6 +398,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         for (int j = 0; j < i34[ie]; j++) {
             const int jsj = elside(j, ie);  
 
+	    //new31: The following should be fatal/assert?
             if (jsj==-1) {
                 printFormatted(ansi::red("jsj==-1"));
                 break;
@@ -404,6 +407,7 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
             const int n1 = elnode(nxq(1, j, i34[ie]), ie);
             const int n2 = elnode(nxq(2, j, i34[ie]), ie);
 
+            //new31: The following should be fatal/assert?
             if (n1==-1) {
                 printFormatted(ansi::red("n1==-1"));
             }
@@ -426,13 +430,13 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
                 isidenode(0,jsj)=n2;
                 isidenode(1,jsj)=n1;
             }
-        }
-    }
+        } // for j=1:i34
+    } //for ie
 
 
     print("");
 
-}
+} // build side info
 
 
 // void buildSideData(int nElements, int nSides, 
@@ -524,7 +528,7 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
                     icount++;
                     nodeNeighElems(i, 0) = ie;
                 }
-            }   
+            } //for ielocal   
 
             if (icount != 1) {   
                 printStackTrace();  
@@ -532,9 +536,10 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
                                          ": found " + std::to_string(icount) + 
                                          " boundary elements");
             }
-        }     
+        } //if bnd node     
 
         // For all nodes: recompute remaining elements in counter-clockwise order
+	// Bnd node: use original 1st elem 
         for (size_t j = 1; j < nodeNeighElems.rowSize(i); j++) {
             // Get previous element
             const int ie = nodeNeighElems(i, j - 1);
@@ -568,7 +573,7 @@ void reorderElementsCounterClockwise(int np, const std::vector<int>& isbnd,
   
     }
     print("");
-}
+} //reorderElementsCounterClockwise
 
 void reorderPartitionNodes(
     const std::vector<idx_t>& partitions,
@@ -848,6 +853,7 @@ std::tuple<py::array_t<int32_t>,    // i34
            py::array_t<int32_t>     // numPartBoundarySides
         >
 //idx_t defined in Metis; need to be consistent here
+//'&' ref/alias
 readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPartitions, int ncor) {
 
     
@@ -1027,7 +1033,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
             nodes[i]--;  // Convert to 0-based indexing
         }
 
-	//Close off island bnd
+	//new31: Close off island bnd here but not below? (not in original code)
         if (islandFlag == 1) {
             nodes[nn] = nodes[0];
         }
@@ -1062,7 +1068,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
         // Mark boundary nodes and check for overlap with open boundaries
         for (int ip : nodes) {
             if (isbnd[ip] == internalNode) {
-                isbnd[ip] = landNode;  // overlap with open boundary
+                isbnd[ip] = landNode;  // overlap with open boundary (flag shifted by 1 from FORT)
             }
         }
     }
@@ -1075,8 +1081,8 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     ArrayOfRows<int> nodeNeighElems, nodeNeighNodes;
 
 
+    //new31: nodeNeighNodes actually not used
     buildListsOfElementNeighbors(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
-
     AdjacencyList adjList = buildAdjacencyList(elnode, i34, nodeNeighElems, nElements);
 
     Array2D<int> js(4, 1, -1);
@@ -1092,6 +1098,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     // of functions is important in this section.
     buildListsOfNodeNeighbors(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
 
+    //new32
     idx_t nvtxs = nElements;  // number of vertices (elements in our case)
     std::vector<idx_t> partElements(nvtxs);  // array to store partition numbers
     if (nPartitions > 1) {
