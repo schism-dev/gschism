@@ -1171,6 +1171,8 @@ struct BoundarySegment {
 
    bool isLand;
 
+   int idx; // Index of the boundary segment in the input files.
+
    double clen;  // Length of the boundary segment
    double carea; // Area of the boundary segment
 
@@ -1218,6 +1220,10 @@ struct SideBoundary {
    Side *leftSide, *rightSide; // Pointers to the left and right sides of the boundary segment
 
    Vector2 ubc[nvrt]; // velocity boundary condition
+
+   // Tidal velocity boundary conditions. They are computed from the nodal tidal velocity amplitudes and phases in populateBoundarySides().
+   Vector2 umo[nbfr];  // tidal velocity amplitude )
+   Vector2 ufa[nbfr];  // tidal velocity phase
    
    __inline__ __device__ double getBoundaryArrayValueWeight(void) const;
 
@@ -1449,8 +1455,6 @@ struct NodeBoundary {
    // Arrays for harmonic constituents (if needed)
    double  emo[nbfr];  // Elevation amplitude
    double  efa[nbfr];  // Elevation phase
-   Vector2 umo[nbfr];  // velocity amplitude
-   Vector2 ufa[nbfr];  // velocity phase
 
 
    NodeBoundary(void) {

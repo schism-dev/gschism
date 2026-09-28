@@ -2036,7 +2036,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    }
 
    // Initialize the turbulence model including the vertical viscosity/diffusivity
-   node.turb.init(&node);
+   node.turb.init(node);
 
    
    // Links the node to the boundary information
@@ -2478,33 +2478,68 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
       // for each segment...
       for (i = 0; i < nond[iseg]; i++) {
          idxNode = iond[iseg + i*nope];
-         if (idxNode == nodeBnd->node->idx) goto found; // Cleanest way to exit the double loop
-         
+         if (idxNode == nodeBnd->node->idx) 
+         {
+            // This is done for every segment that the node is part of, overwriting the previous values.
+            // The result is that the segment with the highest index is the one that is used.
+            nodeBnd->isEssentialBC = (iettype[iseg] != 0);
+            nodeBnd->elbc = 0.0;
+
+            // XXXXXX This may make more sense in populateBoundarySides.
+            nodeBnd->segment->ifltype = ifltype[iseg];
+            nodeBnd->segment->iettype = iettype[iseg];
+            nodeBnd->segment->qthcon  = qthcon[iseg];
+            nodeBnd->segment->idx = iseg;
+
+            for (int jfr = 0; jfr < nbfr; jfr++) {
+
+               const int idx2 = iseg + i*nope + jfr*nope*mnond; 
+
+               nodeBnd->efa[jfr] = efa[idx2];
+               nodeBnd->emo[jfr] = emo[idx2];
+
+            }
+         }         
       }
    }
 
    assert(iseg < nope && "iseg is out of bounds");
 
-found: // Jumped here when the node was found
 
-   nodeBnd->isEssentialBC = (iettype[iseg] != 0);
-   nodeBnd->elbc = 0.0;
 
-   nodeBnd->segment->ifltype = ifltype[iseg];
-   nodeBnd->segment->iettype = iettype[iseg];
-   nodeBnd->segment->qthcon  = qthcon[iseg];
 
-   for (int jfr = 0; jfr < nbfr; jfr++) {
+        
 
-      const int idx2 = iseg + i*nope + jfr*nope*mnond; 
+}
 
-      nodeBnd->efa[jfr] = efa[idx2];
-      nodeBnd->emo[jfr] = emo[idx2];
+__device__ void Mesh::populateBoundarySides(void) {
+
+   SIDE_BND(sideBnd);
+
+   const Side *side = sideBnd->side;
+
+
+   // Indices of the nodes on the side 
+   const int n1 = side->n1->idx;
+   const int n2 = side->n2->idx;
+
+   const int iseg = sideBnd->segment->idx;
+
+   // Loop through the boundary nodes on the segment
+   for (int j = 0; j < nond[iseg] - 1; j++) {
+
+      // Indices of the nodes at the ends of the side (from the boundary node list)
+      const int b1 = iond[iseg + j*nope];
+      const int b2 = iond[iseg + (j + 1)*nope];
+
+      // Find the side that connects the two nodes
+      if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
+      }
+   }
+
+
       nodeBnd->umo[jfr] = {umo[idx2], vmo[idx2]};
       nodeBnd->ufa[jfr] = {ufa[idx2], vfa[idx2]};
-
-   }
-        
 
 }
 
@@ -2525,7 +2560,8 @@ __device__ void Mesh::populateBoundarySideLinks(void) {
       if (s->n1 == side->n2) sideBnd->leftSide  = s;
       if (s->n2 == side->n1) sideBnd->rightSide = s;
    }
-   
+
+  
 }
 
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
