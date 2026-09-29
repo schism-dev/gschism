@@ -9260,6 +9260,22 @@ extern "C" __global__ void getSideVarFunc(int varCode, double *res) {
 }
 
 
+template<TurbulenceModel M>
+__device__ __forceinline__ double getTKE(const Turbulence<M> &turb, int k) {
+   if constexpr (M == TurbulenceModel::GLS)
+      return turb.tke[k];
+   else
+      return 0.0;
+}
+template<TurbulenceModel M>
+__device__ __forceinline__ double getMXL(const Turbulence<M> &turb, int k) {
+   if constexpr (M == TurbulenceModel::GLS)
+      return turb.mxl[k];
+   else
+      return 0.0;
+}
+
+
 extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
    // Packed local order into res. Caller allocates sizePart * nbytes.
    NODE(node);
@@ -9342,19 +9358,19 @@ extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
       case (int)VarCode::tke: {
          double *out = (double *)((char *)res + idx_node * nvrt * 8);
          if (k >= 0)
-            out[0] = node->turb.tke[k];
+            out[0] = getTKE(node->turb, k);
          else
             for (int lev = 0; lev < nvrt; lev++)
-               out[lev] = node->turb.tke[lev];
+               out[lev] = getTKE(node->turb, lev);
          break;
       }
       case (int)VarCode::mxl: {
          double *out = (double *)((char *)res + idx_node * nvrt * 8);
          if (k >= 0)
-            out[0] = node->turb.mxl[k];
+            out[0] = getMXL(node->turb, k);
          else
             for (int lev = 0; lev < nvrt; lev++)
-               out[lev] = node->turb.mxl[lev];
+               out[lev] = getMXL(node->turb, lev);
          break;
       }
    }

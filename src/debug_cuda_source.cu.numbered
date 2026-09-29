@@ -9260,388 +9260,404 @@
  9260: }
  9261: 
  9262: 
- 9263: extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
- 9264:    // Packed local order into res. Caller allocates sizePart * nbytes.
- 9265:    NODE(node);
- 9266: 
- 9267:    switch (varCode) {
- 9268:       case (int)VarCode::outputCoords: {
- 9269:          const Point2 coords = node->outputCoords();
- 9270:          double *out = (double *)((char *)res + idx_node * 16);
- 9271:          out[0] = coords.x;
- 9272:          out[1] = coords.y;
- 9273:          break;
- 9274:       }
- 9275:       case (int)VarCode::depth:
- 9276:          *(double *)((char *)res + idx_node * 8) = node->depth;
- 9277:          break;
- 9278:       case (int)VarCode::kb:
- 9279:          *(int *)((char *)res + idx_node * 4) = (int)node->kb;
- 9280:          break;
- 9281:       case (int)VarCode::eta:
- 9282:          *(double *)((char *)res + idx_node * 8) = node->eta2;
- 9283:          break;
- 9284:       case (int)VarCode::u_air: {
- 9285:          double *out = (double *)((char *)res + idx_node * 16);
- 9286:          out[0] = node->u_air.x;
- 9287:          out[1] = node->u_air.y;
- 9288:          break;
- 9289:       }
- 9290:       case (int)VarCode::isdry:
- 9291:          *(int *)((char *)res + idx_node * 4) = (int)node->isDry;
- 9292:          break;
- 9293:       case (int)VarCode::u: {
- 9294:          double *out = (double *)((char *)res + idx_node * nvrt * 16);
- 9295:          if (k >= 0) {
- 9296:             out[0] = node->u2[k].x;
- 9297:             out[1] = node->u2[k].y;
- 9298:          } else {
- 9299:             for (int lev = 0; lev < nvrt; lev++) {
- 9300:                out[lev*2    ] = node->u2[lev].x;
- 9301:                out[lev*2 + 1] = node->u2[lev].y;
- 9302:             }
- 9303:          }
+ 9263: template<TurbulenceModel M>
+ 9264: __device__ __forceinline__ double getTKE(const Turbulence<M> &turb, int k) {
+ 9265:    if constexpr (M == TurbulenceModel::GLS)
+ 9266:       return turb.tke[k];
+ 9267:    else
+ 9268:       return 0.0;
+ 9269: }
+ 9270: template<TurbulenceModel M>
+ 9271: __device__ __forceinline__ double getMXL(const Turbulence<M> &turb, int k) {
+ 9272:    if constexpr (M == TurbulenceModel::GLS)
+ 9273:       return turb.mxl[k];
+ 9274:    else
+ 9275:       return 0.0;
+ 9276: }
+ 9277: 
+ 9278: 
+ 9279: extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
+ 9280:    // Packed local order into res. Caller allocates sizePart * nbytes.
+ 9281:    NODE(node);
+ 9282: 
+ 9283:    switch (varCode) {
+ 9284:       case (int)VarCode::outputCoords: {
+ 9285:          const Point2 coords = node->outputCoords();
+ 9286:          double *out = (double *)((char *)res + idx_node * 16);
+ 9287:          out[0] = coords.x;
+ 9288:          out[1] = coords.y;
+ 9289:          break;
+ 9290:       }
+ 9291:       case (int)VarCode::depth:
+ 9292:          *(double *)((char *)res + idx_node * 8) = node->depth;
+ 9293:          break;
+ 9294:       case (int)VarCode::kb:
+ 9295:          *(int *)((char *)res + idx_node * 4) = (int)node->kb;
+ 9296:          break;
+ 9297:       case (int)VarCode::eta:
+ 9298:          *(double *)((char *)res + idx_node * 8) = node->eta2;
+ 9299:          break;
+ 9300:       case (int)VarCode::u_air: {
+ 9301:          double *out = (double *)((char *)res + idx_node * 16);
+ 9302:          out[0] = node->u_air.x;
+ 9303:          out[1] = node->u_air.y;
  9304:          break;
  9305:       }
- 9306:       case (int)VarCode::z: {
- 9307:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9308:          if (k >= 0)
- 9309:             out[0] = node->z[k];
- 9310:          else
- 9311:             for (int lev = 0; lev < nvrt; lev++)
- 9312:                out[lev] = node->z[lev];
- 9313:          break;
- 9314:       }
- 9315:       case (int)VarCode::w: {
- 9316:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9317:          if (k >= 0)
- 9318:             out[0] = node->w2[k];
- 9319:          else
- 9320:             for (int lev = 0; lev < nvrt; lev++)
- 9321:                out[lev] = node->w2[lev];
- 9322:          break;
- 9323:       }
- 9324:       case (int)VarCode::dfh: {
- 9325:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9326:          if (k >= 0)
- 9327:             out[0] = node->dfh[k];
- 9328:          else
- 9329:             for (int lev = 0; lev < nvrt; lev++)
- 9330:                out[lev] = node->dfh[lev];
- 9331:          break;
- 9332:       }
- 9333:       case (int)VarCode::dfv: {
- 9334:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9335:          if (k >= 0)
- 9336:             out[0] = node->dfv[k];
- 9337:          else
- 9338:             for (int lev = 0; lev < nvrt; lev++)
- 9339:                out[lev] = node->dfv[lev];
- 9340:          break;
- 9341:       }
- 9342:       case (int)VarCode::tke: {
- 9343:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9344:          if (k >= 0)
- 9345:             out[0] = node->turb.tke[k];
- 9346:          else
- 9347:             for (int lev = 0; lev < nvrt; lev++)
- 9348:                out[lev] = node->turb.tke[lev];
- 9349:          break;
- 9350:       }
- 9351:       case (int)VarCode::mxl: {
- 9352:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9353:          if (k >= 0)
- 9354:             out[0] = node->turb.mxl[k];
- 9355:          else
- 9356:             for (int lev = 0; lev < nvrt; lev++)
- 9357:                out[lev] = node->turb.mxl[lev];
- 9358:          break;
- 9359:       }
- 9360:    }
- 9361: }
- 9362: 
- 9363: 
- 9364: extern "C" __global__ void getSideVar(int varCode, void *res, int k) {
- 9365:    SIDE(side);
- 9366: 
- 9367:    switch (varCode) {
- 9368:       case (int)VarCode::outputCoords: {
- 9369:          const Point2 coords = side->outputCoords();
- 9370:          double *out = (double *)((char *)res + idx_side * 16);
- 9371:          out[0] = coords.x;
- 9372:          out[1] = coords.y;
- 9373:          break;
- 9374:       }
- 9375:       case (int)VarCode::n1:
- 9376:          *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n1 != nullptr) ? side->n1->idx + 1 : -1);
- 9377:          break;
- 9378:       case (int)VarCode::n2:
- 9379:          *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n2 != nullptr) ? side->n2->idx + 1 : -1);
- 9380:          break;
- 9381:       case (int)VarCode::isdry:
- 9382:          *(int *)((char *)res + idx_side * 4) = (int)side->isDry;
- 9383:          break;
- 9384:    }
- 9385: }
- 9386: 
- 9387: 
- 9388: extern "C" __global__ void getElementVar(int varCode, void *res, int k) {
- 9389:    ELEM(elem);
- 9390: 
- 9391:    switch (varCode) {
- 9392:       case (int)VarCode::outputCoords: {
- 9393:          const Point2 coords = elem->outputCoords();
- 9394:          double *out = (double *)((char *)res + idx_elem * 16);
- 9395:          out[0] = coords.x;
- 9396:          out[1] = coords.y;
- 9397:          break;
- 9398:       }
- 9399:       case (int)VarCode::FaceIndices: {
- 9400:          uintptr_t *out = (uintptr_t *)((char *)res + idx_elem * 32);
- 9401:          for (int j = 0; j < 4; j++)
- 9402:             out[j] = (j < elem->i34 && elem->nodes[j]) ? elem->nodes[j]->idx + 1 : -1;
- 9403:          break;
- 9404:       }
- 9405:       case (int)VarCode::isdry:
- 9406:          *(int *)((char *)res + idx_elem * 4) = (int)elem->isDry;
- 9407:          break;
- 9408:       case (int)VarCode::w: {
- 9409:          double *out = (double *)((char *)res + idx_elem * nvrt * 8);
- 9410:          if (k >= 0)
- 9411:             out[0] = elem->w[k];
- 9412:          else
- 9413:             for (int lev = 0; lev < nvrt; lev++)
- 9414:                out[lev] = elem->w[lev];
- 9415:          break;
- 9416:       }
- 9417:    }
- 9418: }
- 9419: 
- 9420: 
- 9421: 
- 9422: 
- 9423: extern "C" __global__ void getNodeVarFunc(int varCode, double *res) {
- 9424: 
- 9425:    NODE(node);
- 9426: 
- 9427:    switch (varCode) {
- 9428:       case (int)VarCode::outputCoords:
- 9429:          const Point2 coords = node->outputCoords();
- 9430:          res[node->idx*2    ] = coords.x;
- 9431:          res[node->idx*2 + 1] = coords.y;
- 9432:          break;
+ 9306:       case (int)VarCode::isdry:
+ 9307:          *(int *)((char *)res + idx_node * 4) = (int)node->isDry;
+ 9308:          break;
+ 9309:       case (int)VarCode::u: {
+ 9310:          double *out = (double *)((char *)res + idx_node * nvrt * 16);
+ 9311:          if (k >= 0) {
+ 9312:             out[0] = node->u2[k].x;
+ 9313:             out[1] = node->u2[k].y;
+ 9314:          } else {
+ 9315:             for (int lev = 0; lev < nvrt; lev++) {
+ 9316:                out[lev*2    ] = node->u2[lev].x;
+ 9317:                out[lev*2 + 1] = node->u2[lev].y;
+ 9318:             }
+ 9319:          }
+ 9320:          break;
+ 9321:       }
+ 9322:       case (int)VarCode::z: {
+ 9323:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9324:          if (k >= 0)
+ 9325:             out[0] = node->z[k];
+ 9326:          else
+ 9327:             for (int lev = 0; lev < nvrt; lev++)
+ 9328:                out[lev] = node->z[lev];
+ 9329:          break;
+ 9330:       }
+ 9331:       case (int)VarCode::w: {
+ 9332:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9333:          if (k >= 0)
+ 9334:             out[0] = node->w2[k];
+ 9335:          else
+ 9336:             for (int lev = 0; lev < nvrt; lev++)
+ 9337:                out[lev] = node->w2[lev];
+ 9338:          break;
+ 9339:       }
+ 9340:       case (int)VarCode::dfh: {
+ 9341:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9342:          if (k >= 0)
+ 9343:             out[0] = node->dfh[k];
+ 9344:          else
+ 9345:             for (int lev = 0; lev < nvrt; lev++)
+ 9346:                out[lev] = node->dfh[lev];
+ 9347:          break;
+ 9348:       }
+ 9349:       case (int)VarCode::dfv: {
+ 9350:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9351:          if (k >= 0)
+ 9352:             out[0] = node->dfv[k];
+ 9353:          else
+ 9354:             for (int lev = 0; lev < nvrt; lev++)
+ 9355:                out[lev] = node->dfv[lev];
+ 9356:          break;
+ 9357:       }
+ 9358:       case (int)VarCode::tke: {
+ 9359:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9360:          if (k >= 0)
+ 9361:             out[0] = getTKE(node->turb, k);
+ 9362:          else
+ 9363:             for (int lev = 0; lev < nvrt; lev++)
+ 9364:                out[lev] = getTKE(node->turb, lev);
+ 9365:          break;
+ 9366:       }
+ 9367:       case (int)VarCode::mxl: {
+ 9368:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9369:          if (k >= 0)
+ 9370:             out[0] = getMXL(node->turb, k);
+ 9371:          else
+ 9372:             for (int lev = 0; lev < nvrt; lev++)
+ 9373:                out[lev] = getMXL(node->turb, lev);
+ 9374:          break;
+ 9375:       }
+ 9376:    }
+ 9377: }
+ 9378: 
+ 9379: 
+ 9380: extern "C" __global__ void getSideVar(int varCode, void *res, int k) {
+ 9381:    SIDE(side);
+ 9382: 
+ 9383:    switch (varCode) {
+ 9384:       case (int)VarCode::outputCoords: {
+ 9385:          const Point2 coords = side->outputCoords();
+ 9386:          double *out = (double *)((char *)res + idx_side * 16);
+ 9387:          out[0] = coords.x;
+ 9388:          out[1] = coords.y;
+ 9389:          break;
+ 9390:       }
+ 9391:       case (int)VarCode::n1:
+ 9392:          *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n1 != nullptr) ? side->n1->idx + 1 : -1);
+ 9393:          break;
+ 9394:       case (int)VarCode::n2:
+ 9395:          *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n2 != nullptr) ? side->n2->idx + 1 : -1);
+ 9396:          break;
+ 9397:       case (int)VarCode::isdry:
+ 9398:          *(int *)((char *)res + idx_side * 4) = (int)side->isDry;
+ 9399:          break;
+ 9400:    }
+ 9401: }
+ 9402: 
+ 9403: 
+ 9404: extern "C" __global__ void getElementVar(int varCode, void *res, int k) {
+ 9405:    ELEM(elem);
+ 9406: 
+ 9407:    switch (varCode) {
+ 9408:       case (int)VarCode::outputCoords: {
+ 9409:          const Point2 coords = elem->outputCoords();
+ 9410:          double *out = (double *)((char *)res + idx_elem * 16);
+ 9411:          out[0] = coords.x;
+ 9412:          out[1] = coords.y;
+ 9413:          break;
+ 9414:       }
+ 9415:       case (int)VarCode::FaceIndices: {
+ 9416:          uintptr_t *out = (uintptr_t *)((char *)res + idx_elem * 32);
+ 9417:          for (int j = 0; j < 4; j++)
+ 9418:             out[j] = (j < elem->i34 && elem->nodes[j]) ? elem->nodes[j]->idx + 1 : -1;
+ 9419:          break;
+ 9420:       }
+ 9421:       case (int)VarCode::isdry:
+ 9422:          *(int *)((char *)res + idx_elem * 4) = (int)elem->isDry;
+ 9423:          break;
+ 9424:       case (int)VarCode::w: {
+ 9425:          double *out = (double *)((char *)res + idx_elem * nvrt * 8);
+ 9426:          if (k >= 0)
+ 9427:             out[0] = elem->w[k];
+ 9428:          else
+ 9429:             for (int lev = 0; lev < nvrt; lev++)
+ 9430:                out[lev] = elem->w[lev];
+ 9431:          break;
+ 9432:       }
  9433:    }
  9434: }
  9435: 
  9436: 
- 9437: extern "C" __global__ void getElementVarAddr(int varCode, void **addr, int *offset, int *sizeElement, int *sizeType) {
- 9438:    Element *elems = mesh->localElemData;
- 9439: 
- 9440:    *addr = elems;
- 9441:    *sizeElement = sizeof(Element);
- 9442:    switch (varCode) {
- 9443:       case (int)VarCode::z:
- 9444:          *offset = (int)((char*)&elems[0].z - (char*)elems);
- 9445:          *sizeType = sizeof(double);
- 9446:          break;
- 9447:       case (int)VarCode::x:
- 9448:          *offset = (int)((char*)&elems[0].center.x - (char*)elems);
- 9449:          *sizeType = sizeof(Vector2);
- 9450:          break;
- 9451:       case (int)VarCode::gradETP:
- 9452:          *offset = (int)((char*)&elems[0].gradETP.x - (char*)elems);
- 9453:          *sizeType = sizeof(Vector2);
- 9454:          break;
- 9455:       case (int)VarCode::area:
- 9456:          *offset = (int)((char*)&elems[0].area - (char*)elems);
- 9457:          *sizeType = sizeof(double);
- 9458:          break;
- 9459:       case (int)VarCode::depth:
- 9460:          *offset = (int)((char*)&elems[0].depth - (char*)elems);
+ 9437: 
+ 9438: 
+ 9439: extern "C" __global__ void getNodeVarFunc(int varCode, double *res) {
+ 9440: 
+ 9441:    NODE(node);
+ 9442: 
+ 9443:    switch (varCode) {
+ 9444:       case (int)VarCode::outputCoords:
+ 9445:          const Point2 coords = node->outputCoords();
+ 9446:          res[node->idx*2    ] = coords.x;
+ 9447:          res[node->idx*2 + 1] = coords.y;
+ 9448:          break;
+ 9449:    }
+ 9450: }
+ 9451: 
+ 9452: 
+ 9453: extern "C" __global__ void getElementVarAddr(int varCode, void **addr, int *offset, int *sizeElement, int *sizeType) {
+ 9454:    Element *elems = mesh->localElemData;
+ 9455: 
+ 9456:    *addr = elems;
+ 9457:    *sizeElement = sizeof(Element);
+ 9458:    switch (varCode) {
+ 9459:       case (int)VarCode::z:
+ 9460:          *offset = (int)((char*)&elems[0].z - (char*)elems);
  9461:          *sizeType = sizeof(double);
  9462:          break;
- 9463:       case (int)VarCode::radius:
- 9464:          *offset = (int)((char*)&elems[0].radius - (char*)elems);
- 9465:          *sizeType = sizeof(double);
+ 9463:       case (int)VarCode::x:
+ 9464:          *offset = (int)((char*)&elems[0].center.x - (char*)elems);
+ 9465:          *sizeType = sizeof(Vector2);
  9466:          break;
- 9467:       case (int)VarCode::ghat:
- 9468:          *offset = (int)((char*)&elems[0].ghat1.x - (char*)elems);
+ 9467:       case (int)VarCode::gradETP:
+ 9468:          *offset = (int)((char*)&elems[0].gradETP.x - (char*)elems);
  9469:          *sizeType = sizeof(Vector2);
  9470:          break;
- 9471:       case (int)VarCode::kb:
- 9472:          *offset = (int)((char*)&elems[0].kb - (char*)elems);
- 9473:          *sizeType = sizeof(int);
+ 9471:       case (int)VarCode::area:
+ 9472:          *offset = (int)((char*)&elems[0].area - (char*)elems);
+ 9473:          *sizeType = sizeof(double);
  9474:          break;
- 9475:       case (int)VarCode::isdry:
- 9476:          *offset = (int)((char*)&elems[0].isDry - (char*)elems);
- 9477:          *sizeType = sizeof(int);
- 9478:          break;            
- 9479:       case (int)VarCode::w:
- 9480:          *offset = (int)((char*)&elems[0].w - (char*)elems);
+ 9475:       case (int)VarCode::depth:
+ 9476:          *offset = (int)((char*)&elems[0].depth - (char*)elems);
+ 9477:          *sizeType = sizeof(double);
+ 9478:          break;
+ 9479:       case (int)VarCode::radius:
+ 9480:          *offset = (int)((char*)&elems[0].radius - (char*)elems);
  9481:          *sizeType = sizeof(double);
  9482:          break;
- 9483:       case (int)VarCode::FaceIndices:
- 9484:          // Notice that this returns pointers to the nodes of the element, some arithmetic is needed to get the actual indices
- 9485:          *offset = (int)((char*)&elems[0].nodes[0] - (char*)elems);
- 9486:          *sizeType = sizeof(Node);
- 9487:          break;
- 9488:       default:
- 9489:          *offset = -1;
- 9490:    }
- 9491: }
- 9492: 
- 9493: 
- 9494: extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset, int *sizeSide, int *sizeType) {
- 9495:    Side *sides = mesh->localSideData;
- 9496: 
- 9497:    *addr = sides;
- 9498:    *sizeSide = sizeof(Side);
- 9499:    switch (varCode) {
- 9500:       case (int)VarCode::z:
- 9501:          *offset = (int)((char*)&sides[0].zc - (char*)sides);
- 9502:          *sizeType = sizeof(double);
+ 9483:       case (int)VarCode::ghat:
+ 9484:          *offset = (int)((char*)&elems[0].ghat1.x - (char*)elems);
+ 9485:          *sizeType = sizeof(Vector2);
+ 9486:          break;
+ 9487:       case (int)VarCode::kb:
+ 9488:          *offset = (int)((char*)&elems[0].kb - (char*)elems);
+ 9489:          *sizeType = sizeof(int);
+ 9490:          break;
+ 9491:       case (int)VarCode::isdry:
+ 9492:          *offset = (int)((char*)&elems[0].isDry - (char*)elems);
+ 9493:          *sizeType = sizeof(int);
+ 9494:          break;            
+ 9495:       case (int)VarCode::w:
+ 9496:          *offset = (int)((char*)&elems[0].w - (char*)elems);
+ 9497:          *sizeType = sizeof(double);
+ 9498:          break;
+ 9499:       case (int)VarCode::FaceIndices:
+ 9500:          // Notice that this returns pointers to the nodes of the element, some arithmetic is needed to get the actual indices
+ 9501:          *offset = (int)((char*)&elems[0].nodes[0] - (char*)elems);
+ 9502:          *sizeType = sizeof(Node);
  9503:          break;
- 9504:       // case (int)VarCode::depth:
- 9505:       //    *offset = (int)((char*)&sides[0].depth - (char*)sides);
- 9506:       //    *sizeType = sizeof(double);
- 9507:       //    break;         
- 9508:       case (int)VarCode::x:
- 9509:          *offset = (int)((char*)&sides[0].center.x - (char*)sides);
- 9510:          *sizeType = sizeof(Vector2);
- 9511:          break;
- 9512:       case (int)VarCode::len:
- 9513:          *offset = (int)((char*)&sides[0].len - (char*)sides);
- 9514:          *sizeType = sizeof(double);
- 9515:          break;
- 9516:       case (int)VarCode::kb:
- 9517:          *offset = (int)((char*)&sides[0].kb - (char*)sides);
- 9518:          *sizeType = sizeof(int);
+ 9504:       default:
+ 9505:          *offset = -1;
+ 9506:    }
+ 9507: }
+ 9508: 
+ 9509: 
+ 9510: extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset, int *sizeSide, int *sizeType) {
+ 9511:    Side *sides = mesh->localSideData;
+ 9512: 
+ 9513:    *addr = sides;
+ 9514:    *sizeSide = sizeof(Side);
+ 9515:    switch (varCode) {
+ 9516:       case (int)VarCode::z:
+ 9517:          *offset = (int)((char*)&sides[0].zc - (char*)sides);
+ 9518:          *sizeType = sizeof(double);
  9519:          break;
- 9520:       case (int)VarCode::isdry:
- 9521:          *offset = (int)((char*)&sides[0].isDry - (char*)sides);
- 9522:          *sizeType = sizeof(int);
- 9523:          break;            
- 9524:       // case (int)VarCode::w:
- 9525:       //    *offset = (int)((char*)&sides[0].w2 - (char*)sides);
- 9526:       //    *sizeType = sizeof(double);
- 9527:       //    break;
- 9528:       case (int)VarCode::u:
- 9529:          *offset = (int)((char*)&sides[0].u2[0].x - (char*)sides);
- 9530:          *sizeType = sizeof(Vector2);
- 9531:          break;   
- 9532:       case (int)VarCode::btu:
- 9533:          *offset = (int)((char*)&sides[0].btu[0].x - (char*)sides);
- 9534:          *sizeType = sizeof(Vector2);
- 9535:          break;          
- 9536:       case (int)VarCode::U:
- 9537:          *offset = (int)((char*)&sides[0].U.x - (char*)sides);
- 9538:          *sizeType = sizeof(Vector2);
- 9539:          break;
- 9540:       case (int)VarCode::gradETP:
- 9541:          *offset = (int)((char*)&sides[0].gradETP.x - (char*)sides);
- 9542:          *sizeType = sizeof(Vector2);
- 9543:          break;
- 9544:       case (int)VarCode::gradPr:
- 9545:          *offset = (int)((char*)&sides[0].gradPr.x - (char*)sides);
+ 9520:       // case (int)VarCode::depth:
+ 9521:       //    *offset = (int)((char*)&sides[0].depth - (char*)sides);
+ 9522:       //    *sizeType = sizeof(double);
+ 9523:       //    break;         
+ 9524:       case (int)VarCode::x:
+ 9525:          *offset = (int)((char*)&sides[0].center.x - (char*)sides);
+ 9526:          *sizeType = sizeof(Vector2);
+ 9527:          break;
+ 9528:       case (int)VarCode::len:
+ 9529:          *offset = (int)((char*)&sides[0].len - (char*)sides);
+ 9530:          *sizeType = sizeof(double);
+ 9531:          break;
+ 9532:       case (int)VarCode::kb:
+ 9533:          *offset = (int)((char*)&sides[0].kb - (char*)sides);
+ 9534:          *sizeType = sizeof(int);
+ 9535:          break;
+ 9536:       case (int)VarCode::isdry:
+ 9537:          *offset = (int)((char*)&sides[0].isDry - (char*)sides);
+ 9538:          *sizeType = sizeof(int);
+ 9539:          break;            
+ 9540:       // case (int)VarCode::w:
+ 9541:       //    *offset = (int)((char*)&sides[0].w2 - (char*)sides);
+ 9542:       //    *sizeType = sizeof(double);
+ 9543:       //    break;
+ 9544:       case (int)VarCode::u:
+ 9545:          *offset = (int)((char*)&sides[0].u2[0].x - (char*)sides);
  9546:          *sizeType = sizeof(Vector2);
- 9547:          break;
- 9548:       case (int)VarCode::gradEta1:
- 9549:          *offset = (int)((char*)&sides[0].gradEta1.x - (char*)sides);
+ 9547:          break;   
+ 9548:       case (int)VarCode::btu:
+ 9549:          *offset = (int)((char*)&sides[0].btu[0].x - (char*)sides);
  9550:          *sizeType = sizeof(Vector2);
- 9551:          break;
- 9552:       case (int)VarCode::gradEta2:
- 9553:          *offset = (int)((char*)&sides[0].gradEta2.x - (char*)sides);
+ 9551:          break;          
+ 9552:       case (int)VarCode::U:
+ 9553:          *offset = (int)((char*)&sides[0].U.x - (char*)sides);
  9554:          *sizeType = sizeof(Vector2);
  9555:          break;
- 9556:       // case (int)VarCode::ghat:
- 9557:       //    *offset = (int)((char*)&sides[0].ghat.x - (char*)sides);
- 9558:       //    *sizeType = sizeof(Vector2);
- 9559:       //    break;   
- 9560:       case (int)VarCode::hhat:
- 9561:          *offset = (int)((char*)&sides[0].hhat - (char*)sides);
+ 9556:       case (int)VarCode::gradETP:
+ 9557:          *offset = (int)((char*)&sides[0].gradETP.x - (char*)sides);
+ 9558:          *sizeType = sizeof(Vector2);
+ 9559:          break;
+ 9560:       case (int)VarCode::gradPr:
+ 9561:          *offset = (int)((char*)&sides[0].gradPr.x - (char*)sides);
  9562:          *sizeType = sizeof(Vector2);
- 9563:          break;      
- 9564:       case (int)VarCode::chi:
- 9565:          *offset = (int)((char*)&sides[0].chi - (char*)sides);
- 9566:          *sizeType = sizeof(double);
+ 9563:          break;
+ 9564:       case (int)VarCode::gradEta1:
+ 9565:          *offset = (int)((char*)&sides[0].gradEta1.x - (char*)sides);
+ 9566:          *sizeType = sizeof(Vector2);
  9567:          break;
- 9568:       case (int)VarCode::n1:
- 9569:          *offset = (int)((char*)&sides[0].n1 - (char*)sides);
- 9570:          *sizeType = sizeof(Node);
+ 9568:       case (int)VarCode::gradEta2:
+ 9569:          *offset = (int)((char*)&sides[0].gradEta2.x - (char*)sides);
+ 9570:          *sizeType = sizeof(Vector2);
  9571:          break;
- 9572:       case (int)VarCode::n2:
- 9573:          *offset = (int)((char*)&sides[0].n2 - (char*)sides);
- 9574:          *sizeType = sizeof(Node);
- 9575:          break;                   
- 9576:       default:
- 9577:          *offset = -1;
- 9578:    }
- 9579: }
- 9580: 
- 9581: 
- 9582: extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset, int *sizeNode, int *sizeType) {
- 9583:    Node *nodes = mesh->localNodeData;
- 9584: 
- 9585:    *addr = nodes;
- 9586:    *sizeNode = sizeof(Node);
- 9587: 
- 9588:    switch (varCode) {
- 9589:       case (int)VarCode::depth:
- 9590:          *offset = (int)((char*)&nodes[0].depth - (char*)nodes);
- 9591:          *sizeType = sizeof(double);
- 9592:          break;
- 9593:       case (int)VarCode::eta:
- 9594:          *offset = (int)((char*)&nodes[0].eta2 - (char*)nodes);
- 9595:          *sizeType = sizeof(double);
- 9596:          break;
- 9597:       case (int)VarCode::x:
- 9598:          *offset = (int)((char*)&nodes[0].p.x - (char*)nodes);
- 9599:          *sizeType = sizeof(Vector2);
- 9600:          break;
- 9601:       case (int)VarCode::z:
- 9602:          *offset = (int)((char*)&nodes[0].z - (char*)nodes);
- 9603:          *sizeType = sizeof(double);
- 9604:          break;
- 9605:       case (int)VarCode::kb:
- 9606:          *offset = (int)((char*)&nodes[0].kb - (char*)nodes);
- 9607:          *sizeType = sizeof(int);
+ 9572:       // case (int)VarCode::ghat:
+ 9573:       //    *offset = (int)((char*)&sides[0].ghat.x - (char*)sides);
+ 9574:       //    *sizeType = sizeof(Vector2);
+ 9575:       //    break;   
+ 9576:       case (int)VarCode::hhat:
+ 9577:          *offset = (int)((char*)&sides[0].hhat - (char*)sides);
+ 9578:          *sizeType = sizeof(Vector2);
+ 9579:          break;      
+ 9580:       case (int)VarCode::chi:
+ 9581:          *offset = (int)((char*)&sides[0].chi - (char*)sides);
+ 9582:          *sizeType = sizeof(double);
+ 9583:          break;
+ 9584:       case (int)VarCode::n1:
+ 9585:          *offset = (int)((char*)&sides[0].n1 - (char*)sides);
+ 9586:          *sizeType = sizeof(Node);
+ 9587:          break;
+ 9588:       case (int)VarCode::n2:
+ 9589:          *offset = (int)((char*)&sides[0].n2 - (char*)sides);
+ 9590:          *sizeType = sizeof(Node);
+ 9591:          break;                   
+ 9592:       default:
+ 9593:          *offset = -1;
+ 9594:    }
+ 9595: }
+ 9596: 
+ 9597: 
+ 9598: extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset, int *sizeNode, int *sizeType) {
+ 9599:    Node *nodes = mesh->localNodeData;
+ 9600: 
+ 9601:    *addr = nodes;
+ 9602:    *sizeNode = sizeof(Node);
+ 9603: 
+ 9604:    switch (varCode) {
+ 9605:       case (int)VarCode::depth:
+ 9606:          *offset = (int)((char*)&nodes[0].depth - (char*)nodes);
+ 9607:          *sizeType = sizeof(double);
  9608:          break;
- 9609:       case (int)VarCode::isdry:
- 9610:          *offset = (int)((char*)&nodes[0].isDry - (char*)nodes);
- 9611:          *sizeType = sizeof(int);
- 9612:          break;         
- 9613:       case (int)VarCode::w:
- 9614:          *offset = (int)((char*)&nodes[0].w2 - (char*)nodes);
- 9615:          *sizeType = sizeof(double);
+ 9609:       case (int)VarCode::eta:
+ 9610:          *offset = (int)((char*)&nodes[0].eta2 - (char*)nodes);
+ 9611:          *sizeType = sizeof(double);
+ 9612:          break;
+ 9613:       case (int)VarCode::x:
+ 9614:          *offset = (int)((char*)&nodes[0].p.x - (char*)nodes);
+ 9615:          *sizeType = sizeof(Vector2);
  9616:          break;
- 9617:       case (int)VarCode::u:
- 9618:          *offset = (int)((char*)&nodes[0].u2[0].x - (char*)nodes);
- 9619:          *sizeType = sizeof(Vector2);
- 9620:          break;  
- 9621:       case (int)VarCode::u_air:
- 9622:          *offset = (int)((char*)&nodes[0].u_air - (char*)nodes);
- 9623:          *sizeType = sizeof(Vector2);
+ 9617:       case (int)VarCode::z:
+ 9618:          *offset = (int)((char*)&nodes[0].z - (char*)nodes);
+ 9619:          *sizeType = sizeof(double);
+ 9620:          break;
+ 9621:       case (int)VarCode::kb:
+ 9622:          *offset = (int)((char*)&nodes[0].kb - (char*)nodes);
+ 9623:          *sizeType = sizeof(int);
  9624:          break;
- 9625:       default:
- 9626:          *offset = -1;    
- 9627:    }  
- 9628:    
- 9629: }
- 9630: 
- 9631: 
- 9632: 
- 9633: 
- 9634: extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
- 9635:    // Get the value of a variable from an side
- 9636:    // varName is the name of the variable to get
- 9637:    // var is the array to store the value
- 9638:    // k is the vertical level index of the variable to get
- 9639:    SIDE_BND(sideBnd);   
- 9640: 
- 9641:    int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-1;
- 9642:    if (sideBnd->segment->isLand) idx = -7;
- 9643: 
- 9644:    if      (varCode == (int)VarCode::idx     && k == -1)   var[idx_side_bnd] = idx;
- 9645:    else if (varCode == (int)VarCode::ifltype && k == -1)   var[idx_side_bnd] = (sideBnd->segment!=nullptr)?sideBnd->segment->ifltype:-1.1;
+ 9625:       case (int)VarCode::isdry:
+ 9626:          *offset = (int)((char*)&nodes[0].isDry - (char*)nodes);
+ 9627:          *sizeType = sizeof(int);
+ 9628:          break;         
+ 9629:       case (int)VarCode::w:
+ 9630:          *offset = (int)((char*)&nodes[0].w2 - (char*)nodes);
+ 9631:          *sizeType = sizeof(double);
+ 9632:          break;
+ 9633:       case (int)VarCode::u:
+ 9634:          *offset = (int)((char*)&nodes[0].u2[0].x - (char*)nodes);
+ 9635:          *sizeType = sizeof(Vector2);
+ 9636:          break;  
+ 9637:       case (int)VarCode::u_air:
+ 9638:          *offset = (int)((char*)&nodes[0].u_air - (char*)nodes);
+ 9639:          *sizeType = sizeof(Vector2);
+ 9640:          break;
+ 9641:       default:
+ 9642:          *offset = -1;    
+ 9643:    }  
+ 9644:    
+ 9645: }
  9646: 
- 9647: }
+ 9647: 
+ 9648: 
+ 9649: 
+ 9650: extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
+ 9651:    // Get the value of a variable from an side
+ 9652:    // varName is the name of the variable to get
+ 9653:    // var is the array to store the value
+ 9654:    // k is the vertical level index of the variable to get
+ 9655:    SIDE_BND(sideBnd);   
+ 9656: 
+ 9657:    int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-1;
+ 9658:    if (sideBnd->segment->isLand) idx = -7;
+ 9659: 
+ 9660:    if      (varCode == (int)VarCode::idx     && k == -1)   var[idx_side_bnd] = idx;
+ 9661:    else if (varCode == (int)VarCode::ifltype && k == -1)   var[idx_side_bnd] = (sideBnd->segment!=nullptr)?sideBnd->segment->ifltype:-1.1;
+ 9662: 
+ 9663: }
