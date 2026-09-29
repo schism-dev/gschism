@@ -1229,8 +1229,7 @@ struct SideBoundary {
 
    __inline__ __device__ double etaMeanBnd(void) const;
 
-   __inline__ __device__ Vector2 umo (int jfr) const;
-   __inline__ __device__ Vector2 ufa (int jfr) const;  
+
    __inline__ __device__ Vector2 uth (int k) const;
    __inline__ __device__ double  nuth(int k) const;
    __inline__ __device__ double  eth (int k) const;
@@ -1886,6 +1885,12 @@ struct Mesh {
                      
 
    __device__ void populateBoundaryNodes(int *nond, int *iond,
+                                          double *emo, double *efa, 
+                                          double *umo, double *ufa, 
+                                          double *vmo, double *vfa,
+                                          int *ifltype, int *iettype, double *qthcon); 
+
+   __device__ void populateBoundarySides(int *nond, int *iond,
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa,

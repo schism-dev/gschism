@@ -724,7 +724,16 @@ if __name__ == "__main__":
                 bctides.umo, bctides.ufa,
                 bctides.vmo, bctides.vfa,
                 bctides.ifltype, bctides.iettype, bctides.qthcon)
-    
+
+    # Phase 6: boundary sides
+    for ipart, pd in enumerate(partPopulate):
+        with cp.cuda.Device(pd['device_id']):
+            cufunc.populateBoundarySides(
+                nond, iond,
+                bctides.emo, bctides.efa,
+                bctides.umo, bctides.ufa,
+                bctides.vmo, bctides.vfa,
+                bctides.ifltype, bctides.iettype, bctides.qthcon)
 
     # initialize the module for bringing memory from the GPU to the CPU
     globalNodeIndices = []

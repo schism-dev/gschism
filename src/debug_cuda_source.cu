@@ -1335,6 +1335,8 @@ struct BoundarySegment {
 
    bool isLand;
 
+   int idx; // Index of the boundary segment in the input files.
+
    double clen;  // Length of the boundary segment
    double carea; // Area of the boundary segment
 
@@ -1382,13 +1384,16 @@ struct SideBoundary {
    Side *leftSide, *rightSide; // Pointers to the left and right sides of the boundary segment
 
    Vector2 ubc[nvrt]; // velocity boundary condition
+
+   // Tidal velocity boundary conditions. They are computed from the nodal tidal velocity amplitudes and phases in populateBoundarySides().
+   Vector2 umo[nbfr];  // tidal velocity amplitude )
+   Vector2 ufa[nbfr];  // tidal velocity phase
    
    __inline__ __device__ double getBoundaryArrayValueWeight(void) const;
 
    __inline__ __device__ double etaMeanBnd(void) const;
 
-   __inline__ __device__ Vector2 umo (int jfr) const;
-   __inline__ __device__ Vector2 ufa (int jfr) const;  
+
    __inline__ __device__ Vector2 uth (int k) const;
    __inline__ __device__ double  nuth(int k) const;
    __inline__ __device__ double  eth (int k) const;
@@ -1613,8 +1618,6 @@ struct NodeBoundary {
    // Arrays for harmonic constituents (if needed)
    double  emo[nbfr];  // Elevation amplitude
    double  efa[nbfr];  // Elevation phase
-   Vector2 umo[nbfr];  // velocity amplitude
-   Vector2 ufa[nbfr];  // velocity phase
 
 
    NodeBoundary(void) {
@@ -2046,6 +2049,12 @@ struct Mesh {
                      
 
    __device__ void populateBoundaryNodes(int *nond, int *iond,
+                                          double *emo, double *efa, 
+                                          double *umo, double *ufa, 
+                                          double *vmo, double *vfa,
+                                          int *ifltype, int *iettype, double *qthcon); 
+
+   __device__ void populateBoundarySides(int *nond, int *iond,
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa,
@@ -3485,27 +3494,6 @@ __inline__ __device__ double SideBoundary::getBoundaryArrayValueWeight(void) con
 __inline__ __device__ double  SideBoundary::etaMeanBnd(void) const { return 0.5*(side->n1->nodeBnd->eta_mean + side->n2->nodeBnd->eta_mean); }         // XXXX Should I use something like getBoundaryArrayValueWeight here?
 
 
-__inline__ __device__ Vector2 SideBoundary::umo(int jfr) const {
-
-   const double w1 = getBoundaryArrayValueWeight();
-   const double w2 = 1.0 - w1;
-   const NodeBoundary *n1Bnd = side->n1->nodeBnd;
-   const NodeBoundary *n2Bnd = side->n2->nodeBnd;
-
-   return w1*n1Bnd->umo[jfr] + w2*n2Bnd->umo[jfr];
-}
-
-
-__inline__ __device__ Vector2 SideBoundary::ufa(int jfr) const {
-   const double w1 = getBoundaryArrayValueWeight();
-   const double w2 = 1.0 - w1;
-   const NodeBoundary *n1Bnd = side->n1->nodeBnd;
-   const NodeBoundary *n2Bnd = side->n2->nodeBnd;
-
-   return w1*n1Bnd->ufa[jfr] + w2*n2Bnd->ufa[jfr];
-
-}
-
 
 __inline__ __device__ Vector2 SideBoundary::uth(int k) const {
    // Returns the value of the velocity at the side center
@@ -4661,33 +4649,101 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
       // for each segment...
       for (i = 0; i < nond[iseg]; i++) {
          idxNode = iond[iseg + i*nope];
-         if (idxNode == nodeBnd->node->idx) goto found; // Cleanest way to exit the double loop
-         
+         if (idxNode == nodeBnd->node->idx) 
+         {
+            // This is done for every segment that the node is part of, overwriting the previous values.
+            // The result is that the segment with the highest index is the one that is used.
+            nodeBnd->isEssentialBC = (iettype[iseg] != 0);
+            nodeBnd->elbc = 0.0;
+
+            // XXXXXX This may make more sense in populateBoundarySides.
+            nodeBnd->segment->ifltype = ifltype[iseg];
+            nodeBnd->segment->iettype = iettype[iseg];
+            nodeBnd->segment->qthcon  = qthcon[iseg];
+            nodeBnd->segment->idx = iseg;
+
+            for (int jfr = 0; jfr < nbfr; jfr++) {
+
+               const int idx2 = iseg + i*nope + jfr*nope*mnond; 
+
+               nodeBnd->efa[jfr] = efa[idx2];
+               nodeBnd->emo[jfr] = emo[idx2];
+
+            }
+         }         
       }
    }
 
    assert(iseg < nope && "iseg is out of bounds");
 
-found: // Jumped here when the node was found
 
-   nodeBnd->isEssentialBC = (iettype[iseg] != 0);
-   nodeBnd->elbc = 0.0;
 
-   nodeBnd->segment->ifltype = ifltype[iseg];
-   nodeBnd->segment->iettype = iettype[iseg];
-   nodeBnd->segment->qthcon  = qthcon[iseg];
 
-   for (int jfr = 0; jfr < nbfr; jfr++) {
-
-      const int idx2 = iseg + i*nope + jfr*nope*mnond; 
-
-      nodeBnd->efa[jfr] = efa[idx2];
-      nodeBnd->emo[jfr] = emo[idx2];
-      nodeBnd->umo[jfr] = {umo[idx2], vmo[idx2]};
-      nodeBnd->ufa[jfr] = {ufa[idx2], vfa[idx2]};
-
-   }
         
+
+}
+
+__device__ void Mesh::populateBoundarySides(int *nond, int *iond,
+                                            double *emo, double *efa, 
+                                            double *umo, double *ufa, 
+                                            double *vmo, double *vfa,
+                                            int *ifltype, int *iettype, double *qthcon) {
+
+   SIDE_BND(sideBnd);
+
+   const Side *side = sideBnd->side;
+
+
+   // Indices of the nodes on the side 
+   const int n1 = side->n1->idx;
+   const int n2 = side->n2->idx;
+
+   const int iseg = sideBnd->segment->idx;
+
+   // Find the index of the side in the segment data array.
+   for (int i = 0; i < nond[iseg] - 1; i++) {
+
+      // Indices of the nodes at both ends of the side (obtained from the boundary node list)
+      const int b1 = iond[iseg + i*nope];
+      const int b2 = iond[iseg + (i + 1)*nope];
+
+      // Find the side that connects the two nodes by comparing the indices of the nodes at both ends of the side (computed from 
+      // the boundary node list) with the indices of the nodes at the ends of the side (obtained from the side structure).
+      if ((b1 == n1 && b2 == n2) || (b1 == n2 && b2 == n1)) {
+
+         for (int jfr = 0; jfr < nbfr; jfr++) {
+         // For each tidal component...
+
+            const int idx2 = iseg + i*nope + jfr*nope*mnond; 
+
+            // velocity magnitude at both ends of the side (1,2)            
+            const double umo1 = umo[idx2];
+            const double vmo1 = vmo[idx2];
+            const double umo2 = umo[idx2 + nope];
+            const double vmo2 = vmo[idx2 + nope];
+
+            // velocity phases at both ends of the side (1,2)
+            const double ufa1 = ufa[idx2];
+            const double vfa1 = vfa[idx2];
+            const double ufa2 = ufa[idx2 + nope];
+            const double vfa2 = vfa[idx2 + nope];
+
+            // These expressions compute the amplitude and phase of the velocity components at the center of the side.
+            // The expressions replicate SCHISM by computing equivalent amplitude and phase for the velocity components at the center of the side.
+            // Equivalent to SCHISM: average of the two reconstructed node tides
+            //   0.5 * (a1*cos(theta - phi1) + a2*cos(theta - phi2))
+            // with theta = amig*t + face. Folded here into one (umo, ufa) per
+            // frequency so the step only does ramp*ff*umo*cos(theta - ufa).
+            // Fortran keeps both (a, phi) on the nodes and averages after the
+            // cosines; the result is the same.
+            sideBnd->umo[jfr] = {0.5*sqrt(pow<2>(umo1) + pow<2>(umo2) + 2*umo1*umo2*cos(ufa1 - ufa2)), 0.5*sqrt(pow<2>(vmo1) + pow<2>(vmo2) + 2*vmo1*vmo2*cos(vfa1 - vfa2))};
+            sideBnd->ufa[jfr] = {atan2(umo1*sin(ufa1) + umo2*sin(ufa2), umo1*cos(ufa1) + umo2*cos(ufa2)), atan2(vmo1*sin(vfa1) + vmo2*sin(vfa2), vmo1*cos(vfa1) + vmo2*cos(vfa2))};
+
+         } // for jfr
+
+      }
+   }
+
 
 }
 
@@ -4708,7 +4764,8 @@ __device__ void Mesh::populateBoundarySideLinks(void) {
       if (s->n1 == side->n2) sideBnd->leftSide  = s;
       if (s->n2 == side->n1) sideBnd->rightSide = s;
    }
-   
+
+  
 }
 
 __device__ void Mesh::populateMesh(int *i34, int *elnode, int *elside,
@@ -6344,8 +6401,8 @@ printf("unth0: %f, qthcon: %f, ramp: %f, carea: %f\n", unth0, segment->qthcon, r
          // Computes the contribution to the velocity from all tide frequencies
          for (int jfr = 0; jfr < nbfr; jfr++) { // For all tide frequencies
 
-            const Vector2 ufa  = sideBnd->ufa(jfr); 
-            const Vector2 umo  = sideBnd->umo(jfr); 
+            const Vector2 ufa  = sideBnd->ufa[jfr]; 
+            const Vector2 umo  = sideBnd->umo[jfr]; 
 
             const int ncyc = int(amig[jfr]*time/(2.0*pi));
             const double argx = amig[jfr]*time - (2.0*pi)*ncyc + face[jfr] - ufa.x;
@@ -9047,6 +9104,15 @@ extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
                                                 double *vmo, double *vfa,
                                                 int *ifltype, int *iettype, double *qthcon) {
    mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon);
+
+}
+
+extern "C" __global__ void populateBoundarySides(int *nond, int *iond,
+                                                double *emo, double *efa, 
+                                                double *umo, double *ufa, 
+                                                double *vmo, double *vfa,
+                                                int *ifltype, int *iettype, double *qthcon) {
+   mesh->populateBoundarySides(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon);
 
 }
 
