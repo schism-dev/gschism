@@ -38,7 +38,7 @@ def solveWaveEquation(solver, maxIter=1000, tol=1e-12, ):
 
     time1 = time.time()
   
-    cp.cuda.profiler.start()
+    # cp.cuda.profiler.start()
     its = solver.solve(rtol=tol, maxiter=maxIter)
     solver.checkSolution() # XXXXXXXX
     # cp.cuda.profiler.stop()
