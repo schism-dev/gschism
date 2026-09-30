@@ -43,6 +43,8 @@ class PCGSolver:
 
         self.A   = csr_matrix((self.data  , self.indices, self.indptr), shape=(N, N))
 
+
+
         
         # Pre-allocate all work vectors (no allocations in solve loop)
         self.diag = cp.empty(self.n, dtype=cp.float64)
@@ -243,16 +245,18 @@ class PCGSolverMultiGPU:
         self.indptr_m  = [None] * numParts
 
         # Local (partition-owned) vectors, length N_m[m]
-        self.b_m    = [None] * numParts
-        self.invD_m = [None] * numParts
-        self.r_m    = [None] * numParts
-        self.z_m    = [None] * numParts
-        self.p_m    = [None] * numParts   # owned segment of CG search direction
-        self.q_m    = [None] * numParts   # q_m = A_m @ p
-        self.x_m    = [None] * numParts
-        self.x0_m   = [None] * numParts
-        self.x1_m   = [None] * numParts
-        self.x2_m   = [None] * numParts
+        self.b_m      = [None] * numParts
+        self.invD_m   = [None] * numParts
+        self.r_m      = [None] * numParts
+        self.z_m      = [None] * numParts
+        self.p_m      = [None] * numParts   # owned segment of CG search direction
+        self.q_m      = [None] * numParts   # q_m = A_m @ p
+        self.x_m      = [None] * numParts
+        self.x0_m     = [None] * numParts
+        self.x1_m     = [None] * numParts
+        self.x2_m     = [None] * numParts
+        self.dotBuf_m = [None] * numParts         
+
 
         # Full packed vectors on each device (SpMV inputs)
         self.p = [None] * numParts
@@ -280,6 +284,8 @@ class PCGSolverMultiGPU:
                 self.indices_m[m] = cp.zeros(NNZm, dtype=cp.int32)
                 self.indptr_m[m] = cp.zeros(Nm + 1, dtype=cp.int32)
                 self.indptr_m[m][Nm] = NNZm
+
+                self.dotBuf_m[m] = cp.zeros(4, dtype=cp.float64)   
 
                 # A_m: Nm rows (local), N_total columns (packed partitions)
                 self.A_m[m] = csr_matrix(
@@ -432,13 +438,34 @@ class PCGSolverMultiGPU:
                 cp.multiply(self.r_m[m], self.invD_m[m], out=self.z_m[m])
 
 
+    def dotSums(self, pairs):
+        """For each (a_m, b_m) in pairs, return sum_m a_m[m] · b_m[m].
+        All local dots are enqueued on all GPUs first (no host reads), then each
+        device's partials come back in a single D2H copy. Summation order over m
+        is fixed, so results are deterministic.
+        """
+        k = len(pairs)
+        assert k <= 4, "increase dotBuf_m size"
+        devs = self.configCuda.devices
+
+        # 1) Enqueue: every GPU starts its dots without waiting for the others.
+        for m, dev in enumerate(devs):
+            with cp.cuda.Device(dev):
+                buf = self.dotBuf_m[m]
+                for j, (a_m, b_m) in enumerate(pairs):
+                    cublas.dotc(a_m[m], b_m[m], out=buf[j])   # device pointer mode, async
+
+        # 2) Collect: by now all GPUs have been running concurrently.
+        totals = np.zeros(k, dtype=np.float64)
+        for m, dev in enumerate(devs):
+            with cp.cuda.Device(dev):
+                totals += self.dotBuf_m[m][:k].get()          # one sync + copy per device
+        return totals
+
+
     def dotSum(self, a_m, b_m):
-        """Sum of local dots across partitions: sum_m a_m · b_m (host float64)."""
-        total = np.float64(0.0)
-        for m, device_id in enumerate(self.configCuda.devices):
-            with cp.cuda.Device(device_id):
-                total += np.float64(cublas.dotc(a_m[m], b_m[m]))
-        return total
+        """sum_m a_m · b_m (host float64)."""
+        return self.dotSums(((a_m, b_m),))[0]
 
 
     def dotRZ(self):
@@ -477,9 +504,6 @@ class PCGSolverMultiGPU:
                 self.x0_m[m][:] = self.x_m[m]
 
 
-    def residualBelow(self, atol):
-        """True if sum_m r_m · r_m <= atol^2."""
-        return self.dotSum(self.r_m, self.r_m) <= atol * atol
 
 
     def gatherBFromMesh(self):
@@ -523,21 +547,24 @@ class PCGSolverMultiGPU:
         r0 = self.norm2Sum(self.r_m)
         print(f"PCG: ||r0||={r0:.6e}  atol={atol:.6e}  ||b||={self.norm2Sum(self.b_m):.6e}")
 
+        atol2 = atol * atol
         rho = 0.0
+        self.applyPreconditioner()           # z_m = invD_m * r_m
+        rhoNew = self.dotRZ()
+
         iters = 0
         for iters in range(maxiter):
-
-            self.applyPreconditioner()   # z_m = invD_m * r_m
-            rhoNew = self.dotRZ()        # sum_m r_m · z_m
-
-            self.updateP(rhoNew, rho)    # p_m = z_m + beta p_m
+            self.updateP(rhoNew, rho)        # p_m = z_m + beta p_m
             self.gatherP()
-            self.mulA()                  # q_m = A_m @ p
+            self.mulA()                      # q_m = A_m @ p
             alpha = rhoNew / self.dotPQ()
 
-            self.axpyUpdate(alpha)       # x_m, r_m
-            rho = rhoNew
-            if self.residualBelow(atol):
+            self.axpyUpdate(alpha)           # x_m += alpha p_m, r_m -= alpha q_m
+            self.applyPreconditioner()       # z for the next iteration
+
+            rr, rz = self.dotSums(((self.r_m, self.r_m), (self.r_m, self.z_m)))
+            rho, rhoNew = rhoNew, rz
+            if rr <= atol2:
                 break
 
         self.scatterXToMesh()
