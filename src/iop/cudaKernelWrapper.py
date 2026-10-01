@@ -30,12 +30,17 @@ def initCudaDeviceConfig(nGpus):
 
     configCuda = CudaDeviceConfig(devices)
 
-    # Enable P2P both ways (test only) XXXXXXXXX
+    # Enable P2P all ways (test only) XXXXXXXXX
     try:
-        with cp.cuda.Device(0):
-            cp.cuda.runtime.deviceEnablePeerAccess(1)
-        with cp.cuda.Device(1):
-            cp.cuda.runtime.deviceEnablePeerAccess(0)
+        for srcId in devices:
+            with cp.cuda.Device(srcId):
+                for dstId in devices:
+                    if srcId == dstId:
+                        continue
+                    try:
+                        cp.cuda.runtime.deviceEnablePeerAccess(dstId)
+                    except:
+                        print(f"Error enabling peer access {srcId} -> {dstId}")
     except:
         print("Error enabling peer access between devices")
 
