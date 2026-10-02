@@ -55,7 +55,8 @@ __device__ __forceinline__ void block_reduce(double (&v)[NV], double* __restrict
 #define GRID_STRIDE(i, n) \
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < (n); i += gridDim.x * blockDim.x)
 
-enum { RHO = 0, BETA = 1, ALPHA = 2, RR = 3 };   // slots in the per-GPU scalar array sc
+// Slots in the per-GPU scalar array sc (keep in sync with SC_* in Python)
+enum { RHO = 0, BETA = 1, ALPHA = 2, RR = 3, ATOL2 = 4, CONV = 5, ITERS = 6 };
 
 extern "C" {
 
@@ -111,21 +112,29 @@ __global__ void finish2(const double* __restrict__ blk, int nblk, double* __rest
 }
 
 // alpha = rho / sum_j pq_j   (fixed summation order on every GPU)
+// Once converged (CONV set), alpha = 0 so any remaining iterations of a graph chunk
+// leave x and r untouched.
 __global__ void scalar_alpha(const double* __restrict__ partPQ, int P, double* __restrict__ sc)
 {
+    if (sc[CONV] != 0.0) { sc[ALPHA] = 0.0; return; }
     double pq = 0.0;
     for (int j = 0; j < P; ++j) pq += partPQ[j];
     sc[ALPHA] = sc[RHO] / pq;
 }
 
-// beta = rz_new / rho_old (0 on the first pass);  rho = rz_new;  rr = sum_j rr_j
+// beta = rz_new / rho_old (0 on the first pass);  rho = rz_new;  rr = sum_j rr_j.
+// Counts iterations and sets CONV when rr <= atol^2. Once converged, beta = 0 and
+// nothing else changes (frozen).
 __global__ void scalar_beta(const double* __restrict__ partRZ, int P, double* __restrict__ sc, int first)
 {
+    if (sc[CONV] != 0.0) { sc[BETA] = 0.0; return; }
     double rr = 0.0, rz = 0.0;
     for (int j = 0; j < P; ++j) { rr += partRZ[2*j]; rz += partRZ[2*j+1]; }
     sc[BETA] = (first || sc[RHO] == 0.0) ? 0.0 : rz / sc[RHO];
     sc[RHO]  = rz;
     sc[RR]   = rr;
+    if (!first) sc[ITERS] += 1.0;
+    if (rr <= sc[ATOL2]) sc[CONV] = 1.0;
 }
 
 }
@@ -318,6 +327,12 @@ class PCGSolver:
 class PCGSolverMultiGPU:
     TPB = 256   # threads per block for the fused kernels
 
+    # Slots in the device-side scalar array sc (must match the enum in _PCG_KERNELS)
+    SC_RHO, SC_BETA, SC_ALPHA, SC_RR, SC_ATOL2, SC_CONV, SC_ITERS = range(7)
+    SC_SIZE = 8
+
+    useGraph = True   # capture the CG loop in a CUDA Graph (falls back to eager launches on failure)
+
     def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
         """Pre-allocate row-block matrices A_m and per-partition vectors.
 
@@ -456,23 +471,34 @@ class PCGSolverMultiGPU:
         self.nblk   = [0] * P
         self.nblk32 = [None] * P
         self.blk    = [None] * P     # per-block partial sums
-        self.sc     = [None] * P     # [rho, beta, alpha, rr] on every GPU
+        self.sc     = [None] * P     # [rho, beta, alpha, rr, atol2, conv, iters] on every GPU
         self.partPQ = [None] * P     # p·q partial of every GPU (P values)
         self.partRZ = [None] * P     # (r·r, r·z) partials of every GPU (2P values)
         self.n32    = [np.int32(n) for n in self.N_m]
+
+        # CUDA Graph state
+        self.evJoin  = [None] * P    # graph capture: other GPUs join back into stream[0]
+        self.evPre   = [None] * P    # graph launch: stream[0] waits for prior work on other GPUs
+        self.evFork  = None          # graph capture: other GPUs join the capture
+        self._graph  = None
+        self._graphK = None
 
         for m, dev in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dev):
                 self.stream[m] = cp.cuda.Stream(non_blocking=True)
                 self.evP[m]    = cp.cuda.Event(disable_timing=True)
                 self.evRed[m]  = cp.cuda.Event(disable_timing=True)
+                self.evJoin[m] = cp.cuda.Event(disable_timing=True)
+                self.evPre[m]  = cp.cuda.Event(disable_timing=True)
+                if m == 0:
+                    self.evFork = cp.cuda.Event(disable_timing=True)
                 mod = cp.RawModule(code=_PCG_KERNELS, options=('-std=c++17',))
                 self.kern[m] = {nm: mod.get_function(nm) for nm in names}
                 sms = cp.cuda.Device(dev).attributes['MultiProcessorCount']
                 self.nblk[m]   = min(4 * sms, 1024)
                 self.nblk32[m] = np.int32(self.nblk[m])
                 self.blk[m]    = cp.zeros(2 * self.nblk[m], cp.float64)
-                self.sc[m]     = cp.zeros(4, cp.float64)
+                self.sc[m]     = cp.zeros(self.SC_SIZE, cp.float64)
                 self.partPQ[m] = cp.zeros(P, cp.float64)
                 self.partRZ[m] = cp.zeros(2 * P, cp.float64)
 
@@ -539,8 +565,10 @@ class PCGSolverMultiGPU:
 
 
     def _spmvLocal(self, m, desc_in):
-        """q_m = A_m @ in on the *current* stream of the current device."""
-        _cusparse.setStream(self.handle[m], cp.cuda.get_current_stream().ptr)
+        """q_m = A_m @ in on the *current* stream of the current device.
+
+        CuPy's spMV wrapper binds the handle to the current stream itself.
+        """
         _cusparse.spMV(
             self.handle[m],
             _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
@@ -717,37 +745,126 @@ class PCGSolverMultiGPU:
                 self.kern[m]['scalar_beta']((1,), (1,), (self.partRZ[m], P32, self.sc[m], f))
 
 
-    def _cgLoop(self, atol2, maxiter, checkEvery):
-        """PCG iterations. Returns the number of iterations performed."""
+    def _iteration(self):
+        """One PCG iteration on all GPUs (solver streams only; capturable in a CUDA Graph)."""
         devs = self.configCuda.devices
-        for it in range(maxiter):
-            for m, dev in enumerate(devs):                        # p = z + beta p
-                with cp.cuda.Device(dev), self.stream[m]:
-                    self.kern[m]['update_p']((self.nblk[m],), (self.TPB,),
-                        (self.z_m[m], self.p_m[m], self.sc[m], self.n32[m]))
+        for m, dev in enumerate(devs):                        # p = z + beta p
+            with cp.cuda.Device(dev), self.stream[m]:
+                self.kern[m]['update_p']((self.nblk[m],), (self.TPB,),
+                    (self.z_m[m], self.p_m[m], self.sc[m], self.n32[m]))
 
-            self._gatherPAsync()                                   # full p everywhere
+        self._gatherPAsync()                                   # full p everywhere
 
-            for m, dev in enumerate(devs):                        # q = A p; local p·q
-                with cp.cuda.Device(dev), self.stream[m]:
-                    k = self.kern[m]
-                    self._spmvLocal(m, self.desc_p)
-                    k['dot_blocks']((self.nblk[m],), (self.TPB,),
-                        (self.p_m[m], self.q_m[m], self.blk[m], self.n32[m]))
-                    k['finish1']((1,), (self.TPB,),
-                        (self.blk[m], self.nblk32[m], self.partPQ[m][m:m + 1]))
+        for m, dev in enumerate(devs):                        # q = A p; local p·q
+            with cp.cuda.Device(dev), self.stream[m]:
+                k = self.kern[m]
+                self._spmvLocal(m, self.desc_p)
+                k['dot_blocks']((self.nblk[m],), (self.TPB,),
+                    (self.p_m[m], self.q_m[m], self.blk[m], self.n32[m]))
+                k['finish1']((1,), (self.TPB,),
+                    (self.blk[m], self.nblk32[m], self.partPQ[m][m:m + 1]))
 
-            self._exchange(self.partPQ, 1)
-            self._updateXRZ(computeAlpha=True)
-            self._exchange(self.partRZ, 2)
-            self._scalarBeta(first=0)
+        self._exchange(self.partPQ, 1)
+        self._updateXRZ(computeAlpha=True)                     # alpha, x, r, z, local (r·r, r·z)
+        self._exchange(self.partRZ, 2)
+        self._scalarBeta(first=0)                              # beta, rho, rr, iters, conv
 
-            if (it + 1) % checkEvery == 0 or it == maxiter - 1:   # only host read in the loop
-                with cp.cuda.Device(devs[0]):
-                    rr = float(self.sc[0][3:4].get(stream=self.stream[0])[0])
-                if rr <= atol2:
-                    return it + 1
-        return maxiter
+
+    # ------------------------------------------------------------------
+    # CUDA Graph: capture K iterations once, replay them for every chunk
+    #
+    # Capture starts on stream[0]; the other GPUs' streams join it by waiting
+    # on evFork and are joined back into stream[0] at the end, so one graph
+    # holds the work of all GPUs. The graph is reused across solves: every
+    # buffer has a fixed address and all scalars live on the GPU. If buffers
+    # are ever reallocated (not just overwritten), call resetGraph().
+    # ------------------------------------------------------------------
+
+    def resetGraph(self):
+        """Discard the captured graph; it is recaptured on the next solve."""
+        self._graph = None
+        self._graphK = None
+
+
+    def _captureGraph(self, K):
+        devs = self.configCuda.devices
+        P = self.numParts
+        s0 = self.stream[0]
+        with cp.cuda.Device(devs[0]):
+            s0.begin_capture()
+        try:
+            with cp.cuda.Device(devs[0]):
+                self.evFork.record(s0)
+            for m in range(1, P):                              # fork: other GPUs join the capture
+                with cp.cuda.Device(devs[m]):
+                    self.stream[m].wait_event(self.evFork)
+            for _ in range(K):
+                self._iteration()
+            for m in range(1, P):                              # join back into stream[0]
+                with cp.cuda.Device(devs[m]):
+                    self.evJoin[m].record(self.stream[m])
+            with cp.cuda.Device(devs[0]):
+                for m in range(1, P):
+                    s0.wait_event(self.evJoin[m])
+        except Exception:
+            with cp.cuda.Device(devs[0]):
+                try:
+                    s0.end_capture()
+                except Exception:
+                    pass
+            raise
+        with cp.cuda.Device(devs[0]):
+            self._graph = s0.end_capture()
+        self._graphK = K
+
+
+    def _launchGraph(self):
+        """Replay K iterations. The launch is ordered after all prior work on every solver stream."""
+        devs = self.configCuda.devices
+        s0 = self.stream[0]
+        for m in range(1, self.numParts):
+            with cp.cuda.Device(devs[m]):
+                self.evPre[m].record(self.stream[m])
+        with cp.cuda.Device(devs[0]):
+            for m in range(1, self.numParts):
+                s0.wait_event(self.evPre[m])
+            self._graph.launch(s0)
+
+
+    def _cgLoop(self, maxiter, K):
+        """Run PCG in chunks of K iterations until converged. Returns the iteration count.
+
+        After convergence the GPUs freeze (alpha = beta = 0), so the rest of a chunk
+        changes nothing and the count read from the GPU is exact.
+        """
+        devs = self.configCuda.devices
+        C, I = self.SC_CONV, self.SC_ITERS
+        done = 0
+        iters = 0
+        while done < maxiter:
+            if self.useGraph and self._graph is not None and self._graphK == K:
+                self._launchGraph()
+            else:
+                for _ in range(K):                             # eager chunk (also the warm-up)
+                    self._iteration()
+                if self.useGraph:
+                    try:
+                        self._captureGraph(K)
+                    except Exception as e:
+                        print(f"PCGSolverMultiGPU: CUDA Graph capture failed ({e!r}); "
+                              f"continuing without graphs.")
+                        self.useGraph = False
+                        self.resetGraph()
+            done += K
+
+            # The only host read: converged flag and iteration count (stream[0]
+            # holds the joined work of all GPUs, so this waits for the whole chunk).
+            with cp.cuda.Device(devs[0]):
+                conv, it = self.sc[0][C:I + 1].get(stream=self.stream[0])
+            iters = int(it)
+            if conv != 0.0:
+                break
+        return iters
 
 
     # ------------------------------------------------------------------
@@ -757,9 +874,10 @@ class PCGSolverMultiGPU:
     def solve(self, rtol=1e-5, maxiter=None, ensureSymmetric=False, checkEvery=10):
         """Jacobi-preconditioned CG across all devices.
 
-        The iteration runs on per-device solver streams with device-side scalars;
-        the host reads the residual only every `checkEvery` iterations, so up to
-        checkEvery-1 extra iterations may run after convergence.
+        Iterations run in chunks of `checkEvery` on per-device solver streams with
+        device-side scalars, replayed from a CUDA Graph after the first chunk. The
+        host reads the convergence flag once per chunk. The returned iteration
+        count is exact (iterations after convergence are frozen no-ops).
         """
         if maxiter is None:
             maxiter = self.N_total * 10
@@ -772,15 +890,16 @@ class PCGSolverMultiGPU:
         self.computeResiduals()                    # r_m = b_m - A_m @ x_guess
         for m, dev in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dev):
-                self.sc[m].fill(0.0)               # alpha = 0 for the init pass below
+                self.sc[m].fill(0.0)               # alpha = 0, conv = 0, iters = 0
+                self.sc[m][self.SC_ATOL2] = atol * atol
         self._syncAll()                            # hand over to the solver streams
 
         # Init: z = invD r, rho = r·z, rr = r·r  (update_xrz with alpha = 0)
         self._updateXRZ(computeAlpha=False)
         self._exchange(self.partRZ, 2)
-        self._scalarBeta(first=1)
+        self._scalarBeta(first=1)                  # also sets conv if already below atol
 
-        iters = self._cgLoop(atol * atol, maxiter, checkEvery)
+        iters = self._cgLoop(maxiter, checkEvery)
 
         self._syncAll()                            # back to the default stream
         self.scatterXToMesh()
@@ -813,4 +932,4 @@ class PCGSolverMultiGPU:
 
 
     def print_stats(self):
-        self.solver_profiler.print_stats() 
+        self.solver_profiler.print_stats()
