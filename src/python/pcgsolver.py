@@ -375,7 +375,7 @@ class PCGSolverMultiGPU:
     SC_RHO, SC_BETA, SC_ALPHA, SC_RR, SC_ATOL2, SC_CONV, SC_ITERS = range(7)
     SC_SIZE = 8
 
-    useGraph = True   # capture the CG loop in a CUDA Graph (falls back to eager launches on failure)
+    useGraph = False   # capture the CG loop in a CUDA Graph (falls back to eager launches on failure)
     waitTimeout = 60.0       # s: max wait for one chunk of GPU work before raising TimeoutError
     watchdogSeconds = 120.0  # s: if one solve takes longer, dump all thread stacks to stderr (None = off)
 
