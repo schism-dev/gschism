@@ -1,3 +1,7 @@
+import faulthandler, sys
+faulthandler.dump_traceback(file=sys.stderr)                     # one trace at startup: confirms output arrives
+faulthandler.dump_traceback_later(60, repeat=True, file=sys.stderr)
+
 import os
 import glob
 import importlib.util
