@@ -785,7 +785,7 @@ if __name__ == "__main__":
         time1 = time2
         pass
 
-    cp.cuda.profiler.stop()
+    cp.cuda.profiler.stop() 
     print(f"Output time: {getOutputTime():.3f} s")
     end_time = time.time()
     total_time = end_time - start_time
