@@ -1,12 +1,6 @@
 from __future__ import annotations
 import python.cuda_functions as cufunc
 
-import ctypes
-import faulthandler
-import os
-import sys
-import time
-
 import numpy as np
 
 import cupy as cp
@@ -61,46 +55,9 @@ __device__ __forceinline__ void block_reduce(double (&v)[NV], double* __restrict
 #define GRID_STRIDE(i, n) \
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < (n); i += gridDim.x * blockDim.x)
 
-// y = A x for a CSR row block, T threads per row (T = power of two, 2..32).
-// Every thread of a warp reaches the shuffles (rows past the end contribute 0),
-// so full-warp masks are valid. The reduction order is fixed -> deterministic.
-template<int T>
-__device__ __forceinline__ void csr_spmv_impl(const int* __restrict__ rowptr,
-                                              const int* __restrict__ col,
-                                              const double* __restrict__ val,
-                                              const double* __restrict__ x,
-                                              double* __restrict__ y, int nrows)
-{
-    const int tid  = blockIdx.x * blockDim.x + threadIdx.x;
-    const int row  = tid / T;
-    const int lane = threadIdx.x & (T - 1);
-    double s = 0.0;
-    if (row < nrows) {
-        const int end = rowptr[row + 1];
-        for (int k = rowptr[row] + lane; k < end; k += T)
-            s += val[k] * x[col[k]];
-    }
-    #pragma unroll
-    for (int o = T / 2; o > 0; o >>= 1)
-        s += __shfl_down_sync(0xffffffffu, s, o, T);
-    if (row < nrows && lane == 0) y[row] = s;
-}
-
-// Slots in the per-GPU scalar array sc (keep in sync with SC_* in Python)
-enum { RHO = 0, BETA = 1, ALPHA = 2, RR = 3, ATOL2 = 4, CONV = 5, ITERS = 6 };
+enum { RHO = 0, BETA = 1, ALPHA = 2, RR = 3 };   // slots in the per-GPU scalar array sc
 
 extern "C" {
-
-#define CSR_SPMV(T) \
-__global__ void csr_spmv_##T(const int* __restrict__ rowptr, const int* __restrict__ col, \
-                             const double* __restrict__ val, const double* __restrict__ x, \
-                             double* __restrict__ y, int nrows) \
-{ csr_spmv_impl<T>(rowptr, col, val, x, y, nrows); }
-CSR_SPMV(2)
-CSR_SPMV(4)
-CSR_SPMV(8)
-CSR_SPMV(16)
-CSR_SPMV(32)
 
 // p = z + beta * p
 __global__ void update_p(const double* __restrict__ z, double* __restrict__ p,
@@ -154,33 +111,21 @@ __global__ void finish2(const double* __restrict__ blk, int nblk, double* __rest
 }
 
 // alpha = rho / sum_j pq_j   (fixed summation order on every GPU)
-// Once converged (CONV set), alpha = 0 so any remaining iterations of a graph chunk
-// leave x and r untouched.
 __global__ void scalar_alpha(const double* __restrict__ partPQ, int P, double* __restrict__ sc)
 {
-    if (sc[CONV] != 0.0) { sc[ALPHA] = 0.0; return; }
     double pq = 0.0;
     for (int j = 0; j < P; ++j) pq += partPQ[j];
     sc[ALPHA] = sc[RHO] / pq;
 }
 
-// beta = rz_new / rho_old (0 on the first pass);  rho = rz_new;  rr = sum_j rr_j.
-// Counts iterations and sets CONV when rr <= atol^2. Once converged, beta = 0 and
-// nothing else changes (frozen).
+// beta = rz_new / rho_old (0 on the first pass);  rho = rz_new;  rr = sum_j rr_j
 __global__ void scalar_beta(const double* __restrict__ partRZ, int P, double* __restrict__ sc, int first)
 {
-    if (sc[CONV] != 0.0) { sc[BETA] = 0.0; return; }
     double rr = 0.0, rz = 0.0;
     for (int j = 0; j < P; ++j) { rr += partRZ[2*j]; rz += partRZ[2*j+1]; }
-    if (!isfinite(rr) || !isfinite(rz)) {          // NaN/Inf: flag error (-1) and freeze
-        sc[BETA] = 0.0;  sc[RR] = rr;  sc[CONV] = -1.0;
-        return;
-    }
     sc[BETA] = (first || sc[RHO] == 0.0) ? 0.0 : rz / sc[RHO];
     sc[RHO]  = rz;
     sc[RR]   = rr;
-    if (!first) sc[ITERS] += 1.0;
-    if (rr <= sc[ATOL2]) sc[CONV] = 1.0;
 }
 
 }
@@ -373,14 +318,6 @@ class PCGSolver:
 class PCGSolverMultiGPU:
     TPB = 256   # threads per block for the fused kernels
 
-    # Slots in the device-side scalar array sc (must match the enum in _PCG_KERNELS)
-    SC_RHO, SC_BETA, SC_ALPHA, SC_RR, SC_ATOL2, SC_CONV, SC_ITERS = range(7)
-    SC_SIZE = 8
-
-    useGraph = True   # capture the CG loop in a CUDA Graph (falls back to eager launches on failure)
-    waitTimeout = 60.0       # s: max wait for one chunk of GPU work before raising TimeoutError
-    watchdogSeconds = 120.0  # s: if one solve takes longer, dump all thread stacks to stderr (None = off)
-
     def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
         """Pre-allocate row-block matrices A_m and per-partition vectors.
 
@@ -511,8 +448,7 @@ class PCGSolverMultiGPU:
         """Solver streams, events, compiled kernels and device-side scalar buffers."""
         P = self.numParts
         names = ('update_p', 'dot_blocks', 'update_xrz', 'finish1', 'finish2',
-                 'scalar_alpha', 'scalar_beta',
-                 'csr_spmv_2', 'csr_spmv_4', 'csr_spmv_8', 'csr_spmv_16', 'csr_spmv_32')
+                 'scalar_alpha', 'scalar_beta')
         self.stream = [None] * P
         self.evP    = [None] * P     # "p_m is ready" (before the gather)
         self.evRed  = [None] * P     # "my partial dot is ready" (before an exchange)
@@ -520,94 +456,25 @@ class PCGSolverMultiGPU:
         self.nblk   = [0] * P
         self.nblk32 = [None] * P
         self.blk    = [None] * P     # per-block partial sums
-        self.sc     = [None] * P     # [rho, beta, alpha, rr, atol2, conv, iters] on every GPU
+        self.sc     = [None] * P     # [rho, beta, alpha, rr] on every GPU
         self.partPQ = [None] * P     # p·q partial of every GPU (P values)
         self.partRZ = [None] * P     # (r·r, r·z) partials of every GPU (2P values)
         self.n32    = [np.int32(n) for n in self.N_m]
-
-        # CUDA Graph state
-        self.evJoin  = [None] * P    # graph capture: other GPUs join back into stream[0]
-        self.evPre   = [None] * P    # graph launch: stream[0] waits for prior work on other GPUs
-        self.evFork  = None          # graph capture: other GPUs join the capture
-        self._graph  = None
-        self._graphK = None
 
         for m, dev in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dev):
                 self.stream[m] = cp.cuda.Stream(non_blocking=True)
                 self.evP[m]    = cp.cuda.Event(disable_timing=True)
                 self.evRed[m]  = cp.cuda.Event(disable_timing=True)
-                self.evJoin[m] = cp.cuda.Event(disable_timing=True)
-                self.evPre[m]  = cp.cuda.Event(disable_timing=True)
-                if m == 0:
-                    self.evFork = cp.cuda.Event(disable_timing=True)
-                    self.evDone = cp.cuda.Event(disable_timing=True)   # chunk completion (polled)
                 mod = cp.RawModule(code=_PCG_KERNELS, options=('-std=c++17',))
                 self.kern[m] = {nm: mod.get_function(nm) for nm in names}
                 sms = cp.cuda.Device(dev).attributes['MultiProcessorCount']
                 self.nblk[m]   = min(4 * sms, 1024)
                 self.nblk32[m] = np.int32(self.nblk[m])
                 self.blk[m]    = cp.zeros(2 * self.nblk[m], cp.float64)
-                self.sc[m]     = cp.zeros(self.SC_SIZE, cp.float64)
+                self.sc[m]     = cp.zeros(4, cp.float64)
                 self.partPQ[m] = cp.zeros(P, cp.float64)
                 self.partRZ[m] = cp.zeros(2 * P, cp.float64)
-
-        # Custom CSR SpMV for the solver loop (a plain kernel: capturable and replayable).
-        # Threads per row: smallest power of two >= average nonzeros per row (2..32).
-        self.spmvLanes = [0] * P
-        self.spmvGrid  = [0] * P
-        for m in range(P):
-            avg = self.NNZ_m[m] / max(self.N_m[m], 1)
-            T = 2
-            while T < avg and T < 32:
-                T *= 2
-            self.spmvLanes[m] = T
-            self.spmvGrid[m]  = max(1, -(-self.N_m[m] * T // self.TPB))   # ceil(N_m * T / TPB)
-        self._useCustomSpMV = True     # set False if the self-check below fails
-        self._spmvChecked   = False
-
-
-    def _spmvCustom(self, m, x_full):
-        """q_m = A_m @ x_full with the custom CSR kernel, on the current stream of device m."""
-        self.kern[m][f'csr_spmv_{self.spmvLanes[m]}'](
-            (self.spmvGrid[m],), (self.TPB,),
-            (self.indptr_m[m], self.indices_m[m], self.data_m[m], x_full, self.q_m[m], self.n32[m]))
-
-
-    def _checkCustomSpMV(self):
-        """Compare the custom SpMV with cuSPARSE on the real matrix (first solve only).
-
-        Uses the current x (already gathered by computeResiduals). The two differ only
-        in summation order, so a tolerance is used. On a mismatch or error, falls back
-        to cuSPARSE without CUDA Graphs (the path that is known to work).
-        """
-        self._spmvChecked = True
-        try:
-            ok = True
-            for m, dev in enumerate(self.configCuda.devices):
-                with cp.cuda.Device(dev):
-                    self._spmvLocal(m, self.desc_x)            # cuSPARSE reference
-                    ref = self.q_m[m].copy()
-                    self._spmvCustom(m, self.x[m])             # same (default) stream
-                    scale = float(cp.max(cp.abs(ref))) if ref.size else 0.0
-                    same = bool(cp.allclose(self.q_m[m], ref, rtol=1e-10, atol=1e-10 * scale))
-                    if not same:
-                        err = float(cp.max(cp.abs(self.q_m[m] - ref)))
-                        print(f"PCGSolverMultiGPU: custom SpMV mismatch on partition {m} "
-                              f"(max abs diff {err:.3e}, max |ref| {scale:.3e}).", flush=True)
-                    ok = ok and same
-        except Exception as e:
-            print(f"PCGSolverMultiGPU: custom SpMV failed ({e!r}).", flush=True)
-            ok = False
-        if ok:
-            print(f"PCGSolverMultiGPU: custom SpMV verified against cuSPARSE "
-                  f"(threads per row: {self.spmvLanes}).", flush=True)
-        else:
-            print("PCGSolverMultiGPU: using cuSPARSE without CUDA Graphs.", flush=True)
-            self._useCustomSpMV = False
-            self.useGraph = False
-            self.resetGraph()
-        self._syncAll()
 
 
     def _syncAll(self):
@@ -672,10 +539,8 @@ class PCGSolverMultiGPU:
 
 
     def _spmvLocal(self, m, desc_in):
-        """q_m = A_m @ in on the *current* stream of the current device.
-
-        CuPy's spMV wrapper binds the handle to the current stream itself.
-        """
+        """q_m = A_m @ in on the *current* stream of the current device."""
+        _cusparse.setStream(self.handle[m], cp.cuda.get_current_stream().ptr)
         _cusparse.spMV(
             self.handle[m],
             _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE,
@@ -852,179 +717,37 @@ class PCGSolverMultiGPU:
                 self.kern[m]['scalar_beta']((1,), (1,), (self.partRZ[m], P32, self.sc[m], f))
 
 
-    def _iteration(self):
-        """One PCG iteration on all GPUs (solver streams only; capturable in a CUDA Graph)."""
+    def _cgLoop(self, atol2, maxiter, checkEvery):
+        """PCG iterations. Returns the number of iterations performed."""
         devs = self.configCuda.devices
-        for m, dev in enumerate(devs):                        # p = z + beta p
-            with cp.cuda.Device(dev), self.stream[m]:
-                self.kern[m]['update_p']((self.nblk[m],), (self.TPB,),
-                    (self.z_m[m], self.p_m[m], self.sc[m], self.n32[m]))
+        for it in range(maxiter):
+            for m, dev in enumerate(devs):                        # p = z + beta p
+                with cp.cuda.Device(dev), self.stream[m]:
+                    self.kern[m]['update_p']((self.nblk[m],), (self.TPB,),
+                        (self.z_m[m], self.p_m[m], self.sc[m], self.n32[m]))
 
-        self._gatherPAsync()                                   # full p everywhere
+            self._gatherPAsync()                                   # full p everywhere
 
-        for m, dev in enumerate(devs):                        # q = A p; local p·q
-            with cp.cuda.Device(dev), self.stream[m]:
-                k = self.kern[m]
-                if self._useCustomSpMV:
-                    self._spmvCustom(m, self.p[m])
-                else:
-                    self._spmvLocal(m, self.desc_p)                # cuSPARSE fallback (not capturable)
-                k['dot_blocks']((self.nblk[m],), (self.TPB,),
-                    (self.p_m[m], self.q_m[m], self.blk[m], self.n32[m]))
-                k['finish1']((1,), (self.TPB,),
-                    (self.blk[m], self.nblk32[m], self.partPQ[m][m:m + 1]))
+            for m, dev in enumerate(devs):                        # q = A p; local p·q
+                with cp.cuda.Device(dev), self.stream[m]:
+                    k = self.kern[m]
+                    self._spmvLocal(m, self.desc_p)
+                    k['dot_blocks']((self.nblk[m],), (self.TPB,),
+                        (self.p_m[m], self.q_m[m], self.blk[m], self.n32[m]))
+                    k['finish1']((1,), (self.TPB,),
+                        (self.blk[m], self.nblk32[m], self.partPQ[m][m:m + 1]))
 
-        self._exchange(self.partPQ, 1)
-        self._updateXRZ(computeAlpha=True)                     # alpha, x, r, z, local (r·r, r·z)
-        self._exchange(self.partRZ, 2)
-        self._scalarBeta(first=0)                              # beta, rho, rr, iters, conv
+            self._exchange(self.partPQ, 1)
+            self._updateXRZ(computeAlpha=True)
+            self._exchange(self.partRZ, 2)
+            self._scalarBeta(first=0)
 
-
-    # ------------------------------------------------------------------
-    # CUDA Graph: capture K iterations once, replay them for every chunk
-    #
-    # Capture starts on stream[0]; the other GPUs' streams join it by waiting
-    # on evFork and are joined back into stream[0] at the end, so one graph
-    # holds the work of all GPUs. The graph is reused across solves: every
-    # buffer has a fixed address and all scalars live on the GPU. If buffers
-    # are ever reallocated (not just overwritten), call resetGraph().
-    # ------------------------------------------------------------------
-
-    def resetGraph(self):
-        """Discard the captured graph; it is recaptured on the next solve."""
-        self._graph = None
-        self._graphK = None
-
-
-    def _captureGraph(self, K):
-        devs = self.configCuda.devices
-        P = self.numParts
-        s0 = self.stream[0]
-        with cp.cuda.Device(devs[0]):
-            s0.begin_capture()
-        try:
-            with cp.cuda.Device(devs[0]):
-                self.evFork.record(s0)
-            for m in range(1, P):                              # fork: other GPUs join the capture
-                with cp.cuda.Device(devs[m]):
-                    self.stream[m].wait_event(self.evFork)
-            for _ in range(K):
-                self._iteration()
-            for m in range(1, P):                              # join back into stream[0]
-                with cp.cuda.Device(devs[m]):
-                    self.evJoin[m].record(self.stream[m])
-            with cp.cuda.Device(devs[0]):
-                for m in range(1, P):
-                    s0.wait_event(self.evJoin[m])
-        except Exception:
-            with cp.cuda.Device(devs[0]):
-                try:
-                    s0.end_capture()
-                except Exception:
-                    pass
-            raise
-        with cp.cuda.Device(devs[0]):
-            self._graph = s0.end_capture()
-        self._graphK = K
-
-
-    graphDumpFile = 'pcg_graph.dot'   # where _dumpGraph writes the captured graph (None = off)
-
-    def _dumpGraph(self):
-        """Write the captured graph (every node, verbose) as a DOT text file, for inspection."""
-        if not self.graphDumpFile:
-            return
-        try:
-            path = os.path.abspath(self.graphDumpFile)
-            if hasattr(self._graph, 'debug_dot_str'):          # newer CuPy
-                with open(path, 'w') as f:
-                    f.write(self._graph.debug_dot_str(1))      # 1 = verbose
-            else:                                              # older CuPy: driver API on the raw handle
-                fn = ctypes.CDLL('libcuda.so.1').cuGraphDebugDotPrint
-                fn.restype = ctypes.c_int
-                fn.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint]
-                status = fn(self._graph.graph, path.encode(), 1)  # 1 = CU_GRAPH_DEBUG_DOT_FLAGS_VERBOSE
-                if status != 0:
-                    raise RuntimeError(f"cuGraphDebugDotPrint returned CUresult {status}")
-            print(f"PCGSolverMultiGPU: graph written to {path}", flush=True)
-        except Exception as e:
-            print(f"PCGSolverMultiGPU: could not write graph dump ({e!r}).", flush=True)
-
-
-    def _launchGraph(self):
-        """Replay K iterations. The launch is ordered after all prior work on every solver stream."""
-        devs = self.configCuda.devices
-        s0 = self.stream[0]
-        for m in range(1, self.numParts):
-            with cp.cuda.Device(devs[m]):
-                self.evPre[m].record(self.stream[m])
-        with cp.cuda.Device(devs[0]):
-            for m in range(1, self.numParts):
-                s0.wait_event(self.evPre[m])
-            self._graph.launch(s0)
-
-
-    def _cgLoop(self, maxiter, K):
-        """Run PCG in chunks of K iterations until converged. Returns the iteration count.
-
-        After convergence the GPUs freeze (alpha = beta = 0), so the rest of a chunk
-        changes nothing and the count read from the GPU is exact.
-        """
-        devs = self.configCuda.devices
-        C, I = self.SC_CONV, self.SC_ITERS
-        done = 0
-        iters = 0
-        chunk = 0
-        while done < maxiter:
-            chunk += 1
-            ranGraph = self.useGraph and self._graph is not None and self._graphK == K
-            if ranGraph:
-                self._launchGraph()
-            else:
-                for _ in range(K):                             # eager chunk (also the warm-up)
-                    self._iteration()
-                if self.useGraph:
-                    try:
-                        self._captureGraph(K)
-                        print(f"PCGSolverMultiGPU: CUDA Graph captured ({K} iterations).", flush=True)
-                        self._dumpGraph()
-                    except Exception as e:
-                        print(f"PCGSolverMultiGPU: CUDA Graph capture failed ({e!r}); "
-                              f"continuing without graphs.")
-                        self.useGraph = False
-                        self.resetGraph()
-            done += K
-
-            # The only host read: converged flag and iteration count (stream[0]
-            # holds the joined work of all GPUs). Wait with a time limit, so a
-            # stuck chunk raises an error instead of hanging the job.
-            what = (f"chunk {chunk}, " +
-                    ("replayed from the CUDA Graph" if ranGraph
-                     else "eager launches" + (" + graph capture" if self._graph is not None else "")))
-            conv, it = self._readStatus(C, I, what)
-            iters = int(it)
-            if conv < 0.0:
-                raise RuntimeError(f"PCGSolverMultiGPU: non-finite residual (NaN/Inf) "
-                                   f"after {iters} iterations.")
-            if conv != 0.0:
-                return iters
-        print(f"PCGSolverMultiGPU: WARNING: not converged after {iters} iterations "
-              f"(maxiter={maxiter}).", flush=True)
-        return iters
-
-
-    def _readStatus(self, C, I, what):
-        """Wait (bounded by waitTimeout) for stream[0] to finish, then read sc[C..I]."""
-        devs = self.configCuda.devices
-        with cp.cuda.Device(devs[0]):
-            self.evDone.record(self.stream[0])
-            t0 = time.perf_counter()
-            while not self.evDone.done:              # cudaEventQuery: never blocks
-                if time.perf_counter() - t0 > self.waitTimeout:
-                    raise TimeoutError(f"PCGSolverMultiGPU: GPU work did not finish within "
-                                       f"{self.waitTimeout:.0f} s ({what}).")
-            vals = self.sc[0][C:I + 1].get(stream=self.stream[0])
-        return float(vals[0]), float(vals[1])
+            if (it + 1) % checkEvery == 0 or it == maxiter - 1:   # only host read in the loop
+                with cp.cuda.Device(devs[0]):
+                    rr = float(self.sc[0][3:4].get(stream=self.stream[0])[0])
+                if rr <= atol2:
+                    return it + 1
+        return maxiter
 
 
     # ------------------------------------------------------------------
@@ -1034,46 +757,30 @@ class PCGSolverMultiGPU:
     def solve(self, rtol=1e-5, maxiter=None, ensureSymmetric=False, checkEvery=10):
         """Jacobi-preconditioned CG across all devices.
 
-        Iterations run in chunks of `checkEvery` on per-device solver streams with
-        device-side scalars, replayed from a CUDA Graph after the first chunk. The
-        host reads the convergence flag once per chunk. The returned iteration
-        count is exact (iterations after convergence are frozen no-ops).
+        The iteration runs on per-device solver streams with device-side scalars;
+        the host reads the residual only every `checkEvery` iterations, so up to
+        checkEvery-1 extra iterations may run after convergence.
         """
         if maxiter is None:
             maxiter = self.N_total * 10
 
-        # Watchdog: if this solve hangs (even inside a C/CUDA call), print every
-        # thread's stack to stderr after watchdogSeconds.
-        if self.watchdogSeconds:
-            faulthandler.dump_traceback_later(self.watchdogSeconds, repeat=True, file=sys.stderr)
-        try:
-            return self._solve(rtol, maxiter, checkEvery)
-        finally:
-            if self.watchdogSeconds:
-                faulthandler.cancel_dump_traceback_later()
-
-
-    def _solve(self, rtol, maxiter, checkEvery):
         # Per-solve setup on the default stream (host syncs are fine here)
         self.gatherBFromMesh()
         self.computeInvDiag()
         atol = self.computeAtol(rtol)
         self.extrapolateGuess()
-        self.computeResiduals()                    # r_m = b_m - A_m @ x_guess (gathers x)
-        if not self._spmvChecked:
-            self._checkCustomSpMV()                # first solve only; uses the gathered x
+        self.computeResiduals()                    # r_m = b_m - A_m @ x_guess
         for m, dev in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dev):
-                self.sc[m].fill(0.0)               # alpha = 0, conv = 0, iters = 0
-                self.sc[m][self.SC_ATOL2] = atol * atol
+                self.sc[m].fill(0.0)               # alpha = 0 for the init pass below
         self._syncAll()                            # hand over to the solver streams
 
         # Init: z = invD r, rho = r·z, rr = r·r  (update_xrz with alpha = 0)
         self._updateXRZ(computeAlpha=False)
         self._exchange(self.partRZ, 2)
-        self._scalarBeta(first=1)                  # also sets conv if already below atol
+        self._scalarBeta(first=1)
 
-        iters = self._cgLoop(maxiter, checkEvery)
+        iters = self._cgLoop(atol * atol, maxiter, checkEvery)
 
         self._syncAll()                            # back to the default stream
         self.scatterXToMesh()
