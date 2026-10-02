@@ -54,7 +54,7 @@ class DeviceToHost:
                        len(globalSideIndices[m]))
             # Diagnostic: old expression (can overflow if numVrt is np.int32)
             maxFieldBytesOld = max(32, numVrt * 16)
-            prodOld = nMax * maxFieldBytesOld
+            prodOld = int(nMax) * int(maxFieldBytesOld)
             print(f"DeviceToHost buf m={m}: numVrt={numVrt!r} type={type(numVrt).__name__} "
                   f"dtype={getattr(numVrt, 'dtype', None)}; "
                   f"nMax={nMax!r} type={type(nMax).__name__}; "

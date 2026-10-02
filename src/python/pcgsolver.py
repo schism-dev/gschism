@@ -960,8 +960,11 @@ class PCGSolverMultiGPU:
         self._bindSparseStreams()                              # direct SpMV runs on the solver streams
         done = 0
         iters = 0
+        chunk = 0
         while done < maxiter:
-            if self.useGraph and self._graph is not None and self._graphK == K:
+            chunk += 1
+            ranGraph = self.useGraph and self._graph is not None and self._graphK == K
+            if ranGraph:
                 self._launchGraph()
             else:
                 for _ in range(K):                             # eager chunk (also the warm-up)
@@ -969,6 +972,7 @@ class PCGSolverMultiGPU:
                 if self.useGraph:
                     try:
                         self._captureGraph(K)
+                        print(f"PCGSolverMultiGPU: CUDA Graph captured ({K} iterations).", flush=True)
                     except Exception as e:
                         print(f"PCGSolverMultiGPU: CUDA Graph capture failed ({e!r}); "
                               f"continuing without graphs.")
@@ -979,8 +983,10 @@ class PCGSolverMultiGPU:
             # The only host read: converged flag and iteration count (stream[0]
             # holds the joined work of all GPUs). Wait with a time limit, so a
             # stuck chunk raises an error instead of hanging the job.
-            usedGraph = self.useGraph and self._graph is not None
-            conv, it = self._readStatus(C, I, 'graph chunk' if usedGraph else 'eager chunk')
+            what = (f"chunk {chunk}, " +
+                    ("replayed from the CUDA Graph" if ranGraph
+                     else "eager launches" + (" + graph capture" if self._graph is not None else "")))
+            conv, it = self._readStatus(C, I, what)
             iters = int(it)
             if conv < 0.0:
                 raise RuntimeError(f"PCGSolverMultiGPU: non-finite residual (NaN/Inf) "
