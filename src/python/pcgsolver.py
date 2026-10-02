@@ -1,7 +1,6 @@
 from __future__ import annotations
 import python.cuda_functions as cufunc
 
-import ctypes
 import faulthandler
 import sys
 import time
@@ -60,10 +59,46 @@ __device__ __forceinline__ void block_reduce(double (&v)[NV], double* __restrict
 #define GRID_STRIDE(i, n) \
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < (n); i += gridDim.x * blockDim.x)
 
+// y = A x for a CSR row block, T threads per row (T = power of two, 2..32).
+// Every thread of a warp reaches the shuffles (rows past the end contribute 0),
+// so full-warp masks are valid. The reduction order is fixed -> deterministic.
+template<int T>
+__device__ __forceinline__ void csr_spmv_impl(const int* __restrict__ rowptr,
+                                              const int* __restrict__ col,
+                                              const double* __restrict__ val,
+                                              const double* __restrict__ x,
+                                              double* __restrict__ y, int nrows)
+{
+    const int tid  = blockIdx.x * blockDim.x + threadIdx.x;
+    const int row  = tid / T;
+    const int lane = threadIdx.x & (T - 1);
+    double s = 0.0;
+    if (row < nrows) {
+        const int end = rowptr[row + 1];
+        for (int k = rowptr[row] + lane; k < end; k += T)
+            s += val[k] * x[col[k]];
+    }
+    #pragma unroll
+    for (int o = T / 2; o > 0; o >>= 1)
+        s += __shfl_down_sync(0xffffffffu, s, o, T);
+    if (row < nrows && lane == 0) y[row] = s;
+}
+
 // Slots in the per-GPU scalar array sc (keep in sync with SC_* in Python)
 enum { RHO = 0, BETA = 1, ALPHA = 2, RR = 3, ATOL2 = 4, CONV = 5, ITERS = 6 };
 
 extern "C" {
+
+#define CSR_SPMV(T) \
+__global__ void csr_spmv_##T(const int* __restrict__ rowptr, const int* __restrict__ col, \
+                             const double* __restrict__ val, const double* __restrict__ x, \
+                             double* __restrict__ y, int nrows) \
+{ csr_spmv_impl<T>(rowptr, col, val, x, y, nrows); }
+CSR_SPMV(2)
+CSR_SPMV(4)
+CSR_SPMV(8)
+CSR_SPMV(16)
+CSR_SPMV(32)
 
 // p = z + beta * p
 __global__ void update_p(const double* __restrict__ z, double* __restrict__ p,
@@ -148,41 +183,6 @@ __global__ void scalar_beta(const double* __restrict__ partRZ, int P, double* __
 
 }
 '''
-
-
-
-
-def _loadCusparseSpMV():
-    """Return a ctypes binding to cusparseSpMV from the libcusparse CuPy already loaded.
-
-    CuPy's own wrapper refuses to call cuSPARSE while a stream is being captured
-    (a guard in CuPy, not a CUDA limitation). Calling the library directly avoids
-    that guard. The library is located in /proc/self/maps so we use exactly the
-    instance CuPy uses: CuPy's handles and descriptors are only valid with it.
-    """
-    path = None
-    with open('/proc/self/maps') as f:
-        for line in f:
-            parts = line.split()
-            if len(parts) >= 6 and 'libcusparse.so' in parts[5]:
-                path = parts[5]
-                break
-    if path is None:
-        raise RuntimeError('libcusparse is not loaded in this process '
-                           '(create a cuSPARSE handle through CuPy first)')
-    fn = ctypes.CDLL(path).cusparseSpMV
-    fn.restype = ctypes.c_int
-    fn.argtypes = [ctypes.c_void_p,   # handle
-                   ctypes.c_int,      # opA
-                   ctypes.c_void_p,   # alpha (host pointer)
-                   ctypes.c_void_p,   # matA descriptor
-                   ctypes.c_void_p,   # vecX descriptor
-                   ctypes.c_void_p,   # beta (host pointer)
-                   ctypes.c_void_p,   # vecY descriptor
-                   ctypes.c_int,      # computeType
-                   ctypes.c_int,      # alg
-                   ctypes.c_void_p]   # external buffer
-    return fn
 
 
 
@@ -375,7 +375,7 @@ class PCGSolverMultiGPU:
     SC_RHO, SC_BETA, SC_ALPHA, SC_RR, SC_ATOL2, SC_CONV, SC_ITERS = range(7)
     SC_SIZE = 8
 
-    useGraph = False   # capture the CG loop in a CUDA Graph (falls back to eager launches on failure)
+    useGraph = True   # capture the CG loop in a CUDA Graph (falls back to eager launches on failure)
     waitTimeout = 60.0       # s: max wait for one chunk of GPU work before raising TimeoutError
     watchdogSeconds = 120.0  # s: if one solve takes longer, dump all thread stacks to stderr (None = off)
 
@@ -509,7 +509,8 @@ class PCGSolverMultiGPU:
         """Solver streams, events, compiled kernels and device-side scalar buffers."""
         P = self.numParts
         names = ('update_p', 'dot_blocks', 'update_xrz', 'finish1', 'finish2',
-                 'scalar_alpha', 'scalar_beta')
+                 'scalar_alpha', 'scalar_beta',
+                 'csr_spmv_2', 'csr_spmv_4', 'csr_spmv_8', 'csr_spmv_16', 'csr_spmv_32')
         self.stream = [None] * P
         self.evP    = [None] * P     # "p_m is ready" (before the gather)
         self.evRed  = [None] * P     # "my partial dot is ready" (before an exchange)
@@ -549,72 +550,62 @@ class PCGSolverMultiGPU:
                 self.partPQ[m] = cp.zeros(P, cp.float64)
                 self.partRZ[m] = cp.zeros(2 * P, cp.float64)
 
-        # Direct cuSPARSE SpMV for the solver loop (capturable in a CUDA Graph).
-        # The handles were created in __init__, so libcusparse is loaded by now.
-        self._cusparseSpMV = _loadCusparseSpMV()
-        self._spmvOp    = int(_cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE)
-        self._spmvAlg   = int(_cusparse.CUSPARSE_MV_ALG_DEFAULT)
-        self._spmvDtype = int(self.cuda_dtype)
-        self._useDirectSpMV = True     # set False if the self-check below fails
+        # Custom CSR SpMV for the solver loop (a plain kernel: capturable and replayable).
+        # Threads per row: smallest power of two >= average nonzeros per row (2..32).
+        self.spmvLanes = [0] * P
+        self.spmvGrid  = [0] * P
+        for m in range(P):
+            avg = self.NNZ_m[m] / max(self.N_m[m], 1)
+            T = 2
+            while T < avg and T < 32:
+                T *= 2
+            self.spmvLanes[m] = T
+            self.spmvGrid[m]  = max(1, -(-self.N_m[m] * T // self.TPB))   # ceil(N_m * T / TPB)
+        self._useCustomSpMV = True     # set False if the self-check below fails
         self._spmvChecked   = False
 
 
-    def _checkDirectSpMV(self):
-        """Compare the direct cusparseSpMV with CuPy's wrapper on the real matrix (once).
+    def _spmvCustom(self, m, x_full):
+        """q_m = A_m @ x_full with the custom CSR kernel, on the current stream of device m."""
+        self.kern[m][f'csr_spmv_{self.spmvLanes[m]}'](
+            (self.spmvGrid[m],), (self.TPB,),
+            (self.indptr_m[m], self.indices_m[m], self.data_m[m], x_full, self.q_m[m], self.n32[m]))
 
-        Uses the current x (already gathered by computeResiduals). On any mismatch or
-        error, falls back to CuPy's wrapper and disables graphs (the wrapper can't be
-        captured), i.e. the code path that is known to work.
+
+    def _checkCustomSpMV(self):
+        """Compare the custom SpMV with cuSPARSE on the real matrix (first solve only).
+
+        Uses the current x (already gathered by computeResiduals). The two differ only
+        in summation order, so a tolerance is used. On a mismatch or error, falls back
+        to cuSPARSE without CUDA Graphs (the path that is known to work).
         """
         self._spmvChecked = True
         try:
             ok = True
             for m, dev in enumerate(self.configCuda.devices):
                 with cp.cuda.Device(dev):
-                    self._spmvLocal(m, self.desc_x)        # CuPy wrapper; binds handle to current (default) stream
+                    self._spmvLocal(m, self.desc_x)            # cuSPARSE reference
                     ref = self.q_m[m].copy()
-                    self._spmvDirect(m, self.desc_x)       # same stream (handle is bound to it now)
+                    self._spmvCustom(m, self.x[m])             # same (default) stream
                     scale = float(cp.max(cp.abs(ref))) if ref.size else 0.0
-                    same = bool(cp.allclose(self.q_m[m], ref, rtol=1e-12, atol=1e-12 * scale))
+                    same = bool(cp.allclose(self.q_m[m], ref, rtol=1e-10, atol=1e-10 * scale))
                     if not same:
                         err = float(cp.max(cp.abs(self.q_m[m] - ref)))
-                        print(f"PCGSolverMultiGPU: direct SpMV mismatch on partition {m} "
-                              f"(max abs diff {err:.3e}).", flush=True)
+                        print(f"PCGSolverMultiGPU: custom SpMV mismatch on partition {m} "
+                              f"(max abs diff {err:.3e}, max |ref| {scale:.3e}).", flush=True)
                     ok = ok and same
         except Exception as e:
-            print(f"PCGSolverMultiGPU: direct SpMV failed ({e!r}).", flush=True)
+            print(f"PCGSolverMultiGPU: custom SpMV failed ({e!r}).", flush=True)
             ok = False
-        if not ok:
-            print("PCGSolverMultiGPU: using CuPy's SpMV wrapper without CUDA Graphs.", flush=True)
-            self._useDirectSpMV = False
+        if ok:
+            print(f"PCGSolverMultiGPU: custom SpMV verified against cuSPARSE "
+                  f"(threads per row: {self.spmvLanes}).", flush=True)
+        else:
+            print("PCGSolverMultiGPU: using cuSPARSE without CUDA Graphs.", flush=True)
+            self._useCustomSpMV = False
             self.useGraph = False
             self.resetGraph()
         self._syncAll()
-
-
-    def _bindSparseStreams(self):
-        """Bind each device's cuSPARSE handle to its solver stream.
-
-        Must be called outside stream capture (it goes through CuPy's setStream).
-        _spmvDirect does not set the stream itself, so it runs on this one.
-        """
-        for m, dev in enumerate(self.configCuda.devices):
-            with cp.cuda.Device(dev):
-                _cusparse.setStream(self.handle[m], self.stream[m].ptr)
-
-
-    def _spmvDirect(self, m, desc_in):
-        """q_m = A_m @ in via cusparseSpMV called directly (no CuPy capture guard).
-
-        Runs on the stream bound by _bindSparseStreams(); call with device m current.
-        """
-        status = self._cusparseSpMV(
-            self.handle[m], self._spmvOp, self.one.ctypes.data,
-            self.desc_A_m[m].desc, desc_in[m].desc, self.zero.ctypes.data,
-            self.desc_q_m[m].desc, self._spmvDtype, self._spmvAlg,
-            self.buff_m[m].data.ptr)
-        if status != 0:
-            raise RuntimeError(f'cusparseSpMV failed (cusparseStatus_t = {status})')
 
 
     def _syncAll(self):
@@ -872,10 +863,10 @@ class PCGSolverMultiGPU:
         for m, dev in enumerate(devs):                        # q = A p; local p·q
             with cp.cuda.Device(dev), self.stream[m]:
                 k = self.kern[m]
-                if self._useDirectSpMV:
-                    self._spmvDirect(m, self.desc_p)
+                if self._useCustomSpMV:
+                    self._spmvCustom(m, self.p[m])
                 else:
-                    self._spmvLocal(m, self.desc_p)
+                    self._spmvLocal(m, self.desc_p)                # cuSPARSE fallback (not capturable)
                 k['dot_blocks']((self.nblk[m],), (self.TPB,),
                     (self.p_m[m], self.q_m[m], self.blk[m], self.n32[m]))
                 k['finish1']((1,), (self.TPB,),
@@ -907,7 +898,6 @@ class PCGSolverMultiGPU:
         devs = self.configCuda.devices
         P = self.numParts
         s0 = self.stream[0]
-        self._bindSparseStreams()                              # must happen before capture begins
         with cp.cuda.Device(devs[0]):
             s0.begin_capture()
         try:
@@ -957,7 +947,6 @@ class PCGSolverMultiGPU:
         """
         devs = self.configCuda.devices
         C, I = self.SC_CONV, self.SC_ITERS
-        self._bindSparseStreams()                              # direct SpMV runs on the solver streams
         done = 0
         iters = 0
         chunk = 0
@@ -1046,7 +1035,7 @@ class PCGSolverMultiGPU:
         self.extrapolateGuess()
         self.computeResiduals()                    # r_m = b_m - A_m @ x_guess (gathers x)
         if not self._spmvChecked:
-            self._checkDirectSpMV()                # first solve only; uses the gathered x
+            self._checkCustomSpMV()                # first solve only; uses the gathered x
         for m, dev in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dev):
                 self.sc[m].fill(0.0)               # alpha = 0, conv = 0, iters = 0
