@@ -2,6 +2,9 @@ from __future__ import annotations
 import python.cuda_functions as cufunc
 
 import ctypes
+import faulthandler
+import sys
+import time
 
 import numpy as np
 
@@ -132,6 +135,10 @@ __global__ void scalar_beta(const double* __restrict__ partRZ, int P, double* __
     if (sc[CONV] != 0.0) { sc[BETA] = 0.0; return; }
     double rr = 0.0, rz = 0.0;
     for (int j = 0; j < P; ++j) { rr += partRZ[2*j]; rz += partRZ[2*j+1]; }
+    if (!isfinite(rr) || !isfinite(rz)) {          // NaN/Inf: flag error (-1) and freeze
+        sc[BETA] = 0.0;  sc[RR] = rr;  sc[CONV] = -1.0;
+        return;
+    }
     sc[BETA] = (first || sc[RHO] == 0.0) ? 0.0 : rz / sc[RHO];
     sc[RHO]  = rz;
     sc[RR]   = rr;
@@ -369,6 +376,8 @@ class PCGSolverMultiGPU:
     SC_SIZE = 8
 
     useGraph = True   # capture the CG loop in a CUDA Graph (falls back to eager launches on failure)
+    waitTimeout = 60.0       # s: max wait for one chunk of GPU work before raising TimeoutError
+    watchdogSeconds = 120.0  # s: if one solve takes longer, dump all thread stacks to stderr (None = off)
 
     def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
         """Pre-allocate row-block matrices A_m and per-partition vectors.
@@ -529,6 +538,7 @@ class PCGSolverMultiGPU:
                 self.evPre[m]  = cp.cuda.Event(disable_timing=True)
                 if m == 0:
                     self.evFork = cp.cuda.Event(disable_timing=True)
+                    self.evDone = cp.cuda.Event(disable_timing=True)   # chunk completion (polled)
                 mod = cp.RawModule(code=_PCG_KERNELS, options=('-std=c++17',))
                 self.kern[m] = {nm: mod.get_function(nm) for nm in names}
                 sms = cp.cuda.Device(dev).attributes['MultiProcessorCount']
@@ -545,6 +555,41 @@ class PCGSolverMultiGPU:
         self._spmvOp    = int(_cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE)
         self._spmvAlg   = int(_cusparse.CUSPARSE_MV_ALG_DEFAULT)
         self._spmvDtype = int(self.cuda_dtype)
+        self._useDirectSpMV = True     # set False if the self-check below fails
+        self._spmvChecked   = False
+
+
+    def _checkDirectSpMV(self):
+        """Compare the direct cusparseSpMV with CuPy's wrapper on the real matrix (once).
+
+        Uses the current x (already gathered by computeResiduals). On any mismatch or
+        error, falls back to CuPy's wrapper and disables graphs (the wrapper can't be
+        captured), i.e. the code path that is known to work.
+        """
+        self._spmvChecked = True
+        try:
+            ok = True
+            for m, dev in enumerate(self.configCuda.devices):
+                with cp.cuda.Device(dev):
+                    self._spmvLocal(m, self.desc_x)        # CuPy wrapper; binds handle to current (default) stream
+                    ref = self.q_m[m].copy()
+                    self._spmvDirect(m, self.desc_x)       # same stream (handle is bound to it now)
+                    scale = float(cp.max(cp.abs(ref))) if ref.size else 0.0
+                    same = bool(cp.allclose(self.q_m[m], ref, rtol=1e-12, atol=1e-12 * scale))
+                    if not same:
+                        err = float(cp.max(cp.abs(self.q_m[m] - ref)))
+                        print(f"PCGSolverMultiGPU: direct SpMV mismatch on partition {m} "
+                              f"(max abs diff {err:.3e}).", flush=True)
+                    ok = ok and same
+        except Exception as e:
+            print(f"PCGSolverMultiGPU: direct SpMV failed ({e!r}).", flush=True)
+            ok = False
+        if not ok:
+            print("PCGSolverMultiGPU: using CuPy's SpMV wrapper without CUDA Graphs.", flush=True)
+            self._useDirectSpMV = False
+            self.useGraph = False
+            self.resetGraph()
+        self._syncAll()
 
 
     def _bindSparseStreams(self):
@@ -827,7 +872,10 @@ class PCGSolverMultiGPU:
         for m, dev in enumerate(devs):                        # q = A p; local p·q
             with cp.cuda.Device(dev), self.stream[m]:
                 k = self.kern[m]
-                self._spmvDirect(m, self.desc_p)
+                if self._useDirectSpMV:
+                    self._spmvDirect(m, self.desc_p)
+                else:
+                    self._spmvLocal(m, self.desc_p)
                 k['dot_blocks']((self.nblk[m],), (self.TPB,),
                     (self.p_m[m], self.q_m[m], self.blk[m], self.n32[m]))
                 k['finish1']((1,), (self.TPB,),
@@ -929,13 +977,33 @@ class PCGSolverMultiGPU:
             done += K
 
             # The only host read: converged flag and iteration count (stream[0]
-            # holds the joined work of all GPUs, so this waits for the whole chunk).
-            with cp.cuda.Device(devs[0]):
-                conv, it = self.sc[0][C:I + 1].get(stream=self.stream[0])
+            # holds the joined work of all GPUs). Wait with a time limit, so a
+            # stuck chunk raises an error instead of hanging the job.
+            usedGraph = self.useGraph and self._graph is not None
+            conv, it = self._readStatus(C, I, 'graph chunk' if usedGraph else 'eager chunk')
             iters = int(it)
+            if conv < 0.0:
+                raise RuntimeError(f"PCGSolverMultiGPU: non-finite residual (NaN/Inf) "
+                                   f"after {iters} iterations.")
             if conv != 0.0:
-                break
+                return iters
+        print(f"PCGSolverMultiGPU: WARNING: not converged after {iters} iterations "
+              f"(maxiter={maxiter}).", flush=True)
         return iters
+
+
+    def _readStatus(self, C, I, what):
+        """Wait (bounded by waitTimeout) for stream[0] to finish, then read sc[C..I]."""
+        devs = self.configCuda.devices
+        with cp.cuda.Device(devs[0]):
+            self.evDone.record(self.stream[0])
+            t0 = time.perf_counter()
+            while not self.evDone.done:              # cudaEventQuery: never blocks
+                if time.perf_counter() - t0 > self.waitTimeout:
+                    raise TimeoutError(f"PCGSolverMultiGPU: GPU work did not finish within "
+                                       f"{self.waitTimeout:.0f} s ({what}).")
+            vals = self.sc[0][C:I + 1].get(stream=self.stream[0])
+        return float(vals[0]), float(vals[1])
 
 
     # ------------------------------------------------------------------
@@ -953,12 +1021,26 @@ class PCGSolverMultiGPU:
         if maxiter is None:
             maxiter = self.N_total * 10
 
+        # Watchdog: if this solve hangs (even inside a C/CUDA call), print every
+        # thread's stack to stderr after watchdogSeconds.
+        if self.watchdogSeconds:
+            faulthandler.dump_traceback_later(self.watchdogSeconds, repeat=True, file=sys.stderr)
+        try:
+            return self._solve(rtol, maxiter, checkEvery)
+        finally:
+            if self.watchdogSeconds:
+                faulthandler.cancel_dump_traceback_later()
+
+
+    def _solve(self, rtol, maxiter, checkEvery):
         # Per-solve setup on the default stream (host syncs are fine here)
         self.gatherBFromMesh()
         self.computeInvDiag()
         atol = self.computeAtol(rtol)
         self.extrapolateGuess()
-        self.computeResiduals()                    # r_m = b_m - A_m @ x_guess
+        self.computeResiduals()                    # r_m = b_m - A_m @ x_guess (gathers x)
+        if not self._spmvChecked:
+            self._checkDirectSpMV()                # first solve only; uses the gathered x
         for m, dev in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dev):
                 self.sc[m].fill(0.0)               # alpha = 0, conv = 0, iters = 0
