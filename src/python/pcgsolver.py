@@ -813,4 +813,4 @@ class PCGSolverMultiGPU:
 
 
     def print_stats(self):
-        self.solver_profiler.print_stats()
+        self.solver_profiler.print_stats() 
