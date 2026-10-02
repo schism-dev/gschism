@@ -2,6 +2,7 @@ from __future__ import annotations
 import python.cuda_functions as cufunc
 
 import faulthandler
+import os
 import sys
 import time
 
@@ -926,6 +927,21 @@ class PCGSolverMultiGPU:
         self._graphK = K
 
 
+    graphDumpFile = 'pcg_graph.dot'   # where _dumpGraph writes the captured graph (None = off)
+
+    def _dumpGraph(self):
+        """Write the captured graph (every node, verbose) as a DOT text file, for inspection."""
+        if not self.graphDumpFile:
+            return
+        try:
+            dot = self._graph.debug_dot_str(1)    # 1 = cudaGraphDebugDotFlagsVerbose
+            with open(self.graphDumpFile, 'w') as f:
+                f.write(dot)
+            print(f"PCGSolverMultiGPU: graph written to {os.path.abspath(self.graphDumpFile)}", flush=True)
+        except Exception as e:
+            print(f"PCGSolverMultiGPU: could not write graph dump ({e!r}).", flush=True)
+
+
     def _launchGraph(self):
         """Replay K iterations. The launch is ordered after all prior work on every solver stream."""
         devs = self.configCuda.devices
@@ -962,6 +978,7 @@ class PCGSolverMultiGPU:
                     try:
                         self._captureGraph(K)
                         print(f"PCGSolverMultiGPU: CUDA Graph captured ({K} iterations).", flush=True)
+                        self._dumpGraph()
                     except Exception as e:
                         print(f"PCGSolverMultiGPU: CUDA Graph capture failed ({e!r}); "
                               f"continuing without graphs.")
