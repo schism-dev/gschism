@@ -1,6 +1,7 @@
 from __future__ import annotations
 import python.cuda_functions as cufunc
 
+import ctypes
 import faulthandler
 import os
 import sys
@@ -934,10 +935,18 @@ class PCGSolverMultiGPU:
         if not self.graphDumpFile:
             return
         try:
-            dot = self._graph.debug_dot_str(1)    # 1 = cudaGraphDebugDotFlagsVerbose
-            with open(self.graphDumpFile, 'w') as f:
-                f.write(dot)
-            print(f"PCGSolverMultiGPU: graph written to {os.path.abspath(self.graphDumpFile)}", flush=True)
+            path = os.path.abspath(self.graphDumpFile)
+            if hasattr(self._graph, 'debug_dot_str'):          # newer CuPy
+                with open(path, 'w') as f:
+                    f.write(self._graph.debug_dot_str(1))      # 1 = verbose
+            else:                                              # older CuPy: driver API on the raw handle
+                fn = ctypes.CDLL('libcuda.so.1').cuGraphDebugDotPrint
+                fn.restype = ctypes.c_int
+                fn.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint]
+                status = fn(self._graph.graph, path.encode(), 1)  # 1 = CU_GRAPH_DEBUG_DOT_FLAGS_VERBOSE
+                if status != 0:
+                    raise RuntimeError(f"cuGraphDebugDotPrint returned CUresult {status}")
+            print(f"PCGSolverMultiGPU: graph written to {path}", flush=True)
         except Exception as e:
             print(f"PCGSolverMultiGPU: could not write graph dump ({e!r}).", flush=True)
 
