@@ -1,6 +1,8 @@
 from __future__ import annotations
 import python.cuda_functions as cufunc
 
+import ctypes
+
 import numpy as np
 
 import cupy as cp
@@ -139,6 +141,41 @@ __global__ void scalar_beta(const double* __restrict__ partRZ, int P, double* __
 
 }
 '''
+
+
+
+
+def _loadCusparseSpMV():
+    """Return a ctypes binding to cusparseSpMV from the libcusparse CuPy already loaded.
+
+    CuPy's own wrapper refuses to call cuSPARSE while a stream is being captured
+    (a guard in CuPy, not a CUDA limitation). Calling the library directly avoids
+    that guard. The library is located in /proc/self/maps so we use exactly the
+    instance CuPy uses: CuPy's handles and descriptors are only valid with it.
+    """
+    path = None
+    with open('/proc/self/maps') as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) >= 6 and 'libcusparse.so' in parts[5]:
+                path = parts[5]
+                break
+    if path is None:
+        raise RuntimeError('libcusparse is not loaded in this process '
+                           '(create a cuSPARSE handle through CuPy first)')
+    fn = ctypes.CDLL(path).cusparseSpMV
+    fn.restype = ctypes.c_int
+    fn.argtypes = [ctypes.c_void_p,   # handle
+                   ctypes.c_int,      # opA
+                   ctypes.c_void_p,   # alpha (host pointer)
+                   ctypes.c_void_p,   # matA descriptor
+                   ctypes.c_void_p,   # vecX descriptor
+                   ctypes.c_void_p,   # beta (host pointer)
+                   ctypes.c_void_p,   # vecY descriptor
+                   ctypes.c_int,      # computeType
+                   ctypes.c_int,      # alg
+                   ctypes.c_void_p]   # external buffer
+    return fn
 
 
 
@@ -502,6 +539,38 @@ class PCGSolverMultiGPU:
                 self.partPQ[m] = cp.zeros(P, cp.float64)
                 self.partRZ[m] = cp.zeros(2 * P, cp.float64)
 
+        # Direct cuSPARSE SpMV for the solver loop (capturable in a CUDA Graph).
+        # The handles were created in __init__, so libcusparse is loaded by now.
+        self._cusparseSpMV = _loadCusparseSpMV()
+        self._spmvOp    = int(_cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE)
+        self._spmvAlg   = int(_cusparse.CUSPARSE_MV_ALG_DEFAULT)
+        self._spmvDtype = int(self.cuda_dtype)
+
+
+    def _bindSparseStreams(self):
+        """Bind each device's cuSPARSE handle to its solver stream.
+
+        Must be called outside stream capture (it goes through CuPy's setStream).
+        _spmvDirect does not set the stream itself, so it runs on this one.
+        """
+        for m, dev in enumerate(self.configCuda.devices):
+            with cp.cuda.Device(dev):
+                _cusparse.setStream(self.handle[m], self.stream[m].ptr)
+
+
+    def _spmvDirect(self, m, desc_in):
+        """q_m = A_m @ in via cusparseSpMV called directly (no CuPy capture guard).
+
+        Runs on the stream bound by _bindSparseStreams(); call with device m current.
+        """
+        status = self._cusparseSpMV(
+            self.handle[m], self._spmvOp, self.one.ctypes.data,
+            self.desc_A_m[m].desc, desc_in[m].desc, self.zero.ctypes.data,
+            self.desc_q_m[m].desc, self._spmvDtype, self._spmvAlg,
+            self.buff_m[m].data.ptr)
+        if status != 0:
+            raise RuntimeError(f'cusparseSpMV failed (cusparseStatus_t = {status})')
+
 
     def _syncAll(self):
         """Wait for all work on all devices (all streams)."""
@@ -758,7 +827,7 @@ class PCGSolverMultiGPU:
         for m, dev in enumerate(devs):                        # q = A p; local p·q
             with cp.cuda.Device(dev), self.stream[m]:
                 k = self.kern[m]
-                self._spmvLocal(m, self.desc_p)
+                self._spmvDirect(m, self.desc_p)
                 k['dot_blocks']((self.nblk[m],), (self.TPB,),
                     (self.p_m[m], self.q_m[m], self.blk[m], self.n32[m]))
                 k['finish1']((1,), (self.TPB,),
@@ -790,6 +859,7 @@ class PCGSolverMultiGPU:
         devs = self.configCuda.devices
         P = self.numParts
         s0 = self.stream[0]
+        self._bindSparseStreams()                              # must happen before capture begins
         with cp.cuda.Device(devs[0]):
             s0.begin_capture()
         try:
@@ -839,6 +909,7 @@ class PCGSolverMultiGPU:
         """
         devs = self.configCuda.devices
         C, I = self.SC_CONV, self.SC_ITERS
+        self._bindSparseStreams()                              # direct SpMV runs on the solver streams
         done = 0
         iters = 0
         while done < maxiter:
