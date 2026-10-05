@@ -6,7 +6,7 @@ import numpy as np
 import debug.monitor as monitor
 from cupyx.scipy.sparse.linalg import cg, gmres, minres, LinearOperator
 
-from python.pcgsolver import PCGSolver
+# from solver.pcg_solver import PCGSolver
 from python.schism_consts import VISTA
 # from cupy import cudaMemcpyFromSymbol
 

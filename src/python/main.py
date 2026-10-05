@@ -12,7 +12,7 @@ import cupy as cp
 import debug.monitor as monitor
 import time
 import pybind11
-from python.pcgsolver import PCGSolver, PCGSolverMultiGPU
+from solver.pcg_solver import PCGSolver, PCGSolverMultiGPU
 from python.schism_consts import VISTA, WINDOWS
 from iop.writeOutput import writeOutput, initializeOutput, getOutputTime
 import iop.cudaKernelWrapper as ckw

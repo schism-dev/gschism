@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import python.cuda_functions as cufunc
 
 import numpy as np
@@ -130,6 +131,79 @@ __global__ void scalar_beta(const double* __restrict__ partRZ, int P, double* __
 
 }
 '''
+
+
+
+
+# ---------------------------------------------------------------------------
+# Compiled host loop (pcg_loop.cpp, pybind11). Built with plain g++ the first
+# time it is needed and whenever pcg_loop.cpp is newer than the built module.
+# Independent of any other build helper in the project.
+# ---------------------------------------------------------------------------
+_PCG_LOOP_MODULE = None
+
+def _load_pcg_loop():
+    """Build (if needed) and import pcg_loop.cpp, located next to this file."""
+    global _PCG_LOOP_MODULE
+    if _PCG_LOOP_MODULE is not None:
+        return _PCG_LOOP_MODULE
+
+    import importlib.util
+    import subprocess
+    import sysconfig
+    import pybind11
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    src = os.path.join(here, "pcg_loop.cpp")
+    build_dir = os.path.join(here, "build_pcg_loop")
+    out = os.path.join(build_dir, "pcg_loop" + sysconfig.get_config_var("EXT_SUFFIX"))
+
+    if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(src):
+        os.makedirs(build_dir, exist_ok=True)
+        cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("TACC_CUDA_DIR")
+        if not cuda_home:
+            raise RuntimeError("CUDA_HOME (or TACC_CUDA_DIR) is not set")
+        math_lib = os.environ.get("MATH_LIB")      # NVHPC layout: .../math_libs/<ver>/lib64
+
+        inc = [pybind11.get_include(), sysconfig.get_paths()["include"],
+               os.path.join(cuda_home, "include"),
+               os.path.join(cuda_home, "include", "cccl")]   # CUDA 13 keeps CCCL headers here
+        libdirs = [os.path.join(cuda_home, "lib64"),
+                   os.path.join(cuda_home, "lib64", "stubs")]  # link-time stub for libcuda
+        rpaths = [os.path.join(cuda_home, "lib64")]
+        if math_lib:
+            inc.append(os.path.join(os.path.dirname(math_lib), "include"))
+            libdirs.insert(0, math_lib)
+            rpaths.insert(0, math_lib)
+        inc = [d for d in inc if os.path.isdir(d)]
+        libdirs = [d for d in libdirs if os.path.isdir(d)]
+
+        tmp = f"{out}.tmp{os.getpid()}"
+        cmd = ([os.environ.get("CXX", "g++"), "-O3", "-std=c++17", "-shared", "-fPIC", src, "-o", tmp]
+               + [f"-I{d}" for d in inc] + [f"-L{d}" for d in libdirs]
+               + [f"-Wl,-rpath,{d}" for d in rpaths] + ["-lcusparse", "-lcuda"])
+        print("PCGSolverMultiGPU: building pcg_loop:\n  " + " ".join(cmd), flush=True)
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            raise RuntimeError("building pcg_loop.cpp failed:\n" + res.stderr[-4000:])
+        os.replace(tmp, out)                       # atomic: never leaves a half-written module
+
+    spec = importlib.util.spec_from_file_location("pcg_loop", out)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # Sanity check: CuPy and pcg_loop should share one libcusparse.
+    libs = set()
+    with open("/proc/self/maps") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) >= 6 and "libcusparse.so" in parts[5]:
+                libs.add(parts[5])
+    if len(libs) > 1:
+        print(f"PCGSolverMultiGPU: WARNING: several libcusparse loaded: {sorted(libs)}", flush=True)
+
+    _PCG_LOOP_MODULE = mod
+    return mod
 
 
 
@@ -318,6 +392,9 @@ class PCGSolver:
 class PCGSolverMultiGPU:
     TPB = 256   # threads per block for the fused kernels
 
+    useNative = True       # run the iteration loop in compiled C++ (pcg_loop.cpp); False = Python loop
+    nativeTimeout = 60.0   # s: the compiled loop raises if the GPU does not finish within this time
+
     def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
         """Pre-allocate row-block matrices A_m and per-partition vectors.
 
@@ -460,6 +537,7 @@ class PCGSolverMultiGPU:
         self.partPQ = [None] * P     # p·q partial of every GPU (P values)
         self.partRZ = [None] * P     # (r·r, r·z) partials of every GPU (2P values)
         self.n32    = [np.int32(n) for n in self.N_m]
+        self._native = None          # compiled loop (pcg_loop.NativePCG), created on first solve
 
         for m, dev in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dev):
@@ -475,6 +553,38 @@ class PCGSolverMultiGPU:
                 self.sc[m]     = cp.zeros(4, cp.float64)
                 self.partPQ[m] = cp.zeros(P, cp.float64)
                 self.partRZ[m] = cp.zeros(2 * P, cp.float64)
+
+
+    def _ensureNative(self):
+        """Create the compiled loop on first use. On any problem, fall back to the Python loop."""
+        if self._native is not None or not self.useNative:
+            return
+        if self.numParts != 1:
+            print("PCGSolverMultiGPU: compiled loop supports 1 GPU only so far (step 1a); "
+                  "using the Python loop.", flush=True)
+            self.useNative = False
+            return
+        try:
+            mod = _load_pcg_loop()
+            native = mod.NativePCG()
+            m, dev = 0, self.configCuda.devices[0]
+            A = self.A_m[m]                    # the exact arrays the Python cuSPARSE path uses
+            with cp.cuda.Device(dev):
+                kernels = {nm: int(k.kernel.ptr) for nm, k in self.kern[m].items()}
+            ptrs = dict(
+                data=A.data.data.ptr, indices=A.indices.data.ptr, indptr=A.indptr.data.ptr,
+                p_full=self.p[m].data.ptr, p_m=self.p_m[m].data.ptr, q=self.q_m[m].data.ptr,
+                r=self.r_m[m].data.ptr, z=self.z_m[m].data.ptr, x=self.x_m[m].data.ptr,
+                invD=self.invD_m[m].data.ptr, sc=self.sc[m].data.ptr, blk=self.blk[m].data.ptr,
+                partPQ=self.partPQ[m].data.ptr, partRZ=self.partRZ[m].data.ptr)
+            native.add_partition(device=dev, N=self.N_m[m], Ntot=self.N_total, nnz=int(A.data.size),
+                                 nblk=self.nblk[m], tpb=self.TPB, ptrs=ptrs, kernels=kernels)
+            self._native = native
+            print("PCGSolverMultiGPU: using the compiled loop (pcg_loop).", flush=True)
+        except Exception as e:
+            print(f"PCGSolverMultiGPU: compiled loop unavailable ({e}); using the Python loop.",
+                  flush=True)
+            self.useNative = False
 
 
     def _syncAll(self):
@@ -775,12 +885,18 @@ class PCGSolverMultiGPU:
                 self.sc[m].fill(0.0)               # alpha = 0 for the init pass below
         self._syncAll()                            # hand over to the solver streams
 
-        # Init: z = invD r, rho = r·z, rr = r·r  (update_xrz with alpha = 0)
-        self._updateXRZ(computeAlpha=False)
-        self._exchange(self.partRZ, 2)
-        self._scalarBeta(first=1)
+        self._ensureNative()
+        if self._native is not None:
+            # Compiled loop: same init pass and iterations, issued from C++.
+            iters = self._native.solve(atol * atol, int(maxiter), int(checkEvery),
+                                       float(self.nativeTimeout))
+        else:
+            # Init: z = invD r, rho = r·z, rr = r·r  (update_xrz with alpha = 0)
+            self._updateXRZ(computeAlpha=False)
+            self._exchange(self.partRZ, 2)
+            self._scalarBeta(first=1)
 
-        iters = self._cgLoop(atol * atol, maxiter, checkEvery)
+            iters = self._cgLoop(atol * atol, maxiter, checkEvery)
 
         self._syncAll()                            # back to the default stream
         self.scatterXToMesh()
