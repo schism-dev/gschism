@@ -181,14 +181,24 @@ __global__ void f_init(const double* __restrict__ r, double* __restrict__ z,
     block_reduce_atomic<2>(v, acc + 1 * A_STRIDE + A_RR);
 }
 
-// Multi-GPU: accAll[j] = acc array of GPU j (j = 0..P-1, own one included). Totals
-// are summed over all GPUs by one thread per block, reading the other GPUs' memory
-// over NVLink with __ldcv (not cached, so always the current value).
-__device__ __forceinline__ double total(const double* const* __restrict__ accAll, int P, int idx)
+// Multi-GPU: accAll[j] = acc array of GPU j (j = 0..P-1, own one included).
+// Totals of two accumulator slots over all GPUs, read in parallel: called by warp 0
+// of a block; lane j reads GPU j's two values (__ldcv: not cached, always current),
+// so all remote reads are in flight at once. The sums are valid in lane 0. P <= 32.
+__device__ __forceinline__ void totals2(const double* const* __restrict__ accAll, int P,
+                                        int idxA, int idxB, double& a, double& b)
 {
-    double s = 0.0;
-    for (int j = 0; j < P; ++j) s += __ldcv(accAll[j] + idx);
-    return s;
+    const int j = threadIdx.x;
+    a = 0.0; b = 0.0;
+    if (j < P) {
+        const double* acc = accAll[j];
+        a = __ldcv(acc + idxA);
+        b = __ldcv(acc + idxB);
+    }
+    for (int o = 16; o > 0; o >>= 1) {
+        a += __shfl_down_sync(0xffffffffu, a, o);
+        b += __shfl_down_sync(0xffffffffu, b, o);
+    }
 }
 
 // p = z + beta p,  beta = rz(k-1) / rz(k-2) over all GPUs (0 at k = 0);  resets own acc[par][PQ]
@@ -198,9 +208,10 @@ __global__ void f_update_p(const double* __restrict__ z, double* __restrict__ p,
 {
     const int par = k & 1, prv = par ^ 1;
     __shared__ double sBeta;
-    if (threadIdx.x == 0) {
-        const double rzOld = total(accAll, P, par * A_STRIDE + A_RZ);
-        sBeta = (k == 0 || rzOld == 0.0) ? 0.0 : total(accAll, P, prv * A_STRIDE + A_RZ) / rzOld;
+    if (threadIdx.x < 32) {                       // warp 0: parallel reads of all GPUs
+        double rzOld, rzCur;
+        totals2(accAll, P, par * A_STRIDE + A_RZ, prv * A_STRIDE + A_RZ, rzOld, rzCur);
+        if (threadIdx.x == 0) sBeta = (k == 0 || rzOld == 0.0) ? 0.0 : rzCur / rzOld;
     }
     __syncthreads();
     const double beta = sBeta;
@@ -231,9 +242,10 @@ __global__ void f_update_xrz(double* __restrict__ x, double* __restrict__ r, dou
 {
     const int par = k & 1, prv = par ^ 1;
     __shared__ double sAlpha;
-    if (threadIdx.x == 0) {
-        const double pq = total(accAll, P, par * A_STRIDE + A_PQ);
-        sAlpha = (pq != 0.0) ? total(accAll, P, prv * A_STRIDE + A_RZ) / pq : 0.0;
+    if (threadIdx.x < 32) {                       // warp 0: parallel reads of all GPUs
+        double pq, rz;
+        totals2(accAll, P, par * A_STRIDE + A_PQ, prv * A_STRIDE + A_RZ, pq, rz);
+        if (threadIdx.x == 0) sAlpha = (pq != 0.0) ? rz / pq : 0.0;
     }
     __syncthreads();
     const double alpha = sAlpha;
