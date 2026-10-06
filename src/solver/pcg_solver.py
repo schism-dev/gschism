@@ -612,6 +612,7 @@ class PCGSolverMultiGPU:
                 self.buff_m[m] = cp.empty(buff_size, dtype=cp.int8)
 
         self._setupFused()
+        self._ensureNative()
 
 
     # ------------------------------------------------------------------
