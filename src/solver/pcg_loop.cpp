@@ -50,8 +50,8 @@ struct CtxGuard {
     ~CtxGuard() { CUcontext dummy; cuCtxPopCurrent(&dummy); }
 };
 
-// Slots of the device-side scalar array sc (must match _PCG_KERNELS).
-enum { SC_RHO = 0, SC_BETA = 1, SC_ALPHA = 2, SC_RR = 3 };
+// Layout of the accumulator array acc[2][4] (must match A_* in _PCG_KERNELS).
+enum { ACC_PQ = 0, ACC_RR = 1, ACC_RZ = 2, ACC_STRIDE = 4 };
 
 // ---------------------------------------------------------------------------
 // One partition (one GPU)
@@ -68,11 +68,10 @@ struct Partition {
     // device arrays (owned by CuPy)
     CUdeviceptr data = 0, indices = 0, indptr = 0;           // CSR row block
     CUdeviceptr p_full = 0, p_m = 0, q = 0, r = 0, z = 0, x = 0, invD = 0;
-    CUdeviceptr sc = 0, blk = 0, partPQ = 0, partRZ = 0;
+    CUdeviceptr acc = 0;                                     // acc[2][4] for the fused kernels
 
-    // kernels (compiled by CuPy/NVRTC)
-    CUfunction kUpdateP = nullptr, kDot = nullptr, kFinish1 = nullptr, kAlpha = nullptr,
-               kUpdateXRZ = nullptr, kFinish2 = nullptr, kBeta = nullptr;
+    // fused kernels (compiled by CuPy/NVRTC, see pcgsolver._PCG_KERNELS)
+    CUfunction kInit = nullptr, kUpdateP = nullptr, kDot = nullptr, kUpdateXRZ = nullptr;
 
     // cuSPARSE
     cusparseHandle_t sp = nullptr;
@@ -143,18 +142,12 @@ public:
         p.z       = getPtr(ptrs, "z");
         p.x       = getPtr(ptrs, "x");
         p.invD    = getPtr(ptrs, "invD");
-        p.sc      = getPtr(ptrs, "sc");
-        p.blk     = getPtr(ptrs, "blk");
-        p.partPQ  = getPtr(ptrs, "partPQ");
-        p.partRZ  = getPtr(ptrs, "partRZ");
+        p.acc     = getPtr(ptrs, "acc");
 
-        p.kUpdateP   = getFunc(kernels, "update_p");
-        p.kDot       = getFunc(kernels, "dot_blocks");
-        p.kFinish1   = getFunc(kernels, "finish1");
-        p.kAlpha     = getFunc(kernels, "scalar_alpha");
-        p.kUpdateXRZ = getFunc(kernels, "update_xrz");
-        p.kFinish2   = getFunc(kernels, "finish2");
-        p.kBeta      = getFunc(kernels, "scalar_beta");
+        p.kInit      = getFunc(kernels, "f_init");
+        p.kUpdateP   = getFunc(kernels, "f_update_p");
+        p.kDot       = getFunc(kernels, "f_dot");
+        p.kUpdateXRZ = getFunc(kernels, "f_update_xrz");
 
         // Use the device's primary context: the same one CuPy uses.
         CUdevice dev;
@@ -192,10 +185,11 @@ public:
         parts_.push_back(p);
     }
 
-    // Initialization pass + CG iterations. Same semantics as the Python path:
-    // returns it+1 at the first check where r.r <= atol2, or maxiter.
-    // Python must have zeroed sc (alpha = 0 for the init pass) and synchronized
-    // its default stream before calling.
+    // Initialization pass + CG iterations with the fused kernels:
+    //   f_update_p, cuSPARSE SpMV, f_dot, f_update_xrz   (per iteration)
+    // Returns it+1 at the first check where r.r <= atol2, or maxiter (same
+    // convention as the Python loop). Python must have synchronized its
+    // default stream before calling (r and x are prepared there).
     int solve(double atol2, int maxiter, int checkEvery, double timeoutSeconds)
     {
         if (parts_.size() != 1)
@@ -208,27 +202,24 @@ public:
             py::gil_scoped_release noGil;       // pure C++/CUDA from here on
             CtxGuard g(p.ctx);
 
-            // Init: z = invD r, rho = r.z, rr = r.r  (update_xrz with alpha = 0)
-            updateXRZ(p, /*computeAlpha=*/false);
-            scalarBeta(p, /*first=*/1);
+            // Init: acc = 0;  z = invD r;  r.r and r.z into acc[1]
+            cuCheck(cuMemsetD8Async(p.acc, 0, 8 * sizeof(double), p.stream), "cuMemsetD8Async");
+            launch(p, p.kInit, p.nblk, p.tpb, {&p.r, &p.z, &p.invD, &p.acc, &p.N});
 
             for (int it = 0; it < maxiter; ++it) {
-                // p = z + beta p
-                launch(p, p.kUpdateP, p.nblk, p.tpb,
-                       {&p.z, &p.p_m, &p.sc, &p.N});
-                // q = A p (cuSPARSE), local p.q
+                int k = it;
+                // p = z + beta p   (beta computed in the kernel)
+                launch(p, p.kUpdateP, p.nblk, p.tpb, {&p.z, &p.p_m, &p.acc, &p.N, &k});
+                // q = A p   (cuSPARSE)
                 spmv(p);
-                launch(p, p.kDot, p.nblk, p.tpb,
-                       {&p.p_m, &p.q, &p.blk, &p.N});
-                launch(p, p.kFinish1, 1, p.tpb,
-                       {&p.blk, &p.nblk, &p.partPQ});
-                // alpha; x, r, z update; local (r.r, r.z)
-                updateXRZ(p, /*computeAlpha=*/true);
-                // beta, rho, rr
-                scalarBeta(p, /*first=*/0);
+                // p.q   (atomic accumulation)
+                launch(p, p.kDot, p.nblk, p.tpb, {&p.p_m, &p.q, &p.acc, &p.N, &k});
+                // alpha in the kernel; x, r, z update; r.r and r.z (atomic accumulation)
+                launch(p, p.kUpdateXRZ, p.nblk, p.tpb,
+                       {&p.x, &p.r, &p.z, &p.p_m, &p.q, &p.invD, &p.acc, &p.N, &k});
 
                 if ((it + 1) % checkEvery == 0 || it == maxiter - 1) {
-                    if (readRR(p, timeoutSeconds) <= atol2) { result = it + 1; break; }
+                    if (readRR(p, it, timeoutSeconds) <= atol2) { result = it + 1; break; }
                 }
             }
             waitStream(p, timeoutSeconds);      // leave nothing queued for the caller
@@ -255,23 +246,6 @@ private:
                 "cusparseSpMV");
     }
 
-    void updateXRZ(Partition& p, bool computeAlpha)
-    {
-        int P = numParts();
-        if (computeAlpha)
-            launch(p, p.kAlpha, 1, 1, {&p.partPQ, &P, &p.sc});
-        launch(p, p.kUpdateXRZ, p.nblk, p.tpb,
-               {&p.x, &p.r, &p.z, &p.p_m, &p.q, &p.invD, &p.sc, &p.blk, &p.N});
-        CUdeviceptr out = p.partRZ;            // partition 0 writes slots [0, 1]
-        launch(p, p.kFinish2, 1, p.tpb, {&p.blk, &p.nblk, &out});
-    }
-
-    void scalarBeta(Partition& p, int first)
-    {
-        int P = numParts();
-        launch(p, p.kBeta, 1, 1, {&p.partRZ, &P, &p.sc, &first});
-    }
-
     // Wait for the stream with a time limit, so a stuck GPU raises instead of hanging.
     void waitStream(Partition& p, double timeoutSeconds)
     {
@@ -286,10 +260,11 @@ private:
         }
     }
 
-    double readRR(Partition& p, double timeoutSeconds)
+    // r.r after iteration it lives in acc[it & 1][A_RR]
+    double readRR(Partition& p, int it, double timeoutSeconds)
     {
-        cuCheck(cuMemcpyDtoHAsync(p.hostRR, p.sc + SC_RR * sizeof(double), sizeof(double),
-                                  p.stream),
+        const CUdeviceptr src = p.acc + ((it & 1) * ACC_STRIDE + ACC_RR) * sizeof(double);
+        cuCheck(cuMemcpyDtoHAsync(p.hostRR, src, sizeof(double), p.stream),
                 "cuMemcpyDtoHAsync");
         waitStream(p, timeoutSeconds);
         return *p.hostRR;
@@ -298,7 +273,7 @@ private:
 
 PYBIND11_MODULE(pcg_loop, m)
 {
-    m.doc() = "Compiled host loop for PCGSolverMultiGPU (step 1a: one GPU)";
+    m.doc() = "Compiled host loop for PCGSolverMultiGPU (one GPU, fused kernels)";
     py::class_<NativePCG>(m, "NativePCG")
         .def(py::init<>())
         .def("add_partition", &NativePCG::addPartition,

@@ -130,6 +130,103 @@ __global__ void scalar_beta(const double* __restrict__ partRZ, int P, double* __
 }
 
 }
+
+// ---------------------------------------------------------------------------
+// Fused kernels for the compiled loop: 3 kernels per iteration (+ cuSPARSE SpMV).
+// Dot products are accumulated with one atomicAdd per block into acc[2][4]:
+// acc[par][A_PQ], acc[par][A_RR], acc[par][A_RZ], par = iteration & 1.
+// Iteration k reads r.z of iteration k-1 from acc[prv] and of k-2 from acc[par],
+// and each kernel resets the slots the next kernel accumulates into, so no
+// kernel reads a value that another block of the same kernel is changing.
+// The summation order is not fixed (atomics): results are not bitwise
+// reproducible run to run.
+// ---------------------------------------------------------------------------
+enum { A_PQ = 0, A_RR = 1, A_RZ = 2, A_STRIDE = 4 };
+
+template<int NV>
+__device__ __forceinline__ void block_reduce_atomic(double (&v)[NV], double* __restrict__ out)
+{
+    __shared__ double sh[NV][32];
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+    #pragma unroll
+    for (int k = 0; k < NV; ++k) {
+        double s = v[k];
+        for (int o = 16; o > 0; o >>= 1) s += __shfl_down_sync(0xffffffffu, s, o);
+        if (lane == 0) sh[k][warp] = s;
+    }
+    __syncthreads();
+    if (warp == 0) {
+        const int nw = blockDim.x >> 5;
+        #pragma unroll
+        for (int k = 0; k < NV; ++k) {
+            double s = (lane < nw) ? sh[k][lane] : 0.0;
+            for (int o = 16; o > 0; o >>= 1) s += __shfl_down_sync(0xffffffffu, s, o);
+            if (lane == 0) atomicAdd(&out[k], s);
+        }
+    }
+}
+
+extern "C" {
+
+// once per solve (acc zeroed before): z = invD r;  acc[1][RR] += r.r;  acc[1][RZ] += r.z
+__global__ void f_init(const double* __restrict__ r, double* __restrict__ z,
+                       const double* __restrict__ invD, double* __restrict__ acc, int n)
+{
+    double v[2] = {0.0, 0.0};
+    GRID_STRIDE(i, n) {
+        const double ri = r[i], zi = invD[i] * ri;
+        z[i] = zi;
+        v[0] += ri * ri;  v[1] += ri * zi;
+    }
+    block_reduce_atomic<2>(v, acc + 1 * A_STRIDE + A_RR);
+}
+
+// p = z + beta p,  beta = rz(k-1) / rz(k-2)  (0 at k = 0);  resets acc[par][PQ]
+__global__ void f_update_p(const double* __restrict__ z, double* __restrict__ p,
+                           double* __restrict__ acc, int n, int k)
+{
+    const int par = k & 1, prv = par ^ 1;
+    const double rzOld = acc[par * A_STRIDE + A_RZ];
+    const double beta = (k == 0 || rzOld == 0.0) ? 0.0 : acc[prv * A_STRIDE + A_RZ] / rzOld;
+    GRID_STRIDE(i, n) p[i] = z[i] + beta * p[i];
+    if (blockIdx.x == 0 && threadIdx.x == 0) acc[par * A_STRIDE + A_PQ] = 0.0;
+}
+
+// acc[par][PQ] += p.q;  resets acc[par][RR], acc[par][RZ]
+__global__ void f_dot(const double* __restrict__ p, const double* __restrict__ q,
+                      double* __restrict__ acc, int n, int k)
+{
+    const int par = k & 1;
+    double v[1] = {0.0};
+    GRID_STRIDE(i, n) v[0] += p[i] * q[i];
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        acc[par * A_STRIDE + A_RR] = 0.0;
+        acc[par * A_STRIDE + A_RZ] = 0.0;
+    }
+    block_reduce_atomic<1>(v, acc + par * A_STRIDE + A_PQ);
+}
+
+// alpha = rz(k-1) / pq;  x += alpha p;  r -= alpha q;  z = invD r;
+// acc[par][RR] += r.r;  acc[par][RZ] += r.z
+__global__ void f_update_xrz(double* __restrict__ x, double* __restrict__ r, double* __restrict__ z,
+                             const double* __restrict__ p, const double* __restrict__ q,
+                             const double* __restrict__ invD, double* __restrict__ acc, int n, int k)
+{
+    const int par = k & 1, prv = par ^ 1;
+    const double pq = acc[par * A_STRIDE + A_PQ];
+    const double alpha = (pq != 0.0) ? acc[prv * A_STRIDE + A_RZ] / pq : 0.0;
+    double v[2] = {0.0, 0.0};
+    GRID_STRIDE(i, n) {
+        x[i] += alpha * p[i];
+        const double ri = r[i] - alpha * q[i];
+        const double zi = invD[i] * ri;
+        r[i] = ri;  z[i] = zi;
+        v[0] += ri * ri;  v[1] += ri * zi;
+    }
+    block_reduce_atomic<2>(v, acc + par * A_STRIDE + A_RR);
+}
+
+}
 '''
 
 
@@ -525,7 +622,8 @@ class PCGSolverMultiGPU:
         """Solver streams, events, compiled kernels and device-side scalar buffers."""
         P = self.numParts
         names = ('update_p', 'dot_blocks', 'update_xrz', 'finish1', 'finish2',
-                 'scalar_alpha', 'scalar_beta')
+                 'scalar_alpha', 'scalar_beta',
+                 'f_init', 'f_update_p', 'f_dot', 'f_update_xrz')     # f_*: compiled loop
         self.stream = [None] * P
         self.evP    = [None] * P     # "p_m is ready" (before the gather)
         self.evRed  = [None] * P     # "my partial dot is ready" (before an exchange)
@@ -536,6 +634,7 @@ class PCGSolverMultiGPU:
         self.sc     = [None] * P     # [rho, beta, alpha, rr] on every GPU
         self.partPQ = [None] * P     # p·q partial of every GPU (P values)
         self.partRZ = [None] * P     # (r·r, r·z) partials of every GPU (2P values)
+        self.acc    = [None] * P     # accumulators of the fused kernels (compiled loop)
         self.n32    = [np.int32(n) for n in self.N_m]
         self._native = None          # compiled loop (pcg_loop.NativePCG), created on first solve
 
@@ -553,6 +652,7 @@ class PCGSolverMultiGPU:
                 self.sc[m]     = cp.zeros(4, cp.float64)
                 self.partPQ[m] = cp.zeros(P, cp.float64)
                 self.partRZ[m] = cp.zeros(2 * P, cp.float64)
+                self.acc[m]    = cp.zeros(8, cp.float64)     # fused kernels: acc[2][4]
 
 
     def _ensureNative(self):
@@ -576,7 +676,8 @@ class PCGSolverMultiGPU:
                 p_full=self.p[m].data.ptr, p_m=self.p_m[m].data.ptr, q=self.q_m[m].data.ptr,
                 r=self.r_m[m].data.ptr, z=self.z_m[m].data.ptr, x=self.x_m[m].data.ptr,
                 invD=self.invD_m[m].data.ptr, sc=self.sc[m].data.ptr, blk=self.blk[m].data.ptr,
-                partPQ=self.partPQ[m].data.ptr, partRZ=self.partRZ[m].data.ptr)
+                partPQ=self.partPQ[m].data.ptr, partRZ=self.partRZ[m].data.ptr,
+                acc=self.acc[m].data.ptr)
             native.add_partition(device=dev, N=self.N_m[m], Ntot=self.N_total, nnz=int(A.data.size),
                                  nblk=self.nblk[m], tpb=self.TPB, ptrs=ptrs, kernels=kernels)
             self._native = native
