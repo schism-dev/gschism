@@ -181,13 +181,29 @@ __global__ void f_init(const double* __restrict__ r, double* __restrict__ z,
     block_reduce_atomic<2>(v, acc + 1 * A_STRIDE + A_RR);
 }
 
-// p = z + beta p,  beta = rz(k-1) / rz(k-2)  (0 at k = 0);  resets acc[par][PQ]
+// Multi-GPU: accAll[j] = acc array of GPU j (j = 0..P-1, own one included). Totals
+// are summed over all GPUs by one thread per block, reading the other GPUs' memory
+// over NVLink with __ldcv (not cached, so always the current value).
+__device__ __forceinline__ double total(const double* const* __restrict__ accAll, int P, int idx)
+{
+    double s = 0.0;
+    for (int j = 0; j < P; ++j) s += __ldcv(accAll[j] + idx);
+    return s;
+}
+
+// p = z + beta p,  beta = rz(k-1) / rz(k-2) over all GPUs (0 at k = 0);  resets own acc[par][PQ]
 __global__ void f_update_p(const double* __restrict__ z, double* __restrict__ p,
-                           double* __restrict__ acc, int n, int k)
+                           double* __restrict__ acc, const double* const* __restrict__ accAll,
+                           int P, int n, int k)
 {
     const int par = k & 1, prv = par ^ 1;
-    const double rzOld = acc[par * A_STRIDE + A_RZ];
-    const double beta = (k == 0 || rzOld == 0.0) ? 0.0 : acc[prv * A_STRIDE + A_RZ] / rzOld;
+    __shared__ double sBeta;
+    if (threadIdx.x == 0) {
+        const double rzOld = total(accAll, P, par * A_STRIDE + A_RZ);
+        sBeta = (k == 0 || rzOld == 0.0) ? 0.0 : total(accAll, P, prv * A_STRIDE + A_RZ) / rzOld;
+    }
+    __syncthreads();
+    const double beta = sBeta;
     GRID_STRIDE(i, n) p[i] = z[i] + beta * p[i];
     if (blockIdx.x == 0 && threadIdx.x == 0) acc[par * A_STRIDE + A_PQ] = 0.0;
 }
@@ -206,15 +222,21 @@ __global__ void f_dot(const double* __restrict__ p, const double* __restrict__ q
     block_reduce_atomic<1>(v, acc + par * A_STRIDE + A_PQ);
 }
 
-// alpha = rz(k-1) / pq;  x += alpha p;  r -= alpha q;  z = invD r;
-// acc[par][RR] += r.r;  acc[par][RZ] += r.z
+// alpha = rz(k-1) / pq over all GPUs;  x += alpha p;  r -= alpha q;  z = invD r;
+// own acc[par][RR] += r.r;  own acc[par][RZ] += r.z
 __global__ void f_update_xrz(double* __restrict__ x, double* __restrict__ r, double* __restrict__ z,
                              const double* __restrict__ p, const double* __restrict__ q,
-                             const double* __restrict__ invD, double* __restrict__ acc, int n, int k)
+                             const double* __restrict__ invD, double* __restrict__ acc,
+                             const double* const* __restrict__ accAll, int P, int n, int k)
 {
     const int par = k & 1, prv = par ^ 1;
-    const double pq = acc[par * A_STRIDE + A_PQ];
-    const double alpha = (pq != 0.0) ? acc[prv * A_STRIDE + A_RZ] / pq : 0.0;
+    __shared__ double sAlpha;
+    if (threadIdx.x == 0) {
+        const double pq = total(accAll, P, par * A_STRIDE + A_PQ);
+        sAlpha = (pq != 0.0) ? total(accAll, P, prv * A_STRIDE + A_RZ) / pq : 0.0;
+    }
+    __syncthreads();
+    const double alpha = sAlpha;
     double v[2] = {0.0, 0.0};
     GRID_STRIDE(i, n) {
         x[i] += alpha * p[i];
@@ -661,29 +683,24 @@ class PCGSolverMultiGPU:
         """Create the compiled loop on first use. On any problem, fall back to the Python loop."""
         if self._native is not None or not self.useNative:
             return
-        if self.numParts != 1:
-            print("PCGSolverMultiGPU: compiled loop supports 1 GPU only so far (step 1a); "
-                  "using the Python loop.", flush=True)
-            self.useNative = False
-            return
         try:
             mod = _load_pcg_loop()
             native = mod.NativePCG()
-            m, dev = 0, self.configCuda.devices[0]
-            A = self.A_m[m]                    # the exact arrays the Python cuSPARSE path uses
-            with cp.cuda.Device(dev):
-                kernels = {nm: int(k.kernel.ptr) for nm, k in self.kern[m].items()}
-            ptrs = dict(
-                data=A.data.data.ptr, indices=A.indices.data.ptr, indptr=A.indptr.data.ptr,
-                p_full=self.p[m].data.ptr, p_m=self.p_m[m].data.ptr, q=self.q_m[m].data.ptr,
-                r=self.r_m[m].data.ptr, z=self.z_m[m].data.ptr, x=self.x_m[m].data.ptr,
-                invD=self.invD_m[m].data.ptr, sc=self.sc[m].data.ptr, blk=self.blk[m].data.ptr,
-                partPQ=self.partPQ[m].data.ptr, partRZ=self.partRZ[m].data.ptr,
-                acc=self.acc[m].data.ptr)
-            native.add_partition(device=dev, N=self.N_m[m], Ntot=self.N_total, nnz=int(A.data.size),
-                                 nblk=self.nblk[m], tpb=self.TPB, ptrs=ptrs, kernels=kernels)
+            for m, dev in enumerate(self.configCuda.devices):
+                A = self.A_m[m]                # the exact arrays the Python cuSPARSE path uses
+                with cp.cuda.Device(dev):      # kernel handles are per GPU
+                    kernels = {nm: int(k.kernel.ptr) for nm, k in self.kern[m].items()}
+                ptrs = dict(
+                    data=A.data.data.ptr, indices=A.indices.data.ptr, indptr=A.indptr.data.ptr,
+                    p_full=self.p[m].data.ptr, p_m=self.p_m[m].data.ptr, q=self.q_m[m].data.ptr,
+                    r=self.r_m[m].data.ptr, z=self.z_m[m].data.ptr, x=self.x_m[m].data.ptr,
+                    invD=self.invD_m[m].data.ptr, acc=self.acc[m].data.ptr)
+                native.add_partition(device=dev, N=self.N_m[m], Ntot=self.N_total,
+                                     nnz=int(A.data.size), offset=self.nodeOffset[m],
+                                     nblk=self.nblk[m], tpb=self.TPB, ptrs=ptrs, kernels=kernels)
             self._native = native
-            print("PCGSolverMultiGPU: using the compiled loop (pcg_loop).", flush=True)
+            print(f"PCGSolverMultiGPU: using the compiled loop (pcg_loop) on {self.numParts} GPU(s).",
+                  flush=True)
         except Exception as e:
             print(f"PCGSolverMultiGPU: compiled loop unavailable ({e}); using the Python loop.",
                   flush=True)
