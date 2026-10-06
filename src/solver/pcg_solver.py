@@ -491,6 +491,7 @@ class PCGSolverMultiGPU:
 
     useNative = True       # run the iteration loop in compiled C++ (pcg_loop.cpp); False = Python loop
     nativeTimeout = 60.0   # s: the compiled loop raises if the GPU does not finish within this time
+    spmvPreprocess = True  # compiled loop: cusparseSpMV_preprocess once per solve
 
     def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
         """Pre-allocate row-block matrices A_m and per-partition vectors.
@@ -612,7 +613,7 @@ class PCGSolverMultiGPU:
                 self.buff_m[m] = cp.empty(buff_size, dtype=cp.int8)
 
         self._setupFused()
-        self._ensureNative()
+        self._ensureNative()      # build pcg_loop and compile the kernels now, not in the first solve
 
 
     # ------------------------------------------------------------------
@@ -991,7 +992,7 @@ class PCGSolverMultiGPU:
         if self._native is not None:
             # Compiled loop: same init pass and iterations, issued from C++.
             iters = self._native.solve(atol * atol, int(maxiter), int(checkEvery),
-                                       float(self.nativeTimeout))
+                                       float(self.nativeTimeout), bool(self.spmvPreprocess))
         else:
             # Init: z = invD r, rho = r·z, rr = r·r  (update_xrz with alpha = 0)
             self._updateXRZ(computeAlpha=False)

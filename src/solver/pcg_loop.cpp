@@ -190,7 +190,7 @@ public:
     // Returns it+1 at the first check where r.r <= atol2, or maxiter (same
     // convention as the Python loop). Python must have synchronized its
     // default stream before calling (r and x are prepared there).
-    int solve(double atol2, int maxiter, int checkEvery, double timeoutSeconds)
+    int solve(double atol2, int maxiter, int checkEvery, double timeoutSeconds, bool preprocess)
     {
         if (parts_.size() != 1)
             throw std::runtime_error("pcg_loop: no partition registered");
@@ -201,6 +201,18 @@ public:
         {
             py::gil_scoped_release noGil;       // pure C++/CUDA from here on
             CtxGuard g(p.ctx);
+
+            // Optional: cuSPARSE preprocessing for this matrix, once per solve (the matrix
+            // values change every time step). Every SpMV below uses the same parameters
+            // and the same, otherwise untouched buffer, as cuSPARSE requires.
+            if (preprocess) {
+                const double one = 1.0, zero = 0.0;
+                spCheck(cusparseSpMV_preprocess(p.sp, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, p.A,
+                                                p.vecP, &zero, p.vecQ, CUDA_R_64F,
+                                                CUSPARSE_SPMV_ALG_DEFAULT,
+                                                reinterpret_cast<void*>(p.spBuffer)),
+                        "cusparseSpMV_preprocess");
+            }
 
             // Init: acc = 0;  z = invD r;  r.r and r.z into acc[1]
             cuCheck(cuMemsetD8Async(p.acc, 0, 8 * sizeof(double), p.stream), "cuMemsetD8Async");
@@ -281,5 +293,5 @@ PYBIND11_MODULE(pcg_loop, m)
              py::arg("nblk"), py::arg("tpb"), py::arg("ptrs"), py::arg("kernels"))
         .def("solve", &NativePCG::solve,
              py::arg("atol2"), py::arg("maxiter"), py::arg("check_every"),
-             py::arg("timeout_seconds") = 60.0);
+             py::arg("timeout_seconds") = 60.0, py::arg("preprocess") = true);
 }
