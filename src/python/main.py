@@ -778,13 +778,13 @@ if __name__ == "__main__":
 
     start_time = time.time()
     time1 = time.time()
-    # for it in range(1, ntime + 1, 1):
-    cp.cuda.profiler.start()
-    for it in range(1, 100, 1):
+    for it in range(1, ntime + 1, 1):
+    # cp.cuda.profiler.start()
+    # for it in range(1, 100, 1):
         print(f"> Step {it}, simulation time: {it*namelist.core.dt:.2f} s")
-        schism_step_wrapped(it, namelist, bctides, sflux, solver)
+        # schism_step_wrapped(it, namelist, bctides, sflux, solver)
 
-        # schism_step(it, namelist, bctides, sflux, solver)
+        schism_step(it, namelist, bctides, sflux, solver)
 
         writeOutput(dtoh, it, namelist.core, namelist.opt)
         # if it % 100 == 0:
@@ -795,7 +795,7 @@ if __name__ == "__main__":
         time1 = time2
         pass
 
-    cp.cuda.profiler.stop() 
+    # cp.cuda.profiler.stop() 
     print(f"Output time: {getOutputTime():.3f} s")
     end_time = time.time()
     total_time = end_time - start_time
