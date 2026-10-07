@@ -84,6 +84,9 @@ class DatasetInfo:
         self.cache_bytes = 0
         self.cache_max_bytes = 10 * 1024 * 1024 * 1024  # 4GB
 
+        self.mesh_cache = {}
+        self.mesh_idx0 = None
+
         # Obtain information from the first file of the dataset
         # -----------------------------------------------------
 
@@ -337,12 +340,20 @@ class DatasetInfo:
 
 
     def interpGrid(self, data_in: np.ndarray):
-
-        if self.interp_indices.min() < 0:
-            raise ValueError("Invalid indices found in interpGrid")
-
         return (data_in[self.interp_indices]*self.interp_weights).sum(axis=0)
 
+    def meshAtTime(self, data_name, time_idx):
+        # Space-interp one sflux time onto the mesh. Cached by (variable, global time index).
+        key = (data_name, time_idx)
+        hit = self.mesh_cache.get(key)
+        if hit is not None:
+            return hit
+        file_num = self.file_num_for_time[time_idx]
+        local_time_idx = self.time_idx_for_time[time_idx]
+        data = self.readData(file_num, data_name, local_time_idx).ravel()
+        out = self.interpGrid(data)
+        self.mesh_cache[key] = out
+        return out
 
     def julianDay(self, year: int, month: int, day: int) -> int:
         """
@@ -565,14 +576,16 @@ class DatasetInfo:
             error(f'No suitable bracket found for {self.name} at time {time_now}')
 
 
-        # if we do have a suitable bracket, then read in the bracketing data
-        # and interpolate the input data in time to the current time (but still on original grid)
-        data_in_at_time = self.interpInTime(time_now, data_name, time_idx_1)
-            
-        # now the data needs to be interpolated in space from the original data
-        # grid to the model grid
-        data_out = self.interpGrid(data_in_at_time)
+        if self.mesh_idx0 != time_idx_1:
+            self.mesh_cache = {k: v for k, v in self.mesh_cache.items()
+                            if k[1] == time_idx_1 or k[1] == time_idx_1 + 1}
+            self.mesh_idx0 = time_idx_1
 
+        mesh1 = self.meshAtTime(data_name, time_idx_1)
+        mesh2 = self.meshAtTime(data_name, time_idx_1 + 1)
+        dt = self.all_times[time_idx_1 + 1] - self.all_times[time_idx_1]
+        weight = (time_now - self.all_times[time_idx_1]) / dt
+        data_out = (1.0 - weight)*mesh1 + weight*mesh2
 
         return got_suitable_bracket, data_out
     
