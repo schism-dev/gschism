@@ -201,10 +201,14 @@ __device__ __forceinline__ void totals2(const double* const* __restrict__ accAll
     }
 }
 
-// p = z + beta p,  beta = rz(k-1) / rz(k-2) over all GPUs (0 at k = 0);  resets own acc[par][PQ]
+// p = z + beta p,  beta = rz(k-1) / rz(k-2) over all GPUs (0 at k = 0);  resets own acc[par][PQ].
+// Exchange of p: if sendMask != nullptr, row i whose byte has bit q set is used by GPU q's
+// matrix row band, so its new value is also stored into GPU q's full p (pAll[q]) at the
+// same global index offset + i (the full vectors use the global numbering on every GPU).
 __global__ void f_update_p(const double* __restrict__ z, double* __restrict__ p,
                            double* __restrict__ acc, const double* const* __restrict__ accAll,
-                           int P, int n, int k)
+                           int P, int n, int k, const unsigned char* __restrict__ sendMask,
+                           double* const* __restrict__ pAll, int offset)
 {
     const int par = k & 1, prv = par ^ 1;
     __shared__ double sBeta;
@@ -215,7 +219,18 @@ __global__ void f_update_p(const double* __restrict__ z, double* __restrict__ p,
     }
     __syncthreads();
     const double beta = sBeta;
-    GRID_STRIDE(i, n) p[i] = z[i] + beta * p[i];
+    GRID_STRIDE(i, n) {
+        const double v = z[i] + beta * p[i];
+        p[i] = v;
+        if (sendMask) {
+            unsigned int m = sendMask[i];
+            while (m) {                                  // one store per GPU that uses row i
+                const int q = __ffs(m) - 1;
+                m &= m - 1;
+                pAll[q][offset + i] = v;
+            }
+        }
+    }
     if (blockIdx.x == 0 && threadIdx.x == 0) acc[par * A_STRIDE + A_PQ] = 0.0;
 }
 
@@ -526,6 +541,8 @@ class PCGSolverMultiGPU:
     useNative = True       # run the iteration loop in compiled C++ (pcg_loop.cpp); False = Python loop
     nativeTimeout = 60.0   # s: the compiled loop raises if the GPU does not finish within this time
     spmvPreprocess = True  # compiled loop: cusparseSpMV_preprocess once per solve
+    directExchange = True  # compiled loop, >1 GPU: f_update_p stores the needed values of p
+                           # directly into the other GPUs (False: copy whole segments)
 
     def __init__(self, configCuda: CudaDeviceConfig, N: list[int], NNZ: list[int]):
         """Pre-allocate row-block matrices A_m and per-partition vectors.
@@ -673,6 +690,9 @@ class PCGSolverMultiGPU:
         self.acc    = [None] * P     # accumulators of the fused kernels (compiled loop)
         self.n32    = [np.int32(n) for n in self.N_m]
         self._native = None          # compiled loop (pcg_loop.NativePCG), created on first solve
+        # exchange of p: per GPU one byte per row, bit q set = GPU q uses that row's value
+        self.sendMask = [None] * P
+        self._patternRef = None      # (indices, indptr) per GPU the masks were built from
 
         for m, dev in enumerate(self.configCuda.devices):
             with cp.cuda.Device(dev):
@@ -689,6 +709,10 @@ class PCGSolverMultiGPU:
                 self.partPQ[m] = cp.zeros(P, cp.float64)
                 self.partRZ[m] = cp.zeros(2 * P, cp.float64)
                 self.acc[m]    = cp.zeros(8, cp.float64)     # fused kernels: acc[2][4]
+                if P > 1:
+                    if P > 8:
+                        raise ValueError("directExchange supports at most 8 GPUs (one byte per row)")
+                    self.sendMask[m] = cp.zeros(self.N_m[m], dtype=cp.uint8)
 
 
     def _ensureNative(self):
@@ -706,7 +730,8 @@ class PCGSolverMultiGPU:
                     data=A.data.data.ptr, indices=A.indices.data.ptr, indptr=A.indptr.data.ptr,
                     p_full=self.p[m].data.ptr, p_m=self.p_m[m].data.ptr, q=self.q_m[m].data.ptr,
                     r=self.r_m[m].data.ptr, z=self.z_m[m].data.ptr, x=self.x_m[m].data.ptr,
-                    invD=self.invD_m[m].data.ptr, acc=self.acc[m].data.ptr)
+                    invD=self.invD_m[m].data.ptr, acc=self.acc[m].data.ptr,
+                    send_mask=self.sendMask[m].data.ptr if self.sendMask[m] is not None else 0)
                 native.add_partition(device=dev, N=self.N_m[m], Ntot=self.N_total,
                                      nnz=int(A.data.size), offset=self.nodeOffset[m],
                                      nblk=self.nblk[m], tpb=self.TPB, ptrs=ptrs, kernels=kernels)
@@ -717,6 +742,57 @@ class PCGSolverMultiGPU:
             print(f"PCGSolverMultiGPU: compiled loop unavailable ({e}); using the Python loop.",
                   flush=True)
             self.useNative = False
+
+
+    def _buildSendMasks(self):
+        """For every pair (sender p, receiver q): the rows of p whose values q's matrix row
+        band uses = distinct column indices of q's rows in p's range, minus p's offset.
+        Stored on p as bit q of one byte per row. Prints the counts once."""
+        P, devs = self.numParts, self.configCuda.devices
+        for m, dev in enumerate(devs):
+            with cp.cuda.Device(dev):
+                self.sendMask[m].fill(0)
+        counts = np.zeros((P, P), dtype=np.int64)
+        for q, qdev in enumerate(devs):                      # receiver
+            for p, pdev in enumerate(devs):                  # sender
+                if p == q:
+                    continue
+                lo, hi = self.nodeOffset[p], self.nodeOffset[p + 1]
+                with cp.cuda.Device(qdev):
+                    ind = self.A_m[q].indices
+                    rows = cp.asnumpy(cp.unique(ind[(ind >= lo) & (ind < hi)]) - lo)
+                counts[p, q] = rows.size
+                if rows.size:
+                    with cp.cuda.Device(pdev):
+                        r = cp.asarray(rows, dtype=cp.int64)
+                        self.sendMask[p][r] = self.sendMask[p][r] | np.uint8(1 << q)
+        self._patternRef = []
+        for m, dev in enumerate(devs):
+            with cp.cuda.Device(dev):
+                self._patternRef.append((self.A_m[m].indices.copy(), self.A_m[m].indptr.copy()))
+        self._syncAll()
+        print("PCGSolverMultiGPU: values of p sent per iteration (row = from GPU, column = to GPU):",
+              flush=True)
+        for p in range(P):
+            print("    " + " ".join(f"{int(c):9d}" for c in counts[p])
+                  + f"     (GPU {p} has {self.N_m[p]} rows)", flush=True)
+
+
+    def _ensureSendMasks(self):
+        """Build the masks at the first solve; rebuild them if the sparsity pattern changed."""
+        if self._patternRef is not None:
+            same = True
+            for m, dev in enumerate(self.configCuda.devices):
+                with cp.cuda.Device(dev):
+                    ind0, ptr0 = self._patternRef[m]
+                    A = self.A_m[m]
+                    same = same and bool(cp.array_equal(A.indices, ind0)) \
+                                and bool(cp.array_equal(A.indptr, ptr0))
+            if same:
+                return
+            print("PCGSolverMultiGPU: sparsity pattern changed; rebuilding the exchange lists.",
+                  flush=True)
+        self._buildSendMasks()
 
 
     def _syncAll(self):
@@ -1018,10 +1094,14 @@ class PCGSolverMultiGPU:
         self._syncAll()                            # hand over to the solver streams
 
         self._ensureNative()
+        direct = self._native is not None and self.numParts > 1 and self.directExchange
+        if direct:
+            self._ensureSendMasks()
         if self._native is not None:
             # Compiled loop: same init pass and iterations, issued from C++.
             iters = self._native.solve(atol * atol, int(maxiter), int(checkEvery),
-                                       float(self.nativeTimeout), bool(self.spmvPreprocess))
+                                       float(self.nativeTimeout), bool(self.spmvPreprocess),
+                                       bool(direct))
         else:
             # Init: z = invD r, rho = r·z, rr = r·r  (update_xrz with alpha = 0)
             self._updateXRZ(computeAlpha=False)

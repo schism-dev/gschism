@@ -6,7 +6,9 @@
 //
 //   barrier; wait evXRZ of every other GPU      (their f_update_xrz(k-1) is done)
 //   f_update_p        beta from all GPUs' r.z partials (read over NVLink)
-//   record evP; barrier; wait evP of every other GPU; copy their p segments here
+//   record evP; barrier; wait evP of every other GPU
+//                     (direct exchange: f_update_p already stored the values other GPUs
+//                      use into their full p; otherwise: copy the others' p segments here)
 //   cuSPARSE SpMV     q = A p
 //   f_dot             own p.q partial
 //   record evDot; barrier; wait evDot of every other GPU
@@ -117,6 +119,8 @@ struct Partition {
     CUdeviceptr p_full = 0, p_m = 0, q = 0, r = 0, z = 0, x = 0, invD = 0;
     CUdeviceptr acc = 0;                                      // acc[2][4] of this GPU
     CUdeviceptr accAll = 0;                                   // device array: acc pointer of every GPU
+    CUdeviceptr sendMask = 0;                                 // one byte per row: bit q = GPU q uses it
+    CUdeviceptr pAll = 0;                                     // device array: full-p pointer of every GPU
 
     // fused kernels (compiled by CuPy/NVRTC on this GPU)
     CUfunction kInit = nullptr, kUpdateP = nullptr, kDot = nullptr, kUpdateXRZ = nullptr;
@@ -161,6 +165,7 @@ public:
             if (p.sp) cusparseDestroy(p.sp);
             if (p.spBuffer) cuMemFree(p.spBuffer);
             if (p.accAll) cuMemFree(p.accAll);
+            if (p.pAll) cuMemFree(p.pAll);
             if (p.hostRR) cuMemFreeHost(p.hostRR);
             if (p.evP) cuEventDestroy(p.evP);
             if (p.evDot) cuEventDestroy(p.evDot);
@@ -195,6 +200,8 @@ public:
         p.x       = getPtr(ptrs, "x");
         p.invD    = getPtr(ptrs, "invD");
         p.acc     = getPtr(ptrs, "acc");
+        p.sendMask = ptrs.contains("send_mask")
+                         ? static_cast<CUdeviceptr>(ptrs["send_mask"].cast<uint64_t>()) : 0;
 
         p.kInit      = getFunc(kernels, "f_init");
         p.kUpdateP   = getFunc(kernels, "f_update_p");
@@ -243,7 +250,8 @@ public:
     // Initialization pass + CG iterations on all registered GPUs.
     // Returns it+1 at the first check where the total r.r <= atol2, or maxiter.
     // Python must have synchronized its default streams before calling.
-    int solve(double atol2, int maxiter, int checkEvery, double timeoutSeconds, bool preprocess)
+    int solve(double atol2, int maxiter, int checkEvery, double timeoutSeconds, bool preprocess,
+              bool direct)
     {
         if (parts_.empty())
             throw std::runtime_error("pcg_loop: no partition registered");
@@ -260,7 +268,7 @@ public:
         auto worker = [&](int m) {
             try {
                 result[m] = runPartition(m, atol2, maxiter, checkEvery, timeoutSeconds,
-                                         preprocess, barrier);
+                                         preprocess, direct, barrier);
             } catch (const std::exception& e) {
                 std::lock_guard<std::mutex> lock(errMutex);
                 if (firstError.empty()) firstError = e.what();
@@ -292,8 +300,8 @@ private:
     {
         if (finalized_) return;
         const int P = static_cast<int>(parts_.size());
-        std::vector<uint64_t> accPtrs(P);
-        for (int j = 0; j < P; ++j) accPtrs[j] = parts_[j].acc;
+        std::vector<uint64_t> accPtrs(P), pPtrs(P);
+        for (int j = 0; j < P; ++j) { accPtrs[j] = parts_[j].acc; pPtrs[j] = parts_[j].p_full; }
 
         for (int a = 0; a < P; ++a) {
             CtxGuard g(parts_[a].ctx);
@@ -315,16 +323,26 @@ private:
             cuCheck(cuMemAlloc(&parts_[a].accAll, P * sizeof(uint64_t)), "cuMemAlloc(accAll)");
             cuCheck(cuMemcpyHtoD(parts_[a].accAll, accPtrs.data(), P * sizeof(uint64_t)),
                     "cuMemcpyHtoD(accAll)");
+            cuCheck(cuMemAlloc(&parts_[a].pAll, P * sizeof(uint64_t)), "cuMemAlloc(pAll)");
+            cuCheck(cuMemcpyHtoD(parts_[a].pAll, pPtrs.data(), P * sizeof(uint64_t)),
+                    "cuMemcpyHtoD(pAll)");
         }
         finalized_ = true;
     }
 
     // Everything one GPU's thread does during a solve.
     int runPartition(int m, double atol2, int maxiter, int checkEvery, double timeoutSeconds,
-                     bool preprocess, SpinBarrier& barrier)
+                     bool preprocess, bool direct, SpinBarrier& barrier)
     {
         Partition& p = parts_[m];
         const int P = static_cast<int>(parts_.size());
+        // Direct exchange: f_update_p stores the values other GPUs use into their full p.
+        direct = direct && P > 1;
+        for (const auto& o : parts_)
+            if (direct && o.sendMask == 0)
+                throw std::runtime_error("pcg_loop: direct exchange requested without send masks");
+        CUdeviceptr maskArg = direct ? p.sendMask : 0;       // 0 = no stores to other GPUs
+        int offsetArg = static_cast<int>(p.offset);
         CtxGuard g(p.ctx);
         int result = maxiter;
 
@@ -352,18 +370,24 @@ private:
             // every GPU's f_update_xrz(k-1) (or f_init) is done -> beta, p = z + beta p
             barrier.wait();
             waitOthers(m, &Partition::evXRZ);
-            launch(p, p.kUpdateP, p.nblk, {&p.z, &p.p_m, &p.acc, &p.accAll, &Pk, &p.N, &k});
+            launch(p, p.kUpdateP, p.nblk,
+                   {&p.z, &p.p_m, &p.acc, &p.accAll, &Pk, &p.N, &k, &maskArg, &p.pAll, &offsetArg});
             record(p.evP, p.stream);
 
-            // every GPU's p segment is ready -> copy the others' segments into the full p
+            // every GPU's f_update_p is done. Direct exchange: their stores into this GPU's
+            // full p are complete, nothing to copy. Otherwise: copy the others' segments.
             barrier.wait();
-            for (int j = 0; j < P; ++j) {
-                if (j == m) continue;
-                Partition& o = parts_[j];
-                cuCheck(cuStreamWaitEvent(p.stream, o.evP, 0), "cuStreamWaitEvent");
-                cuCheck(cuMemcpyPeerAsync(p.p_full + o.offset * sizeof(double), p.ctx,
-                                          o.p_m, o.ctx, o.N * sizeof(double), p.stream),
-                        "cuMemcpyPeerAsync");
+            if (direct) {
+                waitOthers(m, &Partition::evP);
+            } else {
+                for (int j = 0; j < P; ++j) {
+                    if (j == m) continue;
+                    Partition& o = parts_[j];
+                    cuCheck(cuStreamWaitEvent(p.stream, o.evP, 0), "cuStreamWaitEvent");
+                    cuCheck(cuMemcpyPeerAsync(p.p_full + o.offset * sizeof(double), p.ctx,
+                                              o.p_m, o.ctx, o.N * sizeof(double), p.stream),
+                            "cuMemcpyPeerAsync");
+                }
             }
 
             // q = A p;  own p.q partial
@@ -450,5 +474,6 @@ PYBIND11_MODULE(pcg_loop, m)
              py::arg("nblk"), py::arg("tpb"), py::arg("ptrs"), py::arg("kernels"))
         .def("solve", &NativePCG::solve,
              py::arg("atol2"), py::arg("maxiter"), py::arg("check_every"),
-             py::arg("timeout_seconds") = 60.0, py::arg("preprocess") = true);
+             py::arg("timeout_seconds") = 60.0, py::arg("preprocess") = true,
+             py::arg("direct") = false);
 }
