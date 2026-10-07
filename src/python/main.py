@@ -766,6 +766,12 @@ if __name__ == "__main__":
     profiler.add_function(computeMeteorologicalForcing)
     profiler.add_function(SFlux.getWinds)
     profiler.add_function(SFlux.getCombinedData)
+
+    from iop.readSflux import SFlux, DatasetInfo
+    profiler.add_function(DatasetInfo.getData)
+    profiler.add_function(DatasetInfo.interpInTime)
+    profiler.add_function(DatasetInfo.readData)
+    profiler.add_function(DatasetInfo.interpGrid)
     # profiler.add_function(SFlux.cacheGet)
     # profiler.add_function(SFlux.cachePut)
 
