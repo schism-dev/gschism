@@ -1,6 +1,6 @@
-import faulthandler, sys
-faulthandler.dump_traceback(file=sys.stderr)                     # one trace at startup: confirms output arrives
-faulthandler.dump_traceback_later(60, repeat=True, file=sys.stderr)
+# import faulthandler, sys
+# faulthandler.dump_traceback(file=sys.stderr)                     # one trace at startup: confirms output arrives
+# faulthandler.dump_traceback_later(60, repeat=True, file=sys.stderr)
 
 import os
 import glob
@@ -787,7 +787,7 @@ if __name__ == "__main__":
 
         schism_step(it, namelist, bctides, sflux, solver)
 
-        writeOutput(dtoh, it, namelist.core, namelist.opt)
+        # writeOutput(dtoh, it, namelist.core, namelist.opt)
         # if it % 100 == 0:
         #     monitor.plotSideVar("u", 0)
 
