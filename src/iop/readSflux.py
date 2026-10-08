@@ -337,6 +337,7 @@ class DatasetInfo:
         self.interp_indices = tri.simplices[point_tri_indices[inverse_order]].T
         self.out_x = self.out_x[inverse_order]
         self.out_y = self.out_y[inverse_order]
+        self.scratch = np.empty(self.interp_weights.shape[1], dtype=np.float64)
 
 
     def interpGrid(self, data_in: np.ndarray):
@@ -554,7 +555,7 @@ class DatasetInfo:
             return None 
 
 
-    def getData(self, time_now,  data_name):
+    def getData(self, time_now, data_name, data_out):
 
         hours_per_day = 24.0
 
@@ -585,9 +586,11 @@ class DatasetInfo:
         mesh2 = self.meshAtTime(data_name, time_idx_1 + 1)
         dt = self.all_times[time_idx_1 + 1] - self.all_times[time_idx_1]
         weight = (time_now - self.all_times[time_idx_1]) / dt
-        data_out = (1.0 - weight)*mesh1 + weight*mesh2
+        np.multiply(mesh1, 1.0 - weight, out=data_out)
+        np.multiply(mesh2, weight, out=self.scratch)
+        np.add(data_out, self.scratch, out=data_out)
 
-        return got_suitable_bracket, data_out
+        return got_suitable_bracket
     
 
     
@@ -671,6 +674,20 @@ class SFlux:
             if dataset.exist:
                 dataset.computeGridInterpWeights()
 
+        n_node = nodes.shape[1]
+        self.u_air = np.empty(n_node, dtype=np.float64)
+        self.v_air = np.empty(n_node, dtype=np.float64)
+        self.p_air = np.empty(n_node, dtype=np.float64)
+        self.t_air = np.empty(n_node, dtype=np.float64)
+        self.q_air = np.empty(n_node, dtype=np.float64)
+        self.u_air_gpu = cp.empty(n_node, dtype=cp.float64)
+        self.v_air_gpu = cp.empty(n_node, dtype=cp.float64)
+        self.p_air_gpu = cp.empty(n_node, dtype=cp.float64)
+        self.t_air_gpu = cp.empty(n_node, dtype=cp.float64)
+        self.q_air_gpu = cp.empty(n_node, dtype=cp.float64)
+        self.air2 = np.empty(n_node, dtype=np.float64) if self.dataset2.exist else None
+        self.combineScratch = np.empty(n_node, dtype=np.float64) if self.dataset2.exist else None
+
 
     def getCombinedData(self, time_now, data_name, data_out):
 
@@ -678,11 +695,10 @@ class SFlux:
         got_data_2 = False
 
         if (self.dataset1.exist):
-            got_data_1, data_1 = self.dataset1.getData(time_now, data_name)
-
+            got_data_1 = self.dataset1.getData(time_now, data_name, data_out)
 
         if (self.dataset2.exist):
-            got_data_2, data_2 = self.dataset2.getData(time_now, data_name)
+            got_data_2 = self.dataset2.getData(time_now, data_name, self.air2)
 
         
         # depending on whether different datasets exist at this time, combine
@@ -692,26 +708,25 @@ class SFlux:
         if (not got_data_1):
             raise ValueError(f'missing data_1: {data_name}')
 
-        # if data_1 exists, but not data_2, then simply use data_1 (for all)
+        # if data_1 exists, but not data_2, then simply use data_1 (already in data_out)
         if (not got_data_2):
-            data_out[:] = data_1
             return
 
         # if data_1 and data_2 exist, then combine
-        if (got_data_1 and got_data_2):
-            try:
-                # Check if any weight for each node is bad (outside [0,1] range)
-                # dataset_2.weights has shape (3, num_nodes)
-                bad_node_2 = np.any((self.dataset2.weights < 0.0) | (self.dataset2.weights > 1.0), axis=0)
-                
-                # Set weights based on bad node mask
-                local_weight_2 = np.where(bad_node_2, 0.0, self.dataset2.relative_weight)
-                local_weight_1 = np.where(bad_node_2, 1.0, self.dataset1.relative_weight)
+        try:
+            # Check if any weight for each node is bad (outside [0,1] range)
+            # dataset_2.weights has shape (3, num_nodes)
+            bad_node_2 = np.any((self.dataset2.weights < 0.0) | (self.dataset2.weights > 1.0), axis=0)
+            
+            local_weight_2 = np.where(bad_node_2, 0.0, self.dataset2.relative_weight)
+            local_weight_1 = np.where(bad_node_2, 1.0, self.dataset1.relative_weight)
 
-                data_out[:] = local_weight_1*data_1 + local_weight_2*data_2
+            np.multiply(data_out, local_weight_1, out=data_out)
+            np.multiply(self.air2, local_weight_2, out=self.combineScratch)
+            np.add(data_out, self.combineScratch, out=data_out)
 
-            except Exception as e:
-                raise ValueError(f'Error combining sflux data from two datasets: {e}')
+        except Exception as e:
+            raise ValueError(f'Error combining sflux data from two datasets: {e}')
 
 
 
@@ -721,23 +736,21 @@ class SFlux:
         Caller is responsible for passing these to the mesh (e.g. so node->setWind() and
         p_air/t_air/q_air can be set on the device).
         """
-        n_node = self.nodes.shape[1]
-        u_air_node = np.zeros(n_node, dtype=np.float64)  # XXXXXXX These should be cupy arrays
-        v_air_node = np.zeros(n_node, dtype=np.float64)
-        p_air_node = np.zeros(n_node, dtype=np.float64)
-        t_air_node = np.zeros(n_node, dtype=np.float64)
-        q_air_node = np.zeros(n_node, dtype=np.float64)
-
-        self.getCombinedData(time, self.inputs['uwind_name'], u_air_node)
-        self.getCombinedData(time, self.inputs['vwind_name'], v_air_node)
-        self.getCombinedData(time, self.inputs['prmsl_name'], p_air_node)
-        self.getCombinedData(time, self.inputs['stmp_name'],  t_air_node)
-        self.getCombinedData(time, self.inputs['spfh_name'],  q_air_node)
+        self.getCombinedData(time, self.inputs['uwind_name'], self.u_air)
+        self.getCombinedData(time, self.inputs['vwind_name'], self.v_air)
+        self.getCombinedData(time, self.inputs['prmsl_name'], self.p_air)
+        self.getCombinedData(time, self.inputs['stmp_name'],  self.t_air)
+        self.getCombinedData(time, self.inputs['spfh_name'],  self.q_air)
 
         # convert air temperatures to Celsius
-        t_air_node[:] = t_air_node - t_freeze
+        self.t_air -= t_freeze
 
         # Winds here are in geographic coordinates, so we'll need to rotate them to the grid's map projection
         # This is done in setWind() 
 
-        return (cp.array(u_air_node), cp.array(v_air_node), cp.array(p_air_node), cp.array(t_air_node), cp.array(q_air_node))
+        self.u_air_gpu.set(self.u_air)
+        self.v_air_gpu.set(self.v_air)
+        self.p_air_gpu.set(self.p_air)
+        self.t_air_gpu.set(self.t_air)
+        self.q_air_gpu.set(self.q_air)
+        return (self.u_air_gpu, self.v_air_gpu, self.p_air_gpu, self.t_air_gpu, self.q_air_gpu)
