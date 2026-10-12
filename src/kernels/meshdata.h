@@ -1342,9 +1342,9 @@ struct Side {
 
    __inline__ __device__ double centerZ(void)      const;
    __inline__ __device__ Point3 center3D(int k)    const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
-   __inline__ __device__ double Dz(int k)          const { assert(k < nvrt); return zc[k] - zc[k - 1]; }
-   __inline__ __device__ double area(int k)        const { assert(k < nvrt - 1); return len*Dz(k + 1); }
-   __inline__ __device__ double areaClamped(int k) const { assert(k < nvrt - 1); return len*(zc[max(k + 1, kb)] - zc[max(k, kb)]); }
+   __inline__ __device__ double Dz(int k)          const { assert(k < nvrt && k > 0); return zc[k] - zc[k - 1]; }
+   __inline__ __device__ double area(int k)        const { assert(k < nvrt && k > 0); return len*Dz(k + 1); }
+   __inline__ __device__ double areaClamped(int k) const { assert(k < nvrt && k > 0); return len*(zc[max(k + 1, kb)] - zc[max(k, kb)]); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
