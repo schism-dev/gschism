@@ -6371,11 +6371,11 @@ extern "C" {
          const Vector2 F = av_df*Fa; //approx
          elem->ghat1 += rampbc*dt*(av_cff1*F - dt*av_cff2_chi*fb - av_cff3*Fa);
 
-      } // if ibc
+      } // if ibc 
 
 
 
-   }
+   } 
 
 } // extern "C"
 
@@ -6410,7 +6410,7 @@ __global__ void checkMassConservation(Tracers* sumtr) {
    }
 
    //  This function returns per element sums. A reduction must be done on the host side.
-}
+}  
 
 
 __global__ void transport(void) {
