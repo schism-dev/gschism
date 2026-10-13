@@ -6388,6 +6388,9 @@ extern "C" {
 // GSCHISM transport models using implicit TVD in the vertical, explicit TVD
 
 void doTransportTVD(double &difnum_max_l) {
+
+// XXXX USE_DVD not implemented
+
 // Do upwind and TVD transport
 //
 //   difnum_max_l: max. horizontal diffusion number reached by this process (check stability)
@@ -6511,36 +6514,30 @@ void doTransportTVD(double &difnum_max_l) {
       const double vnor_c = 0.5*(vnor1 + vnor2);
 
 
-      fluxAdvHFace = area*vnor_c; 
+      side->fluxAdvHFace = area*vnor_c; 
    }
 
-     >>do j=1,ns !resident side
-        if (idry_s(j)==1) cycle
-        is_land=(isdel(2,j)==0.and.isbs(j)<=0)
+   //   >>do j=1,ns !resident side
+   //      if (idry_s(j)==1) cycle
+   //      is_land=(isdel(2,j)==0.and.isbs(j)<=0)
 
-        do k=kbs(j)+1,nvrt
-          if(is_land) then !land
-            flux_adv_hface(k,j)=0.d0
-          else            
-            vnor1=su2(k,j)*snx(j)+sv2(k,j)*sny(j)
-            vnor2=su2(k-1,j)*snx(j)+sv2(k-1,j)*sny(j)
-            flux_adv_hface(k,j)=(zs(k,j)-zs(k-1,j))*distj(j)*(vnor1+vnor2)/2 !normal * area = flux (in local x-direction)
-
-
-          endif !is_land
-        enddo !k=kbs(i)+1,nvrt
-     << enddo !j=1,ns
+   //      do k=kbs(j)+1,nvrt
+   //        if(is_land) then !land
+   //          flux_adv_hface(k,j)=0.d0
+   //        else            
+   //          vnor1=su2(k,j)*snx(j)+sv2(k,j)*sny(j)
+   //          vnor2=su2(k-1,j)*snx(j)+sv2(k-1,j)*sny(j)
+   //          flux_adv_hface(k,j)=(zs(k,j)-zs(k-1,j))*distj(j)*(vnor1+vnor2)/2 !normal * area = flux (in local x-direction)
 
 
-
-!     Exchange flux_adv
-
-      call exchange_s3dw(flux_adv_hface)
-
- 
+   //        endif !is_land
+   //      enddo !k=kbs(i)+1,nvrt
+   //   << enddo !j=1,ns
 
 
-!     Mark upwind prisms for efficiency
+
+
+      // Mark prisms shallow enough that they will be computed using first-order upwind formulation.
       do i=1,nea
         if(itvd_e(i)==0) then
           iupwind_e(i)=1 
@@ -6566,29 +6563,19 @@ void doTransportTVD(double &difnum_max_l) {
       if(itr_met==4) then 
 
 
-!$OMP single
       it_sub=0
       time_r=dt !time remaining
-!$OMP end single
-
-
 
       loop12: do
-!$OMP   single
+
         it_sub=it_sub+1
-!$OMP   end single
 
 
-!$OMP   workshare
         dtb_min3(:)=time_r !init 
-!$OMP   end workshare
 
         if (it_sub==1) then !only compute dtb for the first step, not related to scalar field
 
-!$OMP     workshare
           ielem_elm=0
-!$OMP     end workshare
-
 
           do i=1,ne
             if(idry_e(i)==1) cycle
@@ -6656,15 +6643,11 @@ void doTransportTVD(double &difnum_max_l) {
 
           !Post-proc flags to avoid shocks in WENO stencil; update
           !dtb_min3 if necessary
-          !Exchange ielem_elm
-!$OMP     master
-          call exchange_e2di(ielem_elm)
-!$OMP     end master
+//           !Exchange ielem_elm
+//           call exchange_e2di(ielem_elm)
             
           !Mark all nodes of ielem_elm=1: ind_elm only correct in resident
-!$OMP     workshare
           ind_elm=0
-!$OMP     end workshare 
 
 
           do i=1,np
@@ -6700,42 +6683,27 @@ void doTransportTVD(double &difnum_max_l) {
 !          !if its not ELM (i.e., upwind or WENO). 
 
 
-!$OMP     workshare
           dtbl=minval(dtb_min3)
-!$OMP     end workshare
 
-!$OMP     master
 
           buf(1,1)=dtbl; buf(2,1)=myrank
           call mpi_allreduce(buf,buf2,1,MPI_2DOUBLE_PRECISION,MPI_MINLOC,comm,ierr)
           dtb=buf2(1,1)
 
-
-
-
-!$OMP     end master
-!$OMP     barrier
-
         endif !if it_sub==1; compute dtb, todo: see if its necessary to compute dtb for each sub_step
 
 
-!$OMP   single
         dtb=min(dtb,time_r) !for upwind
         time_r=time_r-dtb
-!$OMP   end  single
 
         if (ntd_weno>1) then
-!$OMP     workshare
           trel_tmp0(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea) !Runge-Kutta, u0
-!$OMP     end workshare
         endif
 
 
         do itd_weno=1,ntd_weno !temporal discretization steps (reduces to Euler when ntd_weno=1)
           !Store last steps tracer concentrations
-!$OMP     workshare
           trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-!$OMP     end workshare
 
           !Note:
           !tracer concentrations are re-constructed at sides, saved as trsd_tmp(1:ntr,1:nvrt,1:ns).
@@ -6749,10 +6717,7 @@ void doTransportTVD(double &difnum_max_l) {
           !For each interface side, its value is reconstructed in one and only one rank,
           !whereas its value in the other rank is strictly 0.0d0
 
-!$OMP     workshare
           trsd_tmp=0.0d0 
-!$OMP     end workshare
-
   
           do ie=1,ne
 
@@ -6848,7 +6813,6 @@ void doTransportTVD(double &difnum_max_l) {
           enddo !ie
 
 
-!$OMP     master
           !message passing
           if (nproc>1) then
             !make a copy of side concentrations
@@ -6867,8 +6831,6 @@ void doTransportTVD(double &difnum_max_l) {
             trsd_tmp(:,:,iside_table)= trsd_tmp(:,:,iside_table)+trsd_tmp0(:,:,iside_table)
           endif !nproc>1
           !message passing end
-!$OMP     end master
-!$OMP     barrier
 
 
 !         Do advection; conc @ dry elem will not be changed
@@ -7027,15 +6989,9 @@ void doTransportTVD(double &difnum_max_l) {
             enddo !k
           enddo !i=1,ne
 
+// !         Update ghosts
+//           call exchange_e3d_2t_tr(tr_el)
 
-!$OMP     master
-!         Update ghosts
-
-          call exchange_e3d_2t_tr(tr_el)
-
-
-!$OMP     end master
-!$OMP     barrier
         enddo !itd_weno
 
 
@@ -7047,8 +7003,6 @@ void doTransportTVD(double &difnum_max_l) {
 
       end do loop12
  
-
-!$OMP end parallel
 
 !     Deallocate temp. arrays
       deallocate(trsd_tmp,trsd_tmp0,wm1,wm2,wm)
@@ -7066,45 +7020,25 @@ void doTransportTVD(double &difnum_max_l) {
       else if(itr_met==3) then !TVD in horizontal
 !-------------------------------------------------------------------------------------
 
-!$OMP parallel default(shared) private(i,k,iup,ido,psum,psumtr,j,jsj,ie,ind1,ind2,tmp, &
-!$OMP delta_tr,jj,rat,ref_flux,same_sign,vj,bigv,dtb_by_bigv,adv_tr,iel,trel_tmp_outside, &
-!$OMP ibnd,nwild,ll,ndo,lll,dtbl2,ie02,lev02,in_st2,n1,n2,swild4)
-
-#ifdef USE_ANALYSIS
-!$OMP workshare
-      dtbe=dt !min (over all subcycles and all levels) time step allowed at each element
-!$OMP end workshare
-#endif
-
       do i=1,ntr
-!$OMP   workshare
         flux_mod_hface(i,1:nvrt,1:ns)=flux_adv_hface(1:nvrt,1:ns)
-!$OMP   end workshare
       enddo !i
 
-!$OMP single
       it_sub=0
       time_r=dt !time remaining
-!$OMP end single
 
       loop11: do
-!$OMP   single
         it_sub=it_sub+1
-!$OMP   end single
+
 
 !       Compute flux limiters and modify fluxes
         !Use h_tvd as a flag to bypass this and other parts for efficiency
         if(h_tvd<1.d5) then
-!$OMP     workshare
           up_rat_hface=-1.d34 !flags
-!$OMP     end workshare
+
 
 !         Horizontal limiters
-!#ifdef DEBUG
-!          ntot_h=0 !total # of horizontal faces that have large limiters (for 1st tracer)
-!#endif
 
-!$OMP     do 
           do i=1,ns !residents
             if(idry_s(i)==1) cycle
 
@@ -7163,18 +7097,9 @@ void doTransportTVD(double &difnum_max_l) {
             enddo !k=kbs(i)+1,nvrt
           enddo !i=1,ns
 
-
-
-
-!$OMP     master
-
-
-!         Exchange up_rat
-
-          call exchange_s3d_tr2(up_rat_hface)
+// !         Exchange up_rat
+//           call exchange_s3d_tr2(up_rat_hface)
  
-!$OMP     end master
-!$OMP     barrier
 
 !         Modified horizontal fluxes
 
@@ -7215,7 +7140,6 @@ void doTransportTVD(double &difnum_max_l) {
               enddo !j
             enddo !k=kbs(i)+1,nvrt
           enddo !i=1,ns
-!$OMP     end do
 
         endif !flux limiter; h_tvd
 
@@ -7226,26 +7150,15 @@ void doTransportTVD(double &difnum_max_l) {
 
 !        if(ltvd.or.it_sub==1) then !for upwind, only compute dtb for the first step
         if(h_tvd<1.d5.or.it_sub==1) then !for upwind in entire domain, only compute dtb for the first step
-!$OMP     single
           dtbl=time_r !init
           ie01=0 !element # where the exteme is attained (local)
           lev01=0 !level #
           in_st=0 !tracer #
-!$OMP     end single
 
-!$OMP     workshare
           dtb_min3(:)=time_r !init
-!$OMP     end workshare
 
-!!!$OMP     workshare
-!          psum2=-1.e34
-!!!$OMP     end workshare
-
-!$OMP     workshare
           ielem_elm=0
-!$OMP     end workshare
 
-!$OMP     do 
           do i=1,ne
             if(idry_e(i)==1) cycle
 
@@ -7308,33 +7221,21 @@ void doTransportTVD(double &difnum_max_l) {
 
 
           enddo !i=1,ne
-!$OMP     end do
 
-!$OMP     workshare
           dtbl=minval(dtb_min3)
-!$OMP     end workshare
-
-!$OMP     master
 
           buf(1,1)=dtbl; buf(2,1)=real(myrank,rkind)
           call mpi_allreduce(buf,buf2,1,MPI_2DOUBLE_PRECISION,MPI_MINLOC,comm,ierr)
           dtb=buf2(1,1)
 
-
-!$OMP     end master
-
         endif !h_tvd.or.it_sub==1; compute dtb
 
-!$OMP   master
         dtb=min(dtb,time_r) !for upwind
         time_r=time_r-dtb
-!$OMP   end master
-!$OMP   barrier
 
 !       Store last iteration''s S,T
-!$OMP   workshare
         trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-!$OMP   end workshare
+
 
 !$OMP   do reduction(+: h_mass_in)
         do i=1,ne
@@ -7426,10 +7327,6 @@ void doTransportTVD(double &difnum_max_l) {
                   adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp_outside(jj)-trel_tmp(jj,k,i))
                 enddo !jj
 
-#ifdef USE_DVD
-                rkai_num(1:ntrs(12),k,i)=rkai_num(1:ntrs(12),k,i)+dtb_by_bigv*flux_mod_hface(irange_tr(1,12):irange_tr(2,12),k,jsj)* &
-     &(trel_tmp_outside(irange_tr(1,12):irange_tr(2,12))-trel_tmp(irange_tr(1,12):irange_tr(2,12),k,i))
-#endif
               endif !inflow
 
               if(h_tvd<1.d5.and.k>=kbs(jsj)+1) then
@@ -7475,22 +7372,14 @@ void doTransportTVD(double &difnum_max_l) {
             tr_el(1:ntr,k,i)=tr_el(1:ntr,kbe(i)+1,i)
           enddo !k
         enddo !i=1,ne
-!$OMP   end do
 
-!$OMP   master
-!       Update ghosts
-
-        call exchange_e3d_2t_tr(tr_el)
-
-   
-!$OMP   end master
-!$OMP   barrier
+      //  Update ghosts
+      //   call exchange_e3d_2t_tr(tr_el)
 
         if(time_r<1.d-8) exit loop11
 
       end do loop11
 
-!$OMP end parallel
 
       if(myrank==0) then
         write(17,*)it,it_sub
@@ -7501,19 +7390,12 @@ void doTransportTVD(double &difnum_max_l) {
       
 !      write(12,*)'done 1st transport step...'
 
-!    Save the final array from horizontal part as trel_tmp
-!$OMP parallel default(shared) private(i,k,bigv_m,r_s,r_s0,m,iterK,rrat,phi,kup,kdo,psumtr, &
-!$OMP tmp,flux_mod_v1,flux_mod_v2,psum,l,srat,psi1,kin,ndim,alow,bdia,cupp,dt_by_bigv,denom, &
-!$OMP rrhs,soln,gam,term1,term6,strat1,strat2,bigv,av_df,av_dz,swild,j,jsj,iel,nd1,nd2,hdif_tmp,av_h,difnum)
 
-!$OMP workshare
       trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-!$OMP end workshare
 
 !...  2nd step, vertical advection: Fei''s addition
 
 !      adv_tr(:)=0
-!$OMP do 
       do i=1,nea 
         if(idry_e(i)==1) cycle
 
@@ -7742,29 +7624,7 @@ void doTransportTVD(double &difnum_max_l) {
               !strat2=maxval(soln(1,1:ndim))-minval(soln(1,1:ndim))
               !DEBUG
               !write(12,*)'TRANS_IMP, strat loss:',real(strat1),real(strat2),real(strat2-strat1),ielg(i),m,it
-#ifdef USE_DVD
-!Error: did not add time limiter yet due to complication @F.S.
-              if(i<=ne.and.m>=irange_tr(1,12).and.m<=irange_tr(2,12)) then
-                l=m-irange_tr(1,12)+1
-                do k=kbe(i)+1,nvrt !prism
-                  if(k/=nvrt.and.flux_adv_vface(k,m,i)<0.d0) then !inflow at upper face
-                    rkai_num(l,k,i)=rkai_num(l,k,i)+dt_by_bigv* &
-     &abs(flux_adv_vface(k,m,i))*(tr_el(m,k+1,i)-tr_el(m,k,i))*(1.d0-0.5d0*phi(k))
-                  else if(k/=nvrt.and.flux_adv_vface(k,m,i)>0.d0) then !outflow at upper face
-                    rkai_num(l,k,i)=rkai_num(l,k,i)-0.5d0*dt_by_bigv* &
-     &abs(flux_adv_vface(k,m,i))*(tr_el(m,k+1,i)-tr_el(m,k,i))*phi(k)
-                  endif
 
-                  if(k-1/=kbe(i).and.flux_adv_vface(k-1,m,i)>0.d0) then !inflow at lower face
-                    rkai_num(l,k,i)=rkai_num(l,k,i)+dt_by_bigv* &
-     &abs(flux_adv_vface(k-1,m,i))*(tr_el(m,k-1,i)-tr_el(m,k,i))*(1.d0-0.5d0*phi(k-1))
-                  else if(k-1/=kbe(i).and.flux_adv_vface(k-1,m,i)<0.d0) then !outflow at lower
-                    rkai_num(l,k,i)=rkai_num(l,k,i)-0.5d0*dt_by_bigv* &
-     &abs(flux_adv_vface(k-1,m,i))*(tr_el(m,k-1,i)-tr_el(m,k,i))*phi(k-1)
-                  endif
-               enddo !k
-             endif !i<=ne etc
-#endif /*USE_DVD*/
 
               exit
             endif !iterK
@@ -7781,19 +7641,10 @@ void doTransportTVD(double &difnum_max_l) {
         enddo !k
 
       enddo !i=1,nea
-!$OMP end do
-
-
 
 !     Finalize DVD
-#ifdef USE_DVD
-!$OMP workshare
-      !Dim= [C^2]/sec
-      rkai_num(1:ntrs(12),:,1:ne)=(rkai_num(1:ntrs(12),:,1:ne)-tr_el(irange_tr(1,12):irange_tr(2,12),:,1:ne))/dt
-!$OMP end workshare
-#endif /*USE_DVD*/
 
-!$OMP master
+
 !     conservation
       if(max_iadjust_mass_consv>0) then
         psumtr=0.d0 
@@ -7810,21 +7661,16 @@ void doTransportTVD(double &difnum_max_l) {
         total_mass_error=adv_tr-tmass-h_mass_in 
 !        if(myrank==0) write(25,*)'mass after 2 steps with correction:',real(time_stamp/86400),adv_tr(1:ntr)+total_mass_error(1:ntr)
       endif
-!$OMP end master
 
 !      write(12,*)'done 2nd transport step...'
 
 !     3rd step: non-advection terms 
 !     Save the final array from previous step as trel_tmp
-!$OMP workshare
       trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-!$OMP end workshare
 
-!$OMP single
+
       difnum_max_l=0.d0 !max. diffusion number reached by this process (check stability)
-!$OMP end single
 
-!$OMP do 
       do i=1,ne
         if(idry_e(i)==1) cycle
 
@@ -7939,13 +7785,9 @@ void doTransportTVD(double &difnum_max_l) {
         enddo !k
 
       enddo !i=1,ne
-!$OMP end do
 
-!$OMP end parallel
-
-!     Update ghosts
-
-      call exchange_e3d_2t_tr(tr_el)
+// !     Update ghosts
+//       call exchange_e3d_2t_tr(tr_el)
 
 
 !     Horizontal diffusion as filter
@@ -7953,9 +7795,7 @@ void doTransportTVD(double &difnum_max_l) {
       if(ihdif/=0) then
         do kk=1,niter_hdif
 !$OMP     parallel default(shared) !private(i,j,k,m,sum1,jsj,iel,nd1,nd2,hdif_tmp)
-!$OMP     workshare
           trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-!$OMP     end workshare
 
 
           do i=1,ne
@@ -7988,11 +7828,8 @@ void doTransportTVD(double &difnum_max_l) {
             enddo !m: tracers
           enddo !i=1,ne
 
-!$OMP     end parallel
-
-!         Update ghosts
-
-          call exchange_e3d_2t_tr(tr_el)
+// !         Update ghosts
+//           call exchange_e3d_2t_tr(tr_el)
 
         enddo !kk=1,niter_hdif
       endif !ihdif/=0
