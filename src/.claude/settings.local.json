@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api.github.com)",
+      "Bash(curl -s \"https://api.github.com/repos/schism-dev/schism/commits?path=docs/schism/transport-equation.md&per_page=20\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/schism-dev/schism/52ae2e199415916a286a59b39bdc3e18ddd22cc8/docs/schism/transport-equation.md\" -o /tmp/te-2023.md)"
+    ]
+  }
+}

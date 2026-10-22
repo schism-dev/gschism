@@ -72,6 +72,7 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__BLOCK_SIZE__': (blockSize, 'cuda'),
         '__N_TRACERS__': (namelist.core.ntracer_gen, 'namelist.core'),
         '__IBC__': (namelist.core.ibc, 'namelist.core'),
+        '__IBTP__': (namelist.core.ibtp, 'namelist.core'),
         '__DT__': (namelist.core.dt, 'namelist.core'),
         
         # From namelist OPT section

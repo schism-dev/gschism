@@ -1,7 +1,7 @@
 # How to run gschism on TACC VISTA
 
 1. [Command line and arguments](#command-line-and-arguments)
-2. [Setting up the Python environment](#setting-up-the-python-environment)
+2. [Setting up the Python environment](#setting-up-the-python-environment) 
 3. [Running it using Slurm's queue](#running-it-using-slurms-queue)
 
 Commands below assume you are in the `src` directory.
@@ -12,11 +12,14 @@ Commands below assume you are in the `src` directory.
 python python/main.py inDir [--outDir OUTDIR] [--nGpus N]
 ```
 
-| Argument | Required | Meaning |
-|---|---|---|
-| `inDir` | yes | Path to the SCHISM case directory (`hgrid.gr3`, `hgrid.ll`, `vgrid.in`, `param.nml`, `bctides.in`, …). |
-| `--outDir` | no | Output directory. Default: `inDir/gpuoutput`. |
-| `--nGpus` | no | Number of GPUs to use (default: `1`). Fails if you ask for more than are available. |
+
+| Argument   | Required | Meaning                                                                                                |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `inDir`    | yes      | Path to the SCHISM case directory (`hgrid.gr3`, `hgrid.ll`, `vgrid.in`, `param.nml`, `bctides.in`, …). |
+| `--outDir` | no       | Output directory. Default: `inDir/gpuoutput`.                                                          |
+| `--nGpus`  | no       | Number of GPUs to use (default: `1`). Fails if you ask for more than are available.                    |
+
+
 
 
 ## Setting up the Python environment
@@ -36,6 +39,8 @@ If the environment already exists, skip that. The Slurm example below activates 
 ```bash
 micromamba activate cupy311
 ```
+
+
 
 ## Running it using Slurm's queue
 

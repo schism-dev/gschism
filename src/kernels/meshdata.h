@@ -430,6 +430,52 @@ struct Node;
 struct Mesh;
 struct NodeBoundary;
 
+// ----------------------------- Transport -----------------------------
+
+enum class TransportModel : int {
+   TVD  = 3, // itr_met == 3  explicit TVD horiz, implicit TVD vert
+   WENO = 4, // itr_met == 4  later
+};
+
+constexpr TransportModel transportModel = static_cast<TransportModel>(itr_met);
+
+
+template<TransportModel Model>
+struct Transport {
+   Tracers prevTraces[nvrt]; // elem->tracers at previous substep
+   bool itvd;                // Read from tvd.prop; 0 means always 1st order upwind
+   
+
+   __device__ __forceinline__  maxStableSubstep() const {
+      assert(false && "maxStableSubstep not implemented for this transport model");
+   }
+
+   // flag that indicates if 1st order upwind is used
+   __device__ __forceinline__ bool use1stOrderUpwind(const Element *elem) const {
+      if (itvd) {
+         // If the element is marked as such in tvd.prop, use 1st order upwind for this element
+         return true;
+
+      } else {
+
+         // If *any* of the nodes of the element is shallow, use 1st order upwind
+         for (int j = 0; j < elem->i34; j++) {
+            const double htot = elem->nodes[j]->htot2();
+            if (htot < h_tvd) {
+               return true;
+            }
+         }  
+      }
+      return false;
+   }
+
+   __device__ __forceinline__ void savePrevTraces(const Element *elem) {
+      for (int k = 0; k < nvrt; k++) prevTraces[k] = elem->tracers[k];
+   }
+
+
+
+};
 
 // ----------------------------- Turbulence -----------------------------
 
@@ -855,6 +901,7 @@ struct Element {
 
    // Physical information
    Tracers tracers[nvrt];     // Tracer values at each vertical level  
+   Transport<transportModel> transport; // Transport model 
 
    static const bool isblock = false;              // Always false
 
@@ -959,6 +1006,7 @@ struct Element {
 
    __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
+   __inline__ __device__ double volume(int k)  const { assert(k < nvrt - 1); return area * Dz(k); }
 
 
    __device__ __forceinline__ double centerZ(void) const;
@@ -1257,8 +1305,6 @@ struct Side {
  
    Vector2 n;             // Side unit normal vector (for ics=2: these are done inside local lon/lat frame)
 
-   Tracers tracers[nvrt]; // Tracer concentrations at nodes
-
    // Physical information
    Vector2 u2[nvrt];            // Unit normal vector (for ics=2: these are done inside local lon/lat frame)
    Vector2 btu[nvrt];           // Back-tracked velocity
@@ -1470,7 +1516,7 @@ struct NodeBoundary {
       int res = 0;
       if (sideBnd1 != nullptr && sideBnd1->segment == segment) res++;
       if (sideBnd2 != nullptr && sideBnd2->segment == segment) res++;
-// printf("numSidesForAverage: res = %d, segment = %p, sideBnd1 = %p, sideBnd2 = %p\n", res, segment, sideBnd1, sideBnd2);      
+
       return res;
    }
 

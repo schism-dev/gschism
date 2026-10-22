@@ -59,6 +59,7 @@ constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stabi
 constexpr int ihydraulics = 0; // Option of including hydraulics
 constexpr int nhtblocks = 0;                 // Number of hydraulic structures (zero for the moment)
 constexpr int ibc = 1;                 // Option to include baroclinic term (0 means yes)
+constexpr int ibtp = 0;               // Decides wether transport is included in barotropic model
 constexpr int itur = 0;               // Turbulence closure model
 constexpr int icompute_cpsi3 = 0;  // 0: use tabulated cpsi3; !=0: compute (not implemented)
 constexpr int islip = 0;             // Option to include slip horizontal boundary conditions
