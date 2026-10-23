@@ -439,9 +439,16 @@ enum class TransportModel : int {
 
 constexpr TransportModel transportModel = static_cast<TransportModel>(itr_met);
 
+struct TransportFaceBase {
+   double Qh[nvrt]; // Horizontal advection flux at each vertical level
+};
+
+struct TransportElemBase {
+   
+};
 
 template<TransportModel Model>
-struct Transport {
+struct TransportElem: public TransportElemBase {
    Tracers prevTraces[nvrt]; // elem->tracers at previous substep
    bool itvd;                // Read from tvd.prop; 0 means always 1st order upwind
    
@@ -1324,8 +1331,6 @@ struct Side {
    double hhat;                 // \breve{H} in notes
 
    double shapiro;
-
-   double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
 
    double coriolis;             // Coriolis parameter
 

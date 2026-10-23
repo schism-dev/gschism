@@ -6391,65 +6391,7 @@ void doTransportTVD(double &difnum_max_l) {
 
 // XXXX USE_DVD not implemented
 
-// Do upwind and TVD transport
-//
-//   difnum_max_l: max. horizontal diffusion number reached by this process (check stability)
 
-
-//       integer, parameter :: iter_back=50 !maximum iterations in implicit part (upwind is used after that)
-
-// !     Working temporary arrays in this routine
-//       real(rkind), allocatable :: trel_tmp(:,:,:) !tracer @ elements and half levels
-//       real(rkind), allocatable :: flux_adv_hface(:,:) ! original horizontal flux (the local x-driection) 
-//       real(rkind), allocatable :: flux_mod_hface(:,:,:) !limited advective fluxes on horizontal faces
-//       !weno>
-//       real(rkind), allocatable :: trel_tmp0(:,:,:) !tracer @ elements and half levels
-//       real(rkind), allocatable :: trsd_tmp(:,:,:) !tmp concentration on horizontal faces
-//       real(rkind), allocatable :: trsd_tmp0(:,:,:) !tmp concentration on horizontal faces, only used for message-passing
-//       !<weno
-//       real(rkind), allocatable :: up_rat_hface(:,:,:) !upwind ratios for horizontal faces
-
-
-//       integer :: iupwind_e(nea) !to mark upwind prisms when TVD is used
-//       real(rkind) :: dtb_min3(ne),buf(2,1),buf2(2,1)
-//       real(rkind) :: flux_mod_v1(nvrt) !coefficient of limited advective fluxes on vertical faces (space)
-//       real(rkind) :: flux_mod_v2(nvrt) !coefficient of limited advective fluxes on vertical faces (time)
-//       real(rkind) :: rrat(nvrt) !upwind ratios for vertical faces (spatial limiter)
-//       real(rkind) :: srat(nvrt) !s-ratio for vertical faces (temporal limiter)
-//       real(rkind) :: phi(nvrt) !spatial limiter 
-//       real(rkind) :: bigv_m(nvrt) !prism volume
-//       real(rkind) :: psi1(nvrt) !time limiter 
-
-//       real(rkind) :: r_s(nvrt),r_s0(nvrt) !local Courant number
-
-//       real(rkind) :: psumtr(ntr),delta_tr(ntr),adv_tr(ntr),tmass(ntr),h_mass_in(ntr), &
-//      &alow(nvrt),bdia(nvrt),cupp(nvrt),rrhs(1,nvrt),soln(1,nvrt),gam(nvrt), &
-//      &swild(max(3,nvrt)),swild4(3,2),trel_tmp_outside(ntr),swild5(3)
-//       integer :: nwild(2),ielem_elm(nea),ind_elm(npa)
-
-//       integer :: istat,i,j,k,kk,l,m,khh2,ie,n1,n2,n3,n4,isd,isd0,isd1,isd2,isd3,j0,je, &
-//                  &nd,it_sub,ntot_v,ntot_vgb,kup,kdo,jsj,jsj0,kb, &
-//                  &kb1,iup,ido,ie01,lev01,in_st,ie02,lev02,in_st2,jj,ll,lll,ndim,kin,iel,ibnd, &
-//                  &ndo,ind1,ind2,nd1,nd2,ibio,iterK,iele_max,iterK_MAX,it_sum1,it_sum2
-//       real(rkind) :: vnor1,vnor2,xcon,ycon,zcon,dot1,sum1,tmp,cwtmp,toth, &
-//                      &time_r,psum,rat,dtbl,dtbl2,dtb,vj,av_df,av_dz,hdif_tmp, &
-//                      &av_h,difnum,cwtmp2,bigv,dt_by_bigv,dtb_by_bigv, &
-//                      &term1,term2,term6,strat1,strat2,denom, &
-//                      &b1,b2,b3,b4,b5,vol
-
-//       real(rkind) :: ref_flux
-//       logical     :: same_sign, is_land
-// !      logical, save :: first_call
-//       !weno>
-//       real(rkind) :: trsd(2),rctr,ang1,ui,vi,t_out,rk_coef(3) 
-//       real(rkind),allocatable :: wm1(:),wm2(:),wm(:) !weight
-//       real(rkind),allocatable :: tr_min_max(:,:) 
-//       logical :: iweno
-//       integer :: itd_weno       
-
-//       !character(72) :: ftest  ! Name of debugging file
-//       !integer :: lftest       ! Length of debugging file name
-//       !integer :: iorder !temporary identifier for order of accuracy
 
       // Compute total mass of each tracer (for conservation)
       // if(max_iadjust_mass_consv>0) then
@@ -6496,7 +6438,10 @@ void doTransportTVD(double &difnum_max_l) {
    // Horizontal fluxes
    SIDE(side)
 
-   side->fluxAdvHFace = -1.d34; // Sentinel value for dry sides.
+   auto &transport = side->transport;
+
+   for (int k = 0; k < nvrt; k++) transport.Qh[k] = -1.d34; // Sentinel value for dry sides.
+
    if (side->isDry()) return;
 
    const bool isLand = (side->sideBnd!=nullptr && side->sideBnd->isLand);
@@ -6504,7 +6449,7 @@ void doTransportTVD(double &difnum_max_l) {
 
    for (int k = kb + 1; k < nvrt; k++) {
    if (isLand) {
-      side->fluxAdvHFace[k] = 0.0;
+      transport.Qh[k] = 0.0;
 
    } else {
       const Vector2 n = side->n; // normal vector to the side
@@ -6513,7 +6458,7 @@ void doTransportTVD(double &difnum_max_l) {
       const double vnor2 = dot(n, side->u2[k-1]);
       const double vnor_c = 0.5*(vnor1 + vnor2); // Normal velocity at the face center.
 
-      side->fluxAdvHFace[k] = area*vnor_c; 
+      transport.Qh[k] = area*vnor_c; 
    }
 
 
@@ -6531,23 +6476,25 @@ void doTransportTVD(double &difnum_max_l) {
    // as a sum over all faces (inflow and outflow).
 
 
-   // Compute total inflow and maximum allowed sub-time step for TVD transport
+   // Compute total inflow and maximum allowed sub-time step
    ELEM(elem)
 
    const int kb = elem->kb;
+   auto &transport = elem->transport;
 
    if (elem->isDry()) return;
 
    double elemDt = huge(1.0);
 
-   for (int k = 0; k < kb + 1; k++) elem->inflow[k] = 0.0;
+   for (int k = 0; k < kb + 1; k++) elem->transport.inflow[k] = 0.0;
 
    for (int k = kb + 1; k < nvrt; k++) { // For each wet prism in the element...
 
-      elem->inflow[k] = 0.0;
+      transport->inflow[k] = 0.0;
 
       for (int j = 0; j < i34; j++) { // For each side in the element...
          const Side *side = elem->sides[j];
+         const auto &sideTransport = side->transport;
          const double ssign = elem->ssign[j];
          const int kbs = side->kbs;
 
@@ -6557,7 +6504,7 @@ void doTransportTVD(double &difnum_max_l) {
          const Element *neighElem = side->otherElem(elem);
          if (neighElem == nullptr || neighElem->isDry) continue;
 
-         const double faceQ = side->fluxAdvHFace[k];
+         const double faceQ = sideTransport.Qh[k];
          const bool inFlux = (ssign*faceQ) < 0.0; // true if the flux points into the element
 
          const BoundarySegment *boundarySegment = (side->sideBnd == nullptr) ? nullptr : side->sideBnd->BoundarySegment;
@@ -6568,7 +6515,7 @@ void doTransportTVD(double &difnum_max_l) {
          if (isLand || !inFlux) continue;
 
          for (int itr = 0; itr < ntr; itr++) {
-            elem->inflow[k] += fabs(faceQ);  // Sum of all inflow fluxes at level k.
+            transport.inflow[k] += fabs(faceQ);  // Sum of all inflow fluxes at level k.
          }
 
       }

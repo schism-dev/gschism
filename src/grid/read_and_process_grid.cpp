@@ -246,7 +246,7 @@ AdjacencyList buildAdjacencyList(const Array2D<int>& elnode, const std::vector<i
                     bool found = false;
                     for (int l = result.xadj[ie]; l < result.xadj[ie] + nedge; l++) {
                         if (result.adjncy[l] == je) {
-		            //new31: missing # of levels (nlev)
+		            //new31: missing # of levels (nlev) Weighting for domain decomposition
                             result.adjwgt[l] = (2 * i34[je] - 3);
                             found = true;
                             break;
@@ -398,21 +398,20 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         for (int j = 0; j < i34[ie]; j++) {
             const int jsj = elside(j, ie);  
 
-	    //new31: The following should be fatal/assert?
+	        //new31: The following should be fatal/assert? [FIXED]
             if (jsj==-1) {
-                printFormatted(ansi::red("jsj==-1"));
-                break;
+                throw std::runtime_error("jsj==-1");
             }
 
             const int n1 = elnode(nxq(1, j, i34[ie]), ie);
             const int n2 = elnode(nxq(2, j, i34[ie]), ie);
 
-            //new31: The following should be fatal/assert?
+            //new31: The following should be fatal/assert? [FIXED]
             if (n1==-1) {
-                printFormatted(ansi::red("n1==-1"));
+                throw std::runtime_error("n1==-1");
             }
             if (n2==-1) {
-                printFormatted(ansi::red("n2==-1"));
+                throw std::runtime_error("n2==-1");
             }   
 
 
@@ -979,7 +978,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
             iond(k, i) = nodes[i];
         }
 
-        // Mark boundary nodes (new31: last open bnd wins?)
+        // Mark boundary nodes (new31: last open bnd wins?) [I THINK THIS IS CORRECT (see explanation in email)]
         for (int ip : nodes) {
             isbnd[ip] = k;
         }
@@ -1081,7 +1080,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     ArrayOfRows<int> nodeNeighElems, nodeNeighNodes;
 
 
-    //new31: nodeNeighNodes actually not used
+    //new31: nodeNeighNodes actually not used [This was a previous idea that I ended up not using. REMOVE]
     buildListsOfElementNeighbors(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
     AdjacencyList adjList = buildAdjacencyList(elnode, i34, nodeNeighElems, nElements);
 
