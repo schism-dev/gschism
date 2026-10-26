@@ -2,12 +2,26 @@
 
 This file explains how to set up gschism on VISTA once, and then how to run a SCHISM case on VISTA's GPU nodes.
 
-1. [Setting up the Python environment](#setting-up-the-python-environment)
-2. [Running a case with Slurm](#running-a-case-with-slurm)
-3. [Command line and arguments](#command-line-and-arguments)
-4. [Appendix: Python packages](#appendix-python-packages)
+1. [Getting the code](#getting-the-code)
+2. [Setting up the Python environment](#setting-up-the-python-environment)
+3. [Running a case with Slurm](#running-a-case-with-slurm)
+4. [Command line and arguments](#command-line-and-arguments)
+5. [Appendix: Python packages](#appendix-python-packages)
 
-All commands assume you are in the `src` directory of the checkout.
+
+
+## Getting the code
+
+On a VISTA login node, clone the repository into your home directory:
+
+```bash
+mkdir -p "$HOME/src"
+cd "$HOME/src"
+git clone https://github.com/schism-dev/gschism.git
+cd gschism/src
+```
+
+All commands below assume you are in this `src` directory, `$HOME/src/gschism/src`. The first run writes compiled files here, so keep the checkout somewhere you can write to.
 
 
 
