@@ -2443,7 +2443,8 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
                                             double *emo, double *efa, 
                                             double *umo, double *ufa, 
                                             double *vmo, double *vfa,
-                                            int *ifltype, int *iettype, double *qthcon) {
+                                            int *ifltype, int *iettype, 
+                                            double *qthcon, double *eth) {
 
    NODE_BND(nodeBnd);
    const int idx = idx_node_bnd;    
@@ -2468,6 +2469,8 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
             nodeBnd->segment->ifltype = ifltype[iseg];
             nodeBnd->segment->iettype = iettype[iseg];
             nodeBnd->segment->qthcon  = qthcon[iseg];
+            nodeBnd->segment->eth     = eth[iseg];
+            nodeBnd->eth     = eth[iseg]; // XXXXXXX Is this always needed? ot only for certain ietype?
             nodeBnd->segment->idx = iseg;
 
             for (int jfr = 0; jfr < nbfr; jfr++) {
@@ -6377,7 +6380,7 @@ extern "C" {
 
    } 
 
-} // extern "C"
+
 
 
 
@@ -6385,82 +6388,61 @@ extern "C" {
 // Transport
 // ------------------------------------------------------------
 
-// GSCHISM transport models using implicit TVD in the vertical, explicit TVD
+__device__ bool TransportElem<TransportModel::Upwind>::use1stOrderUpwind(const Element *elem) const {
+   if (itvd) {
+      // Marked as such in tvd.prop: always 1st order upwind for this element
+      return true;
+   }
 
-void doTransportTVD(double &difnum_max_l) {
+   // If any node of the element is shallow, use 1st order upwind
+   for (int j = 0; j < elem->i34; j++) {
+      if (elem->nodes[j]->htot2() < h_tvd) return true;
+   }
+   return false;
+}
 
-// XXXX USE_DVD not implemented
+__device__ void TransportElem<TransportModel::Upwind>::savePrevTraces(const Element *elem) {
+   for (int k = 0; k < nvrt; k++) prevTraces[k] = elem->tracers[k];
+}
 
+__device__ double TransportElem<TransportModel::Upwind>::maxPrismDt(const Element *elem, int k) const {
+   if (inflow[k] == 0.0) return huge_double;
+   return elem->volume(k - 1) / inflow[k] * (1.0 - 1.0e-6);
+}
 
-
-      // Compute total mass of each tracer (for conservation)
-      // if(max_iadjust_mass_consv>0) then
-      //   psumtr=0
-      //   do i=1,ne
-      //     if(idry_e(i)==1) cycle
-
-      //     do k=kbe(i)+1,nvrt
-      //       vol=(ze(k,i)-ze(k-1,i))*area(i)
-      //       psumtr(1:ntr)=psumtr(1:ntr)+vol*tr_el(1:ntr,k,i)
-      //     enddo !k
-      //   enddo !i=1,ne
-      //   call mpi_allreduce(psumtr,tmass,ntr,rtype,MPI_SUM,comm,ierr)
-
-      // endif !max_iadjust_mass_consv
-
-
-
-//       allocate(trel_tmp(ntr,nvrt,0:nea),flux_adv_hface(nvrt,nsa),tr_min_max(2,ntr), &
-//               &flux_mod_hface(ntr,nvrt,ns),up_rat_hface(ntr,nvrt,nsa),stat=istat) 
-//       trel_tmp=0.d0
-// !      allocate(psum2(ntr,nvrt,ne))
-//       if(istat/=0) call parallel_abort('Transport: fail to allocate')
-
-//     For TVD, prepare some arrays for 2-tier ghosts
-
-      idry_e_2t(1:ne)=idry_e(1:ne)
+__global__ void computeHorizAdvecFluxes(void) {
 
 
-
-!    Modify here 3D velocity for transport (for whatever reason) - make sure volume conservation is not violated
-!     For rewetted elements, tr_el takes the value from last wet step
-
-
-!     Compute (pre-limited) horizontal fluxes at all faces (vertical
-!     fluxes done in schism_step)
-
-      flux_adv_hface=-1.d34 !flags
-
-
-      
-
-
-   // Horizontal fluxes
    SIDE(side)
 
    auto &transport = side->transport;
 
-   for (int k = 0; k < nvrt; k++) transport.Qh[k] = -1.d34; // Sentinel value for dry sides.
+   for (int k = 0; k < nvrt; k++) transport.Qh[k] = -1.0e34; // Sentinel value for dry sides.
 
-   if (side->isDry()) return;
+   if (side->isDry) return;
 
-   const bool isLand = (side->sideBnd!=nullptr && side->sideBnd->isLand);
+   const bool isLand = (side->sideBnd!=nullptr && side->sideBnd->segment != nullptr && side->sideBnd->segment->isLand);
    const int kb = side->kb;
 
    for (int k = kb + 1; k < nvrt; k++) {
-   if (isLand) {
-      transport.Qh[k] = 0.0;
+      if (isLand) {
+         transport.Qh[k] = 0.0;
 
-   } else {
-      const Vector2 n = side->n; // normal vector to the side
-      const double area = side->area(k); // Area of the side face.
-      const double vnor1 = dot(n, side->u2[k]);
-      const double vnor2 = dot(n, side->u2[k-1]);
-      const double vnor_c = 0.5*(vnor1 + vnor2); // Normal velocity at the face center.
+      } else {
+         const Vector2 n = side->n; // normal vector to the side
+         const double area = side->area(k); // Area of the side face.
+         const double vnor1 = dot(n, side->u2[k]);
+         const double vnor2 = dot(n, side->u2[k-1]);
+         const double vnor_c = 0.5*(vnor1 + vnor2); // Normal velocity at the face center.
 
-      transport.Qh[k] = area*vnor_c; 
+         transport.Qh[k] = area*vnor_c; 
+      }
+
    }
 
+}
+
+__global__ void horizontalAdvection(void) {
 
    // Horizontal advection kernel.
    // -------------------------------
@@ -6480,23 +6462,24 @@ void doTransportTVD(double &difnum_max_l) {
    ELEM(elem)
 
    const int kb = elem->kb;
+   const int i34 = elem->i34;
    auto &transport = elem->transport;
 
-   if (elem->isDry()) return;
+   if (elem->isDry) return;
 
-   double elemDt = huge(1.0);
+   elem->transport.maxDt = huge_double;
 
    for (int k = 0; k < kb + 1; k++) elem->transport.inflow[k] = 0.0;
 
    for (int k = kb + 1; k < nvrt; k++) { // For each wet prism in the element...
 
-      transport->inflow[k] = 0.0;
+      transport.inflow[k] = 0.0;
 
       for (int j = 0; j < i34; j++) { // For each side in the element...
          const Side *side = elem->sides[j];
          const auto &sideTransport = side->transport;
          const double ssign = elem->ssign[j];
-         const int kbs = side->kbs;
+         const int kbs = side->kb;
 
          if (k <= kbs) continue;
 
@@ -6507,64 +6490,107 @@ void doTransportTVD(double &difnum_max_l) {
          const double faceQ = sideTransport.Qh[k];
          const bool inFlux = (ssign*faceQ) < 0.0; // true if the flux points into the element
 
-         const BoundarySegment *boundarySegment = (side->sideBnd == nullptr) ? nullptr : side->sideBnd->BoundarySegment;
+         const BoundarySegment *boundarySegment = (side->sideBnd == nullptr) ? nullptr : side->sideBnd->segment;
          const bool isLand = (boundarySegment != nullptr && boundarySegment->isLand);
 
          // Count this side's flux only when water flows into the element, and the water is coming from somewhere 
          // real: either a wet neighboring element, or an open boundary.         
          if (isLand || !inFlux) continue;
 
-         for (int itr = 0; itr < ntr; itr++) {
+         for (int itr = 0; itr < ntracers; itr++) {
             transport.inflow[k] += fabs(faceQ);  // Sum of all inflow fluxes at level k.
          }
 
       }
       
-      const double volumePrism = elem->volume(k - 1); // XXXXX I wonder if it makes more sense to change the index definition in volume()
-      double maxDtPrism = huge(1.0);
-      for (int itr = 0; itr < ntr; itr++) {
-            if (inflow[itr] > 0):
-               dt_prism = volumePrism/inflow[itr] * (1.0 - 1.0e-6)
-               elemDt = min(elemDt, dt_prism)
-         allowed_dt(i) = elemDt
-      }
+      // computes the minimum allowed sub-time step for the prism
+      elem->transport.maxDt = min(elem->transport.maxDt, elem->transport.maxPrismDt(elem, k));
    }
 
+}
 
+__device__ __forceinline__ void atomicMinDouble(double *addr, double val) {
+   unsigned long long *p = (unsigned long long *)addr;
+   unsigned long long old = *p, assumed;
+   do {
+      assumed = old;
+      old = atomicCAS(p, assumed,
+         __double_as_longlong(fmin(val, __longlong_as_double(assumed))));
+   } while (assumed != old);
+}
 
+__device__ __forceinline__ double blockMin(double v) {
+   __shared__ double sh[32];
+   const int lane = threadIdx.x & 31;
+   const int warp = threadIdx.x >> 5;
+   for (int o = 16; o > 0; o >>= 1)
+      v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+   if (lane == 0) sh[warp] = v;
+   __syncthreads();
+   if (warp == 0) {
+      const int nw = blockDim.x >> 5;
+      v = (lane < nw) ? sh[lane] : huge_double;
+      for (int o = 16; o > 0; o >>= 1)
+         v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+   }
+   return v;  // only lane 0 of warp 0 is the block min
+}
 
-
-   // Mark prisms (shallow enough or marked as such in tvd.prop) that will be computed using first-order upwind formulation.
-   elem->computeUse1stOrderUpwind();
-
-
-
-   // Init horizontal mass influx (m^3*concentration) for conservation 
-   h_mass_in(1:ntr)=0 !positive in
-
-
-//!-------------------------------------------------------------------------------------
-//       else if(itr_met==3) then !TVD in horizontal
-// !-------------------------------------------------------------------------------------
-
- 
-
-__device__ __forceinline__ double fluxLim(double upwindRatio) {
-// Flux limiter functions used in TVD schemes
-
-   if constexpr (typeTVD == tvdSB)
-      return max(0.0, max(min(1.0, 2.0*upwindRatio), min(2.0, upwindRatio)));
-   else if constexpr (typeTVD == tvdVL)
-      return (upwindRatio + abs(upwindRatio)) / (1.0 + abs(upwindRatio));
-   else if constexpr (typeTVD == tvdMM)
-      return max(0.0, min(1.0, upwindRatio));
-   else if constexpr (typeTVD == tvdOS)
-      return max(0.0, min(2.0, upwindRatio));
-   else {
-      assert(false && "TVD limiter not defined");
-      return 0.0;
+extern "C" __global__ void minTransportDt(double *out) {
+   const int idx = threadIdx.x + blockIdx.x * blockDim.x;
+   double v = huge_double;
+   if (idx < mesh->ne) {
+      Element *elem = &mesh->localElemData[idx];
+      if (!elem->isDry) v = elem->transport.maxDt;
+   }
+   __shared__ double sh[32];
+   const int lane = threadIdx.x & 31;
+   const int warp = threadIdx.x >> 5;
+   for (int o = 16; o > 0; o >>= 1)
+      v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+   if (lane == 0) sh[warp] = v;
+   __syncthreads();
+   if (warp == 0) {
+      const int nw = (blockDim.x + 31) >> 5;
+      v = (lane < nw) ? sh[lane] : huge_double;
+      for (int o = 16; o > 0; o >>= 1)
+         v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+      if (lane == 0) atomicMinDouble(out, v);
    }
 }
+
+
+
+
+
+
+   // // Mark prisms (shallow enough or marked as such in tvd.prop) that will be computed using first-order upwind formulation.
+   // elem->computeUse1stOrderUpwind();
+
+
+
+   // // Init horizontal mass influx (m^3*concentration) for conservation 
+   // h_mass_in(1:ntr)=0 !positive in
+
+
+// __device__ __forceinline__ double fluxLim(double upwindRatio) {
+// // Flux limiter functions used in TVD schemes
+
+//    if constexpr (typeTVD == tvdSB)
+//       return max(0.0, max(min(1.0, 2.0*upwindRatio), min(2.0, upwindRatio)));
+//    else if constexpr (typeTVD == tvdVL)
+//       return (upwindRatio + abs(upwindRatio)) / (1.0 + abs(upwindRatio));
+//    else if constexpr (typeTVD == tvdMM)
+//       return max(0.0, min(1.0, upwindRatio));
+//    else if constexpr (typeTVD == tvdOS)
+//       return max(0.0, min(2.0, upwindRatio));
+//    else {
+//       assert(false && "TVD limiter not defined");
+//       return 0.0;
+//    }
+// }
+
+} // extern "C"
 
 
 #ifdef DONTCOMPILE
@@ -6580,7 +6606,7 @@ __global__ void checkMassConservation(Tracers* sumtr) {
    if (elem->isDry) return;
 
    // Local sum array for this thread
-   double localSum[N_TRACERS] = {0.0};
+   double localSum[ntracers] = {0.0};
 
    // Sum over vertical levels for this element
    const int kbe = elem->kbe;
@@ -6590,7 +6616,7 @@ __global__ void checkMassConservation(Tracers* sumtr) {
       const double vol = (elem->z[k] - elem->z[k-1]) * area;
       
       // Accumulate tracer mass
-      for (int tr = 0; tr < N_TRACERS; tr++) {
+      for (int tr = 0; tr < ntracers; tr++) {
          sumtr[i].tracer[tr] += vol * elem->tracers[k].tracer[tr];
       }
    }
@@ -7096,8 +7122,9 @@ extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
                                                 double *emo, double *efa, 
                                                 double *umo, double *ufa, 
                                                 double *vmo, double *vfa,
-                                                int *ifltype, int *iettype, double *qthcon) {
-   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon);
+                                                int *ifltype, int *iettype, 
+                                                double *qthcon, double *eth) {
+   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon, eth);
 
 }
 

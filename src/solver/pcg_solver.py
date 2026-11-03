@@ -1086,6 +1086,14 @@ class PCGSolverMultiGPU:
         self.gatherBFromMesh()
         self.computeInvDiag()
         atol = self.computeAtol(rtol)
+        if atol == 0.0:  # XXXXXXX REMOVE???? I don't think it ever happens
+            for m, dev in enumerate(self.configCuda.devices):
+                with cp.cuda.Device(dev):
+                    self.x_m[m].fill(0.0)
+            self.scatterXToMesh()
+            self.rollHistory()
+            return 0
+
         self.extrapolateGuess()
         self.computeResiduals()                    # r_m = b_m - A_m @ x_guess
         for m, dev in enumerate(self.configCuda.devices):

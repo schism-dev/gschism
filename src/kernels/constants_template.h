@@ -6,7 +6,7 @@ constexpr double rad2deg = 180.0/3.14159265358979323846;
 
 constexpr int BLOCK_SIZE = __BLOCK_SIZE__;
 
-constexpr int N_TRACERS = __N_TRACERS__;
+constexpr int ntracers = __N_TRACERS__;
 
 constexpr int nGPUs = __N_GPUS__; // nGPUs is always equal to the number of partitions.
 constexpr int nPartitions = nGPUs;
@@ -81,6 +81,8 @@ constexpr double drampwind = __DRAMPWIND__; // Option to include wind forcing
 constexpr int ihconsv = __IHCONSV__;     // Option to include conservative wind forcing
 constexpr int isconsv = __ISCONSV__;     // Option to include conservative wind forcing
 
+constexpr int itr_met = __ITR_MET__;     // transport model
+constexpr double h_tvd = __H_TVD__;      // depth for TVD transport
 
 constexpr int nchi = __NCHI__;             // Option to compute drag coefficients chi and chi2
 constexpr double hmin_man = __HMIN_MAN__;  // Minimum water depth for Manning's friction

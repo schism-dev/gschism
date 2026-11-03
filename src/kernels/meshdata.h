@@ -1,9 +1,10 @@
 using int16_t = short;
 using uintptr_t = unsigned long long;   // CUDA device pointers are 64-bit
 
-constexpr double small1 = 1.0e-7;       // Small non-negative number
-constexpr double small2 = small1*100.0;  // Slightly larger than small1
+constexpr double small1 = 1.0e-7;           // Small non-negative number
+constexpr double small2 = small1*100.0;     // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
+constexpr double huge_double =  1.79e+308;  // Huge positive number
 
 constexpr int internalSegment = -1;  // It is not really a segment, but we keep the name.
 constexpr int landSegment     = -2;
@@ -419,7 +420,7 @@ __inline__ __device__ void Error(const char* msg) {
 }
 
 struct Tracers {
-    double tracer[N_TRACERS];
+    double tracer[ntracers];
 };
 
 
@@ -433,13 +434,14 @@ struct NodeBoundary;
 // ----------------------------- Transport -----------------------------
 
 enum class TransportModel : int {
-   TVD  = 3, // itr_met == 3  explicit TVD horiz, implicit TVD vert
-   WENO = 4, // itr_met == 4  later
+   Upwind = 1, // local fallback for elements that are too shallow to use TVD or WENO or explicitly marked as such in tvd.prop
+   TVD    = 3,
+   WENO   = 4,
 };
 
 constexpr TransportModel transportModel = static_cast<TransportModel>(itr_met);
 
-struct TransportFaceBase {
+struct TransportSideBase {
    double Qh[nvrt]; // Horizontal advection flux at each vertical level
 };
 
@@ -448,40 +450,24 @@ struct TransportElemBase {
 };
 
 template<TransportModel Model>
-struct TransportElem: public TransportElemBase {
+struct TransportElem: public TransportElemBase {};
+
+template<>
+struct TransportElem<TransportModel::Upwind>: public TransportElemBase {
+   double maxDt;             // Maximum allowed sub-time step for the element
+   double inflow[nvrt];      // Inflow of tracers at each vertical level
    Tracers prevTraces[nvrt]; // elem->tracers at previous substep
    bool itvd;                // Read from tvd.prop; 0 means always 1st order upwind
-   
 
-   __device__ __forceinline__  maxStableSubstep() const {
-      assert(false && "maxStableSubstep not implemented for this transport model");
-   }
+   // Bodies in meshdata.cu: Element is incomplete here.
+   __device__ bool use1stOrderUpwind(const Element *elem) const;
+   __device__ void savePrevTraces(const Element *elem);
+   __device__ double maxPrismDt(const Element *elem, int k) const;
+};
 
-   // flag that indicates if 1st order upwind is used
-   __device__ __forceinline__ bool use1stOrderUpwind(const Element *elem) const {
-      if (itvd) {
-         // If the element is marked as such in tvd.prop, use 1st order upwind for this element
-         return true;
-
-      } else {
-
-         // If *any* of the nodes of the element is shallow, use 1st order upwind
-         for (int j = 0; j < elem->i34; j++) {
-            const double htot = elem->nodes[j]->htot2();
-            if (htot < h_tvd) {
-               return true;
-            }
-         }  
-      }
-      return false;
-   }
-
-   __device__ __forceinline__ void savePrevTraces(const Element *elem) {
-      for (int k = 0; k < nvrt; k++) prevTraces[k] = elem->tracers[k];
-   }
-
-
-
+template<TransportModel Model>
+struct TransportSide: public TransportSideBase {
+   double Qh[nvrt]; // Horizontal advection flux at each vertical level
 };
 
 // ----------------------------- Turbulence -----------------------------
@@ -908,7 +894,7 @@ struct Element {
 
    // Physical information
    Tracers tracers[nvrt];     // Tracer values at each vertical level  
-   Transport<transportModel> transport; // Transport model 
+   TransportElem<transportModel> transport; // Transport model 
 
    static const bool isblock = false;              // Always false
 
@@ -1277,8 +1263,9 @@ struct SideBoundary {
    Vector2 ubc[nvrt]; // velocity boundary condition
 
    // Tidal velocity boundary conditions. They are computed from the nodal tidal velocity amplitudes and phases in populateBoundarySides().
-   Vector2 umo[nbfr];  // tidal velocity amplitude )
-   Vector2 ufa[nbfr];  // tidal velocity phase
+   // nbfr ? nbfr : 1 is there to avoid a 0-sized array.
+   Vector2 umo[nbfr ? nbfr : 1];  // tidal velocity amplitude 
+   Vector2 ufa[nbfr ? nbfr : 1];  // tidal velocity phase
    
    __inline__ __device__ double getBoundaryArrayValueWeight(void) const;
 
@@ -1341,6 +1328,9 @@ struct Side {
    // Bottom drag parameters.
    double chi;
    double chi2;
+
+   // Transport model
+   TransportSide<transportModel> transport; // Transport model 
 
    __inline__ __device__ Point2 outputCoords(void) const;
 
@@ -1503,8 +1493,9 @@ struct NodeBoundary {
    Vector2 uth[nvrt];  // "Time history" velocity
 
    // Arrays for harmonic constituents (if needed)
-   double  emo[nbfr];  // Elevation amplitude
-   double  efa[nbfr];  // Elevation phase
+   // nbfr ? nbfr : 1 is there to avoid a 0-sized array.
+   double  emo[nbfr ? nbfr : 1];  // Elevation amplitude
+   double  efa[nbfr ? nbfr : 1];  // Elevation phase
 
 
    NodeBoundary(void) {
@@ -1939,7 +1930,8 @@ struct Mesh {
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa,
-                                          int *ifltype, int *iettype, double *qthcon); 
+                                          int *ifltype, int *iettype, 
+                                          double *qthcon, double *eth); 
 
    __device__ void populateBoundarySides(int *nond, int *iond,
                                           double *emo, double *efa, 

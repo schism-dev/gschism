@@ -3,7 +3,7 @@ natrm = 12      # Number of _available_ tracer models at the moment (including T
 mntracers = 30  # Maximum number of tracers, used only for dimensioning btrack arrays. Must >=ntracers
 
 
-DEBUG = False
+DEBUG = True
 try:
     import sys
     WINDOWS = sys.platform.startswith("win")

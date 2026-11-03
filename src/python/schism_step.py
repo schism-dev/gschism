@@ -65,7 +65,24 @@ def computeMeteorologicalForcing(opt, time, sflux):
     print("WARNING: Sflux reading is not well optimized yet. I believe it does unnecesary computations every time step")  # XXXXXXXX
 
 
+def minTransportDt():
+    vals = []
+    import iop.cudaKernelWrapper as ckw
+    for device_id in ckw.configCuda.devices:
+        with cp.cuda.Device(device_id):
+            out = cp.array([1e34])
+            cufunc.minTransportDtKernel(out)  # elements, onlycurrent
+            vals.append(float(out.get()))
+    return min(vals)
 
+def computeTransport(dt: float):
+    cufunc.computeHorizAdvecFluxes()
+
+    dtb = 1e34 # just a big number
+    while (dt > 0.0):
+        cufunc.horizontalAdvection()
+        dtb = min(dt, minTransportDt())
+        dt = dt - dtb
 
 
 def schism_step(it: int, namelist, bctides, sflux, solver):
@@ -264,6 +281,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
 
     # Transport    lines 7388-8111
+    computeTransport(dt)
 
     if opt.ishapiro == 1:
         # The Shapiro filter is applied in two steps

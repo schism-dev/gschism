@@ -67,7 +67,9 @@ updateSearchDirection = None
 updateBedDeformation = None
 shapiroFilter1 = None
 shapiroFilter2 = None
-
+computeHorizAdvecFluxes = None
+horizontalAdvection = None
+minTransportDtKernel = None
 
 getSideBndVar = None
 getElementVarAddr = None
@@ -138,7 +140,7 @@ def initializeCudaFunctions(sizes):
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
     global setupCGSolver, solverCopyResult, gatherBFromMesh, scatterXToMesh, ul0ComputeDryElements, ul0ComputeDryNodes
-    global updateBedDeformation, shapiroFilter1, shapiroFilter2
+    global updateBedDeformation, shapiroFilter1, shapiroFilter2, computeHorizAdvecFluxes, horizontalAdvection, minTransportDtKernel
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix, returnX, returnB
     global ul0UpdateZCoords, ul0ComputeDryElements, ul0ComputeDryNodes, ul0UpdateRewettedNodes, ul0UpdateSides, ul0UpdateSides2
@@ -211,6 +213,9 @@ def initializeCudaFunctions(sizes):
         setVelocityOpenBndNodes             = mod.get_function('setVelocityOpenBndNodes',             sizes, kernel_type='sideBnd')
         computeVerticalVelocity             = mod.get_function('computeVerticalVelocity',             sizes, kernel_type='elements')
         backtrackAllNodes                   = mod.get_function('backtrackAllNodes',                   sizes, kernel_type='sides')
+        computeHorizAdvecFluxes             = mod.get_function('computeHorizAdvecFluxes',             sizes, kernel_type='sides')
+        horizontalAdvection                 = mod.get_function('horizontalAdvection',                 sizes, kernel_type='elements')
+        minTransportDtKernel               = mod.get_function('minTransportDt',                      sizes, kernel_type='elements,onlycurrent')
 
         printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='global')
         returnMatrix                        = mod.get_function('returnMatrix',                        sizes, kernel_type='global')

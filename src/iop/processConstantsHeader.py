@@ -131,6 +131,9 @@ def processConstants(namelist, tidalData, ivcor: int, nvrt: int, nzlev: int, nsi
         '__DRAMPWIND__': (namelist.opt.drampwind, 'namelist.opt'),
         '__IHCONSV__': (namelist.opt.ihconsv, 'namelist.opt'),
         '__ISCONSV__': (namelist.opt.isconsv, 'namelist.opt'),
+        # transport parameters
+        '__ITR_MET__': (1, 'namelist.opt'), # XXXXXX (namelist.opt.itr_met, 'namelist.opt'),
+        '__H_TVD__': (namelist.opt.h_tvd, 'namelist.opt'),
         # From grid parameters
         '__IVCOR__': (ivcor, 'grid'),
         '__NVRT__': (nvrt, 'grid'),

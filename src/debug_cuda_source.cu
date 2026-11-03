@@ -1,13 +1,13 @@
 // BEGIN INCLUDE: constants.h
-#define USE_LOCALIZED_SIGMA
-#define USE_FRAMES
+#define DO_NOT_USE_LOCALIZED_SIGMA
+#define DO_NOT_USE_FRAMES
 
 constexpr double deg2rad = 3.14159265358979323846/180.0;
 constexpr double rad2deg = 180.0/3.14159265358979323846;
 
 constexpr int BLOCK_SIZE = 128;
 
-constexpr int N_TRACERS = 2;
+constexpr int ntracers = 2;
 
 constexpr int nGPUs = 1; // nGPUs is always equal to the number of partitions.
 constexpr int nPartitions = nGPUs;
@@ -45,36 +45,36 @@ constexpr StabilityModel stabilityModel   = static_cast<StabilityModel>(1);
 
 
 // Nodes owned by each partition
-constexpr int numNodesPerPartition[nPartitions] = {1455186};
+constexpr int numNodesPerPartition[nPartitions] = {5289};
 // Cumulative counts: offset[0]=numNodesPerPartition[0], offset[p]=offset[p-1]+numNodesPerPartition[p]
 constexpr int nodeOffsetPerPartition[nPartitions] = {0};
 
 
 
-constexpr int ivcor = 1;              // Vertical coordinate system
-constexpr int ics = 2;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
+constexpr int ivcor = 2;              // Vertical coordinate system
+constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
-constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
+constexpr int indvel = 1;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
 constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = 0; // Option of including hydraulics
 constexpr int nhtblocks = 0;                 // Number of hydraulic structures (zero for the moment)
 constexpr int ibc = 1;                 // Option to include baroclinic term (0 means yes)
-constexpr int ibtp = 0;               // Decides wether transport is included in barotropic model
+constexpr int ibtp = 1;               // Decides wether transport is included in barotropic model
 constexpr int itur = 0;               // Turbulence closure model
 constexpr int icompute_cpsi3 = 0;  // 0: use tabulated cpsi3; !=0: compute (not implemented)
 constexpr int islip = 0;             // Option to include slip horizontal boundary conditions
 constexpr int iupwind_mom = 0; // Option on how to include upwind momentum advection
 constexpr int ihorcon = 0;         // Option to include horizontal viscosity
 constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
-constexpr int ishapiro = 1;       // Option to include Shapiro filter
+constexpr int ishapiro = 0;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
-constexpr int ncor = 1;               // Option to include Coriolis force
+constexpr int ncor = 0;               // Option to include Coriolis force
 constexpr double coricoef = 0;    // Coriolis force coefficient
-constexpr double sfea0 = 24*deg2rad; // Reference latitude for Coriolis force
-constexpr int nws = 2;               // Option to include wind forcing
-constexpr double wtiminc = 3600;    // Time increment for wind forcing
+constexpr double sfea0 = 45*deg2rad; // Reference latitude for Coriolis force
+constexpr int nws = 0;               // Option to include wind forcing
+constexpr double wtiminc = 300;    // Time increment for wind forcing
 constexpr int iwind_form = 1; // Option to include wind forcing
 constexpr int iwindoff = 0;     // Option to include wind forcing
 constexpr double drampwind = 1; // Option to include wind forcing
@@ -82,8 +82,10 @@ constexpr double drampwind = 1; // Option to include wind forcing
 constexpr int ihconsv = 0;     // Option to include conservative wind forcing
 constexpr int isconsv = 0;     // Option to include conservative wind forcing
 
+constexpr int itr_met = 1;     // transport model
+constexpr double h_tvd = -1;      // depth for TVD transport
 
-constexpr int nchi = 1;             // Option to compute drag coefficients chi and chi2
+constexpr int nchi = 0;             // Option to compute drag coefficients chi and chi2
 constexpr double hmin_man = 1;  // Minimum water depth for Manning's friction
 
 constexpr int nramp_elev = 0; // Option to use ramp for elevation boundary conditions
@@ -97,11 +99,11 @@ constexpr double prmsl_ref = 101325; // Reference pressure for inverse barometri
 constexpr double veg_lai = 1; // Vegetation drag coefficient
 constexpr double veg_cw = 1.5; // Vegetation drag coefficient
 
-constexpr int ntip = 8;            // Number of tidal potential components
-constexpr double tip_dp = 50;   // cut-off depth for applying tidal potential
+constexpr int ntip = 0;            // Number of tidal potential components
+constexpr double tip_dp = 40;   // cut-off depth for applying tidal potential
 
 // Boundary forcing frequencies
-constexpr int nbfr = 8;            // Number of boundary forcing frequencies
+constexpr int nbfr = 0;            // Number of boundary forcing frequencies
 
 // Boundary condition types
 constexpr int nettype = 0;      // Total number of type I elevation boundaries
@@ -119,26 +121,26 @@ constexpr double h2_bcc   = 100;
 constexpr double hw_depth = 1000000; 
 constexpr double hw_ratio = 0.5;
 
-constexpr int nvrt    = 50; // Number of vertical levels
-constexpr int nzlev   = 0; // Number of z levels (in contrast to sigma levels)
-constexpr int nsiglev = 50; // Number of sigma levels (in contrast to z levels)
+constexpr int nvrt    = 23; // Number of vertical levels
+constexpr int nzlev   = 1; // Number of z levels (in contrast to sigma levels)
+constexpr int nsiglev = 23; // Number of sigma levels (in contrast to z levels)
 
 //  To simplify comparisons, I define index versions of count variables.
 constexpr int ivrt    = nvrt - 1;
 constexpr int izlev   = nzlev - 1;
 constexpr int isiglev = nsiglev - 1;
 
-constexpr int nope  = 1; // Number of open boundary segments
-constexpr int mnond = 1199; // Maximum number of nodes per open boundary segment
-constexpr int nland = 45; // Number of land boundary segments
-constexpr int mnlnd = 29002; // Maximum number of nodes per land boundary segment
+constexpr int nope  = 2; // Number of open boundary segments
+constexpr int mnond = 41; // Maximum number of nodes per open boundary segment
+constexpr int nland = 2; // Number of land boundary segments
+constexpr int mnlnd = 129; // Maximum number of nodes per land boundary segment
 
 constexpr double rearth_eq   = 6378206.4; // [m] 
 constexpr double rearth_pole = 6378206.4; // [m]
 
-constexpr double thetai = 1;
+constexpr double thetai = 0.51;
 
-constexpr double rmaxvel = 4; // Maximum velocity for the x-component
+constexpr double rmaxvel = 10; // Maximum velocity for the x-component
 constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-component
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
@@ -150,15 +152,15 @@ constexpr double velmin_btrack_sq = velmin_btrack*velmin_btrack;
 
 constexpr int nadv = 1; // Advection flag
 
-constexpr double dfv0 = 0.01; // turbulent diffusion for momentum
-constexpr double dfh0 = 0.0001; // turbulent diffusion for tracers
+constexpr double dfv0 = 0; // turbulent diffusion for momentum
+constexpr double dfh0 = 0; // turbulent diffusion for tracers
 constexpr double xlsc0 = 0.1; // surface/bottom mixing length scale (itur=3,5)
 
 constexpr double dzb_min = 0.5; // Min. bottom boundary layer thickness [m]
 
-constexpr double dt = 120;  // Time step  XXX 
+constexpr double dt = 300;  // Time step  XXX 
 
-constexpr double h0 = 0.0001;  // Minimum water depth for wetting and drying [m]
+constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
 enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, dfh=15, dfv=16, tke=17, mxl=18, island=19, ifltype=20, elbc=21, isdry=22, eta=23, area=24, qel=25, depth=26, radius=27, len=28, lonlat=29, kb=30, n1=31, n2=32, idx=33, htot=34, gradPr=35, gradEta1=36, gradEta2=37, gradETP=38, FaceIndices=39, u_air=40, outputCoords=41}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
@@ -166,9 +168,10 @@ enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, 
 using int16_t = short;
 using uintptr_t = unsigned long long;   // CUDA device pointers are 64-bit
 
-constexpr double small1 = 1.0e-7;       // Small non-negative number
-constexpr double small2 = small1*100.0;  // Slightly larger than small1
+constexpr double small1 = 1.0e-7;           // Small non-negative number
+constexpr double small2 = small1*100.0;     // Slightly larger than small1
 constexpr double small = 1.0e-7;            // Small positive number or 0
+constexpr double huge_double =  1.79e+308;  // Huge positive number
 
 constexpr int internalSegment = -1;  // It is not really a segment, but we keep the name.
 constexpr int landSegment     = -2;
@@ -584,7 +587,7 @@ __inline__ __device__ void Error(const char* msg) {
 }
 
 struct Tracers {
-    double tracer[N_TRACERS];
+    double tracer[ntracers];
 };
 
 
@@ -598,48 +601,40 @@ struct NodeBoundary;
 // ----------------------------- Transport -----------------------------
 
 enum class TransportModel : int {
-   TVD  = 3, // itr_met == 3  explicit TVD horiz, implicit TVD vert
-   WENO = 4, // itr_met == 4  later
+   Upwind = 1, // local fallback for elements that are too shallow to use TVD or WENO or explicitly marked as such in tvd.prop
+   TVD    = 3,
+   WENO   = 4,
 };
 
 constexpr TransportModel transportModel = static_cast<TransportModel>(itr_met);
 
+struct TransportSideBase {
+   double Qh[nvrt]; // Horizontal advection flux at each vertical level
+};
+
+struct TransportElemBase {
+   
+};
 
 template<TransportModel Model>
-struct Transport {
+struct TransportElem: public TransportElemBase {};
+
+template<>
+struct TransportElem<TransportModel::Upwind>: public TransportElemBase {
+   double maxDt;             // Maximum allowed sub-time step for the element
+   double inflow[nvrt];      // Inflow of tracers at each vertical level
    Tracers prevTraces[nvrt]; // elem->tracers at previous substep
    bool itvd;                // Read from tvd.prop; 0 means always 1st order upwind
-   
 
-   __device__ __forceinline__  maxStableSubstep() const {
-      assert(false && "maxStableSubstep not implemented for this transport model");
-   }
+   // Bodies in meshdata.cu: Element is incomplete here.
+   __device__ bool use1stOrderUpwind(const Element *elem) const;
+   __device__ void savePrevTraces(const Element *elem);
+   __device__ double maxPrismDt(const Element *elem, int k) const;
+};
 
-   // flag that indicates if 1st order upwind is used
-   __device__ __forceinline__ bool use1stOrderUpwind(const Element *elem) const {
-      if (itvd) {
-         // If the element is marked as such in tvd.prop, use 1st order upwind for this element
-         return true;
-
-      } else {
-
-         // If *any* of the nodes of the element is shallow, use 1st order upwind
-         for (int j = 0; j < elem->i34; j++) {
-            const double htot = elem->nodes[j]->htot2();
-            if (htot < h_tvd) {
-               return true;
-            }
-         }  
-      }
-      return false;
-   }
-
-   __device__ __forceinline__ void savePrevTraces(const Element *elem) {
-      for (int k = 0; k < nvrt; k++) prevTraces[k] = elem->tracers[k];
-   }
-
-
-
+template<TransportModel Model>
+struct TransportSide: public TransportSideBase {
+   double Qh[nvrt]; // Horizontal advection flux at each vertical level
 };
 
 // ----------------------------- Turbulence -----------------------------
@@ -1066,7 +1061,7 @@ struct Element {
 
    // Physical information
    Tracers tracers[nvrt];     // Tracer values at each vertical level  
-   Transport<transportModel> transport; // Transport model 
+   TransportElem<transportModel> transport; // Transport model 
 
    static const bool isblock = false;              // Always false
 
@@ -1171,6 +1166,7 @@ struct Element {
 
    __inline__ __device__ double z_prism(int k) const { assert(k < nvrt - 1); return 0.5*(z[k+1] + z[k]); }
    __inline__ __device__ double Dz(int k)      const { assert(k < nvrt - 1); return z[k+1] - z[k]; }
+   __inline__ __device__ double volume(int k)  const { assert(k < nvrt - 1); return area * Dz(k); }
 
 
    __device__ __forceinline__ double centerZ(void) const;
@@ -1434,8 +1430,9 @@ struct SideBoundary {
    Vector2 ubc[nvrt]; // velocity boundary condition
 
    // Tidal velocity boundary conditions. They are computed from the nodal tidal velocity amplitudes and phases in populateBoundarySides().
-   Vector2 umo[nbfr];  // tidal velocity amplitude )
-   Vector2 ufa[nbfr];  // tidal velocity phase
+   // nbfr ? nbfr : 1 is there to avoid a 0-sized array.
+   Vector2 umo[nbfr ? nbfr : 1];  // tidal velocity amplitude 
+   Vector2 ufa[nbfr ? nbfr : 1];  // tidal velocity phase
    
    __inline__ __device__ double getBoundaryArrayValueWeight(void) const;
 
@@ -1489,8 +1486,6 @@ struct Side {
 
    double shapiro;
 
-   double flux_adv_hface[nvrt]; // Flux of horizontal advection at each vertical level
-
    double coriolis;             // Coriolis parameter
 
    // Vegetation parameters
@@ -1500,6 +1495,9 @@ struct Side {
    // Bottom drag parameters.
    double chi;
    double chi2;
+
+   // Transport model
+   TransportSide<transportModel> transport; // Transport model 
 
    __inline__ __device__ Point2 outputCoords(void) const;
 
@@ -1662,8 +1660,9 @@ struct NodeBoundary {
    Vector2 uth[nvrt];  // "Time history" velocity
 
    // Arrays for harmonic constituents (if needed)
-   double  emo[nbfr];  // Elevation amplitude
-   double  efa[nbfr];  // Elevation phase
+   // nbfr ? nbfr : 1 is there to avoid a 0-sized array.
+   double  emo[nbfr ? nbfr : 1];  // Elevation amplitude
+   double  efa[nbfr ? nbfr : 1];  // Elevation phase
 
 
    NodeBoundary(void) {
@@ -2098,7 +2097,8 @@ struct Mesh {
                                           double *emo, double *efa, 
                                           double *umo, double *ufa, 
                                           double *vmo, double *vfa,
-                                          int *ifltype, int *iettype, double *qthcon); 
+                                          int *ifltype, int *iettype, 
+                                          double *qthcon, double *eth); 
 
    __device__ void populateBoundarySides(int *nond, int *iond,
                                           double *emo, double *efa, 
@@ -4681,7 +4681,8 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
                                             double *emo, double *efa, 
                                             double *umo, double *ufa, 
                                             double *vmo, double *vfa,
-                                            int *ifltype, int *iettype, double *qthcon) {
+                                            int *ifltype, int *iettype, 
+                                            double *qthcon, double *eth) {
 
    NODE_BND(nodeBnd);
    const int idx = idx_node_bnd;    
@@ -4706,6 +4707,8 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
             nodeBnd->segment->ifltype = ifltype[iseg];
             nodeBnd->segment->iettype = iettype[iseg];
             nodeBnd->segment->qthcon  = qthcon[iseg];
+            nodeBnd->segment->eth     = eth[iseg];
+            nodeBnd->eth     = eth[iseg]; // XXXXXXX Is this always needed? ot only for certain ietype?
             nodeBnd->segment->idx = iseg;
 
             for (int jfr = 0; jfr < nbfr; jfr++) {
@@ -8615,7 +8618,7 @@ extern "C" {
 
    } 
 
-} // extern "C"
+
 
 
 
@@ -8623,1008 +8626,209 @@ extern "C" {
 // Transport
 // ------------------------------------------------------------
 
-// GSCHISM transport models using implicit TVD in the vertical, explicit TVD
+__device__ bool TransportElem<TransportModel::Upwind>::use1stOrderUpwind(const Element *elem) const {
+   if (itvd) {
+      // Marked as such in tvd.prop: always 1st order upwind for this element
+      return true;
+   }
 
-void doTransportTVD(double &difnum_max_l) {
+   // If any node of the element is shallow, use 1st order upwind
+   for (int j = 0; j < elem->i34; j++) {
+      if (elem->nodes[j]->htot2() < h_tvd) return true;
+   }
+   return false;
+}
 
-// XXXX USE_DVD not implemented
+__device__ void TransportElem<TransportModel::Upwind>::savePrevTraces(const Element *elem) {
+   for (int k = 0; k < nvrt; k++) prevTraces[k] = elem->tracers[k];
+}
 
-// Do upwind and TVD transport
-//
-//   difnum_max_l: max. horizontal diffusion number reached by this process (check stability)
+__device__ double TransportElem<TransportModel::Upwind>::maxPrismDt(const Element *elem, int k) const {
+   if (inflow[k] == 0.0) return huge_double;
+   return elem->volume(k - 1) / inflow[k] * (1.0 - 1.0e-6);
+}
 
-
-//       integer, parameter :: iter_back=50 !maximum iterations in implicit part (upwind is used after that)
-
-// !     Working temporary arrays in this routine
-//       real(rkind), allocatable :: trel_tmp(:,:,:) !tracer @ elements and half levels
-//       real(rkind), allocatable :: flux_adv_hface(:,:) ! original horizontal flux (the local x-driection) 
-//       real(rkind), allocatable :: flux_mod_hface(:,:,:) !limited advective fluxes on horizontal faces
-//       !weno>
-//       real(rkind), allocatable :: trel_tmp0(:,:,:) !tracer @ elements and half levels
-//       real(rkind), allocatable :: trsd_tmp(:,:,:) !tmp concentration on horizontal faces
-//       real(rkind), allocatable :: trsd_tmp0(:,:,:) !tmp concentration on horizontal faces, only used for message-passing
-//       !<weno
-//       real(rkind), allocatable :: up_rat_hface(:,:,:) !upwind ratios for horizontal faces
-
-
-//       integer :: iupwind_e(nea) !to mark upwind prisms when TVD is used
-//       real(rkind) :: dtb_min3(ne),buf(2,1),buf2(2,1)
-//       real(rkind) :: flux_mod_v1(nvrt) !coefficient of limited advective fluxes on vertical faces (space)
-//       real(rkind) :: flux_mod_v2(nvrt) !coefficient of limited advective fluxes on vertical faces (time)
-//       real(rkind) :: rrat(nvrt) !upwind ratios for vertical faces (spatial limiter)
-//       real(rkind) :: srat(nvrt) !s-ratio for vertical faces (temporal limiter)
-//       real(rkind) :: phi(nvrt) !spatial limiter 
-//       real(rkind) :: bigv_m(nvrt) !prism volume
-//       real(rkind) :: psi1(nvrt) !time limiter 
-
-//       real(rkind) :: r_s(nvrt),r_s0(nvrt) !local Courant number
-
-//       real(rkind) :: psumtr(ntr),delta_tr(ntr),adv_tr(ntr),tmass(ntr),h_mass_in(ntr), &
-//      &alow(nvrt),bdia(nvrt),cupp(nvrt),rrhs(1,nvrt),soln(1,nvrt),gam(nvrt), &
-//      &swild(max(3,nvrt)),swild4(3,2),trel_tmp_outside(ntr),swild5(3)
-//       integer :: nwild(2),ielem_elm(nea),ind_elm(npa)
-
-//       integer :: istat,i,j,k,kk,l,m,khh2,ie,n1,n2,n3,n4,isd,isd0,isd1,isd2,isd3,j0,je, &
-//                  &nd,it_sub,ntot_v,ntot_vgb,kup,kdo,jsj,jsj0,kb, &
-//                  &kb1,iup,ido,ie01,lev01,in_st,ie02,lev02,in_st2,jj,ll,lll,ndim,kin,iel,ibnd, &
-//                  &ndo,ind1,ind2,nd1,nd2,ibio,iterK,iele_max,iterK_MAX,it_sum1,it_sum2
-//       real(rkind) :: vnor1,vnor2,xcon,ycon,zcon,dot1,sum1,tmp,cwtmp,toth, &
-//                      &time_r,psum,rat,dtbl,dtbl2,dtb,vj,av_df,av_dz,hdif_tmp, &
-//                      &av_h,difnum,cwtmp2,bigv,dt_by_bigv,dtb_by_bigv, &
-//                      &term1,term2,term6,strat1,strat2,denom, &
-//                      &b1,b2,b3,b4,b5,vol
-
-//       real(rkind) :: ref_flux
-//       logical     :: same_sign, is_land
-// !      logical, save :: first_call
-//       !weno>
-//       real(rkind) :: trsd(2),rctr,ang1,ui,vi,t_out,rk_coef(3) 
-//       real(rkind),allocatable :: wm1(:),wm2(:),wm(:) !weight
-//       real(rkind),allocatable :: tr_min_max(:,:) 
-//       logical :: iweno
-//       integer :: itd_weno       
-
-//       !character(72) :: ftest  ! Name of debugging file
-//       !integer :: lftest       ! Length of debugging file name
-//       !integer :: iorder !temporary identifier for order of accuracy
-
-      // Compute total mass of each tracer (for conservation)
-      // if(max_iadjust_mass_consv>0) then
-      //   psumtr=0
-      //   do i=1,ne
-      //     if(idry_e(i)==1) cycle
-
-      //     do k=kbe(i)+1,nvrt
-      //       vol=(ze(k,i)-ze(k-1,i))*area(i)
-      //       psumtr(1:ntr)=psumtr(1:ntr)+vol*tr_el(1:ntr,k,i)
-      //     enddo !k
-      //   enddo !i=1,ne
-      //   call mpi_allreduce(psumtr,tmass,ntr,rtype,MPI_SUM,comm,ierr)
-
-      // endif !max_iadjust_mass_consv
+__global__ void computeHorizAdvecFluxes(void) {
 
 
-
-//       allocate(trel_tmp(ntr,nvrt,0:nea),flux_adv_hface(nvrt,nsa),tr_min_max(2,ntr), &
-//               &flux_mod_hface(ntr,nvrt,ns),up_rat_hface(ntr,nvrt,nsa),stat=istat) 
-//       trel_tmp=0.d0
-// !      allocate(psum2(ntr,nvrt,ne))
-//       if(istat/=0) call parallel_abort('Transport: fail to allocate')
-
-//     For TVD, prepare some arrays for 2-tier ghosts
-
-      idry_e_2t(1:ne)=idry_e(1:ne)
-
-
-
-!    Modify here 3D velocity for transport (for whatever reason) - make sure volume conservation is not violated
-!     For rewetted elements, tr_el takes the value from last wet step
-
-
-!     Compute (pre-limited) horizontal fluxes at all faces (vertical
-!     fluxes done in schism_step)
-
-      flux_adv_hface=-1.d34 !flags
-
-
-      
-
-
-   // Horizontal fluxes
    SIDE(side)
 
-   const bool isDry = side->isDry();
+   auto &transport = side->transport;
 
-   if (isDry) continue;
+   for (int k = 0; k < nvrt; k++) transport.Qh[k] = -1.0e34; // Sentinel value for dry sides.
 
-   const bool isLand = (side->sideBnd!=nullptr && side->sideBnd->isLand);
+   if (side->isDry) return;
+
+   const bool isLand = (side->sideBnd!=nullptr && side->sideBnd->segment != nullptr && side->sideBnd->segment->isLand);
    const int kb = side->kb;
 
    for (int k = kb + 1; k < nvrt; k++) {
-   if (isLand) {
-      fluxAdvHFace = 0.0;
-   } else {
-      const Vector2 n = side->n; // normal vector to the side
-      const double area = side->area(k); // Area of the side face.
-      const double vnor1 = dot(n, side->u2[k]);
-      const double vnor2 = dot(n, side->u2[k-1]);
-      const double vnor_c = 0.5*(vnor1 + vnor2);
-
-
-      side->fluxAdvHFace = area*vnor_c; 
-   }
-
-   //   >>do j=1,ns !resident side
-   //      if (idry_s(j)==1) cycle
-   //      is_land=(isdel(2,j)==0.and.isbs(j)<=0)
-
-   //      do k=kbs(j)+1,nvrt
-   //        if(is_land) then !land
-   //          flux_adv_hface(k,j)=0.d0
-   //        else            
-   //          vnor1=su2(k,j)*snx(j)+sv2(k,j)*sny(j)
-   //          vnor2=su2(k-1,j)*snx(j)+sv2(k-1,j)*sny(j)
-   //          flux_adv_hface(k,j)=(zs(k,j)-zs(k-1,j))*distj(j)*(vnor1+vnor2)/2 !normal * area = flux (in local x-direction)
-
-
-   //        endif !is_land
-   //      enddo !k=kbs(i)+1,nvrt
-   //   << enddo !j=1,ns
-
-
-
-
-   // Mark prisms shallow enough that they will be computed using first-order upwind formulation.
-   elem->computeUse1stOrderUpwind();
-
-
-
-
-
-   // Init horizontal mass influx (m^3*concentration) for conservation 
-      h_mass_in(1:ntr)=0 !positive in
-
-
-//!-------------------------------------------------------------------------------------
-//       else if(itr_met==3) then !TVD in horizontal
-// !-------------------------------------------------------------------------------------
-
-      do i=1,ntr
-        flux_mod_hface(i,1:nvrt,1:ns)=flux_adv_hface(1:nvrt,1:ns)
-      enddo !i
-
-      it_sub=0
-      time_r=dt !time remaining
-
-      loop11: do
-        it_sub=it_sub+1
-
-
-!       Compute flux limiters and modify fluxes
-        !Use h_tvd as a flag to bypass this and other parts for efficiency
-        if(h_tvd<1.d5) then
-          up_rat_hface=-1.d34 !flags
-
-
-!         Horizontal limiters
-
-          do i=1,ns !residents
-            if(idry_s(i)==1) cycle
-
-!           At least one element is wet
-            up_rat_hface(:,:,i)=0.d0 !-1.d0 !initialize (for below bottom and abnormal cases)
-            if(isdel(2,i)==0.or.(isdel(2,i)/=0.and.idry_e(max(1,isdel(2,i)))==1).or.idry_e(isdel(1,i))==1) cycle
-
-!           Both elem r wet
-            !Bypass sides with at least 1 'upwind' elem
-            if(iupwind_e(isdel(1,i))/=0.or.iupwind_e(isdel(2,i))/=0) cycle
-
-!           Leave k=kbs unchanged
-            do k=kbs(i)+1,nvrt !faces
-              if(flux_adv_hface(k,i)<-1.d33) then
-                write(errmsg,*)'Left out horizontal flux (3):',i,k
-                call parallel_abort(errmsg)
-              endif
-              if(flux_adv_hface(k,i)>0.d0) then
-                iup=isdel(1,i); ido=isdel(2,i) !up/downwind prisms
-              else
-                iup=isdel(2,i); ido=isdel(1,i)
-              endif
-
-              psum=0.d0 !!sum of original fluxes
-              psumtr(1:ntr)=0.d0 !sum of products (|Q|*(T-T))
-              do j=1,i34(iup)
-                jsj=elside(j,iup)
-                ie=ic3(j,iup)
-
-                if(ie<0) then !outside 1-tier aug. domain
-                  ie=iabs(ie) !global elem.
-
-
-
-                  ind1=iegl2(2,ie) !local elem. index in 2-tier aug. domain
-
-
-
-                  ie=ind1
-                endif !ie<0
-
-                !idry_e_2t, tr_el are valid up to 2-tier aug.
-                if(ie/=0) then; if(idry_e_2t(ie)==0.and.k>=kbs(jsj)+1.and.ssign(j,iup)*flux_adv_hface(k,jsj)<0.d0) then
- 
-                  psum=psum+abs(flux_adv_hface(k,jsj))
-                  psumtr(1:ntr)=psumtr(1:ntr)+abs(flux_adv_hface(k,jsj))*(tr_el(1:ntr,k,ie)-tr_el(1:ntr,k,iup))
-                endif; endif
-              enddo !j
-
-              do j=1,ntr
-                tmp=(tr_el(j,k,iup)-tr_el(j,k,ido))*abs(flux_adv_hface(k,i))
-                if(abs(tmp)>1.d-20) up_rat_hface(j,k,i)=psumtr(j)/tmp
-              enddo !j
-
-
-            enddo !k=kbs(i)+1,nvrt
-          enddo !i=1,ns
-
-// !         Exchange up_rat
-//           call exchange_s3d_tr2(up_rat_hface)
- 
-
-!         Modified horizontal fluxes
-
-          do i=1,ns
-            if(idry_s(i)==1.or.isdel(2,i)==0.or.idry_e(isdel(1,i))==1) cycle
-            if(idry_e(isdel(2,i))==1) cycle
-            !Bypass if both elem r upwind (then up_rat_hface=0 on all sides)
-            if(iupwind_e(isdel(1,i))/=0.and.iupwind_e(isdel(2,i))/=0) cycle
-
-!           Both elements are wet
-            do k=kbs(i)+1,nvrt
-              if(flux_adv_hface(k,i)>0) then
-                iup=isdel(1,i)
-              else
-                iup=isdel(2,i)
-              endif
- 
-              delta_tr(1:ntr)=0.d0
-              do j=1,i34(iup)
-                jsj=elside(j,iup) !inside aug. domain
-!                ie=ic3(j,iup) !not really used
-                if(k>=kbs(jsj)+1.and.ssign(j,iup)*flux_adv_hface(k,jsj)>0.d0) then !outflow
-                  do jj=1,ntr
-                    rat=up_rat_hface(jj,k,jsj)
-
-                    if(abs(rat)>1.d-5) then
-                      tmp=flux_lim(rat)/(rat*2.d0)
-
-                      delta_tr(jj)=delta_tr(jj)+tmp
-                    endif
-                  enddo !jj=1,ntr
-                endif !outflow
-              enddo !j
-
-              do j=1,ntr
-                flux_mod_hface(j,k,i)=flux_adv_hface(k,i)*(1.d0- &
-     &flux_lim(up_rat_hface(j,k,i))/2.d0+ delta_tr(j)) 
-              enddo !j
-            enddo !k=kbs(i)+1,nvrt
-          enddo !i=1,ns
-
-        endif !flux limiter; h_tvd
-
-!       Compute sub time step
-!       Strike out \hat{S}^- (including all horizontal and vertical bnds, and where ic3(j,i) is dry)
-!       Caution: \hat{S}^- conditions must be consistent later in the advective flux part!!!!!!
-!       Implicit vertical flux for upwind; explicit for TVD
-
-!        if(ltvd.or.it_sub==1) then !for upwind, only compute dtb for the first step
-        if(h_tvd<1.d5.or.it_sub==1) then !for upwind in entire domain, only compute dtb for the first step
-          dtbl=time_r !init
-          ie01=0 !element # where the exteme is attained (local)
-          lev01=0 !level #
-          in_st=0 !tracer #
-
-          dtb_min3(:)=time_r !init
-
-          ielem_elm=0
-
-          do i=1,ne
-            if(idry_e(i)==1) cycle
-
-            dtbl2=huge(1.d0) !init local
-            ie02=0 !element # where the exteme is attained (local)
-            lev02=0 !level #
-            in_st2=0
-            do k=kbe(i)+1,nvrt !prism
-              psumtr(1:ntr)=0.d0 !sum of modified fluxes for all inflow bnds
-     
-              do j=1,i34(i)
-                jsj=elside(j,i) !resident side
-                ie=ic3(j,i)
-  
-                if(k>=kbs(jsj)+1) then
-                  ref_flux = flux_mod_hface(1,k,jsj)
-                  same_sign = (ssign(j,i)*ref_flux)<0.d0
-!!DIR$ IVDEP 
-                  if((ie/=0.and.idry_e(max(1,ie))==0.or.ie==0.and.isbs(jsj)>0).and.same_sign) then !flux_mod(:) same sign as flux_adv
-                    do jj=1,ntr
-
-
-                      psumtr(jj)=psumtr(jj)+abs(flux_mod_hface(jj,k,jsj))
-                    enddo !jj
-
-                  endif !ie
-                endif !k>=kbs
-              enddo !j
-
-
-              vj=area(i)*(ze(k,i)-ze(k-1,i))
-
-              if(it==46.and.it_sub==1.and.i==58422) write(99,*)k,nplus,vj
-
-              do jj=1,ntr
-                if(psumtr(jj)/=0.d0) then
-                  tmp=vj/psumtr(jj)*(1.d0-1.d-6) !safety factor included
-
-
-                  if(tmp<dtbl2) then
-                    dtbl2=tmp
-                    ie02=i; lev02=k; in_st2=jj
-
-
-                  endif
-                endif !psumtr
-              enddo !jj
-
-            enddo !k=kbe(i)+1,nvrt
-
-            if(ielm_transport/=0) then
-              if(dtbl2<dtb_min_transport) then
-                ielem_elm(i)=1
-                dtbl2=dt !unlimited
-              endif
-            endif
-            dtb_min3(i)=dtbl2
-
-
-
-
-          enddo !i=1,ne
-
-          dtbl=minval(dtb_min3)
-
-          buf(1,1)=dtbl; buf(2,1)=real(myrank,rkind)
-          call mpi_allreduce(buf,buf2,1,MPI_2DOUBLE_PRECISION,MPI_MINLOC,comm,ierr)
-          dtb=buf2(1,1)
-
-        endif !h_tvd.or.it_sub==1; compute dtb
-
-        dtb=min(dtb,time_r) !for upwind
-        time_r=time_r-dtb
-
-!       Store last iteration''s S,T
-        trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-
-
-!$OMP   do reduction(+: h_mass_in)
-        do i=1,ne
-          if(idry_e(i)==1) cycle
-
-!         Wet elements with wet nodes
-          do k=kbe(i)+1,nvrt
-            bigv=area(i)*(ze(k,i)-ze(k-1,i)) !volume
-            dtb_by_bigv = dtb/bigv
-  
-!           Advective flux
-!           Strike out \hat{S}^- (see above)
-            psumtr(1:ntr)=0.d0 !sum of modified fluxes at all inflow bnds 
-!           Alternative mass conservative form for the advection part (Eq. C32); contribute to rrhs
-            adv_tr(1:ntr)=trel_tmp(1:ntr,k,i) 
-
-!           Horizontal faces
-            do j=1,i34(i)
-              jsj=elside(j,i) !resident side
-              iel=ic3(j,i)
-
-              if(iel/=0) then
-                if(idry_e(iel)==1) cycle
-                trel_tmp_outside(:)=trel_tmp(:,k,iel)
-              else !bnd side
-
-                if(isbs(jsj)<=0.or.k>=kbs(jsj)+1.and.ssign(j,i)*flux_mod_hface(1,k,jsj)>=0.d0) then
-                  !For outflow open bnd side, estimate mass in (open
-                  !side cannot be interface side)
-                  if(max_iadjust_mass_consv>0.and.isbs(jsj)>0) then !outflow @open bnd
-                    h_mass_in(:)=h_mass_in(:)-trel_tmp(1:ntr,k,i)*flux_adv_hface(k,jsj)*dtb
-                  endif
-
-                  cycle
-                endif
-       
-                !Open bnd side with _inflow_ or k<kbs(jsj)+1; compute trel_tmp from outside and save it as trel_tmp_outside(1:ntr)
-                ibnd=isbs(jsj) !global bnd #
-                !Find node indices on bnd segment for the 2 nodes (for type 4 b.c.)
-                nwild(1:2)=0
-                do ll=1,2 !nodes
-                  ndo=isidenode(ll,jsj)
-                  do lll=1,2 !2 possible bnds
-                    if(isbnd(lll,ndo)==ibnd) then
-                      nwild(ll)=isbnd(-lll,ndo) !global index
-                      exit
-                    endif
-                  enddo !lll
-                enddo !ll
-                ind1=nwild(1); ind2=nwild(2);
-
-                do jj=1,natrm
-                  if(ntrs(jj)<=0) cycle
-
-                  if(itrtype(jj,ibnd)==0) then !set to be same as interior (so cancel out below)
-                    do ll=irange_tr(1,jj),irange_tr(2,jj)
-                      trel_tmp_outside(ll)=trel_tmp(ll,k,i)
-                    enddo !ll
-                  else if(itrtype(jj,ibnd)==1.or.itrtype(jj,ibnd)==2) then
-                    do ll=irange_tr(1,jj),irange_tr(2,jj)
-                      trel_tmp_outside(ll)=trobc(jj,ibnd)*trth(ll,1,1,ibnd)+(1.d0-trobc(jj,ibnd))*trel_tmp(ll,k,i)
-                    enddo
-                  else if(itrtype(jj,ibnd)==3) then
-                    do ll=irange_tr(1,jj),irange_tr(2,jj)
-                      tmp=sum(tr_nd0(ll,k,elnode(1:i34(i),i))+tr_nd0(ll,k-1,elnode(1:i34(i),i)))/2.d0/real(i34(i),rkind)
-                      trel_tmp_outside(ll)=trobc(jj,ibnd)*tmp+(1.d0-trobc(jj,ibnd))*trel_tmp(ll,k,i)
-                    enddo
-                  else if(itrtype(jj,ibnd)==4) then
-                    do ll=irange_tr(1,jj),irange_tr(2,jj)
-                      trel_tmp_outside(ll)=trobc(jj,ibnd)* &
-     &(trth(ll,k,ind1,ibnd)+trth(ll,k,ind2,ibnd)+trth(ll,k-1,ind1,ibnd)+trth(ll,k-1,ind2,ibnd))/4.d0+ &
-     &(1.d0-trobc(jj,ibnd))*trel_tmp(ll,k,i)
-                    enddo
-                  else
-                    write(errmsg,*)'TRASNPORT: INVALID VALUE FOR ITRTYPE:'',jj,ibnd
-!'
-                    call parallel_abort(errmsg)
-                  endif !itrtype
-                enddo !jj
-
-                !Tally horizontal mass in fro inflow case
-                if(max_iadjust_mass_consv>0) h_mass_in(:)=h_mass_in(:)-trel_tmp_outside(1:ntr)*flux_adv_hface(k,jsj)*dtb
-              endif !iel
-
-              if(k>=kbs(jsj)+1.and.ssign(j,i)*flux_mod_hface(1,k,jsj)<0.d0) then !inflow
-                do jj=1,ntr
-
-                  psumtr(jj)=psumtr(jj)+abs(flux_mod_hface(jj,k,jsj))
-                  adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp_outside(jj)-trel_tmp(jj,k,i))
-                enddo !jj
-
-              endif !inflow
-
-              if(h_tvd<1.d5.and.k>=kbs(jsj)+1) then
-                do jj=1,ntr
-                  adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp(jj,k,i)-trel_tmp_outside(jj))* &
-     &flux_lim( up_rat_hface(jj,k,jsj))/2.d0
-                enddo !jj
-              endif
-            enddo !j=1,i34(i)
-
-
-            enddo !jj
-
-            tr_el(1:ntr,k,i)=adv_tr(1:ntr) 
-          enddo !k=kbe(i)+1,nvrt
-
-
-          !Overwrite with ELM value if enabled. The previous sections
-          !are necessary for diagnostics like DVD etc
-          if(ielem_elm(i)/=0) then
-            rat=time_r/dt !time ratio
-            rat=max(0.d0,min(1.d0,rat))
-            do k=kbe(i)+1,nvrt
-              do jj=1,ntr
-                psumtr(jj)=0.d0
-                do j=1,i34(i)
-                  jsj=elside(j,i)
-                  n1=isidenode(1,jsj); n2=isidenode(2,jsj)
-                  swild4(1,1)=0.5d0*(tr_nd(jj,k,n1)+tr_nd(jj,k,n2))
-                  swild4(2,1)=0.5d0*(tr_nd(jj,k-1,n1)+tr_nd(jj,k-1,n2))
-
-                  swild4(1,1)=swild4(1,1)*rat+sdbt(2+jj,max(k,kbs(jsj)),jsj)*(1-rat)
-                  swild4(2,1)=swild4(2,1)*rat+sdbt(2+jj,max(k-1,kbs(jsj)),jsj)*(1-rat)
-                  psumtr(jj)=psumtr(jj)+0.5d0*(swild4(1,1)+swild4(2,1)) 
-                enddo !j
-              enddo !jj
-              tr_el(1:ntr,k,i)=psumtr(:)/dble(i34(i))
-            enddo !k
-          endif !ielem_elm(i)/=0
-
-!         Extend
-          do k=1,kbe(i)
-            tr_el(1:ntr,k,i)=tr_el(1:ntr,kbe(i)+1,i)
-          enddo !k
-        enddo !i=1,ne
-
-      //  Update ghosts
-      //   call exchange_e3d_2t_tr(tr_el)
-
-        if(time_r<1.d-8) exit loop11
-
-      end do loop11
-
-
-      if(myrank==0) then
-        write(17,*)it,it_sub
-        flush(17)
-      endif
-!-------------------------------------------------------------------------------------
-      endif !itr_met=3,4
-      
-!      write(12,*)'done 1st transport step...'
-
-
-      trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-
-!...  2nd step, vertical advection: Fei''s addition
-
-!      adv_tr(:)=0
-      do i=1,nea 
-        if(idry_e(i)==1) cycle
-
-!       Wet elements
-
-!--------------------Parameters that do not change through iterations------------------
-
-        do k=kbe(i)+1,nvrt !prism
-          bigv_m(k)=area(i)*(ze(k,i)-ze(k-1,i)) !volume
-        enddo !k
-
-
-        !--------------------End: parameters that do not change through iterations------------------ 
-
-        do m=1,ntr !cycle through tracers.
-          !time limiter set to 0 before the first iteration, which will be updated after each iteration
-          iterK=0
-          do !iterations
-            iterK=iterK+1
-
-            !space limiter
-            rrat(:)=0.d0 !init for F.S., bottom etc
-            phi(:)=0.d0 !init for F.S., bottom etc (also 2D prism)
-            do k=kbe(i)+1,nvrt-1 !intermediate levels (excelude bnds)
-              if(flux_adv_vface(k,m,i)>=0.d0) then
-                kup=k; kdo=k+1
-              else !if(flux_adv_vface(k,m,i)<0) then
-                kup=k+1; kdo=k
-              endif
-      
-              psumtr(m)=0.d0 !sum of products (|Q|*(T-T))
-
-              if(flux_adv_vface(kup,m,i)<0.d0.and.kup/=nvrt) then !inflow at upper face (for up-upwind)
-                psumtr(m)=psumtr(m)+abs(flux_adv_vface(kup,m,i))*(tr_el(m,kup+1,i)-tr_el(m,kup,i))
-              endif
-              if(flux_adv_vface(kup-1,m,i)>0.d0.and.kup/=kbe(i)+1) then !inflow at lower face
-                psumtr(m)=psumtr(m)+abs(flux_adv_vface(kup-1,m,i))*(tr_el(m,kup-1,i)-tr_el(m,kup,i))
-              endif
-     
-              tmp=(tr_el(m,kup,i)-tr_el(m,kdo,i))*abs(flux_adv_vface(k,m,i))
-              if(abs(tmp)>1.d-20) rrat(k)=psumtr(m)/tmp !otherwise it remains at 0
-
-              !phi(k)=max(0.d0,min(1.d0,rrat(k))) !MM
-              phi(k)=max(0.d0,min(1.d0,2.0d0*rrat(k)),min(2.d0,rrat(k))) !SB
-              !phi(k)=(rrat(k)+abs(rrat(k)))/(1.0d0+abs(rrat(k))) !VL
-              !phi(k)=0 !upwind
-            enddo !k
-
-            !reset to upwind for upwind elem. abnormal cases
-            if(iupwind_e(i)==1.or.iterK==iter_back) phi(:)=0.d0
-
-            !The _coefficient_ of modified flux (space) at intermediate levels
-            flux_mod_v1(:)=1.d0 !init
-            do k=kbe(i)+1,nvrt-1 !intermediate levels (exclude bnds); k='j' in notes
-              !Find downwind prism 'i'
-              if(flux_adv_vface(k,m,i)<=0.d0) then
-                kdo=k
-              else !if(flux_adv_vface(k,m,i)>0) then
-                kdo=k+1
-              endif
-      
-              psum=0.d0
-              do l=0,1 !two vertical faces of downwind prism
-                if(flux_adv_vface(kdo-l,m,i)*real(1-2*l,rkind)>0.d0) then !outflow
-                  if(abs(rrat(kdo-l))>1.d-6) psum=psum+phi(kdo-l)/rrat(kdo-l)
-                endif !outflow
-              enddo !l
-
-              tmp=1.d0+0.5d0*(psum-phi(k))
-              if(tmp<0.d0) then
-                write(errmsg,*)'TRANS_IMP: mod. flux<0:',ielg(i),k,tmp
-                call parallel_abort(errmsg)
-              endif !tmp
-              flux_mod_v1(k)=tmp
-            enddo !k
-
-            
-
-            !TVD temporal modification
-            !s-ratios, defined at all levels
-            srat=0.d0 !init for bottom & F.S.
-            psi1=0.d0 !init for all first
-            do k=kbe(i)+1,nvrt-1 !intermediate levels (excelude bnds)
-              if(flux_adv_vface(k,m,i)>=0) then
-                kup=k; kdo=k+1 !prisms
-              else !if(flux_adv_vface(k,m,i)<0) then
-                kup=k+1; kdo=k
-              endif
-
-              psum=0.d0 !sum of |Q|*(T-T)
-              if(flux_adv_vface(kdo,m,i)>0.d0) then !outflow at upper face 
-                psum=psum+abs(flux_adv_vface(kdo,m,i))
-              endif
-              if(flux_adv_vface(kdo-1,m,i)<0.d0.and.kdo/=kbe(i)+1) then !outflow at lower face
-                psum=psum+abs(flux_adv_vface(kdo-1,m,i))
-              endif
-              psum=psum*(tr_el(m,kdo,i)-trel_tmp(m,kdo,i))
-
-              tmp=(tr_el(m,kup,i)-trel_tmp(m,kup,i))*abs(flux_adv_vface(k,m,i))
-              if(abs(tmp)>1.d-20) srat(k)=psum/tmp !otherwise it remains at 0
-          
-              !Prep undetermined faces
-              psi1(k)=max(0.d0,min(1.d0,srat(k))) !MM
-              !psi1(k)=max(0.d0,min(1.d0,2.0d0*srat(k)),min(2.d0,srat(k))) !SB
-            enddo !k
-
-            !For all levels that have a uni-directional upwind prism and (s_rat>0 or bnd), redo psi1
-            do k=kbe(i),nvrt !including bnd now
-              kup=0 !init
-              if(flux_adv_vface(k,m,i)>=0.d0.and.k/=kbe(i)) then
-                kup=k !prism
-              else if(flux_adv_vface(k,m,i)<0.d0.and.k/=nvrt) then
-                kup=k+1
-              endif
-
-              if(kup/=0) then; if(flux_adv_vface(kup,m,i)*flux_adv_vface(kup-1,m,i)>0.d0.and. &
-     &(srat(k)>0.d0.or.k==nvrt.or.k==kbe(i))) then
-                !flux_adv_vface(k,m,i)/=0 as k is one of kup | kup-1
-                tmp=2.d0*(1.d0-1.d-4)*bigv_m(kup)/dt/abs(flux_adv_vface(k,m,i)) !>0
-                if(tmp<=0.d0) call parallel_abort('TRANS_IMP: tmp<=0(1)')
-                psi1(k)=min(1.d0,tmp) !>0
-              endif; endif !uni-directional
-            enddo !k
-            
-            !Modified flux (time) - at all levels that have a
-            !uni-directional upwind prism
-            flux_mod_v2(:)=-1.d20 !init as flag
-            do k=kbe(i),nvrt !include bnds
-              kup=0 !init
-              if(flux_adv_vface(k,m,i)>=0.d0.and.k/=kbe(i)) then
-                kup=k
-              else if(flux_adv_vface(k,m,i)<0.d0.and.k/=nvrt) then
-                kup=k+1
-              endif
-
-              if(kup/=0) then; if(flux_adv_vface(kup,m,i)*flux_adv_vface(kup-1,m,i)>0.d0) then !uni-directional
-                !There is exactly 1 inflow face - k is outflow face
-                kin=2*kup-1-k !inflow face
-                if(abs(srat(kin))>1.d-10) then
-                  psum=psi1(kin)/srat(kin) !should be >=0
-                else
-                  psum=0.d0
-                endif
-                flux_mod_v2(k)=0.5d0*(psum-psi1(k))*abs(flux_adv_vface(k,m,i))
-              endif; endif !uni-directional
-            enddo !k=kbe(i)+1,nvrt-1
-
-            !Matrix
-            ndim=nvrt-kbe(i) !# of eqs/unknowns
-            alow=0.d0; bdia=0.d0; cupp=0.d0
-            do k=kbe(i)+1,nvrt !prism
-              kin=k-kbe(i) !eq. #
-              dt_by_bigv = dt/bigv_m(k)
-
-              !Diffusivity
-
-              !Advection part
-              denom=1.d0 !denom. of Eq. (5)
-              if(flux_adv_vface(k,m,i)*flux_adv_vface(k-1,m,i)>0.d0) then !uni-directional
-                if(flux_adv_vface(k,m,i)>0.d0) then !outflow at upper face (including rising F.S.)
-                  if(flux_mod_v2(k)<-1.d10) then !check if flux_mod_v2 has valid values
-                    write(errmsg,*)'TRANS_IMP, flux_mod_v2(1):',it,iterK,m,ielg(i)
-                    call parallel_abort(errmsg)
-                  endif
-
-                  denom=denom+dt_by_bigv*flux_mod_v2(k)
-                endif !outflow at upper face
-                !if(k-1/=kbe(i).and.flux_adv_vface(k-1,m,i)<0) then !outflow at lower
-                if(flux_adv_vface(k-1,m,i)<0.d0) then !outflow at lower (including sinking bottom)
-                  if(flux_mod_v2(k-1)<-1.d10) then
-                    write(errmsg,*)'TRANS_IMP, flux_mod_v2(2):',it,iterK,m,ielg(i)
-                    call parallel_abort(errmsg)
-                  endif
-                  denom=denom+dt_by_bigv*flux_mod_v2(k-1)
-                endif !outflow at lower
-              endif !uni-directional
-
-              if(denom<=0.d0) then
-                write(errmsg,*)'TRANS_IMP, mod.  flux<=0:',it,iterK,m,ielg(i),k,denom
-                call parallel_abort(errmsg)
-              endif !denom
-
-              !Reset to upwind for upwind elem. or abnormal case
-              if(iupwind_e(i)==1.or.iterK==iter_back) then
-                denom=1.d0
-                psi1(:)=0.d0 !reset for conservation check
-              endif
-
-              !DEBUG 
-              !denom=1.d0
-
-              bdia(kin)=bdia(kin)+denom
-              rrhs(1,kin)=trel_tmp(m,k,i)*denom !# of columns=1 because tracer loop is outer
-
-              if(k/=nvrt.and.flux_adv_vface(k,m,i)<0.d0) then !inflow at upper face
-                tmp=dt_by_bigv*abs(flux_adv_vface(k,m,i)*flux_mod_v1(k)) !flux_mod_v1>=0
-                cupp(kin)=cupp(kin)-tmp
-                bdia(kin)=bdia(kin)+tmp
-              endif !inflow at upper face
-
-              if(k-1/=kbe(i).and.flux_adv_vface(k-1,m,i)>0.d0) then !inflow at lower
-                tmp=dt_by_bigv*abs(flux_adv_vface(k-1,m,i)*flux_mod_v1(k-1))
-                alow(kin)=alow(kin)-tmp
-                bdia(kin)=bdia(kin)+tmp
-              endif !inflow at lower
-
-            enddo !k=kbe(i)+1,nvrt
-
-            !Other RHS
-
-
-            call tridag_sch(nvrt,1,ndim,1,alow,bdia,cupp,rrhs,soln,gam)
-
-            !check convergence, based on increment
-            term1=sqrt(sum((soln(1,1:ndim)-tr_el(m,kbe(i)+1:nvrt,i))**2.d0))
-            term6=sqrt(sum(tr_el(m,kbe(i)+1:nvrt,i)**2.d0))
-            !update concentration
-            tr_el(m,kbe(i)+1:nvrt,i)=soln(1,1:ndim)
-1_tvd_imp*term6+eps2_tvd_imp,term6
-
-            !Calculate strat in prep for exit
-            if(iterK==iter_back-1) strat1=maxval(soln(1,1:ndim))-minval(soln(1,1:ndim))
-
-            !Done upwind for abnormal cases and exit
-            if(iterK==iter_back.or.term1<=eps1_tvd_imp*term6+eps2_tvd_imp) then
-              !strat2=maxval(soln(1,1:ndim))-minval(soln(1,1:ndim))
-              !DEBUG
-              !write(12,*)'TRANS_IMP, strat loss:',real(strat1),real(strat2),real(strat2-strat1),ielg(i),m,it
-
-
-              exit
-            endif !iterK
-
-
-          enddo !nonlinear iteration
-
-
-        enddo !m: tracers
-
-!       Extend
-        do k=1,kbe(i)
-          tr_el(:,k,i)=tr_el(:,kbe(i)+1,i)
-        enddo !k
-
-      enddo !i=1,nea
-
-!     Finalize DVD
-
-
-!     conservation
-      if(max_iadjust_mass_consv>0) then
-        psumtr=0.d0 
-        do i=1,ne
-          if(idry_e(i)==1) cycle
-
-          do k=kbe(i)+1,nvrt
-            vol=(ze(k,i)-ze(k-1,i))*area(i)
-            psumtr(1:ntr)=psumtr(1:ntr)+vol*tr_el(1:ntr,k,i)
-          enddo !k
-        enddo !i=1,ne
-        call mpi_allreduce(psumtr,adv_tr,ntr,rtype,MPI_SUM,comm,ierr)
-        !Mass 'error' after advection step
-        total_mass_error=adv_tr-tmass-h_mass_in 
-!        if(myrank==0) write(25,*)'mass after 2 steps with correction:',real(time_stamp/86400),adv_tr(1:ntr)+total_mass_error(1:ntr)
-      endif
-
-!      write(12,*)'done 2nd transport step...'
-
-!     3rd step: non-advection terms 
-!     Save the final array from previous step as trel_tmp
-      trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-
-
-      difnum_max_l=0.d0 !max. diffusion number reached by this process (check stability)
-
-      do i=1,ne
-        if(idry_e(i)==1) cycle
-
-!       Wet elements with 3 wet nodes
-        ndim=nvrt-kbe(i) !# of eqs/unknowns
-        do m=1,ntr !cycle through tracers
-          ! Vertical movement of POM (by Richard Hofmeister)
-          ! for vertically varying velocities of vertical movement.
-          ! If iwsett=0 (default), set wsett(nvrt|kbe)=0 (actually bypassed below with if) and use wsett(kbe(i)+1:nvrt-1) for
-          ! vertical velocities at whole levels
-          ! Limit wsett to avoid char line out of boundary 
-          do k=kbe(i),nvrt 
-            tmp=0.9*(ze(nvrt,i)-ze(kbe(i),i))/dt !>0; safety factor added
-!Error: to assert
-            if(tmp<=0) call parallel_abort('Transport:tmp<=0')
-            swild(k)=max(-tmp,min(tmp,wsett(m,k,i)))
-          enddo !k
-
-          !Matrix
-          alow=0.d0; bdia=1.d0; cupp=0.d0
-          do k=kbe(i)+1,nvrt !prism
-            kin=k-kbe(i) !eq. #
-            bigv=area(i)*(ze(k,i)-ze(k-1,i)) !volume
-            dt_by_bigv = dt/bigv
-  
-            if(k<nvrt) then !diffusion & settling terms @ k
-              if(itur==5.and.m>=irange_tr(1,5).and.m<=irange_tr(1,5)) then !1018:itur==5
-                av_df=sum(dfhm(k,m-irange_tr(1,5)+1,elnode(1:i34(i),i)))/real(i34(i),rkind) !1007
-              else
-                av_df=sum(dfh(k,elnode(1:i34(i),i)))/real(i34(i),rkind) !diffusivity
-              endif              
-              av_dz=(ze(k+1,i)-ze(k-1,i))/2.d0
-              tmp=area(i)*dt_by_bigv*av_df/av_dz
-              cupp(kin)=cupp(kin)-tmp
-              bdia(kin)=bdia(kin)+tmp
-
-              if(swild(k)<=0.0d0) then !upwinding for conc
-                bdia(kin) = bdia(kin) - area(i)*dt_by_bigv*swild(k) !wsett(m,k,i)
-              else
-                cupp(kin) = cupp(kin) - area(i)*dt_by_bigv*swild(k) !wsett(m,k,i)
-              endif
-            endif !k<nvrt
-
-            if(k>kbe(i)+1) then !diffusion & settling terms @ k-1
-              if(itur==5.and.m>=irange_tr(1,5).and.m<=irange_tr(1,5)) then !1018:itur==5
-                av_df=sum(dfhm(k-1,m-irange_tr(1,5)+1,elnode(1:i34(i),i)))/real(i34(i),rkind) !1007
-              else
-                av_df=sum(dfh(k-1,elnode(1:i34(i),i)))/real(i34(i),rkind)
-              endif
-              av_dz=(ze(k,i)-ze(k-2,i))/2.d0
-              tmp=area(i)*dt_by_bigv*av_df/av_dz
-              alow(kin)=alow(kin)-tmp
-              bdia(kin)=bdia(kin)+tmp
-
-              if(swild(k-1)<=0.0d0) then
-                alow(kin) = alow(kin) + area(i)*dt_by_bigv*swild(k-1) !wsett(m,k-1,i)
-              else
-                bdia(kin) = bdia(kin) + area(i)*dt_by_bigv*swild(k-1) !wsett(m,k-1,i)
-              endif
-            endif !k>kbe(i)+1
-
-            !Extra terms for sediment at bottom b.c.: \kapp*dT/dz+w_s*T=w_s*T-E
-            if(iwsett(m)==1.and.k==kbe(i)+1) then
-              if(swild(k-1)<0.0d0) then
-                write(errmsg,*)'TRAN_IMP: wsett<0,',m,k,ielg(i),swild(k-1) !wsett(m,k-1,i)
-                call parallel_abort(errmsg)   
-              endif
-              bdia(kin)=bdia(kin)+area(i)*dt_by_bigv*swild(k-1) !wsett(m,k-1,i)
-            endif !k==kbe(i)+1
-         
-            !# of column=1 as tracer loop is outside
-            rrhs(1,kin)=trel_tmp(m,k,i)
-            !b.c.
-            if(k==nvrt) then
-              rrhs(1,kin)=rrhs(1,kin)+area(i)*dt_by_bigv*flx_sf(m,i)
-            endif !k==nvrt
-
-            if(k==kbe(i)+1) then
-              !NOTE: with settling vel., flx_bt=D-E-w_s*T_{kbe+1}, since
-              !in well-formulated b.c., D \approx w_s*T_{kbe+1}. D&E are
-              !deposi. & erosional fluxes respectively
-              rrhs(1,kin)=rrhs(1,kin)-area(i)*dt_by_bigv*flx_bt(m,i)
-            endif !k==kbe(i)+1
-
-            !Body source
-            rrhs(1,kin)=rrhs(1,kin)+dt*bdy_frc(m,k,i)
-
-
-          enddo !k=kbe(i)+1,nvrt
-
-          call tridag_sch(nvrt,1,ndim,1,alow,bdia,cupp,rrhs,soln,gam)
-
-          do k=kbe(i)+1,nvrt
-            kin=k-kbe(i)
-            tr_el(m,k,i)=soln(1,kin)
-          enddo !k
-
-
-        enddo !m: tracers
-
-        !Post-proc
-        do k=kbe(i)+1,nvrt
-          if(ihconsv/=0) tr_el(1,k,i)=max(tempmin,min(tempmax,tr_el(1,k,i)))
-          if(isconsv/=0) tr_el(2,k,i)=max(saltmin,min(saltmax,tr_el(2,k,i)))
-
-
-        enddo !k
-
-!       Extend
-        do k=1,kbe(i)
-          tr_el(:,k,i)=tr_el(:,kbe(i)+1,i)
-        enddo !k
-
-      enddo !i=1,ne
-
-// !     Update ghosts
-//       call exchange_e3d_2t_tr(tr_el)
-
-
-!     Horizontal diffusion as filter
-!     Save the final array from previous step as trel_tmp
-      if(ihdif/=0) then
-        do kk=1,niter_hdif
-!$OMP     parallel default(shared) !private(i,j,k,m,sum1,jsj,iel,nd1,nd2,hdif_tmp)
-          trel_tmp(1:ntr,:,1:nea)=tr_el(1:ntr,:,1:nea)
-
-
-          do i=1,ne
-            if(idry_e(i)==1) cycle
-  
-            !Wet elements with wet nodes
-            do m=1,ntr !cycle through tracers
-              do k=kbe(i),nvrt
-                sum1=0.d0
-                do j=1,i34(i) !sides
-                  jsj=elside(j,i) !residents
-                  iel=ic3(j,i)
-                  if(iel==0.or.idry_e(max(1,iel))==1) cycle
-
-                  nd1=isidenode(1,jsj)
-                  nd2=isidenode(2,jsj)
-                  hdif_tmp=(hdif(nd1)+hdif(nd2))/2.d0
-                  if(k>=kbs(jsj)+1) then
-                    sum1=sum1+hdif_tmp*(trel_tmp(m,k,iel)-trel_tmp(m,k,i))
-                  endif !k>=
-                enddo !j
-            
-                tr_el(m,k,i)=trel_tmp(m,k,i)+sum1
-              enddo !k
-
-              !Extend
-!              do k=1,kbe(i)
-!                tr_el(m,k,i)=tr_el(m,kbe(i)+1,i)
-!              enddo !k
-            enddo !m: tracers
-          enddo !i=1,ne
-
-// !         Update ghosts
-//           call exchange_e3d_2t_tr(tr_el)
-
-        enddo !kk=1,niter_hdif
-      endif !ihdif/=0
-
+      if (isLand) {
+         transport.Qh[k] = 0.0;
+
+      } else {
+         const Vector2 n = side->n; // normal vector to the side
+         const double area = side->area(k); // Area of the side face.
+         const double vnor1 = dot(n, side->u2[k]);
+         const double vnor2 = dot(n, side->u2[k-1]);
+         const double vnor_c = 0.5*(vnor1 + vnor2); // Normal velocity at the face center.
+
+         transport.Qh[k] = area*vnor_c; 
+      }
 
    }
 
+}
+
+__global__ void horizontalAdvection(void) {
+
+   // Horizontal advection kernel.
+   // -------------------------------
+
+   // In this model, equations are written in such a way that concentration at time t+1 are computed from
+   // *differences* of concentrations at the cell underconsideration and concentrations upwind of it. 
+   // (how upwind is determined depends on the scheme)
+   // 
+   // For the 1st order upwind scheme, "upwind concentration" at outflow faces is the concentration at the cell itself.
+   // So only inflow faces contribute to the concentration change at the cell.
+
+   // In the implementation, we do 1st order independently and then consider TVD as an additional update term computed as 
+   // as a sum over all faces (inflow and outflow).
 
 
-__device__ __forceinline__ double fluxLim(double upwindRatio) {
-// Flux limiter functions used in TVD schemes
+   // Compute total inflow and maximum allowed sub-time step
+   ELEM(elem)
 
-   if constexpr (typeTVD == tvdSB)
-      return max(0.0, max(min(1.0, 2.0*upwindRatio), min(2.0, upwindRatio)));
-   else if constexpr (typeTVD == tvdVL)
-      return (upwindRatio + abs(upwindRatio)) / (1.0 + abs(upwindRatio));
-   else if constexpr (typeTVD == tvdMM)
-      return max(0.0, min(1.0, upwindRatio));
-   else if constexpr (typeTVD == tvdOS)
-      return max(0.0, min(2.0, upwindRatio));
-   else {
-      assert(false && "TVD limiter not defined");
-      return 0.0;
+   const int kb = elem->kb;
+   const int i34 = elem->i34;
+   auto &transport = elem->transport;
+
+   if (elem->isDry) return;
+
+   elem->transport.maxDt = huge_double;
+
+   for (int k = 0; k < kb + 1; k++) elem->transport.inflow[k] = 0.0;
+
+   for (int k = kb + 1; k < nvrt; k++) { // For each wet prism in the element...
+
+      transport.inflow[k] = 0.0;
+
+      for (int j = 0; j < i34; j++) { // For each side in the element...
+         const Side *side = elem->sides[j];
+         const auto &sideTransport = side->transport;
+         const double ssign = elem->ssign[j];
+         const int kbs = side->kb;
+
+         if (k <= kbs) continue;
+
+         // Get the element at the other end of side j.
+         const Element *neighElem = side->otherElem(elem);
+         if (neighElem == nullptr || neighElem->isDry) continue;
+
+         const double faceQ = sideTransport.Qh[k];
+         const bool inFlux = (ssign*faceQ) < 0.0; // true if the flux points into the element
+
+         const BoundarySegment *boundarySegment = (side->sideBnd == nullptr) ? nullptr : side->sideBnd->segment;
+         const bool isLand = (boundarySegment != nullptr && boundarySegment->isLand);
+
+         // Count this side's flux only when water flows into the element, and the water is coming from somewhere 
+         // real: either a wet neighboring element, or an open boundary.         
+         if (isLand || !inFlux) continue;
+
+         for (int itr = 0; itr < ntracers; itr++) {
+            transport.inflow[k] += fabs(faceQ);  // Sum of all inflow fluxes at level k.
+         }
+
+      }
+      
+      // computes the minimum allowed sub-time step for the prism
+      elem->transport.maxDt = min(elem->transport.maxDt, elem->transport.maxPrismDt(elem, k));
+   }
+
+}
+
+__device__ __forceinline__ void atomicMinDouble(double *addr, double val) {
+   unsigned long long *p = (unsigned long long *)addr;
+   unsigned long long old = *p, assumed;
+   do {
+      assumed = old;
+      old = atomicCAS(p, assumed,
+         __double_as_longlong(fmin(val, __longlong_as_double(assumed))));
+   } while (assumed != old);
+}
+
+__device__ __forceinline__ double blockMin(double v) {
+   __shared__ double sh[32];
+   const int lane = threadIdx.x & 31;
+   const int warp = threadIdx.x >> 5;
+   for (int o = 16; o > 0; o >>= 1)
+      v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+   if (lane == 0) sh[warp] = v;
+   __syncthreads();
+   if (warp == 0) {
+      const int nw = blockDim.x >> 5;
+      v = (lane < nw) ? sh[lane] : huge_double;
+      for (int o = 16; o > 0; o >>= 1)
+         v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+   }
+   return v;  // only lane 0 of warp 0 is the block min
+}
+
+extern "C" __global__ void minTransportDt(double *out) {
+   const int idx = threadIdx.x + blockIdx.x * blockDim.x;
+   double v = huge_double;
+   if (idx < mesh->ne) {
+      Element *elem = &mesh->localElemData[idx];
+      if (!elem->isDry) v = elem->transport.maxDt;
+   }
+   __shared__ double sh[32];
+   const int lane = threadIdx.x & 31;
+   const int warp = threadIdx.x >> 5;
+   for (int o = 16; o > 0; o >>= 1)
+      v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+   if (lane == 0) sh[warp] = v;
+   __syncthreads();
+   if (warp == 0) {
+      const int nw = (blockDim.x + 31) >> 5;
+      v = (lane < nw) ? sh[lane] : huge_double;
+      for (int o = 16; o > 0; o >>= 1)
+         v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+      if (lane == 0) atomicMinDouble(out, v);
    }
 }
+
+
+
+
+
+
+   // // Mark prisms (shallow enough or marked as such in tvd.prop) that will be computed using first-order upwind formulation.
+   // elem->computeUse1stOrderUpwind();
+
+
+
+   // // Init horizontal mass influx (m^3*concentration) for conservation 
+   // h_mass_in(1:ntr)=0 !positive in
+
+
+// __device__ __forceinline__ double fluxLim(double upwindRatio) {
+// // Flux limiter functions used in TVD schemes
+
+//    if constexpr (typeTVD == tvdSB)
+//       return max(0.0, max(min(1.0, 2.0*upwindRatio), min(2.0, upwindRatio)));
+//    else if constexpr (typeTVD == tvdVL)
+//       return (upwindRatio + abs(upwindRatio)) / (1.0 + abs(upwindRatio));
+//    else if constexpr (typeTVD == tvdMM)
+//       return max(0.0, min(1.0, upwindRatio));
+//    else if constexpr (typeTVD == tvdOS)
+//       return max(0.0, min(2.0, upwindRatio));
+//    else {
+//       assert(false && "TVD limiter not defined");
+//       return 0.0;
+//    }
+// }
+
+} // extern "C"
 
 
 #ifdef DONTCOMPILE
@@ -9640,7 +8844,7 @@ __global__ void checkMassConservation(Tracers* sumtr) {
    if (elem->isDry) return;
 
    // Local sum array for this thread
-   double localSum[N_TRACERS] = {0.0};
+   double localSum[ntracers] = {0.0};
 
    // Sum over vertical levels for this element
    const int kbe = elem->kbe;
@@ -9650,7 +8854,7 @@ __global__ void checkMassConservation(Tracers* sumtr) {
       const double vol = (elem->z[k] - elem->z[k-1]) * area;
       
       // Accumulate tracer mass
-      for (int tr = 0; tr < N_TRACERS; tr++) {
+      for (int tr = 0; tr < ntracers; tr++) {
          sumtr[i].tracer[tr] += vol * elem->tracers[k].tracer[tr];
       }
    }
@@ -10156,8 +9360,9 @@ extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
                                                 double *emo, double *efa, 
                                                 double *umo, double *ufa, 
                                                 double *vmo, double *vfa,
-                                                int *ifltype, int *iettype, double *qthcon) {
-   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon);
+                                                int *ifltype, int *iettype, 
+                                                double *qthcon, double *eth) {
+   mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon, eth);
 
 }
 

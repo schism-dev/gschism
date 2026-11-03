@@ -727,7 +727,7 @@ if __name__ == "__main__":
                 bctides.emo, bctides.efa,
                 bctides.umo, bctides.ufa,
                 bctides.vmo, bctides.vfa,
-                bctides.ifltype, bctides.iettype, bctides.qthcon)
+                bctides.ifltype, bctides.iettype, bctides.qthcon, bctides.eth)
 
     # Phase 6: boundary sides
     for ipart, pd in enumerate(partPopulate):

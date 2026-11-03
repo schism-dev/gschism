@@ -142,7 +142,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
         # Initialize arrays
         tide.iettype = cp.zeros(nope_global, dtype=int32)
         tide.ifltype = cp.zeros(nope_global, dtype=int32)
-        tide.eth = cp.zeros((nope_global,), dtype=float64)
+        tide.eth    = cp.zeros((nope_global,), dtype=float64)
         tide.qthcon = cp.zeros(nope_global, dtype=float64)
         tide.vobc1 = cp.zeros(nope_global, dtype=float64)
         tide.vobc2 = cp.zeros(nope_global, dtype=float64)
@@ -207,6 +207,7 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                         tide.vmo[k, j, i] = v_amp
                         tide.vfa[k, j, i] = v_phase * cp.pi / 180.0
             elif abs(ifltype) in [4, 5]:
+                raise NotImplementedError(f"ifltype={ifltype} needs uv3D.th.nc → nodeBnd.uth (open bnd {k})")
                 if ifltype < 0:
                     if iettype == 0:
                         raise ValueError(f'vel. obc needs elev. to be specified: {k}')
@@ -227,6 +228,8 @@ def read_bctides(path: str, nope_global: int, mnond_global: int, ntrs: list, ira
                             tide.ufa[k, j, i] = cp.deg2rad(u_phase)                            
                             tide.vfa[k, j, i] = cp.deg2rad(v_phase)
             elif ifltype == -1:  # Flather 1
+                raise NotImplementedError(f"ifltype=-1 Flather needs uthnd → nodeBnd.uth (open bnd {k})")
+    
                 if iettype != 0:
                     raise ValueError(f'Flather obc requires iettype=0: {k}')
                 line = f.readline()  # Skip 'eta_mean'
