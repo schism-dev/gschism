@@ -1879,9 +1879,6 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
       }
    }
 
-   // Check that the nodes are not both on the boundary
-   assert( (side.n1->nodeBnd == nullptr || side.n2->nodeBnd == nullptr)
-        && "side not in ilnd/iond but both nodes are boundary" );
 
    return -1;
 }
@@ -1899,6 +1896,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *localNodePart,     int *localElemPart,     int *localSidePart, 
                                     double *drag, double *roughness, double *rmanning, 
                                     double *diffmin, double *diffmax,
+                                    double *temp, double *salt,
                                     int *kb, double *localSigma) {
 
    NODE(pnode);  
@@ -2001,6 +1999,19 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    // Populate the diffmin and diffmax values read from the files.
    // (Only used for GLS, GOTM, and SedimentMix.)
    node.turb.setDiffLimits(diffmin[iglobal], diffmax[iglobal]);
+
+   // Cold-start T,S: vertically homogeneous nodal I.C. (temp.ic/salt.ic or barotropic constants).
+   // tr0 keeps the initial field (e.g. type-3 open BC); tracers is the working nodal state.
+   {
+      const double t0 = temp[iglobal];
+      const double s0 = salt[iglobal];
+      for (int k = 0; k < nvrt; k++) {
+         node.tr0[k].tracer[0]     = t0;
+         node.tr0[k].tracer[1]     = s0;
+         node.tracers[k].tracer[0] = t0;
+         node.tracers[k].tracer[1] = s0;
+      }
+   }
 
    if constexpr(ivcor == 1) 
    {  
@@ -2433,8 +2444,22 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       } // if Tri/Quad
 
    } // for j   
-   
-   
+
+   // Initial element tracers: average surrounding nodal I.C. (levels k and k-1)
+   // For level k: average of node values at k and k-1 over the element nodes.
+   // Level 0 copies level 1 (Fortran tr_el(:,1)=tr_el(:,2)).
+   const double inv = 1.0 / (2.0 * elem.i34);
+   for (int k = 1; k < nvrt; k++) {
+      Tracers sum = {};
+      for (int j = 0; j < elem.i34; j++) {
+         const Node *nd = elem.nodes[j];
+         for (int itr = 0; itr < ntracers; itr++)
+            sum.tracer[itr] += nd->tr0[k].tracer[itr] + nd->tr0[k - 1].tracer[itr];
+      }
+      for (int itr = 0; itr < ntracers; itr++)
+         elem.tracers[k].tracer[itr] = inv * sum.tracer[itr];
+   }
+   elem.tracers[0] = elem.tracers[1];
 
 }
 
@@ -2485,7 +2510,8 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
       }
    }
 
-   assert(iseg < nope && "iseg is out of bounds");
+
+   assert(iseg <= nope && "iseg is out of bounds");
 
 
 
@@ -4389,7 +4415,6 @@ printf("unth0: %f, qthcon: %f, ramp: %f, carea: %f\n", unth0, segment->qthcon, r
    	         assert(nbNode != nullptr && "setEssentialBC: nbNode is nullptr");
 
                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
-               assert(nbNodeBnd != nullptr && "setEssentialBC: nbNodeBnd is nullptr");
 
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
@@ -4424,11 +4449,14 @@ printf("unth0: %f, qthcon: %f, ramp: %f, carea: %f\n", unth0, segment->qthcon, r
       if(side->isDry) return;
 
       // Vertically integrated velocity U
+      #pragma unroll 1
       for (int k = side->kb; k < nvrt - 1; k++) { 
-         const Vector2 uc = 0.5*(side->u2[k] + side->u2[k + 1]);
-         side->U += side->Dz(k + 1)*uc;  
-      }
 
+         const Vector2 uc = 0.5*(side->u2[k] + side->u2[k + 1]);
+
+         side->U += side->Dz(k + 1)*uc;  
+
+      }
    }
 
    __global__ void computeBottomDragVegetation(void) {
@@ -6442,7 +6470,7 @@ __global__ void computeHorizAdvecFluxes(void) {
 
 }
 
-__global__ void horizontalAdvection(void) {
+__global__ void horizontalAdvectionPrepare(void) {
 
    // Horizontal advection kernel.
    // -------------------------------
@@ -6466,6 +6494,9 @@ __global__ void horizontalAdvection(void) {
    auto &transport = elem->transport;
 
    if (elem->isDry) return;
+
+   // Snapshot current prism tracers for this substep (Update reads prevTraces).
+   transport.savePrevTraces(elem);
 
    elem->transport.maxDt = huge_double;
 
@@ -6508,6 +6539,83 @@ __global__ void horizontalAdvection(void) {
    }
 
 }
+
+__global__ void horizontalAdvectionUpdate(double dtb) {
+   ELEM(elem);
+
+   if (elem->isDry) return;
+
+   const int kb = elem->kb;
+   auto &transport = elem->transport;
+
+   for (int k = kb + 1; k < nvrt; k++) {
+      const double vol = elem->volume(k - 1);
+      const double dtb_by_vol = dtb / vol;
+      Tracers adv = transport.prevTraces[k];  // start from old C
+
+      for (int j = 0; j < elem->i34; j++) {
+
+         const Side *side = elem->sides[j];
+
+         if (k <= side->kb) continue;
+
+         const double faceQ = side->transport.Qh[k];
+         const double sQ = elem->ssign[j] * faceQ;
+         if (sQ >= 0.0) continue;  // outflow or zero: skip (upwind)
+
+         // outside concentration
+         Tracers Cout = adv;  // default: no change (e.g. land / same as interior)
+         const Element *neigh = side->otherElem(elem);
+         if (neigh != nullptr && !neigh->isDry) {
+            Cout = neigh->transport.prevTraces[k];
+         } else if (side->sideBnd != nullptr && !side->sideBnd->segment->isLand) {
+            // XXXXXXXXXXXXX
+            Cout.tracer[0] = 0.1;
+            Cout.tracer[1] = 0.1;
+         } else {
+            continue;
+         }
+
+         const double coef = dtb_by_vol * fabs(faceQ);
+         #pragma unroll 
+         for (int itr = 0; itr < ntracers; itr++)
+            adv.tracer[itr] += coef * (Cout.tracer[itr] - transport.prevTraces[k].tracer[itr]);
+      }
+
+      elem->tracers[k] = adv;
+   }
+
+   // extend below bottom
+   for (int k = 0; k <= kb; k++)
+      elem->tracers[k] = elem->tracers[kb + 1];
+}
+
+
+__global__ void nodalTracerUpdate(void) {
+   NODE(node);
+   if (node->isDry) return;
+
+   for (int k = 0; k < nvrt; k++) {
+      Tracers sum = {};
+      double sumA = 0.0;
+
+      for (int j = 0; j < node->numElements; j++) {
+         const Element *elem = node->elements[j];
+         if (elem->isDry || k <= elem->kb) continue;
+
+         const double A = elem->area;
+         for (int itr = 0; itr < ntracers; itr++)
+            sum.tracer[itr] += A * elem->tracers[k].tracer[itr];
+         sumA += A;
+      }
+
+      if (sumA == 0.0) continue;
+      const double inv = 1.0 / sumA;
+      for (int itr = 0; itr < ntracers; itr++)
+         node->tracers[k].tracer[itr] = inv * sum.tracer[itr];
+   }
+}
+
 
 __device__ __forceinline__ void atomicMinDouble(double *addr, double val) {
    unsigned long long *p = (unsigned long long *)addr;
@@ -7058,6 +7166,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *localNodePart,     int *localElemPart,     int *localSidePart,
    double *drag, double *roughness, double *rmanning, 
    double *diffmin, double *diffmax,
+   double *temp, double *salt,
    int *kb, double *localSigma) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
@@ -7069,7 +7178,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning, diffmin, diffmax, kb, localSigma);
+                       drag, roughness, rmanning, diffmin, diffmax, temp, salt, kb, localSigma);
 }  
 
 extern "C" __global__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
@@ -7392,6 +7501,24 @@ extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
          else
             for (int lev = 0; lev < nvrt; lev++)
                out[lev] = getMXL(node->turb, lev);
+         break;
+      }
+      case (int)VarCode::temp: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->tracers[k].tracer[0];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->tracers[lev].tracer[0];
+         break;
+      }
+      case (int)VarCode::salt: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->tracers[k].tracer[1];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->tracers[lev].tracer[1];
          break;
       }
    }

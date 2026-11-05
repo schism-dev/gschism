@@ -145,11 +145,24 @@ class CudaSourceManager:
         Returns:
             CuPy RawModule and the combined source code
         """
+
         # Reset line mapping
         self.line_map = {}
         
         # Process the main file (which will recursively process includes)
         processed_source = self.preprocess_file(main_file)
+
+        # XXXXX REMOVE THIS BEFORE RELEASE XXXXX
+        import cupy.cuda.compiler as cc
+        from cupy._core.core import assemble_cupy_compiler_options
+
+        ptx_options = (assemble_cupy_compiler_options(options+ ('-lineinfo',))    # include paths etc., as RawModule does
+                    + ('-ftz=true',)                           # added in _compile_with_cache_cuda
+                    + cc._get_extra_include_dir_opts())        # added in _compile_with_cache_cuda
+        cc._use_ptx = True
+        ptx, _ = cc.compile_using_nvrtc(processed_source, ptx_options)
+        with open(r"C:\tmp\kernel.ptx", "wb") as f:
+            f.write(ptx if isinstance(ptx, bytes) else ptx.encode())
         
         # Create the module
         try:

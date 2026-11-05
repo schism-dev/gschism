@@ -80,10 +80,12 @@ def computeTransport(dt: float):
 
     dtb = 1e34 # just a big number
     while (dt > 0.0):
-        cufunc.horizontalAdvection()
+        cufunc.horizontalAdvectionPrepare()
         dtb = min(dt, minTransportDt())
+        cufunc.horizontalAdvectionUpdate(dtb)
         dt = dt - dtb
 
+    cufunc.nodalTracerUpdate()
 
 def schism_step(it: int, namelist, bctides, sflux, solver):
 

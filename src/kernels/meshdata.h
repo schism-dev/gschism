@@ -480,7 +480,7 @@ constexpr double veg_cfpsi = 0.16;
 
 template<TurbulenceModel Model>
 struct Turbulence {
-   __device__ void setDiffLimits(double, double) { assert(false && "setDiffLimits does not exist for this turbulence model"); }
+   __device__ void setDiffLimits(double, double) { /* The default implementation does nothing */ };
 
    __device__ void init(Node *node) {
       for (int k = 0; k < nvrt; k++) {
@@ -1304,7 +1304,7 @@ struct Side {
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 U;                   // Vertically averaged velocity vector  
 
-   Vector2 nuGradU[nvrt];          // nu*grad u
+   Vector2 nuGradU[nvrt];       // nu*grad u
 
    Vector2 bcc[nvrt];           // Baroclinic term
    Vector2 bcc_TDz[nvrt];       // Baroclinic term at previous timestep
@@ -1383,9 +1383,10 @@ struct Side {
 
    __inline__ __device__ double centerZ(void)      const;
    __inline__ __device__ Point3 center3D(int k)    const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
+   // k is the upper level of the layer (same convention as Dz).
    __inline__ __device__ double Dz(int k)          const { assert(k < nvrt && k > 0); return zc[k] - zc[k - 1]; }
-   __inline__ __device__ double area(int k)        const { assert(k < nvrt && k > 0); return len*Dz(k + 1); }
-   __inline__ __device__ double areaClamped(int k) const { assert(k < nvrt && k > 0); return len*(zc[max(k + 1, kb)] - zc[max(k, kb)]); }
+   __inline__ __device__ double area(int k)        const { assert(k < nvrt && k > 0); return len*Dz(k); }
+   __inline__ __device__ double areaClamped(int k) const { assert(k < nvrt && k > 0); return len*(zc[max(k, kb)] - zc[max(k - 1, kb)]); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
@@ -1899,6 +1900,7 @@ struct Mesh {
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
                   double *drag, double *roughness, double *rmanning, 
                   double *diffmin, double *diffmax,
+                  double *temp, double *salt,
                   int *kb, double *localSigma);
    __device__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,

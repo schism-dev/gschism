@@ -60,5 +60,7 @@ varInfoDict =  {'x':       {'is3D': False, 'type': 'Vector2'},
                 'FaceIndices': {'is3D': False, 'type': 'FaceIndices'},
                 'u_air':   {'is3D': False, 'type': 'Vector2'},
                 'outputCoords': {'is3D': False, 'type': 'Vector2'},
+                'temp':    {'is3D': True,  'type': 'double'},
+                'salt':    {'is3D': True,  'type': 'double'},
                 }
 

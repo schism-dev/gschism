@@ -53,7 +53,7 @@ constexpr int nodeOffsetPerPartition[nPartitions] = {0};
 constexpr int ivcor = 2;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
-constexpr int indvel = 1;           // Option to compute nodal velocities from element velocities
+constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
 constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = 0; // Option of including hydraulics
@@ -66,7 +66,7 @@ constexpr int islip = 0;             // Option to include slip horizontal bounda
 constexpr int iupwind_mom = 0; // Option on how to include upwind momentum advection
 constexpr int ihorcon = 0;         // Option to include horizontal viscosity
 constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
-constexpr int ishapiro = 0;       // Option to include Shapiro filter
+constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
 constexpr int ncor = 0;               // Option to include Coriolis force
@@ -161,4 +161,4 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
-enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, dfh=15, dfv=16, tke=17, mxl=18, island=19, ifltype=20, elbc=21, isdry=22, eta=23, area=24, qel=25, depth=26, radius=27, len=28, lonlat=29, kb=30, n1=31, n2=32, idx=33, htot=34, gradPr=35, gradEta1=36, gradEta2=37, gradETP=38, FaceIndices=39, u_air=40, outputCoords=41}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, dfh=15, dfv=16, tke=17, mxl=18, island=19, ifltype=20, elbc=21, isdry=22, eta=23, area=24, qel=25, depth=26, radius=27, len=28, lonlat=29, kb=30, n1=31, n2=32, idx=33, htot=34, gradPr=35, gradEta1=36, gradEta2=37, gradETP=38, FaceIndices=39, u_air=40, outputCoords=41, temp=42, salt=43}; // Var codes for getElementVar, getNodeVar...

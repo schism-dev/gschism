@@ -341,6 +341,40 @@ if __name__ == "__main__":
     else:
         raise Exception(f"nchi = {nchi} is not a valid option")
 
+    # Set up initial values for the tracers
+    # Cold start (ihot==0): temp.ic/salt.ic when flag_ic(1:2)==1 (vertically homogeneous).
+    # True barotropic (ibc==1, ibtp==0): T=10, S=0. flag_ic==2 (ts.ic) / hotstart deferred.
+    nNodes = nodeCoords.shape[1]
+    nElems = elnode.shape[1]
+    temp = np.zeros(nNodes)
+    salt = np.zeros(nNodes)
+    if namelist.opt.ihot == 0:  # cold start
+        
+        if namelist.core.ibc == 1 and namelist.core.ibtp == 0:
+            # True barotropic (no T/S calculation): fixed I.C., skip .ic files
+
+            temp[:] = 10.0
+            salt[:] = 0.0
+        else:
+            # flag_ic(1)=TEM, flag_ic(2)=SAL; Fortran requires they match
+            flag_ic = namelist.opt.flag_ic
+            if flag_ic[0] != flag_ic[1]:
+                raise Exception('INIT: flag_ic(1) must equal flag_ic(2)')
+            if flag_ic[0] == 1:
+                # Horizontally varying, vertically uniform: .gr3-format temp.ic / salt.ic
+                temp[:] = module.readHGridData(os.path.join(in_dir, 'temp.ic'), nNodes, nElems)
+                salt[:] = module.readHGridData(os.path.join(in_dir, 'salt.ic'), nNodes, nElems)
+                # Same bounds as Fortran tempmin/max, saltmin/max
+                if np.any(temp < -2.0) or np.any(temp > 40.0):
+                    raise Exception('Initial invalid T in temp.ic')
+                if np.any(salt < 0.0) or np.any(salt > 42.0):
+                    raise Exception('Initial invalid S in salt.ic')
+            elif flag_ic[0] == 2:
+                # Vertically varying, horizontally uniform: ts.ic (not yet)
+                raise NotImplementedError('flag_ic=2 (ts.ic) not implemented')
+            else:
+                raise Exception(f'Unknown flag_ic={flag_ic[0]}')
+
     # If necessary, read in the diffmin and diffmax files of maximum and minimum diffusivity
     diffmin = np.zeros(1)  # For the case they are not read in, we just allocate one element
     diffmax = np.zeros(1)
@@ -360,7 +394,7 @@ if __name__ == "__main__":
                      templatePath="kernels/constants_template.h", 
                      outputPath="kernels/constants.h")
     
-    cufunc.initializeCudaKernelManager(project_root)
+    modKernels = cufunc.initializeCudaKernelManager(project_root)
 
     
     # convert arrays to cupy (Numpy arrays may lose mem)
@@ -399,6 +433,9 @@ if __name__ == "__main__":
 
     diffmin              = cp.array(diffmin,           dtype=cp.float64, order='F')
     diffmax              = cp.array(diffmax,           dtype=cp.float64, order='F')
+
+    temp                 = cp.array(temp,              dtype=cp.float64, order='F')
+    salt                 = cp.array(salt,              dtype=cp.float64, order='F')
 
 
 
@@ -658,7 +695,7 @@ if __name__ == "__main__":
                 pd['globalNodeIndices'], pd['globalElemIndices'], pd['globalSideIndices'],
                 localNodeIndices, localElemIndices, localSideIndices,
                 localNodePart, localElemPart, localSidePart,
-                drag, roughness, rmanning, diffmin, diffmax, kb, sigma_lcl)
+                drag, roughness, rmanning, diffmin, diffmax, temp, salt, kb, sigma_lcl)
 
     
     for ipart, pd in enumerate(partPopulate):
@@ -757,6 +794,20 @@ if __name__ == "__main__":
 
     initializeOutput(out_dir, numNodes, numElements, numSides, nvrt, nodesSize, elemsSize, sidesSize)
 
+    # # XXXXXXXXXXXX THIS GENERATE PTX FILES FOR THE KERNELS
+    # # TO BE REMOVED BEFORE RELEASE
+    # # UNCOMMENT THE CODE BELOW TO GENERATE PTX FILES FOR THE KERNELS
+    # import cupy as cp
+    # read_u64 = cp.RawKernel(r'''
+    # extern "C" __global__ void read_u64(const unsigned long long* p, unsigned long long* out) { *out = *p; }
+    # ''', 'read_u64')
+
+    # m = modKernels.get_global("mesh")                                  # address of the global `mesh`
+    # mesh_ptr = int(cp.ndarray((1,), cp.uint64, memptr=m)[0])           # value of `mesh`
+    # out = cp.zeros(1, dtype=cp.uint64)
+    # read_u64((1,), (1,), (cp.uint64(mesh_ptr + 48), out))              # GPU reads 8 bytes at mesh + 48
+    # sides_ptr = int(out[0])
+    # print(hex(mesh_ptr), hex(sides_ptr), sides_ptr % 16)
 
     profiler = LineProfiler() 
     schism_step_wrapped = profiler(schism_step)

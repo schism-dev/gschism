@@ -54,7 +54,7 @@ constexpr int nodeOffsetPerPartition[nPartitions] = {0};
 constexpr int ivcor = 2;              // Vertical coordinate system
 constexpr int ics = 1;                 // 1: Local coordinates, 2: 3D global cartesian coordinates
 constexpr int imm = 0;                 // 0: without bed deformation; 1: with bed deformation (e.g., tsunami); 2: 3D bed deformation model (needs user coding)
-constexpr int indvel = 1;           // Option to compute nodal velocities from element velocities
+constexpr int indvel = 0;           // Option to compute nodal velocities from element velocities
 constexpr int iveg = 0;               // Vegetation option, 0: no vegetation, 1: vegetation
 constexpr int ihhat = 1;             // Option to limit \hat{H} to enhance stability for large friction in shallow area
 constexpr int ihydraulics = 0; // Option of including hydraulics
@@ -67,7 +67,7 @@ constexpr int islip = 0;             // Option to include slip horizontal bounda
 constexpr int iupwind_mom = 0; // Option on how to include upwind momentum advection
 constexpr int ihorcon = 0;         // Option to include horizontal viscosity
 constexpr double hvis_coef0 = 0.025;// Horizontal viscosity coefficient
-constexpr int ishapiro = 0;       // Option to include Shapiro filter
+constexpr int ishapiro = 1;       // Option to include Shapiro filter
 constexpr double shapiro0 = 0.5;    // Shapiro filter parameter
 constexpr int niter_shap = 1;   // Number of iterations for Shapiro filter
 constexpr int ncor = 0;               // Option to include Coriolis force
@@ -162,7 +162,7 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
-enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, dfh=15, dfv=16, tke=17, mxl=18, island=19, ifltype=20, elbc=21, isdry=22, eta=23, area=24, qel=25, depth=26, radius=27, len=28, lonlat=29, kb=30, n1=31, n2=32, idx=33, htot=34, gradPr=35, gradEta1=36, gradEta2=37, gradETP=38, FaceIndices=39, u_air=40, outputCoords=41}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, dfh=15, dfv=16, tke=17, mxl=18, island=19, ifltype=20, elbc=21, isdry=22, eta=23, area=24, qel=25, depth=26, radius=27, len=28, lonlat=29, kb=30, n1=31, n2=32, idx=33, htot=34, gradPr=35, gradEta1=36, gradEta2=37, gradETP=38, FaceIndices=39, u_air=40, outputCoords=41, temp=42, salt=43}; // Var codes for getElementVar, getNodeVar...
 // END INCLUDE: constants.h
 // BEGIN INCLUDE: meshdata.h
 using int16_t = short;
@@ -647,7 +647,7 @@ constexpr double veg_cfpsi = 0.16;
 
 template<TurbulenceModel Model>
 struct Turbulence {
-   __device__ void setDiffLimits(double, double) { assert(false && "setDiffLimits does not exist for this turbulence model"); }
+   __device__ void setDiffLimits(double, double) { /* The default implementation does nothing */ };
 
    __device__ void init(Node *node) {
       for (int k = 0; k < nvrt; k++) {
@@ -1471,7 +1471,7 @@ struct Side {
    Vector2 btu[nvrt];           // Back-tracked velocity
    Vector2 U;                   // Vertically averaged velocity vector  
 
-   Vector2 nuGradU[nvrt];          // nu*grad u
+   Vector2 nuGradU[nvrt];       // nu*grad u
 
    Vector2 bcc[nvrt];           // Baroclinic term
    Vector2 bcc_TDz[nvrt];       // Baroclinic term at previous timestep
@@ -1550,9 +1550,10 @@ struct Side {
 
    __inline__ __device__ double centerZ(void)      const;
    __inline__ __device__ Point3 center3D(int k)    const { assert(false); assert(k < nvrt); return {center.x, center.y, zc[k]}; }  // USED??? CONSISTENT?? XXXXX
+   // k is the upper level of the layer (same convention as Dz).
    __inline__ __device__ double Dz(int k)          const { assert(k < nvrt && k > 0); return zc[k] - zc[k - 1]; }
-   __inline__ __device__ double area(int k)        const { assert(k < nvrt && k > 0); return len*Dz(k + 1); }
-   __inline__ __device__ double areaClamped(int k) const { assert(k < nvrt && k > 0); return len*(zc[max(k + 1, kb)] - zc[max(k, kb)]); }
+   __inline__ __device__ double area(int k)        const { assert(k < nvrt && k > 0); return len*Dz(k); }
+   __inline__ __device__ double areaClamped(int k) const { assert(k < nvrt && k > 0); return len*(zc[max(k, kb)] - zc[max(k - 1, kb)]); }
 
    __inline__ __device__ Side* neigh(int index) const { 
       // Each internal side has 4 neighbors, they are the closest sides to each of the two elements that share this side
@@ -2066,6 +2067,7 @@ struct Mesh {
                   int *localNodePart,     int *localElemPart,     int *localSidePart,
                   double *drag, double *roughness, double *rmanning, 
                   double *diffmin, double *diffmax,
+                  double *temp, double *salt,
                   int *kb, double *localSigma);
    __device__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr);
    __device__ void populateSides(int *i34, int *sharedIdxSideBoundary,
@@ -4117,9 +4119,6 @@ __device__ int findSideBoundaryType(Side &side, int *iond, int *nond, int *ilnd,
       }
    }
 
-   // Check that the nodes are not both on the boundary
-   assert( (side.n1->nodeBnd == nullptr || side.n2->nodeBnd == nullptr)
-        && "side not in ilnd/iond but both nodes are boundary" );
 
    return -1;
 }
@@ -4137,6 +4136,7 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
                                     int *localNodePart,     int *localElemPart,     int *localSidePart, 
                                     double *drag, double *roughness, double *rmanning, 
                                     double *diffmin, double *diffmax,
+                                    double *temp, double *salt,
                                     int *kb, double *localSigma) {
 
    NODE(pnode);  
@@ -4239,6 +4239,19 @@ __device__ void Mesh::populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoun
    // Populate the diffmin and diffmax values read from the files.
    // (Only used for GLS, GOTM, and SedimentMix.)
    node.turb.setDiffLimits(diffmin[iglobal], diffmax[iglobal]);
+
+   // Cold-start T,S: vertically homogeneous nodal I.C. (temp.ic/salt.ic or barotropic constants).
+   // tr0 keeps the initial field (e.g. type-3 open BC); tracers is the working nodal state.
+   {
+      const double t0 = temp[iglobal];
+      const double s0 = salt[iglobal];
+      for (int k = 0; k < nvrt; k++) {
+         node.tr0[k].tracer[0]     = t0;
+         node.tr0[k].tracer[1]     = s0;
+         node.tracers[k].tracer[0] = t0;
+         node.tracers[k].tracer[1] = s0;
+      }
+   }
 
    if constexpr(ivcor == 1) 
    {  
@@ -4671,8 +4684,22 @@ __device__ void Mesh::populateElements(int *i34, int *elnode, int *elside,
       } // if Tri/Quad
 
    } // for j   
-   
-   
+
+   // Initial element tracers: average surrounding nodal I.C. (levels k and k-1)
+   // For level k: average of node values at k and k-1 over the element nodes.
+   // Level 0 copies level 1 (Fortran tr_el(:,1)=tr_el(:,2)).
+   const double inv = 1.0 / (2.0 * elem.i34);
+   for (int k = 1; k < nvrt; k++) {
+      Tracers sum = {};
+      for (int j = 0; j < elem.i34; j++) {
+         const Node *nd = elem.nodes[j];
+         for (int itr = 0; itr < ntracers; itr++)
+            sum.tracer[itr] += nd->tr0[k].tracer[itr] + nd->tr0[k - 1].tracer[itr];
+      }
+      for (int itr = 0; itr < ntracers; itr++)
+         elem.tracers[k].tracer[itr] = inv * sum.tracer[itr];
+   }
+   elem.tracers[0] = elem.tracers[1];
 
 }
 
@@ -4723,7 +4750,8 @@ __device__ void Mesh::populateBoundaryNodes(int *nond, int *iond,
       }
    }
 
-   assert(iseg < nope && "iseg is out of bounds");
+
+   assert(iseg <= nope && "iseg is out of bounds");
 
 
 
@@ -6627,7 +6655,6 @@ printf("unth0: %f, qthcon: %f, ramp: %f, carea: %f\n", unth0, segment->qthcon, r
    	         assert(nbNode != nullptr && "setEssentialBC: nbNode is nullptr");
 
                const NodeBoundary* nbNodeBnd = nbNode->nodeBnd;
-               assert(nbNodeBnd != nullptr && "setEssentialBC: nbNodeBnd is nullptr");
 
                if (nbNodeBnd && nbNodeBnd->isEssentialBC) {
                   // Verify neighbor's BC value
@@ -6662,11 +6689,14 @@ printf("unth0: %f, qthcon: %f, ramp: %f, carea: %f\n", unth0, segment->qthcon, r
       if(side->isDry) return;
 
       // Vertically integrated velocity U
+      #pragma unroll 1
       for (int k = side->kb; k < nvrt - 1; k++) { 
-         const Vector2 uc = 0.5*(side->u2[k] + side->u2[k + 1]);
-         side->U += side->Dz(k + 1)*uc;  
-      }
 
+         const Vector2 uc = 0.5*(side->u2[k] + side->u2[k + 1]);
+
+         side->U += side->Dz(k + 1)*uc;  
+
+      }
    }
 
    __global__ void computeBottomDragVegetation(void) {
@@ -8680,7 +8710,7 @@ __global__ void computeHorizAdvecFluxes(void) {
 
 }
 
-__global__ void horizontalAdvection(void) {
+__global__ void horizontalAdvectionPrepare(void) {
 
    // Horizontal advection kernel.
    // -------------------------------
@@ -8704,6 +8734,9 @@ __global__ void horizontalAdvection(void) {
    auto &transport = elem->transport;
 
    if (elem->isDry) return;
+
+   // Snapshot current prism tracers for this substep (Update reads prevTraces).
+   transport.savePrevTraces(elem);
 
    elem->transport.maxDt = huge_double;
 
@@ -8746,6 +8779,83 @@ __global__ void horizontalAdvection(void) {
    }
 
 }
+
+__global__ void horizontalAdvectionUpdate(double dtb) {
+   ELEM(elem);
+
+   if (elem->isDry) return;
+
+   const int kb = elem->kb;
+   auto &transport = elem->transport;
+
+   for (int k = kb + 1; k < nvrt; k++) {
+      const double vol = elem->volume(k - 1);
+      const double dtb_by_vol = dtb / vol;
+      Tracers adv = transport.prevTraces[k];  // start from old C
+
+      for (int j = 0; j < elem->i34; j++) {
+
+         const Side *side = elem->sides[j];
+
+         if (k <= side->kb) continue;
+
+         const double faceQ = side->transport.Qh[k];
+         const double sQ = elem->ssign[j] * faceQ;
+         if (sQ >= 0.0) continue;  // outflow or zero: skip (upwind)
+
+         // outside concentration
+         Tracers Cout = adv;  // default: no change (e.g. land / same as interior)
+         const Element *neigh = side->otherElem(elem);
+         if (neigh != nullptr && !neigh->isDry) {
+            Cout = neigh->transport.prevTraces[k];
+         } else if (side->sideBnd != nullptr && !side->sideBnd->segment->isLand) {
+            // XXXXXXXXXXXXX
+            Cout.tracer[0] = 0.1;
+            Cout.tracer[1] = 0.1;
+         } else {
+            continue;
+         }
+
+         const double coef = dtb_by_vol * fabs(faceQ);
+         #pragma unroll 
+         for (int itr = 0; itr < ntracers; itr++)
+            adv.tracer[itr] += coef * (Cout.tracer[itr] - transport.prevTraces[k].tracer[itr]);
+      }
+
+      elem->tracers[k] = adv;
+   }
+
+   // extend below bottom
+   for (int k = 0; k <= kb; k++)
+      elem->tracers[k] = elem->tracers[kb + 1];
+}
+
+
+__global__ void nodalTracerUpdate(void) {
+   NODE(node);
+   if (node->isDry) return;
+
+   for (int k = 0; k < nvrt; k++) {
+      Tracers sum = {};
+      double sumA = 0.0;
+
+      for (int j = 0; j < node->numElements; j++) {
+         const Element *elem = node->elements[j];
+         if (elem->isDry || k <= elem->kb) continue;
+
+         const double A = elem->area;
+         for (int itr = 0; itr < ntracers; itr++)
+            sum.tracer[itr] += A * elem->tracers[k].tracer[itr];
+         sumA += A;
+      }
+
+      if (sumA == 0.0) continue;
+      const double inv = 1.0 / sumA;
+      for (int itr = 0; itr < ntracers; itr++)
+         node->tracers[k].tracer[itr] = inv * sum.tracer[itr];
+   }
+}
+
 
 __device__ __forceinline__ void atomicMinDouble(double *addr, double val) {
    unsigned long long *p = (unsigned long long *)addr;
@@ -9296,6 +9406,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
    int *localNodePart,     int *localElemPart,     int *localSidePart,
    double *drag, double *roughness, double *rmanning, 
    double *diffmin, double *diffmax,
+   double *temp, double *salt,
    int *kb, double *localSigma) {
 
    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
@@ -9307,7 +9418,7 @@ extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNod
                        globalNodeIndices, globalElemIndices, globalSideIndices,
                        localNodeIndices, localElemIndices, localSideIndices,
                        localNodePart, localElemPart, localSidePart,
-                       drag, roughness, rmanning, diffmin, diffmax, kb, localSigma);
+                       drag, roughness, rmanning, diffmin, diffmax, temp, salt, kb, localSigma);
 }  
 
 extern "C" __global__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
@@ -9630,6 +9741,24 @@ extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
          else
             for (int lev = 0; lev < nvrt; lev++)
                out[lev] = getMXL(node->turb, lev);
+         break;
+      }
+      case (int)VarCode::temp: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->tracers[k].tracer[0];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->tracers[lev].tracer[0];
+         break;
+      }
+      case (int)VarCode::salt: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->tracers[k].tracer[1];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->tracers[lev].tracer[1];
          break;
       }
    }
