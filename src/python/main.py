@@ -257,18 +257,19 @@ if __name__ == "__main__":
         print(f"Matrix size = {N}, total number of non-zero matrix elements = {NNZ}")
 
     else:
+        #new32
         # Count nonzeros per row-block A_p (rows owned by partition p, columns = all nodes packed).
-        idxStarts = nodeNeighNodes[1]
+        idxStarts = nodeNeighNodes[1] #extract 2nd entry of a py tuple as array
         idxNeigh = nodeNeighNodes[0]
 
         # ipart[k] = partition of the row node for the k-th off-diagonal neighbor entry
-        ipart = np.repeat(partNodes, np.diff(idxStarts))
+        ipart = np.repeat(partNodes, np.diff(idxStarts)) #create row struc of each partition?
 
-        NNZ = np.zeros(numPartitions, dtype=np.int64)
+        NNZ = np.zeros(numPartitions, dtype=np.int64) #on each GPU
         np.add.at(NNZ, ipart, 1)  # off-diagonals whose row is in partition p
         del ipart
 
-        N = [int(np.sum(partNodes == part)) for part in range(numPartitions)]
+        N = [int(np.sum(partNodes == part)) for part in range(numPartitions)] #on each GPU (matrix dim)
         NNZ += np.asarray(numPartNodes, dtype=np.int64)  # + diagonal per owned row
 
         if NNZ.sum() != idxNeigh.size + nodeCoords.shape[1]:

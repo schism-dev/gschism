@@ -398,7 +398,6 @@ void buildElementSideElementTable(const Array2D<int>& elnode, const std::vector<
         for (int j = 0; j < i34[ie]; j++) {
             const int jsj = elside(j, ie);  
 
-	        //new31: The following should be fatal/assert? [FIXED]
             if (jsj==-1) {
                 throw std::runtime_error("jsj==-1");
             }
@@ -675,7 +674,7 @@ void partitionNodesAndSides(int nElements, int nNodes, int nSides,
 
         // Choses one of the elements that the node belongs to and assigns the partition
         // of that element to the node.
-        const int le = rand() % numElementsPerNode;
+        const int le = rand() % numElementsPerNode; // % remainder so a random # in [0,numElementsPerNode-1] 
 
         const int ie = nodeNeighElems(in, le);
         partNodes[in] = partitions[ie];
@@ -778,7 +777,7 @@ int findSideBoundaryType(int n1, int n2,
     }
 
     return -1;  // not a boundary segment edge
-}
+} //findSideBoundaryType
 
 
 void countPartitionSizes(
@@ -824,7 +823,7 @@ void countPartitionSizes(
         if (isbs >= 0)
             numPartBoundarySides[p]++;
     }
-}
+} //countPartitionSizes
 
 //To Numpy arrays first (CPU)
 std::tuple<py::array_t<int32_t>,    // i34
@@ -1097,7 +1096,6 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
     // of functions is important in this section.
     buildListsOfNodeNeighbors(elnode, i34, isbnd, nElements, nNodes, nodeNeighElems, nodeNeighNodes);
 
-    //new32
     idx_t nvtxs = nElements;  // number of vertices (elements in our case)
     std::vector<idx_t> partElements(nvtxs);  // array to store partition numbers
     if (nPartitions > 1) {
@@ -1139,7 +1137,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
         std::fill(partElements.begin(), partElements.end(), 0);  // All elements in partition 0
     }
 
-    bool reorderPartitions = false;
+    bool reorderPartitions = false; //never re-order for efficiency
     if (reorderPartitions) {
         printFormatted(ansi::yellow("Reordering %d partitions"), nPartitions);
         for (int ipart = 0; ipart < nPartitions; ipart++) {
@@ -1148,7 +1146,7 @@ readHGrid(const std::string& filename, const std::string& filename_ll, idx_t nPa
         }
     }
 
-    // Assigns nodes and sides also to different partitions.
+    // Assigns nodes and sides also to different partitions (based on 1 of surrounding elem).
     std::vector<int> partNodes;
     std::vector<int> partSides;
 
@@ -1215,7 +1213,7 @@ printFormatted(ansi::green("******numPartBoundarySides = %d"), numPartBoundarySi
                 nodeCoords_ll(1, i) = lat;
             }
 
-        }
+        } //file_ll.is_open
 
         print("");
         printFormatted(ansi::green("Read longitude and latitude"));
