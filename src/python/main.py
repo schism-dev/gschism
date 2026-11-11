@@ -259,11 +259,11 @@ if __name__ == "__main__":
     else:
         #new32
         # Count nonzeros per row-block A_p (rows owned by partition p, columns = all nodes packed).
-        idxStarts = nodeNeighNodes[1] #extract 2nd entry of a py tuple as array
-        idxNeigh = nodeNeighNodes[0]
+        idxStarts = nodeNeighNodes[1] #extract 2nd entry of a py tuple as array (starting global indices)
+        idxNeigh = nodeNeighNodes[0]  #1st entry is list of neigb
 
         # ipart[k] = partition of the row node for the k-th off-diagonal neighbor entry
-        ipart = np.repeat(partNodes, np.diff(idxStarts)) #create row struc of each partition?
+        ipart = np.repeat(partNodes, np.diff(idxStarts)) #create row struc of owned nodes
 
         NNZ = np.zeros(numPartitions, dtype=np.int64) #on each GPU
         np.add.at(NNZ, ipart, 1)  # off-diagonals whose row is in partition p
