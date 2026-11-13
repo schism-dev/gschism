@@ -166,17 +166,19 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     dryFlagElement_var[idxTime, :] = isdry_cpu
     del isdry_cpu    
 
-    uv = dtoh.getNodeVar("u")
+    uv = dtoh.getNodeVar("u").copy()
     u_cpu = uv[0, :, :]
     v_cpu = uv[1, :, :]
 
     # Mask depth layers above kb (dry/above bed) as NaN
-    kb_cpu = dtoh.getNodeVar("kb")
+    kb_cpu = dtoh.getNodeVar("kb").copy()
     nvrt_u = u_cpu.shape[0]
     k_2d = np.arange(nvrt_u, dtype=kb_cpu.dtype)[:, np.newaxis]
     mask_above_kb = k_2d < kb_cpu[np.newaxis, :]
     u_cpu[mask_above_kb] = np.nan
     v_cpu[mask_above_kb] = np.nan
+
+    print(u_cpu.T[40:61, -1])  # XXXXXXX
 
     horizontalVelX_var = dataU.variables['horizontalVelX']
     horizontalVelX_var[idxTime, :, :] = u_cpu.T

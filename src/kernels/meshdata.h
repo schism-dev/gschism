@@ -434,12 +434,17 @@ struct NodeBoundary;
 // ----------------------------- Transport -----------------------------
 
 enum class TransportModel : int {
+   None   = 0,
    Upwind = 1, // local fallback for elements that are too shallow to use TVD or WENO or explicitly marked as such in tvd.prop
    TVD    = 3,
    WENO   = 4,
 };
 
-constexpr TransportModel transportModel = static_cast<TransportModel>(itr_met);
+// Calculates the transport model based on the number of tracers and the chosen transport method
+constexpr TransportModel transportModel =
+   (ntracers == 0 || itr_met == 0)
+      ? TransportModel::None
+      : static_cast<TransportModel>(itr_met);
 
 struct TransportSideBase {
    double Qh[nvrt]; // Horizontal advection flux at each vertical level
@@ -452,6 +457,15 @@ struct TransportElemBase {
 template<TransportModel Model>
 struct TransportElem: public TransportElemBase {};
 
+
+template<>
+struct TransportElem<TransportModel::None>: public TransportElemBase {
+   // No transport scratch (no Qv, inflow, prevTraces, ...).
+   __device__ void setVerticalAdvectionFlux(int /*k*/, double /*flux*/) {
+      // Do nothing.
+   }
+};
+
 template<>
 struct TransportElem<TransportModel::Upwind>: public TransportElemBase {
    double maxDt;             // Maximum allowed sub-time step for the element
@@ -459,10 +473,13 @@ struct TransportElem<TransportModel::Upwind>: public TransportElemBase {
    Tracers prevTraces[nvrt]; // elem->tracers at previous substep
    bool itvd;                // Read from tvd.prop; 0 means always 1st order upwind
 
+   double Qv[nvrt];          // Vertical advection flux at each vertical level
+
    // Bodies in meshdata.cu: Element is incomplete here.
    __device__ bool use1stOrderUpwind(const Element *elem) const;
    __device__ void savePrevTraces(const Element *elem);
    __device__ double maxPrismDt(const Element *elem, int k) const;
+   __device__ void setVerticalAdvectionFlux(int k, double Qv);
 };
 
 template<TransportModel Model>

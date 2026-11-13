@@ -70,6 +70,8 @@ shapiroFilter2 = None
 computeHorizAdvecFluxes = None
 horizontalAdvectionPrepare = None
 horizontalAdvectionUpdate = None
+verticalAdvectionUpdate = None
+verticalDiffusionUpdate = None
 nodalTracerUpdate = None
 minTransportDtKernel = None
 
@@ -144,7 +146,7 @@ def initializeCudaFunctions(sizes):
     global computeDensityGradient, computeBaroclinicTerm, computeElemAverageGhat, setEssentialBC, updateElevation
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
     global setupCGSolver, solverCopyResult, gatherBFromMesh, scatterXToMesh, ul0ComputeDryElements, ul0ComputeDryNodes
-    global updateBedDeformation, shapiroFilter1, shapiroFilter2, computeHorizAdvecFluxes, horizontalAdvectionPrepare, horizontalAdvectionUpdate, nodalTracerUpdate, minTransportDtKernel
+    global updateBedDeformation, shapiroFilter1, shapiroFilter2, computeHorizAdvecFluxes, horizontalAdvectionPrepare, horizontalAdvectionUpdate, verticalAdvectionUpdate, verticalDiffusionUpdate, nodalTracerUpdate, minTransportDtKernel
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix, returnX, returnB
     global ul0UpdateZCoords, ul0ComputeDryElements, ul0ComputeDryNodes, ul0UpdateRewettedNodes, ul0UpdateSides, ul0UpdateSides2
@@ -220,6 +222,8 @@ def initializeCudaFunctions(sizes):
         computeHorizAdvecFluxes             = mod.get_function('computeHorizAdvecFluxes',             sizes, kernel_type='sides')
         horizontalAdvectionPrepare          = mod.get_function('horizontalAdvectionPrepare',          sizes, kernel_type='elements')
         horizontalAdvectionUpdate           = mod.get_function('horizontalAdvectionUpdate',           sizes, kernel_type='elements')
+        verticalAdvectionUpdate             = mod.get_function('verticalAdvectionUpdate',             sizes, kernel_type='elements')
+        verticalDiffusionUpdate             = mod.get_function('verticalDiffusionUpdate',             sizes, kernel_type='elements')
         nodalTracerUpdate                   = mod.get_function('nodalTracerUpdate',                   sizes, kernel_type='nodes')
         minTransportDtKernel                = mod.get_function('minTransportDt',                      sizes, kernel_type='elements,onlycurrent')
 

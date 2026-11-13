@@ -601,12 +601,17 @@ struct NodeBoundary;
 // ----------------------------- Transport -----------------------------
 
 enum class TransportModel : int {
+   None   = 0,
    Upwind = 1, // local fallback for elements that are too shallow to use TVD or WENO or explicitly marked as such in tvd.prop
    TVD    = 3,
    WENO   = 4,
 };
 
-constexpr TransportModel transportModel = static_cast<TransportModel>(itr_met);
+// Calculates the transport model based on the number of tracers and the chosen transport method
+constexpr TransportModel transportModel =
+   (ntracers == 0 || itr_met == 0)
+      ? TransportModel::None
+      : static_cast<TransportModel>(itr_met);
 
 struct TransportSideBase {
    double Qh[nvrt]; // Horizontal advection flux at each vertical level
@@ -619,6 +624,15 @@ struct TransportElemBase {
 template<TransportModel Model>
 struct TransportElem: public TransportElemBase {};
 
+
+template<>
+struct TransportElem<TransportModel::None>: public TransportElemBase {
+   // No transport scratch (no Qv, inflow, prevTraces, ...).
+   __device__ void setVerticalAdvectionFlux(int /*k*/, double /*flux*/) {
+      // Do nothing.
+   }
+};
+
 template<>
 struct TransportElem<TransportModel::Upwind>: public TransportElemBase {
    double maxDt;             // Maximum allowed sub-time step for the element
@@ -626,10 +640,13 @@ struct TransportElem<TransportModel::Upwind>: public TransportElemBase {
    Tracers prevTraces[nvrt]; // elem->tracers at previous substep
    bool itvd;                // Read from tvd.prop; 0 means always 1st order upwind
 
+   double Qv[nvrt];          // Vertical advection flux at each vertical level
+
    // Bodies in meshdata.cu: Element is incomplete here.
    __device__ bool use1stOrderUpwind(const Element *elem) const;
    __device__ void savePrevTraces(const Element *elem);
    __device__ double maxPrismDt(const Element *elem, int k) const;
+   __device__ void setVerticalAdvectionFlux(int k, double Qv);
 };
 
 template<TransportModel Model>
@@ -7353,8 +7370,6 @@ extern "C" {
          // to indicate the "top" level, which may not coincide with a layer. "t" can stand for both
          // k+1 and k.
 
-
-         const int ndim = nvrt - kb;
          const double zTopCanopy = side->zTopCanopy();
 
          // Initialize the tridiagonal system
@@ -8153,7 +8168,10 @@ if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
 
       for (int k = 0;  k < kb;   k++) node->u2[k] = {0.0, 0.0};
       for (int k = kb; k < nvrt; k++) node->u2[k] = node->utmp[k]*(1.0/nodeCount);
-      
+  if (fabs(node->p.x) < 1e-6)
+   printf("idx=%d cnt=%d bnd=%d u=%f v=%f\n",
+          node->idx, nodeCount, node->nodeBnd != nullptr,
+          node->u2[ivrt].x, node->u2[ivrt].y);    
       
    }   
 
@@ -8163,7 +8181,7 @@ if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
    // Set velocity to zero for open boundary nodes where the velocity is imposed.
 
       NODE_BND(nodebnd);
-// printf("DDDDDDDDDD\n");  // XXXXXXX
+ 
       if (nodebnd->segment != nullptr && nodebnd->segment->ifltype != 0) {
          for (int k = 0; k < nvrt; k++) { nodebnd->node->u2[k] = {0.0, 0.0}; nodebnd->node->w2[k] = 0.0; }  // XXXXXXX
       }
@@ -8273,6 +8291,8 @@ if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
          elem->w[kb] = bedVelocity + bottomW; 
 
          bottomFlux = 0.0;  // No flux from the bed face. XXXX
+
+         elem->transport.setVerticalAdvectionFlux(kb, 0.0);
          
       } // if imm
 
@@ -8311,6 +8331,8 @@ if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
          // The flux at the top ace can be computed from the other flows.
          // All fluxes are in directions into the prism.
          const double topFlux = - sideFlux - bottomFlux;
+
+         elem->transport.setVerticalAdvectionFlux(l + 1, topFlux);
 
          // Flux at the top face due to the horizontal velocities only
          // topFlux = topHorizontalFlux + topVerticalFlux
@@ -8678,6 +8700,11 @@ __device__ double TransportElem<TransportModel::Upwind>::maxPrismDt(const Elemen
    return elem->volume(k - 1) / inflow[k] * (1.0 - 1.0e-6);
 }
 
+__device__ void TransportElem<TransportModel::Upwind>::setVerticalAdvectionFlux(int k, double flux)
+{
+   Qv[k] = flux;
+}
+
 __global__ void computeHorizAdvecFluxes(void) {
 
 
@@ -8810,8 +8837,8 @@ __global__ void horizontalAdvectionUpdate(double dtb) {
             Cout = neigh->transport.prevTraces[k];
          } else if (side->sideBnd != nullptr && !side->sideBnd->segment->isLand) {
             // XXXXXXXXXXXXX
-            Cout.tracer[0] = 0.1;
-            Cout.tracer[1] = 0.1;
+            // Cout.tracer[0] = 0.1;
+            // Cout.tracer[1] = 0.1;
          } else {
             continue;
          }
@@ -8830,6 +8857,133 @@ __global__ void horizontalAdvectionUpdate(double dtb) {
       elem->tracers[k] = elem->tracers[kb + 1];
 }
 
+__global__ void verticalAdvectionUpdate(double dt) {
+
+   ELEM(elem);
+
+   if (elem->isDry) return;
+
+   const int kb = elem->kb;
+   auto &transport = elem->transport;
+
+   // Fortran workshare: trel_tmp = tr_el
+   transport.savePrevTraces(elem);
+
+   const bool upwindElem = transport.use1stOrderUpwind(elem);
+
+   // For TransportModel::Upwind this is always the path below (phi=0).
+   double alow[nvrt], bdia[nvrt], cupp[nvrt], rrhs[nvrt], soln[nvrt], gam[nvrt];
+
+   // Outer tracer loop as in Fortran (m=1..ntr). Matrix is scalar in m.
+   for (int itr = 0; itr < ntracers; itr++) {
+      // ---- upwind / iter_back: phi=0, flux_mod_v1=1, denom=1 ----
+      // Full SB-TVD iteration (rrat, phi, flux_mod_v1/v2, psi1) omitted here;
+      // that is the TVD branch when !upwindElem. Structure is in Fortran L1224-1488.
+      const int nEq  = nvrt - (kb + 1);
+      for (int kin = 0; kin < nEq ; kin++) {
+         alow[kin] = 0.0;
+         cupp[kin] = 0.0;
+         bdia[kin] = 0.0;
+      }
+      for (int k = kb + 1; k < nvrt; k++) {
+         const int kin = k - (kb + 1);
+         const double dt_by_bigv = dt / elem->volume(k - 1);
+         // upwind: denom = 1
+         bdia[kin] += 1.0;
+         rrhs[kin]  = transport.prevTraces[k].tracer[itr] * 1.0;
+         // Upper face inflow: Qv[k] < 0
+         if (k != nvrt - 1 && transport.Qv[k] < 0.0) {
+            const double tmp = dt_by_bigv * fabs(transport.Qv[k]); // * flux_mod_v1(=1)
+            cupp[kin] -= tmp;
+            bdia[kin] += tmp;
+         }
+         // Lower face inflow: Qv[k-1] > 0
+         if (k - 1 != kb && transport.Qv[k - 1] > 0.0) {
+            const double tmp = dt_by_bigv * fabs(transport.Qv[k - 1]);
+            alow[kin] -= tmp;
+            bdia[kin] += tmp;
+         }
+      }
+      tridag_sch<1>(nEq , alow, bdia, cupp, rrhs, soln, gam);
+      for (int k = kb + 1; k < nvrt; k++)
+         elem->tracers[k].tracer[itr] = soln[k - (kb + 1)];
+   }
+   // Extend below bottom
+   for (int k = 0; k <= kb; k++)
+      elem->tracers[k] = elem->tracers[kb + 1];
+}
+
+
+// Fortran transport_TVD_imp step 3: non-advection (vertical diffusion).
+// Call after verticalAdvectionUpdate(dt), before nodalTracerUpdate.
+// Requires dfh set (itur!=0 path, or dfh0>0 when itur==0).
+__global__ void verticalDiffusionUpdate(double dt) {
+
+   ELEM(elem);
+
+   if (elem->isDry) return;
+
+   const int kb = elem->kb;
+   auto &transport = elem->transport;
+
+   // Fortran: trel_tmp = tr_el
+   transport.savePrevTraces(elem);
+
+   double alow[nvrt], bdia[nvrt], cupp[nvrt], rrhs[nvrt], soln[nvrt], gam[nvrt];
+
+   for (int itr = 0; itr < ntracers; itr++) {
+      const int nEq = nvrt - (kb + 1);
+
+      for (int kin = 0; kin < nEq; kin++) {
+         alow[kin] = 0.0;
+         cupp[kin] = 0.0;
+         bdia[kin] = 1.0;
+         rrhs[kin] = 0.0;
+      }
+
+      // Prism k = kb+1 .. nvrt-1  (Fortran kbe+1 .. nvrt)
+      for (int k = kb + 1; k < nvrt; k++) {
+         const int kin = k - (kb + 1);
+         const double dt_by_bigv = dt / elem->volume(k - 1);
+
+         // Diffusion at upper face k (Fortran k < nvrt)
+         if (k < nvrt - 1) {
+            const double av_df = elem->mean(k, &Node::dfh);
+            const double av_dz = 0.5 * (elem->z[k + 1] - elem->z[k - 1]);
+            const double tmp   = elem->area * dt_by_bigv * av_df / av_dz;
+            cupp[kin] -= tmp;
+            bdia[kin] += tmp;
+            // settling @ face k: if wsett<=0 bdia -= area*dt_by_bigv*wsett;
+            //                     else cupp -= area*dt_by_bigv*wsett;
+         }
+
+         // Diffusion at lower face k-1 (Fortran k > kbe+1)
+         if (k > kb + 1) {
+            const double av_df = elem->mean(k - 1, &Node::dfh);
+            const double av_dz = 0.5 * (elem->z[k] - elem->z[k - 2]);
+            const double tmp   = elem->area * dt_by_bigv * av_df / av_dz;
+            alow[kin] -= tmp;
+            bdia[kin] += tmp;
+            // settling @ face k-1: if wsett<=0 alow += ...; else bdia += ...;
+         }
+
+         // Bottom settling BC (iwsett==1, k==kbe+1): bdia += area*dt_by_bigv*wsett(kb)
+
+         rrhs[kin] = transport.prevTraces[k].tracer[itr];
+         // if (k == nvrt - 1) rrhs += area * dt_by_bigv * flx_sf;
+         // if (k == kb + 1)   rrhs -= area * dt_by_bigv * flx_bt;
+         // rrhs += dt * bdy_frc;
+      }
+
+      tridag_sch<1>(nEq, alow, bdia, cupp, rrhs, soln, gam);
+
+      for (int k = kb + 1; k < nvrt; k++)
+         elem->tracers[k].tracer[itr] = soln[k - (kb + 1)];
+   }
+
+   for (int k = 0; k <= kb; k++)
+      elem->tracers[k] = elem->tracers[kb + 1];
+}
 
 __global__ void nodalTracerUpdate(void) {
    NODE(node);

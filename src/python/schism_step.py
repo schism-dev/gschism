@@ -76,15 +76,20 @@ def minTransportDt():
     return min(vals)
 
 def computeTransport(dt: float):
+
     cufunc.computeHorizAdvecFluxes()
 
     dtb = 1e34 # just a big number
-    while (dt > 0.0):
+    remaining_dt = dt
+    while (remaining_dt > 0.0):
         cufunc.horizontalAdvectionPrepare()
         dtb = min(dt, minTransportDt())
         cufunc.horizontalAdvectionUpdate(dtb)
-        dt = dt - dtb
+        remaining_dt -= dtb
 
+    cufunc.verticalAdvectionUpdate(dt)
+    cufunc.verticalDiffusionUpdate(dt)
+    # Update the tracers at the nodes from the elements
     cufunc.nodalTracerUpdate()
 
 def schism_step(it: int, namelist, bctides, sflux, solver):
@@ -240,7 +245,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     #  Solve the wave equation
     # cufunc.printMatrix(True)   
-    solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0)
+    its = solveWaveEquation(solver, maxIter = opt.mxitn0, tol = opt.rtol0)
 
 
     # cufunc.printMatrix(True)   
@@ -281,6 +286,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     cufunc.applyMomentumBC()
 
+    cufunc.computeVerticalVelocity()
 
     # Transport    lines 7388-8111
     computeTransport(dt)
@@ -293,7 +299,7 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     # cufunc.updateBedDeformation()  // XXXX CHECK IF updateZCoordData MUST BE CALLED HERE
 
-    cufunc.computeVerticalVelocity()
+
 
     cufunc.ul0UpdateZCoords()
     
