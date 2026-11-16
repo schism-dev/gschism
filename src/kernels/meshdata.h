@@ -1070,7 +1070,8 @@ struct Element {
 
    __inline__ __device__ bool isEdgeBoundary(Side *side) const;
 
-   __forceinline__ __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const;
+   __forceinline__ __device__ bool inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4],
+                                                       bool useSideCenters = false) const;
 
    __inline__ __device__ double computeSignedArea(void) const;
 

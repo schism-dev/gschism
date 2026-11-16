@@ -170,7 +170,23 @@ class DeviceToHost:
                 arrayPart = partRaw.reshape(sizePart, self.nvrt)
             else:
                 arrayPart = partRaw.reshape(sizePart, numComponents)
+
+            # XXXXXXX debug gather for global nodes 40..60 (surface ux)
+            if varName == "u" and is3D and varType == 'Vector2':
+                doubles = self.bufferCPU[m][:sizePart * nbytes].view(np.float64)
+                for local in range(sizePart):
+                    gid = int(gidx[local])
+                    if 40 <= gid <= 60:
+                        base = local * self.nvrt * 2
+                        uxRaw = doubles[base + (self.nvrt - 1) * 2]
+                        uxPart = float(arrayPart[local, -1, 0])
+                        print(f"GATHER m={m} local={local} gid={gid} RAW={uxRaw} PART={uxPart}")
+
             result[gidx] = arrayPart
+
+            if varName == "u" and is3D and varType == 'Vector2':
+                for gid in range(40, 61):
+                    print(f"GATHER HOST gid={gid} ux_surface={result[gid, -1, 0]}")
 
         if varType == 'Vector2' and not is3D:
             return result.T

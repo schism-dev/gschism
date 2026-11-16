@@ -783,9 +783,11 @@ __inline__ __device__ bool Element::isEdgeBoundary(Side *side) const {
    return side->elems[1] == nullptr; 
 }
 
-__forceinline__ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4]) const {
+__forceinline__ __device__ bool Element::inverseBilinearQuad(Point2 p, double &xi, double &eta, double shp[4],
+                                                             bool useSideCenters) const {
    // Given a point p in the quad element returns the bilinear coordinates (xi,eta) and the shape coordinates shp[4]
    // For ics == 2, this function uses local frame coordinates.
+   // If useSideCenters, bilinear domain is the side-center quad (side j opposite node j).
 
    assert(isQuad());
 
@@ -796,6 +798,14 @@ __forceinline__ __device__ bool Element::inverseBilinearQuad(Point2 p, double &x
    Point2 p0, p1, p2, p3;
 
    getLocalHorizontalNodePositionsQuad(p0, p1, p2, p3);
+
+   if (useSideCenters) {
+      const Point2 s0 = 0.5 * (p1 + p2);
+      const Point2 s1 = 0.5 * (p2 + p3);
+      const Point2 s2 = 0.5 * (p3 + p0);
+      const Point2 s3 = 0.5 * (p0 + p1);
+      p0 = s0; p1 = s1; p2 = s2; p3 = s3;
+   }
 
    // A point of bilinear coordinates (xi,eta) has cartesian coordinates given by:
    // p = c + 0.25 * (xi*vxi + eta*veta + xi*eta*vb)
@@ -5843,6 +5853,7 @@ if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
 
 
             // Compute the bilinear coordinates of the center of each diagonal.
+            // Weights from side-center domain (Fortran shape_c2); eval at node-diagonal midpoints.
             double xi, eta;
             double shp13[4], shp24[4];
             Point2 x0, x1, x2, x3;
@@ -5850,8 +5861,8 @@ if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
             const Point2 p13 = 0.5 * (x0 + x2);   // Center of sides 1 & 3
             const Point2 p24 = 0.5 * (x1 + x3);   // Center of sides 2 & 4
 
-            elem->inverseBilinearQuad(p13, xi, eta, shp13);
-            elem->inverseBilinearQuad(p24, xi, eta, shp24);
+            elem->inverseBilinearQuad(p13, xi, eta, shp13, true);
+            elem->inverseBilinearQuad(p24, xi, eta, shp24, true);
 
 
 
@@ -5911,12 +5922,7 @@ if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
 
       for (int k = 0;  k < kb;   k++) node->u2[k] = {0.0, 0.0};
       for (int k = kb; k < nvrt; k++) node->u2[k] = node->utmp[k]*(1.0/nodeCount);
-  if (fabs(node->p.x) < 1e-6)
-   printf("idx=%d cnt=%d bnd=%d u=%f v=%f\n",
-          node->idx, nodeCount, node->nodeBnd != nullptr,
-          node->u2[ivrt].x, node->u2[ivrt].y);    
-      
-   }   
+     }   
 
  
 

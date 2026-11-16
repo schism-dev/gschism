@@ -87,8 +87,8 @@ def computeTransport(dt: float):
         cufunc.horizontalAdvectionUpdate(dtb)
         remaining_dt -= dtb
 
-    cufunc.verticalAdvectionUpdate(dt)
-    cufunc.verticalDiffusionUpdate(dt)
+    # cufunc.verticalAdvectionUpdate(dt)
+    # cufunc.verticalDiffusionUpdate(dt)
     # Update the tracers at the nodes from the elements
     cufunc.nodalTracerUpdate()
 
@@ -286,15 +286,17 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     cufunc.applyMomentumBC()
 
+    if opt.ishapiro == 1:
+        # The Shapiro filter is applied in two steps
+        cufunc.shapiroFilter1()
+        cufunc.shapiroFilter2()
+
     cufunc.computeVerticalVelocity()
 
     # Transport    lines 7388-8111
     computeTransport(dt)
 
-    if opt.ishapiro == 1:
-        # The Shapiro filter is applied in two steps
-        cufunc.shapiroFilter1()
-        cufunc.shapiroFilter2()
+
 
 
     # cufunc.updateBedDeformation()  // XXXX CHECK IF updateZCoordData MUST BE CALLED HERE

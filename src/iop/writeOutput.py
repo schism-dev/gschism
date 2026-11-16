@@ -171,21 +171,20 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     v_cpu = uv[1, :, :]
 
     # Mask depth layers above kb (dry/above bed) as NaN
-    kb_cpu = dtoh.getNodeVar("kb").copy()
+    kb_cpu = dtoh.getNodeVar("kb")
     nvrt_u = u_cpu.shape[0]
     k_2d = np.arange(nvrt_u, dtype=kb_cpu.dtype)[:, np.newaxis]
     mask_above_kb = k_2d < kb_cpu[np.newaxis, :]
     u_cpu[mask_above_kb] = np.nan
     v_cpu[mask_above_kb] = np.nan
 
-    print(u_cpu.T[40:61, -1])  # XXXXXXX
 
     horizontalVelX_var = dataU.variables['horizontalVelX']
     horizontalVelX_var[idxTime, :, :] = u_cpu.T
 
     horizontalVelY_var = dataV.variables['horizontalVelY']
     horizontalVelY_var[idxTime, :, :] = v_cpu.T
-    del u_cpu, v_cpu
+    del u_cpu, v_cpu, uv
 
     z_cpu = dtoh.getNodeVar("z")
     zCoordinates_var = dataZ.variables['zCoordinates']
