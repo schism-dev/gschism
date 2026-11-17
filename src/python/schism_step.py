@@ -83,7 +83,7 @@ def computeTransport(dt: float):
     remaining_dt = dt
     while (remaining_dt > 0.0):
         cufunc.horizontalAdvectionPrepare()
-        dtb = min(dt, minTransportDt())
+        dtb = min(remaining_dt, minTransportDt())
         cufunc.horizontalAdvectionUpdate(dtb)
         remaining_dt -= dtb
 

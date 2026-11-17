@@ -602,10 +602,16 @@ __device__ __forceinline__ Vector3 Element::n(int k, double &area3D) const {
 
       getLocalHorizontalNodePositionsQuad(h0, h1, h2, h3);
 
+      // Indices of the nodes at level k, taking care of not going below the bed
+      const int k0 = max(k, nodes[0]->kb);
+      const int k1 = max(k, nodes[1]->kb);
+      const int k2 = max(k, nodes[2]->kb);
+      const int k3 = max(k, nodes[3]->kb);
+
       // Computes the cross product of the two diagonals (h2 - h0) and (h3 - h1). 
       // WARNING: For the vertical coordinate we are assuming that z = 0 in the element frame coincides with the 0 level of the ellipsoid.
-      const Vector3 n20 = toVector3(h2 - h0, nodes[2]->z[k] - nodes[0]->z[k]);
-      const Vector3 n31 = toVector3(h3 - h1, nodes[3]->z[k] - nodes[1]->z[k]);
+      const Vector3 n20 = toVector3(h2 - h0, nodes[2]->z[k2] - nodes[0]->z[k0]);
+      const Vector3 n31 = toVector3(h3 - h1, nodes[3]->z[k3] - nodes[1]->z[k1]);
 
       // Computes the cross product of the two diagonals (h2 - h0) and (h3 - h1). 
       nx = n20.y*n31.z - n20.z*n31.y;
@@ -871,9 +877,8 @@ __forceinline__ __device__ bool Element::inverseBilinearQuad(Point2 p, double &x
    // Branchless: nb = vb / (|vb.x| + |vb.y| + tiny).
    // When vb ~ 0, nb ~ 0, all L/Q coefficients vanish proportionally,
    // and the quadratic solver takes its linear path (a ~ 0).
-   const double wlen1 = fabs(vb.x) + fabs(vb.y) + 1e-30;
-   const double inv_wlen = 1.0 / wlen1;
-   const Vector2 nb = vb * inv_wlen;
+   const double wlen1 = fabs(vb.x) + fabs(vb.y);
+   const Vector2 nb = (wlen1 > 0.0) ? vb*(1.0/wlen1) : Vector2{1.0, 0.0};
 
    // ---- Linear equation (L): Lp = Ls*xi + Lt*eta ----
    // cross(nb, .) projects onto the direction PERPENDICULAR to W.
@@ -5865,8 +5870,6 @@ if (ifltype == 2) printf("XXXXX ubc: %f, %f\n", ubc[k].x, ubc[k].y);
             elem->inverseBilinearQuad(p24, xi, eta, shp24, true);
 
 
-
-
             for (int k = kb; k < nvrt; k++) {
 
                //Each quad is split into two triangles. For each triangle we extrapolate as we did for triangles.
@@ -6544,9 +6547,7 @@ __global__ void horizontalAdvectionPrepare(void) {
          // real: either a wet neighboring element, or an open boundary.         
          if (isLand || !inFlux) continue;
 
-         for (int itr = 0; itr < ntracers; itr++) {
-            transport.inflow[k] += fabs(faceQ);  // Sum of all inflow fluxes at level k.
-         }
+         transport.inflow[k] += fabs(faceQ);  // Sum of all inflow fluxes at level k.
 
       }
       
