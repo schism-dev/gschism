@@ -9003,1211 +9003,1223 @@
  9003: 
  9004:       for (int j = 0; j < node->numElements; j++) {
  9005:          const Element *elem = node->elements[j];
- 9006:          if (elem->isDry || k <= elem->kb) continue;
+ 9006:          if (elem->isDry) continue;
  9007: 
- 9008:          const double A = elem->area;
- 9009:          for (int itr = 0; itr < ntracers; itr++)
- 9010:             sum.tracer[itr] += A * elem->tracers[k].tracer[itr];
- 9011:          sumA += A;
- 9012:       }
- 9013: 
- 9014:       if (sumA == 0.0) continue;
- 9015:       const double inv = 1.0 / sumA;
- 9016:       for (int itr = 0; itr < ntracers; itr++)
- 9017:          node->tracers[k].tracer[itr] = inv * sum.tracer[itr];
- 9018:    }
- 9019: }
- 9020: 
- 9021: 
- 9022: __device__ __forceinline__ void atomicMinDouble(double *addr, double val) {
- 9023:    unsigned long long *p = (unsigned long long *)addr;
- 9024:    unsigned long long old = *p, assumed;
- 9025:    do {
- 9026:       assumed = old;
- 9027:       old = atomicCAS(p, assumed,
- 9028:          __double_as_longlong(fmin(val, __longlong_as_double(assumed))));
- 9029:    } while (assumed != old);
- 9030: }
- 9031: 
- 9032: __device__ __forceinline__ double blockMin(double v) {
- 9033:    __shared__ double sh[32];
- 9034:    const int lane = threadIdx.x & 31;
- 9035:    const int warp = threadIdx.x >> 5;
- 9036:    for (int o = 16; o > 0; o >>= 1)
- 9037:       v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
- 9038:    if (lane == 0) sh[warp] = v;
- 9039:    __syncthreads();
- 9040:    if (warp == 0) {
- 9041:       const int nw = blockDim.x >> 5;
- 9042:       v = (lane < nw) ? sh[lane] : huge_double;
- 9043:       for (int o = 16; o > 0; o >>= 1)
- 9044:          v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
- 9045:    }
- 9046:    return v;  // only lane 0 of warp 0 is the block min
- 9047: }
- 9048: 
- 9049: extern "C" __global__ void minTransportDt(double *out) {
- 9050:    const int idx = threadIdx.x + blockIdx.x * blockDim.x;
- 9051:    double v = huge_double;
- 9052:    if (idx < mesh->ne) {
- 9053:       Element *elem = &mesh->localElemData[idx];
- 9054:       if (!elem->isDry) v = elem->transport.maxDt;
- 9055:    }
- 9056:    __shared__ double sh[32];
- 9057:    const int lane = threadIdx.x & 31;
- 9058:    const int warp = threadIdx.x >> 5;
- 9059:    for (int o = 16; o > 0; o >>= 1)
- 9060:       v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
- 9061:    if (lane == 0) sh[warp] = v;
- 9062:    __syncthreads();
- 9063:    if (warp == 0) {
- 9064:       const int nw = (blockDim.x + 31) >> 5;
- 9065:       v = (lane < nw) ? sh[lane] : huge_double;
- 9066:       for (int o = 16; o > 0; o >>= 1)
- 9067:          v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
- 9068:       if (lane == 0) atomicMinDouble(out, v);
- 9069:    }
- 9070: }
- 9071: 
- 9072: 
- 9073: 
- 9074: 
- 9075: 
- 9076: 
- 9077:    // // Mark prisms (shallow enough or marked as such in tvd.prop) that will be computed using first-order upwind formulation.
- 9078:    // elem->computeUse1stOrderUpwind();
- 9079: 
- 9080: 
- 9081: 
- 9082:    // // Init horizontal mass influx (m^3*concentration) for conservation 
- 9083:    // h_mass_in(1:ntr)=0 !positive in
+ 9008:          // Element value at whole level kin (Fortran swild98): prisms kin and kin+1 are
+ 9009:          // interpolated linearly in z between their centers; surface takes the top prism,
+ 9010:          // the bed takes the bottom prism.
+ 9011:          const int kb  = elem->kb;
+ 9012:          const int kin = max(k, kb);
+ 9013:          int kLo = kin, kHi = kin + 1;
+ 9014:          double zrat = 0.0;  // Weight of prism kLo
+ 9015: 
+ 9016:          if      (kin == ivrt) { kLo = ivrt;   kHi = ivrt; }
+ 9017:          else if (kin == kb)   { kLo = kb + 1; kHi = kb + 1; }
+ 9018:          else zrat = (elem->z[kin + 1] - elem->z[kin]) / (elem->z[kin + 1] - elem->z[kin - 1]);
+ 9019: 
+ 9020:          const double A = elem->area;
+ 9021:          for (int itr = 0; itr < ntracers; itr++)
+ 9022:             sum.tracer[itr] += A * ((1.0 - zrat)*elem->tracers[kHi].tracer[itr] + zrat*elem->tracers[kLo].tracer[itr]);
+ 9023:          sumA += A;
+ 9024:       }
+ 9025: 
+ 9026:       if (sumA == 0.0) continue;
+ 9027:       const double invsumA = 1.0/sumA;
+ 9028:       for (int itr = 0; itr < ntracers; itr++)
+ 9029:          node->tracers[k].tracer[itr] = invsumA * sum.tracer[itr];
+ 9030:    }
+ 9031: }
+ 9032: 
+ 9033: 
+ 9034: __device__ __forceinline__ void atomicMinDouble(double *addr, double val) {
+ 9035:    unsigned long long *p = (unsigned long long *)addr;
+ 9036:    unsigned long long old = *p, assumed;
+ 9037:    do {
+ 9038:       assumed = old;
+ 9039:       old = atomicCAS(p, assumed,
+ 9040:          __double_as_longlong(fmin(val, __longlong_as_double(assumed))));
+ 9041:    } while (assumed != old);
+ 9042: }
+ 9043: 
+ 9044: __device__ __forceinline__ double blockMin(double v) {
+ 9045:    __shared__ double sh[32];
+ 9046:    const int lane = threadIdx.x & 31;
+ 9047:    const int warp = threadIdx.x >> 5;
+ 9048:    for (int o = 16; o > 0; o >>= 1)
+ 9049:       v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+ 9050:    if (lane == 0) sh[warp] = v;
+ 9051:    __syncthreads();
+ 9052:    if (warp == 0) {
+ 9053:       const int nw = blockDim.x >> 5;
+ 9054:       v = (lane < nw) ? sh[lane] : huge_double;
+ 9055:       for (int o = 16; o > 0; o >>= 1)
+ 9056:          v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+ 9057:    }
+ 9058:    return v;  // only lane 0 of warp 0 is the block min
+ 9059: }
+ 9060: 
+ 9061: extern "C" __global__ void minTransportDt(double *out) {
+ 9062:    const int idx = threadIdx.x + blockIdx.x * blockDim.x;
+ 9063:    double v = huge_double;
+ 9064:    if (idx < mesh->ne) {
+ 9065:       Element *elem = &mesh->localElemData[idx];
+ 9066:       if (!elem->isDry) v = elem->transport.maxDt;
+ 9067:    }
+ 9068:    __shared__ double sh[32];
+ 9069:    const int lane = threadIdx.x & 31;
+ 9070:    const int warp = threadIdx.x >> 5;
+ 9071:    for (int o = 16; o > 0; o >>= 1)
+ 9072:       v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+ 9073:    if (lane == 0) sh[warp] = v;
+ 9074:    __syncthreads();
+ 9075:    if (warp == 0) {
+ 9076:       const int nw = (blockDim.x + 31) >> 5;
+ 9077:       v = (lane < nw) ? sh[lane] : huge_double;
+ 9078:       for (int o = 16; o > 0; o >>= 1)
+ 9079:          v = fmin(v, __shfl_down_sync(0xffffffffu, v, o));
+ 9080:       if (lane == 0) atomicMinDouble(out, v);
+ 9081:    }
+ 9082: }
+ 9083: 
  9084: 
  9085: 
- 9086: // __device__ __forceinline__ double fluxLim(double upwindRatio) {
- 9087: // // Flux limiter functions used in TVD schemes
+ 9086: 
+ 9087: 
  9088: 
- 9089: //    if constexpr (typeTVD == tvdSB)
- 9090: //       return max(0.0, max(min(1.0, 2.0*upwindRatio), min(2.0, upwindRatio)));
- 9091: //    else if constexpr (typeTVD == tvdVL)
- 9092: //       return (upwindRatio + abs(upwindRatio)) / (1.0 + abs(upwindRatio));
- 9093: //    else if constexpr (typeTVD == tvdMM)
- 9094: //       return max(0.0, min(1.0, upwindRatio));
- 9095: //    else if constexpr (typeTVD == tvdOS)
- 9096: //       return max(0.0, min(2.0, upwindRatio));
- 9097: //    else {
- 9098: //       assert(false && "TVD limiter not defined");
- 9099: //       return 0.0;
- 9100: //    }
- 9101: // }
- 9102: 
- 9103: } // extern "C"
- 9104: 
- 9105: 
- 9106: #ifdef DONTCOMPILE
- 9107: __global__ void checkMassConservation(Tracers* sumtr) {
- 9108: 
- 9109:    int i = blockIdx.x * blockDim.x + threadIdx.x;
- 9110: 
- 9111:    if (i >= mesh->ne) return;  // Guard against out-of-bounds access
- 9112: 
- 9113:    Element *elem = &(mesh->localElemData[i]);
+ 9089:    // // Mark prisms (shallow enough or marked as such in tvd.prop) that will be computed using first-order upwind formulation.
+ 9090:    // elem->computeUse1stOrderUpwind();
+ 9091: 
+ 9092: 
+ 9093: 
+ 9094:    // // Init horizontal mass influx (m^3*concentration) for conservation 
+ 9095:    // h_mass_in(1:ntr)=0 !positive in
+ 9096: 
+ 9097: 
+ 9098: // __device__ __forceinline__ double fluxLim(double upwindRatio) {
+ 9099: // // Flux limiter functions used in TVD schemes
+ 9100: 
+ 9101: //    if constexpr (typeTVD == tvdSB)
+ 9102: //       return max(0.0, max(min(1.0, 2.0*upwindRatio), min(2.0, upwindRatio)));
+ 9103: //    else if constexpr (typeTVD == tvdVL)
+ 9104: //       return (upwindRatio + abs(upwindRatio)) / (1.0 + abs(upwindRatio));
+ 9105: //    else if constexpr (typeTVD == tvdMM)
+ 9106: //       return max(0.0, min(1.0, upwindRatio));
+ 9107: //    else if constexpr (typeTVD == tvdOS)
+ 9108: //       return max(0.0, min(2.0, upwindRatio));
+ 9109: //    else {
+ 9110: //       assert(false && "TVD limiter not defined");
+ 9111: //       return 0.0;
+ 9112: //    }
+ 9113: // }
  9114: 
- 9115:    // Skip dry elements
- 9116:    if (elem->isDry) return;
+ 9115: } // extern "C"
+ 9116: 
  9117: 
- 9118:    // Local sum array for this thread
- 9119:    double localSum[ntracers] = {0.0};
+ 9118: #ifdef DONTCOMPILE
+ 9119: __global__ void checkMassConservation(Tracers* sumtr) {
  9120: 
- 9121:    // Sum over vertical levels for this element
- 9122:    const int kbe = elem->kbe;
- 9123:    const double area = elem->area;
+ 9121:    int i = blockIdx.x * blockDim.x + threadIdx.x;
+ 9122: 
+ 9123:    if (i >= mesh->ne) return;  // Guard against out-of-bounds access
  9124: 
- 9125:    for (int k = kbe; k < nvrt; k++) {
- 9126:       const double vol = (elem->z[k] - elem->z[k-1]) * area;
- 9127:       
- 9128:       // Accumulate tracer mass
- 9129:       for (int tr = 0; tr < ntracers; tr++) {
- 9130:          sumtr[i].tracer[tr] += vol * elem->tracers[k].tracer[tr];
- 9131:       }
- 9132:    }
- 9133: 
- 9134:    //  This function returns per element sums. A reduction must be done on the host side.
- 9135: }  
+ 9125:    Element *elem = &(mesh->localElemData[i]);
+ 9126: 
+ 9127:    // Skip dry elements
+ 9128:    if (elem->isDry) return;
+ 9129: 
+ 9130:    // Local sum array for this thread
+ 9131:    double localSum[ntracers] = {0.0};
+ 9132: 
+ 9133:    // Sum over vertical levels for this element
+ 9134:    const int kbe = elem->kbe;
+ 9135:    const double area = elem->area;
  9136: 
- 9137: 
- 9138: __global__ void transport(void) {
- 9139: 
- 9140:    int ie = blockIdx.x * blockDim.x + threadIdx.x;
- 9141: 
- 9142:    if (ie >= mesh->ne) return;  // Guard against out-of-bounds access
- 9143: 
- 9144:    Element *elem = &(mesh->localElemData[ie]);
+ 9137:    for (int k = kbe; k < nvrt; k++) {
+ 9138:       const double vol = (elem->z[k] - elem->z[k-1]) * area;
+ 9139:       
+ 9140:       // Accumulate tracer mass
+ 9141:       for (int tr = 0; tr < ntracers; tr++) {
+ 9142:          sumtr[i].tracer[tr] += vol * elem->tracers[k].tracer[tr];
+ 9143:       }
+ 9144:    }
  9145: 
- 9146:    if (ip_weno==2 && nweno2(ie)>0 && isten_qual2(ie) && isbe(ie)==0)  // p2 weno method
- 9147: 
- 9148:                for (int m=0; m<ntr; m++) {
- 9149:                   for (int k=kbe(ie); k<nvrt; k++) {
- 9150:                      // Calculate each polynomial's weight 
- 9151:                      wm=0.d0; sum1=0.d0; 
- 9152:                      wm1=0.d0; wm2=0.d0; 
- 9153:                      for (int i=0; i<elem->nweno2; i++) {
- 9154:                   
- 9155:                      const double b1 = dot_product(elem->wts2(:,1,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
- 9156:                      const double b2 = dot_product(elem->wts2(:,2,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
- 9157:                      const double b3 = dot_product(elem->wts2(:,3,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
- 9158:                      const double b4 = dot_product(elem->wts2(:,4,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
- 9159:                      const double b5 = dot_product(elem->wts2(:,5,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
- 9160:                      b1 = b1*b1+b2*b2+(4.d0*b1*b3+2*b2*b4)*fwts2(1,ie)+(4.d0*b2*b5+2*b1*b4)*fwts2(2,ie)
- 9161:                      b2 = (4.d0*b3*b3+b4*b4)*fwts2(3,ie)+4.d0*b4*(b3+b5)*fwts2(4,ie)+(4.d0*b5*b5+b4*b4)*fwts2(5,ie)
- 9162:                      b3 = (4.d0*b3*b3+b4*b4+4.d0*b5*b5)*area(ie)
- 9163:                      // -----------------Hu and Shu (1999)'s method----------------
- 9164:                      b4=b1+b2+b3
- 9165: 
- 9166: //Error: add PRODUCTION CPP
- 9167: #ifdef DEBUG
- 9168:                   if(b4<0.d0 && abs(b4)>1.0d-50) {
- 9169:                     write(errmsg,*)'b4<0',b1,b2,b3,b4
- 9170:                     call parallel_abort(errmsg)
- 9171:                   }
- 9172: #endif
- 9173: 
- 9174:                   wm(i) = 1.0d0/((elem->epsilon2+b4)*(elem->epsilon2+b4))
- 9175:                   // !----test-------------- 
- 9176:                   // !wm1(i)=1.0/((epsilon2_elem(ie)+b1+b2)*(epsilon2_elem(ie)+b1+b2)); ! sum1=sum1+wm1(i)
- 9177:                   // !wm2(i)=1.0/((epsilon3+b3)*(epsilon3+b3)); 
- 9178:                   // !wm(i)=wm1(i)*wm2(i)
- 9179:                   // !---------------------- 
- 9180:                   sum1=sum1+wm(i)
- 9181:                 } // end for i
- 9182: 
- 9183:                 wm=wm/sum1
- 9184: 
- 9185:                 for (int j=0; j<elem->i34; j++) {
- 9186: 
- 9187:                   const Side *side  = elem->sides[j];
- 9188:                   const Node *node1 = side->n1;
- 9189:                   const Node *node2 = side->n2;
- 9190: 
- 9191:                   if (elem->ssign[j]*side->flux_adv_hface[k] >= 0.d0) { // outflow face or bnd face
- 9192:                      trsd=0.d0
- 9193:                      for (int kk=0; kk<nquad; kk++) {
- 9194:                         for (int i=0; i<elem->nweno2; i++) {
- 9195:                            trsd(kk)=trsd(kk)+wm(i)*dot_product(elem->wmat2(1:6,i,kk,j),elem->tr_el(m,k,elem->isten2(1:6,i)))
- 9196:                         } // end for i   
- 9197:                      } // end for kk
- 9198:                      trsd_tmp(m,k,jsj)=sum(trsd(1:nquad))/real(nquad,rkind) //mean value of the two quadrature points
- 9199:                   } // outward flux
- 9200:                } // end for j=1,i34(ie) ! side
- 9201:             }
- 9202:          }
- 9203:               
- 9204: 
- 9205: //             elseif((ip_weno==1.or.ip_weno==2).and.nweno1(ie)>0.and.isbe(ie)==0) then !p1 weno method
- 9206: //             //   calculate each polynomial's weight 
- 9207: //               do m=1,ntr; do k=kbe(ie)+1,nvrt!!!possible optimization
- 9208: //                 wm=0.d0; sum1=0.d0
- 9209: //                 do i=1,nweno1(ie) !for each polynomial
- 9210: //                   b1=dot_product(wts1(:,1,i,ie),tr_el(m,k,isten1(1:3,i,ie)))
- 9211: //                   b2=dot_product(wts1(:,2,i,ie),tr_el(m,k,isten1(1:3,i,ie)))
- 9212: //                   b1=b1*b1+b2*b2 !smoothness indicator
- 9213: //                   b2=1.d0/((epsilon1+b1)*(epsilon1+b1))
- 9214: //                   wm(i)=b2
- 9215: //                   sum1=sum1+b2
- 9216: //                   !wm(i)=1.d0
- 9217: //                   !sum1=sum1+1.d0
- 9218: 
- 9219: // // Error: PRODUCTION
- 9220: // #ifdef DEBUG
- 9221: //                   if(.not.(wm(i)>=0.d0.or.wm(i)<0.d0)) then
- 9222: //                     write(errmsg,*)'wm(i)=nan',wts1(:,:,i,ie),tr_el(m,k,isten1(1:3,i,ie))
- 9223: //                     call parallel_abort(errmsg)
- 9224: //                   endif
- 9225: // #endif
- 9226: 
- 9227: //                 enddo !i
- 9228: //                 wm=wm/sum1 !final weight
- 9229: 
- 9230:                 for (int j=0; j<elem->i34; j++) { // side
- 9231:                   const Side *side = elem->sides[j];
- 9232:                   const Node *node1 = side->n1;
- 9233:                   const Node *node2 = side->n2;
- 9234: 
- 9235:                   if ((elem->ssign[j]*side->flux_adv_hface[k]>=0.d0) .or. side->isbs != 0) {  outflow face or bnd face
- 9236:                     trsd=0.d0
- 9237:                     for (int kk=0; kk<nquad; kk++) { //1 or 2 quadrature points
- 9238:                       for (int i=0; i<elem->nweno1; i++) {
- 9239:                         trsd(kk)=trsd(kk)+wm(i)*dot_product(elem->wmat1(1:3,i,kk,j),elem->tr_el(m,k,elem->isten1(1:3,i)))
- 9240:                       }
- 9241:                     enddo //kk
- 9242:                     trsd_tmp(m,k,jsj)=sum(trsd(1:nquad))/real(nquad,rkind) //mean value of the two quadrature points
- 9243:                   } // outward flux
- 9244:                 } // end for j=1,i34(ie) ! side
- 9245:               } // end for k; ntr 
+ 9146:    //  This function returns per element sums. A reduction must be done on the host side.
+ 9147: }  
+ 9148: 
+ 9149: 
+ 9150: __global__ void transport(void) {
+ 9151: 
+ 9152:    int ie = blockIdx.x * blockDim.x + threadIdx.x;
+ 9153: 
+ 9154:    if (ie >= mesh->ne) return;  // Guard against out-of-bounds access
+ 9155: 
+ 9156:    Element *elem = &(mesh->localElemData[ie]);
+ 9157: 
+ 9158:    if (ip_weno==2 && nweno2(ie)>0 && isten_qual2(ie) && isbe(ie)==0)  // p2 weno method
+ 9159: 
+ 9160:                for (int m=0; m<ntr; m++) {
+ 9161:                   for (int k=kbe(ie); k<nvrt; k++) {
+ 9162:                      // Calculate each polynomial's weight 
+ 9163:                      wm=0.d0; sum1=0.d0; 
+ 9164:                      wm1=0.d0; wm2=0.d0; 
+ 9165:                      for (int i=0; i<elem->nweno2; i++) {
+ 9166:                   
+ 9167:                      const double b1 = dot_product(elem->wts2(:,1,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
+ 9168:                      const double b2 = dot_product(elem->wts2(:,2,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
+ 9169:                      const double b3 = dot_product(elem->wts2(:,3,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
+ 9170:                      const double b4 = dot_product(elem->wts2(:,4,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
+ 9171:                      const double b5 = dot_product(elem->wts2(:,5,i),elem->tr_el(m,k,elem->isten2(1:6,i)))
+ 9172:                      b1 = b1*b1+b2*b2+(4.d0*b1*b3+2*b2*b4)*fwts2(1,ie)+(4.d0*b2*b5+2*b1*b4)*fwts2(2,ie)
+ 9173:                      b2 = (4.d0*b3*b3+b4*b4)*fwts2(3,ie)+4.d0*b4*(b3+b5)*fwts2(4,ie)+(4.d0*b5*b5+b4*b4)*fwts2(5,ie)
+ 9174:                      b3 = (4.d0*b3*b3+b4*b4+4.d0*b5*b5)*area(ie)
+ 9175:                      // -----------------Hu and Shu (1999)'s method----------------
+ 9176:                      b4=b1+b2+b3
+ 9177: 
+ 9178: //Error: add PRODUCTION CPP
+ 9179: #ifdef DEBUG
+ 9180:                   if(b4<0.d0 && abs(b4)>1.0d-50) {
+ 9181:                     write(errmsg,*)'b4<0',b1,b2,b3,b4
+ 9182:                     call parallel_abort(errmsg)
+ 9183:                   }
+ 9184: #endif
+ 9185: 
+ 9186:                   wm(i) = 1.0d0/((elem->epsilon2+b4)*(elem->epsilon2+b4))
+ 9187:                   // !----test-------------- 
+ 9188:                   // !wm1(i)=1.0/((epsilon2_elem(ie)+b1+b2)*(epsilon2_elem(ie)+b1+b2)); ! sum1=sum1+wm1(i)
+ 9189:                   // !wm2(i)=1.0/((epsilon3+b3)*(epsilon3+b3)); 
+ 9190:                   // !wm(i)=wm1(i)*wm2(i)
+ 9191:                   // !---------------------- 
+ 9192:                   sum1=sum1+wm(i)
+ 9193:                 } // end for i
+ 9194: 
+ 9195:                 wm=wm/sum1
+ 9196: 
+ 9197:                 for (int j=0; j<elem->i34; j++) {
+ 9198: 
+ 9199:                   const Side *side  = elem->sides[j];
+ 9200:                   const Node *node1 = side->n1;
+ 9201:                   const Node *node2 = side->n2;
+ 9202: 
+ 9203:                   if (elem->ssign[j]*side->flux_adv_hface[k] >= 0.d0) { // outflow face or bnd face
+ 9204:                      trsd=0.d0
+ 9205:                      for (int kk=0; kk<nquad; kk++) {
+ 9206:                         for (int i=0; i<elem->nweno2; i++) {
+ 9207:                            trsd(kk)=trsd(kk)+wm(i)*dot_product(elem->wmat2(1:6,i,kk,j),elem->tr_el(m,k,elem->isten2(1:6,i)))
+ 9208:                         } // end for i   
+ 9209:                      } // end for kk
+ 9210:                      trsd_tmp(m,k,jsj)=sum(trsd(1:nquad))/real(nquad,rkind) //mean value of the two quadrature points
+ 9211:                   } // outward flux
+ 9212:                } // end for j=1,i34(ie) ! side
+ 9213:             }
+ 9214:          }
+ 9215:               
+ 9216: 
+ 9217: //             elseif((ip_weno==1.or.ip_weno==2).and.nweno1(ie)>0.and.isbe(ie)==0) then !p1 weno method
+ 9218: //             //   calculate each polynomial's weight 
+ 9219: //               do m=1,ntr; do k=kbe(ie)+1,nvrt!!!possible optimization
+ 9220: //                 wm=0.d0; sum1=0.d0
+ 9221: //                 do i=1,nweno1(ie) !for each polynomial
+ 9222: //                   b1=dot_product(wts1(:,1,i,ie),tr_el(m,k,isten1(1:3,i,ie)))
+ 9223: //                   b2=dot_product(wts1(:,2,i,ie),tr_el(m,k,isten1(1:3,i,ie)))
+ 9224: //                   b1=b1*b1+b2*b2 !smoothness indicator
+ 9225: //                   b2=1.d0/((epsilon1+b1)*(epsilon1+b1))
+ 9226: //                   wm(i)=b2
+ 9227: //                   sum1=sum1+b2
+ 9228: //                   !wm(i)=1.d0
+ 9229: //                   !sum1=sum1+1.d0
+ 9230: 
+ 9231: // // Error: PRODUCTION
+ 9232: // #ifdef DEBUG
+ 9233: //                   if(.not.(wm(i)>=0.d0.or.wm(i)<0.d0)) then
+ 9234: //                     write(errmsg,*)'wm(i)=nan',wts1(:,:,i,ie),tr_el(m,k,isten1(1:3,i,ie))
+ 9235: //                     call parallel_abort(errmsg)
+ 9236: //                   endif
+ 9237: // #endif
+ 9238: 
+ 9239: //                 enddo !i
+ 9240: //                 wm=wm/sum1 !final weight
+ 9241: 
+ 9242:                 for (int j=0; j<elem->i34; j++) { // side
+ 9243:                   const Side *side = elem->sides[j];
+ 9244:                   const Node *node1 = side->n1;
+ 9245:                   const Node *node2 = side->n2;
  9246: 
- 9247:             else !simple upwind method
- 9248:               do j=1,i34(ie)
- 9249:                 jsj=elside(j,ie)
- 9250:                 n1=isidenode(1,jsj);   n2=isidenode(2,jsj)
- 9251:                 do k=kbe(ie)+1,nvrt !!!possible optimization
- 9252:                   if(ssign(j,ie)*flux_adv_hface(k,jsj)>=0.d0) then !outflow face
- 9253:                     trsd_tmp(:,k,jsj)=tr_el(:,k,ie) 
- 9254:                   endif
- 9255:                 enddo  !vertical layers
- 9256:               enddo !j=1,i34(ie) ! side
- 9257:             endif !order of accuracy
+ 9247:                   if ((elem->ssign[j]*side->flux_adv_hface[k]>=0.d0) .or. side->isbs != 0) {  outflow face or bnd face
+ 9248:                     trsd=0.d0
+ 9249:                     for (int kk=0; kk<nquad; kk++) { //1 or 2 quadrature points
+ 9250:                       for (int i=0; i<elem->nweno1; i++) {
+ 9251:                         trsd(kk)=trsd(kk)+wm(i)*dot_product(elem->wmat1(1:3,i,kk,j),elem->tr_el(m,k,elem->isten1(1:3,i)))
+ 9252:                       }
+ 9253:                     enddo //kk
+ 9254:                     trsd_tmp(m,k,jsj)=sum(trsd(1:nquad))/real(nquad,rkind) //mean value of the two quadrature points
+ 9255:                   } // outward flux
+ 9256:                 } // end for j=1,i34(ie) ! side
+ 9257:               } // end for k; ntr 
  9258: 
- 9259:          //  enddo !ie
- 9260: // !$OMP     end do
- 9261: 
- 9262: // !$OMP     master
- 9263: //           !message passing
- 9264: //           if (nproc>1) then
- 9265: //             !make a copy of side concentrations
- 9266: //             trsd_tmp0=trsd_tmp 
- 9267: 
- 9268: //             !this exchange routine swaps interface concentration between two partitions
- 9269: //             !trsd_tmp0 receives neighboring info, while trsd_tmp remains the same
- 9270: //             call exchange_s3d_tr3(trsd_tmp0,trsd_tmp) 
- 9271: 
- 9272: //             !Two sets of concentrations: before message-passing (trsd_tmp) and after (trsd_tmp0).
- 9273: //             !(1) trsd_tmp0 is the same as trsd_tmp everywhere except on interface sides;
- 9274: //             !(2) For an interface side, non-0 concentration can not be present in both trsd_tmp and trsd_tmp0;
- 9275: 
- 9276: 
- 9277: //             !This obtains final values for interface sides
- 9278: //             trsd_tmp(:,:,iside_table)= trsd_tmp(:,:,iside_table)+trsd_tmp0(:,:,iside_table)
- 9279: //       :    endif !nproc>1
- 9280: //           !message passing end
- 9281: // !$OMP     end master
- 9282: // !$OMP     barrier
+ 9259:             else !simple upwind method
+ 9260:               do j=1,i34(ie)
+ 9261:                 jsj=elside(j,ie)
+ 9262:                 n1=isidenode(1,jsj);   n2=isidenode(2,jsj)
+ 9263:                 do k=kbe(ie)+1,nvrt !!!possible optimization
+ 9264:                   if(ssign(j,ie)*flux_adv_hface(k,jsj)>=0.d0) then !outflow face
+ 9265:                     trsd_tmp(:,k,jsj)=tr_el(:,k,ie) 
+ 9266:                   endif
+ 9267:                 enddo  !vertical layers
+ 9268:               enddo !j=1,i34(ie) ! side
+ 9269:             endif !order of accuracy
+ 9270: 
+ 9271:          //  enddo !ie
+ 9272: // !$OMP     end do
+ 9273: 
+ 9274: // !$OMP     master
+ 9275: //           !message passing
+ 9276: //           if (nproc>1) then
+ 9277: //             !make a copy of side concentrations
+ 9278: //             trsd_tmp0=trsd_tmp 
+ 9279: 
+ 9280: //             !this exchange routine swaps interface concentration between two partitions
+ 9281: //             !trsd_tmp0 receives neighboring info, while trsd_tmp remains the same
+ 9282: //             call exchange_s3d_tr3(trsd_tmp0,trsd_tmp) 
  9283: 
- 9284: 
- 9285: // !         Do advection; conc @ dry elem will not be changed
- 9286: // !         Follows the style of explicit TVD, but using WENO correction instead of TVD correction
- 9287: // !$OMP     do reduction(+: h_mass_in)
- 9288: //           do i=1,ne
- 9289: //             if(idry_e(i)==1) cycle
- 9290: 
- 9291: 
- 9292: // !           Wet elements with 3 wet nodes
- 9293: //             do k=kbe(i)+1,nvrt
- 9294: 
+ 9284: //             !Two sets of concentrations: before message-passing (trsd_tmp) and after (trsd_tmp0).
+ 9285: //             !(1) trsd_tmp0 is the same as trsd_tmp everywhere except on interface sides;
+ 9286: //             !(2) For an interface side, non-0 concentration can not be present in both trsd_tmp and trsd_tmp0;
+ 9287: 
+ 9288: 
+ 9289: //             !This obtains final values for interface sides
+ 9290: //             trsd_tmp(:,:,iside_table)= trsd_tmp(:,:,iside_table)+trsd_tmp0(:,:,iside_table)
+ 9291: //       :    endif !nproc>1
+ 9292: //           !message passing end
+ 9293: // !$OMP     end master
+ 9294: // !$OMP     barrier
  9295: 
- 9296: //               bigv=area(i)*(ze(k,i)-ze(k-1,i)) !volume
- 9297: //               dtb_by_bigv = dtb/bigv
- 9298:     
- 9299: // !             Advective flux
- 9300: //               if (ntd_weno==1 .or. itd_weno==1) then
- 9301: //                 adv_tr(1:ntr)=trel_tmp(1:ntr,k,i) 
- 9302: //               else
- 9303: //                 adv_tr(1:ntr)=(1.d0-rk_coef(itd_weno))*trel_tmp0(1:ntr,k,i)+rk_coef(itd_weno)*trel_tmp(1:ntr,k,i) 
- 9304: //               endif
- 9305: 
- 9306: //               !psum=0.d0 !sum of modified fluxes for all inflow bnds
- 9307: //               do j=1,i34(i)
- 9308: //                 jsj=elside(j,i) !side
- 9309: //                 iweno=.true. !use weno reconstruction as default
- 9310: //                 iel=ic3(j,i) !neighboring elem
- 9311: 
- 9312: //                 if(iel/=0) then
- 9313: //                   if(idry_e(iel)==1) cycle
- 9314: //                   trel_tmp_outside(:)=trel_tmp(:,k,iel)
- 9315: //                   !reset to upwind; if Element i uses ELM, it will be overwritten by ELM value eventually
- 9316: //                   if(iupwind_e(i)+iupwind_e(iel)>0) then
- 9317: //                     iweno=.false.
- 9318: //                   endif
- 9319: //                 else !land or open bnd side
- 9320: //                   !skip land bnd and outflowing open bnd, 
- 9321: //                   !in this case iweno is not changed from initial value (.true.), but won't be used
- 9322: //                   if(isbs(jsj)<=0.or.k>=kbs(jsj)+1.and.ssign(j,i)*flux_adv_hface(k,jsj)>=0.d0) then
- 9323: //                     !For outflow open bnd side, estimate mass in (open
- 9324: //                     !side cannot be interface side)
- 9325: //                     if(max_iadjust_mass_consv>0.and.isbs(jsj)>0) then !outflow @open bnd
- 9326: //                       h_mass_in(:)=h_mass_in(:)-trel_tmp(1:ntr,k,i)*flux_adv_hface(k,jsj)*dtb
- 9327: //                     endif
- 9328: 
- 9329: //                     cycle
+ 9296: 
+ 9297: // !         Do advection; conc @ dry elem will not be changed
+ 9298: // !         Follows the style of explicit TVD, but using WENO correction instead of TVD correction
+ 9299: // !$OMP     do reduction(+: h_mass_in)
+ 9300: //           do i=1,ne
+ 9301: //             if(idry_e(i)==1) cycle
+ 9302: 
+ 9303: 
+ 9304: // !           Wet elements with 3 wet nodes
+ 9305: //             do k=kbe(i)+1,nvrt
+ 9306: 
+ 9307: 
+ 9308: //               bigv=area(i)*(ze(k,i)-ze(k-1,i)) !volume
+ 9309: //               dtb_by_bigv = dtb/bigv
+ 9310:     
+ 9311: // !             Advective flux
+ 9312: //               if (ntd_weno==1 .or. itd_weno==1) then
+ 9313: //                 adv_tr(1:ntr)=trel_tmp(1:ntr,k,i) 
+ 9314: //               else
+ 9315: //                 adv_tr(1:ntr)=(1.d0-rk_coef(itd_weno))*trel_tmp0(1:ntr,k,i)+rk_coef(itd_weno)*trel_tmp(1:ntr,k,i) 
+ 9316: //               endif
+ 9317: 
+ 9318: //               !psum=0.d0 !sum of modified fluxes for all inflow bnds
+ 9319: //               do j=1,i34(i)
+ 9320: //                 jsj=elside(j,i) !side
+ 9321: //                 iweno=.true. !use weno reconstruction as default
+ 9322: //                 iel=ic3(j,i) !neighboring elem
+ 9323: 
+ 9324: //                 if(iel/=0) then
+ 9325: //                   if(idry_e(iel)==1) cycle
+ 9326: //                   trel_tmp_outside(:)=trel_tmp(:,k,iel)
+ 9327: //                   !reset to upwind; if Element i uses ELM, it will be overwritten by ELM value eventually
+ 9328: //                   if(iupwind_e(i)+iupwind_e(iel)>0) then
+ 9329: //                     iweno=.false.
  9330: //                   endif
- 9331: 
- 9332: //                   !Open bnd side with inflow (must be wet elem) or k<kbs(jsj)+1
- 9333: //                   iweno=.false.  !reset to upwind
- 9334: //                   ibnd=isbs(jsj) !global bnd #
- 9335: //                   !Find node indices on bnd segment for the 2 nodes (for type 4 b.c.)
- 9336: //                   nwild(1:2)=0
- 9337: //                   do ll=1,2 !nodes
- 9338: //                     ndo=isidenode(ll,jsj)
- 9339: //                     do lll=1,2 !2 possible bnds
- 9340: //                       if(isbnd(lll,ndo)==ibnd) then
- 9341: //                         nwild(ll)=isbnd(-lll,ndo) !global index
- 9342: //                         exit
- 9343: //                       endif
- 9344: //                     enddo !lll
- 9345: //                   enddo !ll
- 9346: //                   ind1=nwild(1); ind2=nwild(2);
- 9347: 
- 9348: //                   do jj=1,natrm
- 9349: //                     if(ntrs(jj)<=0) cycle
- 9350: 
- 9351: //                     if(itrtype(jj,ibnd)==0) then !set to be same as interior (so cancel out below)
- 9352: //                       do ll=irange_tr(1,jj),irange_tr(2,jj)
- 9353: //                         trel_tmp_outside(ll)=trel_tmp(ll,k,i)
- 9354: //                       enddo !ll
- 9355: //                     else if(itrtype(jj,ibnd)==1.or.itrtype(jj,ibnd)==2) then
- 9356: //                       do ll=irange_tr(1,jj),irange_tr(2,jj)
- 9357: //                         trel_tmp_outside(ll)=trobc(jj,ibnd)*trth(ll,1,1,ibnd)+(1-trobc(jj,ibnd))*trel_tmp(ll,k,i)
- 9358: //                       enddo !ll
- 9359: //                     else if(itrtype(jj,ibnd)==3) then
- 9360: //                       do ll=irange_tr(1,jj),irange_tr(2,jj)
- 9361: //                         tmp=sum(tr_nd0(ll,k,elnode(1:i34(i),i))+tr_nd0(ll,k-1,elnode(1:i34(i),i)))/2.d0/real(i34(i),rkind)
- 9362: //                         trel_tmp_outside(ll)=trobc(jj,ibnd)*tmp+(1.d0-trobc(jj,ibnd))*trel_tmp(ll,k,i)
- 9363: //                       enddo !ll
- 9364: //                     else if(itrtype(jj,ibnd)==4) then
- 9365: //                       do ll=irange_tr(1,jj),irange_tr(2,jj)
- 9366: //                         trel_tmp_outside(ll)=trobc(jj,ibnd)* &
- 9367: //        &(trth(ll,k,ind1,ibnd)+trth(ll,k,ind2,ibnd)+trth(ll,k-1,ind1,ibnd)+trth(ll,k-1,ind2,ibnd))/4.d0+ &
- 9368: //        &(1.d0-trobc(jj,ibnd))*trel_tmp(ll,k,i)
- 9369: //                       enddo !ll
- 9370: //                     else
- 9371: //                       write(errmsg,*)'TRASNPORT: INVALID VALUE FOR ITRTYPE:',jj,ibnd
- 9372: //   !'
- 9373: //                       call parallel_abort(errmsg)
- 9374: //                     endif !itrtype
- 9375: 
- 9376: //                   enddo !jj
- 9377: 
- 9378: //                   !Tally horizontal mass in for inflow case
- 9379: //                   if(max_iadjust_mass_consv>0) h_mass_in(:)=h_mass_in(:)-trel_tmp_outside(1:ntr)*flux_adv_hface(k,jsj)*dtb
- 9380: //                 endif !iel
- 9381: 
- 9382: //                 !!upwind part
- 9383: //                 !if(k>=kbs(jsj)+1.and.ssign(j,i)*flux_adv_hface(k,jsj)<0) then !inflow
- 9384: //                 !  do jj=1,ntr
- 9385: //                 !    adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp_outside(jj)-trel_tmp(jj,k,i))
- 9386: //                 !  enddo
- 9387: //                 !endif
- 9388: //                 !!weno correction
- 9389: //                 !if (iweno) then
- 9390: //                 !  if(k>=kbs(jsj)+1.and.ssign(j,i)*flux_adv_hface(k,jsj)<0) then !inflow
- 9391: //                 !    do jj=1,ntr
- 9392: //                 !      adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trsd_tmp(jj,k,jsj)-trel_tmp_outside(jj))
- 9393: //                 !    enddo
- 9394: //                 !  else if(k>=kbs(jsj)+1.and.ssign(j,i)*flux_adv_hface(k,jsj)>=0) then !outflow
- 9395: //                 !    do jj=1,ntr
- 9396: //                 !      adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp(jj,k,i)-trsd_tmp(jj,k,jsj) )
- 9397: //                 !    enddo
- 9398: //                 !  endif !inflow or outflow
- 9399: //                 !endif !if use weno
- 9400: 
- 9401: //                 !alternative formulation
- 9402: //                 if (k>=kbs(jsj)+1) then
- 9403: //                   if (iweno) then !weno
- 9404: //                     do jj=1,ntr
- 9405: //                       tmp=rk_coef(itd_weno)*dtb_by_bigv*( ssign(j,i)*(flux_adv_hface(k,jsj))*(trel_tmp(jj,k,i)-trsd_tmp(jj,k,jsj)) )
- 9406: //                       adv_tr(jj)=adv_tr(jj)+tmp
- 9407: //                       if (adv_tr(jj)<tr_min_max(1,jj) .or. adv_tr(jj)>tr_min_max(2,jj) ) then !reset to upwind
- 9408: //                         adv_tr(jj)=adv_tr(jj)-tmp !reset to previous value
- 9409: //                         if(ssign(j,i)*flux_adv_hface(k,jsj)<0.d0) then  !inflow 
- 9410: //                           adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp_outside(jj)-trel_tmp(jj,k,i))
- 9411: //                         endif
- 9412: //                       endif
- 9413: //                       !when ntd_weno=1, reduces to: adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*( ssign(j,i)*(flux_adv_hface(k,jsj))*(trel_tmp(jj,k,i)-trsd_tmp(jj,k,jsj)) )
- 9414: //                     enddo
- 9415: //                   else !upwind
- 9416: //                     if(ssign(j,i)*flux_adv_hface(k,jsj)<0) then  !inflow 
- 9417: //                       do jj=1,ntr
- 9418: //                         adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp_outside(jj)-trel_tmp(jj,k,i))
- 9419: //                       enddo
- 9420: //                     endif
- 9421: //                   endif !weno or upwind
- 9422: //                 endif
- 9423: 
- 9424: //               enddo !j
- 9425: 
- 9426: //               tr_el(1:ntr,k,i)=adv_tr(1:ntr) 
- 9427: //             enddo !k=kbe(i)+1,nvrt
- 9428: 
- 9429: //             !Overwrite with ELM value if enabled.
- 9430: //             if(ielem_elm(i)/=0) then
- 9431: //               rat=time_r/dt !time ratio
- 9432: //               rat=max(0.d0,min(1.d0,rat))
- 9433: //               do k=kbe(i)+1,nvrt
- 9434: //                 do jj=1,ntr
- 9435: //                   psumtr(jj)=0.d0
- 9436: //                   do j=1,i34(i)
- 9437: //                     jsj=elside(j,i)
- 9438: //                     n1=isidenode(1,jsj); n2=isidenode(2,jsj)
- 9439: //                     swild4(1,1)=0.5d0*(tr_nd(jj,k,n1)+tr_nd(jj,k,n2))
- 9440: //                     swild4(2,1)=0.5d0*(tr_nd(jj,k-1,n1)+tr_nd(jj,k-1,n2))
- 9441:   
- 9442: //                     swild4(1,1)=swild4(1,1)*rat+sdbt(2+jj,max(k,kbs(jsj)),jsj)*(1-rat)
- 9443: //                     swild4(2,1)=swild4(2,1)*rat+sdbt(2+jj,max(k-1,kbs(jsj)),jsj)*(1-rat)
- 9444: //                     psumtr(jj)=psumtr(jj)+0.5d0*(swild4(1,1)+swild4(2,1)) 
- 9445: //                   enddo !j
- 9446: //                 enddo !jj
- 9447: //                 tr_el(1:ntr,k,i)=psumtr(:)/dble(i34(i))
- 9448: //               enddo !k
- 9449: //             endif !ielem_elm(i)/=0
- 9450: 
- 9451: 
- 9452: // !           Extend
- 9453: //             do k=1,kbe(i)
- 9454: //               tr_el(1:ntr,k,i)=tr_el(1:ntr,kbe(i)+1,i)
- 9455: //             enddo !k
- 9456: //           enddo !i=1,ne
- 9457: // !$OMP     end do 
- 9458: 
- 9459: // !$OMP     master
- 9460: // !         Update ghosts
- 9461: // #ifdef INCLUDE_TIMING
- 9462: //           cwtmp=mpi_wtime()
- 9463: //           timer_ns(1)=timer_ns(1)+cwtmp-cwtmp2
- 9464: // #endif
- 9465: //           call exchange_e3d_2t_tr(tr_el)
- 9466: 
- 9467: // #ifdef INCLUDE_TIMING
- 9468: //           cwtmp2=mpi_wtime()
- 9469: //           wtimer(9,2)=wtimer(9,2)+cwtmp2-cwtmp
- 9470: // #endif
- 9471: 
- 9472: #endif
- 9473: 
- 9474: 
- 9475: extern "C" 
- 9476: 
- 9477: __global__ void createMesh(int partNum, 
- 9478:                            int npgb, int negb, int nsgb, int nseg,
- 9479:                            int np, int ne, int ns, 
- 9480:                            int max_np, int max_ne, int max_ns,
- 9481:                            NodeBoundary *plandNodeBndMem, BoundarySegment *plandSegMem,
- 9482:                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
- 9483:                            Node *nodes, Element *elems, Side *sides,
- 9484:                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
- 9485:                            int16_t *localNodePermutationSortMem,
- 9486:                            double *partCoeffMatrixMem,
- 9487:                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
- 9488:                            int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma, 
- 9489:                            double *ztot, double *cs, double *dcs,
- 9490:                            double *_debugPlot, int *_debugPlotIdx) {
- 9491: 
- 9492: 
- 9493: 
- 9494:    if (mesh != nullptr) 
- 9495:    {
- 9496:       printf("ERROR: Mesh is already initialized\n");
- 9497:       return;
- 9498:    };
- 9499: 
- 9500: 
- 9501:    debugPlot = _debugPlot;
- 9502:    debugPlotIdx = _debugPlotIdx;
- 9503:    // return;   
+ 9331: //                 else !land or open bnd side
+ 9332: //                   !skip land bnd and outflowing open bnd, 
+ 9333: //                   !in this case iweno is not changed from initial value (.true.), but won't be used
+ 9334: //                   if(isbs(jsj)<=0.or.k>=kbs(jsj)+1.and.ssign(j,i)*flux_adv_hface(k,jsj)>=0.d0) then
+ 9335: //                     !For outflow open bnd side, estimate mass in (open
+ 9336: //                     !side cannot be interface side)
+ 9337: //                     if(max_iadjust_mass_consv>0.and.isbs(jsj)>0) then !outflow @open bnd
+ 9338: //                       h_mass_in(:)=h_mass_in(:)-trel_tmp(1:ntr,k,i)*flux_adv_hface(k,jsj)*dtb
+ 9339: //                     endif
+ 9340: 
+ 9341: //                     cycle
+ 9342: //                   endif
+ 9343: 
+ 9344: //                   !Open bnd side with inflow (must be wet elem) or k<kbs(jsj)+1
+ 9345: //                   iweno=.false.  !reset to upwind
+ 9346: //                   ibnd=isbs(jsj) !global bnd #
+ 9347: //                   !Find node indices on bnd segment for the 2 nodes (for type 4 b.c.)
+ 9348: //                   nwild(1:2)=0
+ 9349: //                   do ll=1,2 !nodes
+ 9350: //                     ndo=isidenode(ll,jsj)
+ 9351: //                     do lll=1,2 !2 possible bnds
+ 9352: //                       if(isbnd(lll,ndo)==ibnd) then
+ 9353: //                         nwild(ll)=isbnd(-lll,ndo) !global index
+ 9354: //                         exit
+ 9355: //                       endif
+ 9356: //                     enddo !lll
+ 9357: //                   enddo !ll
+ 9358: //                   ind1=nwild(1); ind2=nwild(2);
+ 9359: 
+ 9360: //                   do jj=1,natrm
+ 9361: //                     if(ntrs(jj)<=0) cycle
+ 9362: 
+ 9363: //                     if(itrtype(jj,ibnd)==0) then !set to be same as interior (so cancel out below)
+ 9364: //                       do ll=irange_tr(1,jj),irange_tr(2,jj)
+ 9365: //                         trel_tmp_outside(ll)=trel_tmp(ll,k,i)
+ 9366: //                       enddo !ll
+ 9367: //                     else if(itrtype(jj,ibnd)==1.or.itrtype(jj,ibnd)==2) then
+ 9368: //                       do ll=irange_tr(1,jj),irange_tr(2,jj)
+ 9369: //                         trel_tmp_outside(ll)=trobc(jj,ibnd)*trth(ll,1,1,ibnd)+(1-trobc(jj,ibnd))*trel_tmp(ll,k,i)
+ 9370: //                       enddo !ll
+ 9371: //                     else if(itrtype(jj,ibnd)==3) then
+ 9372: //                       do ll=irange_tr(1,jj),irange_tr(2,jj)
+ 9373: //                         tmp=sum(tr_nd0(ll,k,elnode(1:i34(i),i))+tr_nd0(ll,k-1,elnode(1:i34(i),i)))/2.d0/real(i34(i),rkind)
+ 9374: //                         trel_tmp_outside(ll)=trobc(jj,ibnd)*tmp+(1.d0-trobc(jj,ibnd))*trel_tmp(ll,k,i)
+ 9375: //                       enddo !ll
+ 9376: //                     else if(itrtype(jj,ibnd)==4) then
+ 9377: //                       do ll=irange_tr(1,jj),irange_tr(2,jj)
+ 9378: //                         trel_tmp_outside(ll)=trobc(jj,ibnd)* &
+ 9379: //        &(trth(ll,k,ind1,ibnd)+trth(ll,k,ind2,ibnd)+trth(ll,k-1,ind1,ibnd)+trth(ll,k-1,ind2,ibnd))/4.d0+ &
+ 9380: //        &(1.d0-trobc(jj,ibnd))*trel_tmp(ll,k,i)
+ 9381: //                       enddo !ll
+ 9382: //                     else
+ 9383: //                       write(errmsg,*)'TRASNPORT: INVALID VALUE FOR ITRTYPE:',jj,ibnd
+ 9384: //   !'
+ 9385: //                       call parallel_abort(errmsg)
+ 9386: //                     endif !itrtype
+ 9387: 
+ 9388: //                   enddo !jj
+ 9389: 
+ 9390: //                   !Tally horizontal mass in for inflow case
+ 9391: //                   if(max_iadjust_mass_consv>0) h_mass_in(:)=h_mass_in(:)-trel_tmp_outside(1:ntr)*flux_adv_hface(k,jsj)*dtb
+ 9392: //                 endif !iel
+ 9393: 
+ 9394: //                 !!upwind part
+ 9395: //                 !if(k>=kbs(jsj)+1.and.ssign(j,i)*flux_adv_hface(k,jsj)<0) then !inflow
+ 9396: //                 !  do jj=1,ntr
+ 9397: //                 !    adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp_outside(jj)-trel_tmp(jj,k,i))
+ 9398: //                 !  enddo
+ 9399: //                 !endif
+ 9400: //                 !!weno correction
+ 9401: //                 !if (iweno) then
+ 9402: //                 !  if(k>=kbs(jsj)+1.and.ssign(j,i)*flux_adv_hface(k,jsj)<0) then !inflow
+ 9403: //                 !    do jj=1,ntr
+ 9404: //                 !      adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trsd_tmp(jj,k,jsj)-trel_tmp_outside(jj))
+ 9405: //                 !    enddo
+ 9406: //                 !  else if(k>=kbs(jsj)+1.and.ssign(j,i)*flux_adv_hface(k,jsj)>=0) then !outflow
+ 9407: //                 !    do jj=1,ntr
+ 9408: //                 !      adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp(jj,k,i)-trsd_tmp(jj,k,jsj) )
+ 9409: //                 !    enddo
+ 9410: //                 !  endif !inflow or outflow
+ 9411: //                 !endif !if use weno
+ 9412: 
+ 9413: //                 !alternative formulation
+ 9414: //                 if (k>=kbs(jsj)+1) then
+ 9415: //                   if (iweno) then !weno
+ 9416: //                     do jj=1,ntr
+ 9417: //                       tmp=rk_coef(itd_weno)*dtb_by_bigv*( ssign(j,i)*(flux_adv_hface(k,jsj))*(trel_tmp(jj,k,i)-trsd_tmp(jj,k,jsj)) )
+ 9418: //                       adv_tr(jj)=adv_tr(jj)+tmp
+ 9419: //                       if (adv_tr(jj)<tr_min_max(1,jj) .or. adv_tr(jj)>tr_min_max(2,jj) ) then !reset to upwind
+ 9420: //                         adv_tr(jj)=adv_tr(jj)-tmp !reset to previous value
+ 9421: //                         if(ssign(j,i)*flux_adv_hface(k,jsj)<0.d0) then  !inflow 
+ 9422: //                           adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp_outside(jj)-trel_tmp(jj,k,i))
+ 9423: //                         endif
+ 9424: //                       endif
+ 9425: //                       !when ntd_weno=1, reduces to: adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*( ssign(j,i)*(flux_adv_hface(k,jsj))*(trel_tmp(jj,k,i)-trsd_tmp(jj,k,jsj)) )
+ 9426: //                     enddo
+ 9427: //                   else !upwind
+ 9428: //                     if(ssign(j,i)*flux_adv_hface(k,jsj)<0) then  !inflow 
+ 9429: //                       do jj=1,ntr
+ 9430: //                         adv_tr(jj)=adv_tr(jj)+dtb_by_bigv*abs(flux_adv_hface(k,jsj))*(trel_tmp_outside(jj)-trel_tmp(jj,k,i))
+ 9431: //                       enddo
+ 9432: //                     endif
+ 9433: //                   endif !weno or upwind
+ 9434: //                 endif
+ 9435: 
+ 9436: //               enddo !j
+ 9437: 
+ 9438: //               tr_el(1:ntr,k,i)=adv_tr(1:ntr) 
+ 9439: //             enddo !k=kbe(i)+1,nvrt
+ 9440: 
+ 9441: //             !Overwrite with ELM value if enabled.
+ 9442: //             if(ielem_elm(i)/=0) then
+ 9443: //               rat=time_r/dt !time ratio
+ 9444: //               rat=max(0.d0,min(1.d0,rat))
+ 9445: //               do k=kbe(i)+1,nvrt
+ 9446: //                 do jj=1,ntr
+ 9447: //                   psumtr(jj)=0.d0
+ 9448: //                   do j=1,i34(i)
+ 9449: //                     jsj=elside(j,i)
+ 9450: //                     n1=isidenode(1,jsj); n2=isidenode(2,jsj)
+ 9451: //                     swild4(1,1)=0.5d0*(tr_nd(jj,k,n1)+tr_nd(jj,k,n2))
+ 9452: //                     swild4(2,1)=0.5d0*(tr_nd(jj,k-1,n1)+tr_nd(jj,k-1,n2))
+ 9453:   
+ 9454: //                     swild4(1,1)=swild4(1,1)*rat+sdbt(2+jj,max(k,kbs(jsj)),jsj)*(1-rat)
+ 9455: //                     swild4(2,1)=swild4(2,1)*rat+sdbt(2+jj,max(k-1,kbs(jsj)),jsj)*(1-rat)
+ 9456: //                     psumtr(jj)=psumtr(jj)+0.5d0*(swild4(1,1)+swild4(2,1)) 
+ 9457: //                   enddo !j
+ 9458: //                 enddo !jj
+ 9459: //                 tr_el(1:ntr,k,i)=psumtr(:)/dble(i34(i))
+ 9460: //               enddo !k
+ 9461: //             endif !ielem_elm(i)/=0
+ 9462: 
+ 9463: 
+ 9464: // !           Extend
+ 9465: //             do k=1,kbe(i)
+ 9466: //               tr_el(1:ntr,k,i)=tr_el(1:ntr,kbe(i)+1,i)
+ 9467: //             enddo !k
+ 9468: //           enddo !i=1,ne
+ 9469: // !$OMP     end do 
+ 9470: 
+ 9471: // !$OMP     master
+ 9472: // !         Update ghosts
+ 9473: // #ifdef INCLUDE_TIMING
+ 9474: //           cwtmp=mpi_wtime()
+ 9475: //           timer_ns(1)=timer_ns(1)+cwtmp-cwtmp2
+ 9476: // #endif
+ 9477: //           call exchange_e3d_2t_tr(tr_el)
+ 9478: 
+ 9479: // #ifdef INCLUDE_TIMING
+ 9480: //           cwtmp2=mpi_wtime()
+ 9481: //           wtimer(9,2)=wtimer(9,2)+cwtmp2-cwtmp
+ 9482: // #endif
+ 9483: 
+ 9484: #endif
+ 9485: 
+ 9486: 
+ 9487: extern "C" 
+ 9488: 
+ 9489: __global__ void createMesh(int partNum, 
+ 9490:                            int npgb, int negb, int nsgb, int nseg,
+ 9491:                            int np, int ne, int ns, 
+ 9492:                            int max_np, int max_ne, int max_ns,
+ 9493:                            NodeBoundary *plandNodeBndMem, BoundarySegment *plandSegMem,
+ 9494:                            Node **nodesPtr, Element **elemsPtr, Side **sidesPtr,
+ 9495:                            Node *nodes, Element *elems, Side *sides,
+ 9496:                            Node **partNodeNeighNodesMem, Element **partNodeNeighElemsMem,
+ 9497:                            int16_t *localNodePermutationSortMem,
+ 9498:                            double *partCoeffMatrixMem,
+ 9499:                            NodeBoundary *localNodeBoundaryMem, SideBoundary *localSideBoundaryMem, BoundarySegment *localSegmentMem,
+ 9500:                            int *kb, double h_c, double h_s, double theta_b, double theta_f, double *sigma, 
+ 9501:                            double *ztot, double *cs, double *dcs,
+ 9502:                            double *_debugPlot, int *_debugPlotIdx) {
+ 9503: 
  9504: 
- 9505:    printf("partNum = %d, npgb = %d, negb = %d, nsgb = %d, nseg = %d\n", partNum, npgb, negb, nsgb, nseg);
- 9506:    printf("np = %d, ne = %d, ns = %d\n", np, ne, ns);
- 9507:    printf("max_np = %d, max_ne = %d, max_ns = %d\n", max_np, max_ne, max_ns);
- 9508:    printf("nvrt = %d, nzlev = %d\n", nvrt, nzlev);
- 9509: 
- 9510:    printf("Creating mesh for partition %d, np = %d\n", partNum, np);
- 9511:    printf("CREATEMESH: elemsPtr = %p, elems = %p\n", *elemsPtr, elems);
- 9512:    
- 9513:    mesh = new Mesh(partNum, npgb, negb, nsgb, 
- 9514:                    np, ne, ns,
- 9515:                    max_np, max_ne, max_ns, nseg, 
- 9516:                    plandNodeBndMem, plandSegMem,
- 9517:                    nodesPtr, elemsPtr, sidesPtr, 
- 9518:                    nodes, elems, sides,
- 9519:                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
- 9520:                    localNodePermutationSortMem,
- 9521:                    partCoeffMatrixMem,
- 9522:                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
- 9523:                    kb, h_c, h_s, theta_b, theta_f, sigma, ztot, cs, dcs);
- 9524: 
- 9525:    // XXX read from file
- 9526:    polyDischarge = new Polynomial<4>(0.0, 0.0, 0.0, 0.0, 0.0);                   
- 9527:    
- 9528: }
- 9529: 
- 9530: extern "C"
- 9531:                                  
- 9532:   __global__ void populateMesh(int *i34, int *elnode, int *elside,
- 9533:                    double *node_coords, double *node_coords_ll, bool use_ll,
- 9534:                    double *wind_rotate_angle,  int *sharedIdxNodeBoundary, int *sharedIdxSideBoundary,
- 9535:                    int *isdel, int *isidenode, int *isbnd,
- 9536:                    int *nond, int *nlnd, int *iond, int *ilnd, 
- 9537:                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
- 9538:                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
- 9539:                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
- 9540:                    int *localNodeIndices, int *localElemIndices, int *localSideIndices,
- 9541:                    int *localNodePart,    int *localElemPart,    int *localSidePart,
- 9542:                    double *drag, double *roughness,
- 9543:                    double *emo, double *efa, 
- 9544:                    double *umo, double *ufa, 
- 9545:                    double *vmo, double *vfa) {
- 9546: 
- 9547:     mesh->populateMesh(i34, elnode, elside, node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
- 9548:                        sharedIdxNodeBoundary, sharedIdxSideBoundary,
- 9549:                        isdel, isidenode, isbnd,
- 9550:                        nond, nlnd, iond, ilnd, 
- 9551:                        nodeNeighNodesStart, nodeNeighNodesIndices,
- 9552:                        nodeNeighElemsStart, nodeNeighElemsIndices,
- 9553:                        globalNodeIndices, globalElemIndices, globalSideIndices,
- 9554:                        localNodeIndices, localElemIndices, localSideIndices,
- 9555:                        localNodePart, localElemPart, localSidePart,
- 9556:                        drag, roughness,
- 9557:                        emo, efa, umo, ufa, vmo, vfa);  // XXXXX Remember to refactor this, removing the parameters that are not used.
- 9558:   }
- 9559: 
- 9560: extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
- 9561:    double *node_coords, double *node_coords_ll, bool use_ll, double *wind_rotate_angle, 
- 9562:    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
- 9563:    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
- 9564:    int16_t *nodePermutationSort, double *crs_data,
- 9565:    int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
- 9566:    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
- 9567:    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
- 9568:    int *localNodePart,     int *localElemPart,     int *localSidePart,
- 9569:    double *drag, double *roughness, double *rmanning, 
- 9570:    double *diffmin, double *diffmax,
- 9571:    double *temp, double *salt,
- 9572:    int *kb, double *localSigma) {
- 9573: 
- 9574:    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
- 9575:                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
- 9576:                        nodeNeighNodesStart, nodeNeighNodesIndices,
- 9577:                        nodeNeighElemsStart, nodeNeighElemsIndices,
- 9578:                        nodePermutationSort, crs_data,
- 9579:                        localNodeNeighNodesStart, localNodeNeighElemsStart,
- 9580:                        globalNodeIndices, globalElemIndices, globalSideIndices,
- 9581:                        localNodeIndices, localElemIndices, localSideIndices,
- 9582:                        localNodePart, localElemPart, localSidePart,
- 9583:                        drag, roughness, rmanning, diffmin, diffmax, temp, salt, kb, localSigma);
- 9584: }  
+ 9505: 
+ 9506:    if (mesh != nullptr) 
+ 9507:    {
+ 9508:       printf("ERROR: Mesh is already initialized\n");
+ 9509:       return;
+ 9510:    };
+ 9511: 
+ 9512: 
+ 9513:    debugPlot = _debugPlot;
+ 9514:    debugPlotIdx = _debugPlotIdx;
+ 9515:    // return;   
+ 9516: 
+ 9517:    printf("partNum = %d, npgb = %d, negb = %d, nsgb = %d, nseg = %d\n", partNum, npgb, negb, nsgb, nseg);
+ 9518:    printf("np = %d, ne = %d, ns = %d\n", np, ne, ns);
+ 9519:    printf("max_np = %d, max_ne = %d, max_ns = %d\n", max_np, max_ne, max_ns);
+ 9520:    printf("nvrt = %d, nzlev = %d\n", nvrt, nzlev);
+ 9521: 
+ 9522:    printf("Creating mesh for partition %d, np = %d\n", partNum, np);
+ 9523:    printf("CREATEMESH: elemsPtr = %p, elems = %p\n", *elemsPtr, elems);
+ 9524:    
+ 9525:    mesh = new Mesh(partNum, npgb, negb, nsgb, 
+ 9526:                    np, ne, ns,
+ 9527:                    max_np, max_ne, max_ns, nseg, 
+ 9528:                    plandNodeBndMem, plandSegMem,
+ 9529:                    nodesPtr, elemsPtr, sidesPtr, 
+ 9530:                    nodes, elems, sides,
+ 9531:                    partNodeNeighNodesMem, partNodeNeighElemsMem, 
+ 9532:                    localNodePermutationSortMem,
+ 9533:                    partCoeffMatrixMem,
+ 9534:                    localNodeBoundaryMem, localSideBoundaryMem, localSegmentMem,
+ 9535:                    kb, h_c, h_s, theta_b, theta_f, sigma, ztot, cs, dcs);
+ 9536: 
+ 9537:    // XXX read from file
+ 9538:    polyDischarge = new Polynomial<4>(0.0, 0.0, 0.0, 0.0, 0.0);                   
+ 9539:    
+ 9540: }
+ 9541: 
+ 9542: extern "C"
+ 9543:                                  
+ 9544:   __global__ void populateMesh(int *i34, int *elnode, int *elside,
+ 9545:                    double *node_coords, double *node_coords_ll, bool use_ll,
+ 9546:                    double *wind_rotate_angle,  int *sharedIdxNodeBoundary, int *sharedIdxSideBoundary,
+ 9547:                    int *isdel, int *isidenode, int *isbnd,
+ 9548:                    int *nond, int *nlnd, int *iond, int *ilnd, 
+ 9549:                    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+ 9550:                    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+ 9551:                    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+ 9552:                    int *localNodeIndices, int *localElemIndices, int *localSideIndices,
+ 9553:                    int *localNodePart,    int *localElemPart,    int *localSidePart,
+ 9554:                    double *drag, double *roughness,
+ 9555:                    double *emo, double *efa, 
+ 9556:                    double *umo, double *ufa, 
+ 9557:                    double *vmo, double *vfa) {
+ 9558: 
+ 9559:     mesh->populateMesh(i34, elnode, elside, node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
+ 9560:                        sharedIdxNodeBoundary, sharedIdxSideBoundary,
+ 9561:                        isdel, isidenode, isbnd,
+ 9562:                        nond, nlnd, iond, ilnd, 
+ 9563:                        nodeNeighNodesStart, nodeNeighNodesIndices,
+ 9564:                        nodeNeighElemsStart, nodeNeighElemsIndices,
+ 9565:                        globalNodeIndices, globalElemIndices, globalSideIndices,
+ 9566:                        localNodeIndices, localElemIndices, localSideIndices,
+ 9567:                        localNodePart, localElemPart, localSidePart,
+ 9568:                        drag, roughness,
+ 9569:                        emo, efa, umo, ufa, vmo, vfa);  // XXXXX Remember to refactor this, removing the parameters that are not used.
+ 9570:   }
+ 9571: 
+ 9572: extern "C" __global__ void populateNodes(int *i34, int *isbnd, int *sharedIdxNodeBoundary,
+ 9573:    double *node_coords, double *node_coords_ll, bool use_ll, double *wind_rotate_angle, 
+ 9574:    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+ 9575:    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+ 9576:    int16_t *nodePermutationSort, double *crs_data,
+ 9577:    int *localNodeNeighNodesStart, int *localNodeNeighElemsStart,
+ 9578:    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+ 9579:    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+ 9580:    int *localNodePart,     int *localElemPart,     int *localSidePart,
+ 9581:    double *drag, double *roughness, double *rmanning, 
+ 9582:    double *diffmin, double *diffmax,
+ 9583:    double *temp, double *salt,
+ 9584:    int *kb, double *localSigma) {
  9585: 
- 9586: extern "C" __global__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
- 9587: 
- 9588:    mesh->populateNodes2(localNodeNeighNodesStart, crs_indices, crs_indptr);
- 9589: }
- 9590: 
- 9591: 
- 9592: extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,
- 9593:                                          double *node_coords, double *node_coords_ll, bool use_ll,
- 9594:                                          double *wind_rotate_angle,   
- 9595:                                          int *isdel, int *isidenode, int *isbnd,
- 9596:                                          int *nond, int *nlnd, int *iond, int *ilnd,                                  
- 9597:                                          int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
- 9598:                                          int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
- 9599:                                          int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
- 9600:                                          int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
- 9601:                                          int *localNodePart,     int *localElemPart,     int *localSidePart,
- 9602:                                          double *drag, double *roughness) {
- 9603:    mesh->populateSides(i34, sharedIdxSideBoundary,
- 9604:                        node_coords, node_coords_ll, use_ll,
- 9605:                        wind_rotate_angle,   
- 9606:                        isdel, isidenode, isbnd,
- 9607:                        nond, nlnd, iond, ilnd,                                  
- 9608:                        nodeNeighNodesStart, nodeNeighNodesIndices, nodeNeighElemsStart, nodeNeighElemsIndices, globalNodeIndices, globalElemIndices, globalSideIndices, localNodeIndices, localElemIndices, localSideIndices, localNodePart, localElemPart, localSidePart, drag, roughness);                          
- 9609: 
- 9610: }
- 9611: 
- 9612: extern "C" __global__ void populateElements(int *i34, int *elnode, int *elside,
- 9613:    double *node_coords, double *node_coords_ll, bool use_ll,
- 9614:    double *wind_rotate_angle,   
- 9615:    int *isdel, int *isidenode, int *isbnd,
- 9616:    int *nond, int *nlnd, int *iond, int *ilnd,                                  
- 9617:    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
- 9618:    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
- 9619:    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
- 9620:    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
- 9621:    int *localNodePart,     int *localElemPart,     int *localSidePart,
- 9622:    double *drag, double *roughness) {
- 9623:    mesh->populateElements(i34, elnode, elside,
- 9624:                           node_coords, node_coords_ll, use_ll,
- 9625:                           wind_rotate_angle,   
- 9626:                           isdel, isidenode, isbnd,
- 9627:                           nond, nlnd, iond, ilnd,                                  
- 9628:                           nodeNeighNodesStart, nodeNeighNodesIndices, nodeNeighElemsStart, nodeNeighElemsIndices, globalNodeIndices, globalElemIndices, globalSideIndices, localNodeIndices, localElemIndices, localSideIndices, localNodePart, localElemPart, localSidePart, drag, roughness);                          
- 9629: 
- 9630: } 
- 9631: 
- 9632: extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
- 9633:                                                 double *emo, double *efa, 
- 9634:                                                 double *umo, double *ufa, 
- 9635:                                                 double *vmo, double *vfa,
- 9636:                                                 int *ifltype, int *iettype, 
- 9637:                                                 double *qthcon, double *eth) {
- 9638:    mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon, eth);
- 9639: 
- 9640: }
+ 9586:    mesh->populateNodes(i34, isbnd, sharedIdxNodeBoundary, 
+ 9587:                        node_coords, node_coords_ll, use_ll, wind_rotate_angle, 
+ 9588:                        nodeNeighNodesStart, nodeNeighNodesIndices,
+ 9589:                        nodeNeighElemsStart, nodeNeighElemsIndices,
+ 9590:                        nodePermutationSort, crs_data,
+ 9591:                        localNodeNeighNodesStart, localNodeNeighElemsStart,
+ 9592:                        globalNodeIndices, globalElemIndices, globalSideIndices,
+ 9593:                        localNodeIndices, localElemIndices, localSideIndices,
+ 9594:                        localNodePart, localElemPart, localSidePart,
+ 9595:                        drag, roughness, rmanning, diffmin, diffmax, temp, salt, kb, localSigma);
+ 9596: }  
+ 9597: 
+ 9598: extern "C" __global__ void populateNodes2(int *localNodeNeighNodesStart, int *crs_indices, int *crs_indptr) {
+ 9599: 
+ 9600:    mesh->populateNodes2(localNodeNeighNodesStart, crs_indices, crs_indptr);
+ 9601: }
+ 9602: 
+ 9603: 
+ 9604: extern "C" __global__ void populateSides(int *i34, int *sharedIdxSideBoundary,
+ 9605:                                          double *node_coords, double *node_coords_ll, bool use_ll,
+ 9606:                                          double *wind_rotate_angle,   
+ 9607:                                          int *isdel, int *isidenode, int *isbnd,
+ 9608:                                          int *nond, int *nlnd, int *iond, int *ilnd,                                  
+ 9609:                                          int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+ 9610:                                          int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+ 9611:                                          int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+ 9612:                                          int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+ 9613:                                          int *localNodePart,     int *localElemPart,     int *localSidePart,
+ 9614:                                          double *drag, double *roughness) {
+ 9615:    mesh->populateSides(i34, sharedIdxSideBoundary,
+ 9616:                        node_coords, node_coords_ll, use_ll,
+ 9617:                        wind_rotate_angle,   
+ 9618:                        isdel, isidenode, isbnd,
+ 9619:                        nond, nlnd, iond, ilnd,                                  
+ 9620:                        nodeNeighNodesStart, nodeNeighNodesIndices, nodeNeighElemsStart, nodeNeighElemsIndices, globalNodeIndices, globalElemIndices, globalSideIndices, localNodeIndices, localElemIndices, localSideIndices, localNodePart, localElemPart, localSidePart, drag, roughness);                          
+ 9621: 
+ 9622: }
+ 9623: 
+ 9624: extern "C" __global__ void populateElements(int *i34, int *elnode, int *elside,
+ 9625:    double *node_coords, double *node_coords_ll, bool use_ll,
+ 9626:    double *wind_rotate_angle,   
+ 9627:    int *isdel, int *isidenode, int *isbnd,
+ 9628:    int *nond, int *nlnd, int *iond, int *ilnd,                                  
+ 9629:    int *nodeNeighNodesStart, int *nodeNeighNodesIndices,
+ 9630:    int *nodeNeighElemsStart, int *nodeNeighElemsIndices,
+ 9631:    int *globalNodeIndices, int *globalElemIndices, int *globalSideIndices,
+ 9632:    int *localNodeIndices,  int *localElemIndices,  int *localSideIndices,
+ 9633:    int *localNodePart,     int *localElemPart,     int *localSidePart,
+ 9634:    double *drag, double *roughness) {
+ 9635:    mesh->populateElements(i34, elnode, elside,
+ 9636:                           node_coords, node_coords_ll, use_ll,
+ 9637:                           wind_rotate_angle,   
+ 9638:                           isdel, isidenode, isbnd,
+ 9639:                           nond, nlnd, iond, ilnd,                                  
+ 9640:                           nodeNeighNodesStart, nodeNeighNodesIndices, nodeNeighElemsStart, nodeNeighElemsIndices, globalNodeIndices, globalElemIndices, globalSideIndices, localNodeIndices, localElemIndices, localSideIndices, localNodePart, localElemPart, localSidePart, drag, roughness);                          
  9641: 
- 9642: extern "C" __global__ void populateBoundarySides(int *nond, int *iond,
- 9643:                                                 double *emo, double *efa, 
- 9644:                                                 double *umo, double *ufa, 
- 9645:                                                 double *vmo, double *vfa,
- 9646:                                                 int *ifltype, int *iettype, double *qthcon) {
- 9647:    mesh->populateBoundarySides(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon);
- 9648: 
- 9649: }
- 9650: 
+ 9642: } 
+ 9643: 
+ 9644: extern "C" __global__ void populateBoundaryNodes(int *nond, int *iond,
+ 9645:                                                 double *emo, double *efa, 
+ 9646:                                                 double *umo, double *ufa, 
+ 9647:                                                 double *vmo, double *vfa,
+ 9648:                                                 int *ifltype, int *iettype, 
+ 9649:                                                 double *qthcon, double *eth) {
+ 9650:    mesh->populateBoundaryNodes(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon, eth);
  9651: 
- 9652: extern "C" __global__ void populateBoundarySideLinks(void) {
- 9653:    // mesh->populateBoundarySideLinks();   // XXXXXX Not really used at the moment
- 9654: 
- 9655: }
- 9656: 
- 9657: 
- 9658: 
- 9659: 
+ 9652: }
+ 9653: 
+ 9654: extern "C" __global__ void populateBoundarySides(int *nond, int *iond,
+ 9655:                                                 double *emo, double *efa, 
+ 9656:                                                 double *umo, double *ufa, 
+ 9657:                                                 double *vmo, double *vfa,
+ 9658:                                                 int *ifltype, int *iettype, double *qthcon) {
+ 9659:    mesh->populateBoundarySides(nond, iond, emo, efa, umo, ufa, vmo, vfa, ifltype, iettype, qthcon);
  9660: 
- 9661: extern "C"  __global__ void destroyMeshCPU(void) {
- 9662:    delete mesh;
- 9663: }
- 9664: 
- 9665: 
+ 9661: }
+ 9662: 
+ 9663: 
+ 9664: extern "C" __global__ void populateBoundarySideLinks(void) {
+ 9665:    // mesh->populateBoundarySideLinks();   // XXXXXX Not really used at the moment
  9666: 
- 9667: 
- 9668: __global__ void getStructSizes(int* sizes)  {
- 9669:    // Get the size of each struct. This is used to allocate memory for the structs in the host code.
- 9670:       printf(">>>>>*** C++ 3 getStructSizes, sizes = %p\n", sizes);
- 9671:       sizes[0] = (int)sizeof(Node);
- 9672:       sizes[1] = (int)sizeof(Element);
- 9673:       sizes[2] = (int)sizeof(Side);
- 9674:       sizes[3] = (int)sizeof(NodeBoundary);
- 9675:       sizes[4] = (int)sizeof(SideBoundary);
- 9676:       sizes[5] = (int)sizeof(BoundarySegment);
- 9677: }
+ 9667: }
+ 9668: 
+ 9669: 
+ 9670: 
+ 9671: 
+ 9672: 
+ 9673: extern "C"  __global__ void destroyMeshCPU(void) {
+ 9674:    delete mesh;
+ 9675: }
+ 9676: 
+ 9677: 
  9678: 
  9679: 
- 9680: __global__ void printMatrix(bool full) {
- 9681:    // Debugging: print the FEM matrix row for each local node
- 9682: 
- 9683:    const int size = mesh->np;
- 9684:    double sum = 0.0;
- 9685: 
- 9686:    for (int idx_node = 0; idx_node < size; idx_node++) {
- 9687:       const Node *node = mesh->localNodeData + idx_node;
- 9688: 
- 9689:       if (full)
- 9690:          printf("idx_node = %d [%d] diag=%lf, [",
- 9691:                 idx_node, node->numNodes, *(node->coeffDiag));
- 9692: 
- 9693:       // Full CSR row length = numNodes + 1 (includes diagonal)
- 9694:       for (int k = 0; k < node->numNodes + 1; k++)
- 9695:          sum += node->coeffRow[k];
- 9696: 
- 9697:       for (int j = 0; j < node->numNodes; j++) {
- 9698:          const Node *nbNode = node->nodes[j];
- 9699:          const double aij = node->coeffRow[node->csrSlot[j]];
- 9700:          if (full && aij != 0.0)
- 9701:             printf("%d:%f,  ", nbNode->idx, aij);
- 9702:       }
- 9703: 
- 9704:       if (full) printf("]\n");
- 9705:    }
- 9706: 
- 9707:    if (!full) printf("sum=%lf\n", sum);
- 9708: }
- 9709: 
- 9710: 
- 9711: 
- 9712: 
- 9713: __global__ void returnMatrix(double *res) {
- 9714:    // Debugging: dense local matrix, row-major, size = mesh->np
- 9715:    // Assumes single-partition / local indexing (see note below).
- 9716: 
- 9717:    const int size = mesh->np;
+ 9680: __global__ void getStructSizes(int* sizes)  {
+ 9681:    // Get the size of each struct. This is used to allocate memory for the structs in the host code.
+ 9682:       printf(">>>>>*** C++ 3 getStructSizes, sizes = %p\n", sizes);
+ 9683:       sizes[0] = (int)sizeof(Node);
+ 9684:       sizes[1] = (int)sizeof(Element);
+ 9685:       sizes[2] = (int)sizeof(Side);
+ 9686:       sizes[3] = (int)sizeof(NodeBoundary);
+ 9687:       sizes[4] = (int)sizeof(SideBoundary);
+ 9688:       sizes[5] = (int)sizeof(BoundarySegment);
+ 9689: }
+ 9690: 
+ 9691: 
+ 9692: __global__ void printMatrix(bool full) {
+ 9693:    // Debugging: print the FEM matrix row for each local node
+ 9694: 
+ 9695:    const int size = mesh->np;
+ 9696:    double sum = 0.0;
+ 9697: 
+ 9698:    for (int idx_node = 0; idx_node < size; idx_node++) {
+ 9699:       const Node *node = mesh->localNodeData + idx_node;
+ 9700: 
+ 9701:       if (full)
+ 9702:          printf("idx_node = %d [%d] diag=%lf, [",
+ 9703:                 idx_node, node->numNodes, *(node->coeffDiag));
+ 9704: 
+ 9705:       // Full CSR row length = numNodes + 1 (includes diagonal)
+ 9706:       for (int k = 0; k < node->numNodes + 1; k++)
+ 9707:          sum += node->coeffRow[k];
+ 9708: 
+ 9709:       for (int j = 0; j < node->numNodes; j++) {
+ 9710:          const Node *nbNode = node->nodes[j];
+ 9711:          const double aij = node->coeffRow[node->csrSlot[j]];
+ 9712:          if (full && aij != 0.0)
+ 9713:             printf("%d:%f,  ", nbNode->idx, aij);
+ 9714:       }
+ 9715: 
+ 9716:       if (full) printf("]\n");
+ 9717:    }
  9718: 
- 9719:    for (int idx_node = 0; idx_node < size; idx_node++) {
- 9720:       const Node *node = mesh->localNodeData + idx_node;
+ 9719:    if (!full) printf("sum=%lf\n", sum);
+ 9720: }
  9721: 
- 9722:       res[idx_node * size + idx_node] = *(node->coeffDiag);
+ 9722: 
  9723: 
- 9724:       for (int j = 0; j < node->numNodes; j++) {
- 9725:          const Node *nbNode = node->nodes[j];
- 9726:          // Only dump neighbors that live on this partition
- 9727:          if (nbNode->part != mesh->partNum) continue;
+ 9724: 
+ 9725: __global__ void returnMatrix(double *res) {
+ 9726:    // Debugging: dense local matrix, row-major, size = mesh->np
+ 9727:    // Assumes single-partition / local indexing (see note below).
  9728: 
- 9729:          const int jlocal = (int)(nbNode - mesh->nodes[nbNode->part]);
- 9730:          const double aij = node->coeffRow[node->csrSlot[j]];
- 9731:          if (aij != 0.0)
- 9732:             res[jlocal * size + idx_node] = aij;
- 9733:       }
- 9734:    }
- 9735: }
- 9736: 
- 9737: 
- 9738: __global__ void returnX(double *res) {
- 9739:    // Debugging: returns the matrix as a CuPy array
+ 9729:    const int size = mesh->np;
+ 9730: 
+ 9731:    for (int idx_node = 0; idx_node < size; idx_node++) {
+ 9732:       const Node *node = mesh->localNodeData + idx_node;
+ 9733: 
+ 9734:       res[idx_node * size + idx_node] = *(node->coeffDiag);
+ 9735: 
+ 9736:       for (int j = 0; j < node->numNodes; j++) {
+ 9737:          const Node *nbNode = node->nodes[j];
+ 9738:          // Only dump neighbors that live on this partition
+ 9739:          if (nbNode->part != mesh->partNum) continue;
  9740: 
- 9741:    const int size = mesh->np;
- 9742:    for (int idx_node = 0; idx_node < size; idx_node++) {
- 9743:       const Node *node = mesh->localNodeData + idx_node;
- 9744: 
- 9745:       res[idx_node] = node->mX;
- 9746: 
- 9747:    }
- 9748:    
- 9749: }
- 9750: 
- 9751: 
- 9752: __global__ void returnB(double *res) {
- 9753:    // Debugging: returns the matrix as a CuPy array
- 9754: 
- 9755:    const int size = mesh->np;
- 9756:    for (int idx_node = 0; idx_node < size; idx_node++) {
- 9757:       const Node *node = mesh->localNodeData + idx_node;
+ 9741:          const int jlocal = (int)(nbNode - mesh->nodes[nbNode->part]);
+ 9742:          const double aij = node->coeffRow[node->csrSlot[j]];
+ 9743:          if (aij != 0.0)
+ 9744:             res[jlocal * size + idx_node] = aij;
+ 9745:       }
+ 9746:    }
+ 9747: }
+ 9748: 
+ 9749: 
+ 9750: __global__ void returnX(double *res) {
+ 9751:    // Debugging: returns the matrix as a CuPy array
+ 9752: 
+ 9753:    const int size = mesh->np;
+ 9754:    for (int idx_node = 0; idx_node < size; idx_node++) {
+ 9755:       const Node *node = mesh->localNodeData + idx_node;
+ 9756: 
+ 9757:       res[idx_node] = node->mX;
  9758: 
- 9759:       res[idx_node] = node->qel;
- 9760: 
- 9761:    }
- 9762:    
- 9763: }
- 9764: 
- 9765: 
+ 9759:    }
+ 9760:    
+ 9761: }
+ 9762: 
+ 9763: 
+ 9764: __global__ void returnB(double *res) {
+ 9765:    // Debugging: returns the matrix as a CuPy array
  9766: 
- 9767: extern "C" __global__ void getElementVarFunc(int varCode, double *res) {
- 9768: 
- 9769:    ELEM(elem);
+ 9767:    const int size = mesh->np;
+ 9768:    for (int idx_node = 0; idx_node < size; idx_node++) {
+ 9769:       const Node *node = mesh->localNodeData + idx_node;
  9770: 
- 9771:    switch (varCode) {
- 9772:       case (int)VarCode::outputCoords:
- 9773:          const Point2 coords = elem->outputCoords();
- 9774:          res[elem->idx*2    ] = coords.x;
- 9775:          res[elem->idx*2 + 1] = coords.y;
- 9776:          break;
- 9777:    }
- 9778: }
- 9779: 
+ 9771:       res[idx_node] = node->qel;
+ 9772: 
+ 9773:    }
+ 9774:    
+ 9775: }
+ 9776: 
+ 9777: 
+ 9778: 
+ 9779: extern "C" __global__ void getElementVarFunc(int varCode, double *res) {
  9780: 
- 9781: extern "C" __global__ void getSideVarFunc(int varCode, double *res) {
+ 9781:    ELEM(elem);
  9782: 
- 9783:    SIDE(side);
- 9784: 
- 9785:    switch (varCode) {
- 9786:       case (int)VarCode::outputCoords:
- 9787:          const Point2 coords = side->outputCoords();
- 9788:          res[side->idx*2    ] = coords.x;
- 9789:          res[side->idx*2 + 1] = coords.y;
- 9790:          break;
- 9791:    }
- 9792: }
- 9793: 
+ 9783:    switch (varCode) {
+ 9784:       case (int)VarCode::outputCoords:
+ 9785:          const Point2 coords = elem->outputCoords();
+ 9786:          res[elem->idx*2    ] = coords.x;
+ 9787:          res[elem->idx*2 + 1] = coords.y;
+ 9788:          break;
+ 9789:    }
+ 9790: }
+ 9791: 
+ 9792: 
+ 9793: extern "C" __global__ void getSideVarFunc(int varCode, double *res) {
  9794: 
- 9795: template<TurbulenceModel M>
- 9796: __device__ __forceinline__ double getTKE(const Turbulence<M> &turb, int k) {
- 9797:    if constexpr (M == TurbulenceModel::GLS)
- 9798:       return turb.tke[k];
- 9799:    else
- 9800:       return 0.0;
- 9801: }
- 9802: template<TurbulenceModel M>
- 9803: __device__ __forceinline__ double getMXL(const Turbulence<M> &turb, int k) {
- 9804:    if constexpr (M == TurbulenceModel::GLS)
- 9805:       return turb.mxl[k];
- 9806:    else
- 9807:       return 0.0;
- 9808: }
- 9809: 
- 9810: 
- 9811: extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
- 9812:    // Packed local order into res. Caller allocates sizePart * nbytes.
- 9813:    NODE(node);
- 9814: 
- 9815:    switch (varCode) {
- 9816:       case (int)VarCode::outputCoords: {
- 9817:          const Point2 coords = node->outputCoords();
- 9818:          double *out = (double *)((char *)res + idx_node * 16);
- 9819:          out[0] = coords.x;
- 9820:          out[1] = coords.y;
- 9821:          break;
- 9822:       }
- 9823:       case (int)VarCode::depth:
- 9824:          *(double *)((char *)res + idx_node * 8) = node->depth;
- 9825:          break;
- 9826:       case (int)VarCode::kb:
- 9827:          *(int *)((char *)res + idx_node * 4) = (int)node->kb;
- 9828:          break;
- 9829:       case (int)VarCode::eta:
- 9830:          *(double *)((char *)res + idx_node * 8) = node->eta2;
- 9831:          break;
- 9832:       case (int)VarCode::u_air: {
- 9833:          double *out = (double *)((char *)res + idx_node * 16);
- 9834:          out[0] = node->u_air.x;
- 9835:          out[1] = node->u_air.y;
- 9836:          break;
- 9837:       }
- 9838:       case (int)VarCode::isdry:
- 9839:          *(int *)((char *)res + idx_node * 4) = (int)node->isDry;
+ 9795:    SIDE(side);
+ 9796: 
+ 9797:    switch (varCode) {
+ 9798:       case (int)VarCode::outputCoords:
+ 9799:          const Point2 coords = side->outputCoords();
+ 9800:          res[side->idx*2    ] = coords.x;
+ 9801:          res[side->idx*2 + 1] = coords.y;
+ 9802:          break;
+ 9803:    }
+ 9804: }
+ 9805: 
+ 9806: 
+ 9807: template<TurbulenceModel M>
+ 9808: __device__ __forceinline__ double getTKE(const Turbulence<M> &turb, int k) {
+ 9809:    if constexpr (M == TurbulenceModel::GLS)
+ 9810:       return turb.tke[k];
+ 9811:    else
+ 9812:       return 0.0;
+ 9813: }
+ 9814: template<TurbulenceModel M>
+ 9815: __device__ __forceinline__ double getMXL(const Turbulence<M> &turb, int k) {
+ 9816:    if constexpr (M == TurbulenceModel::GLS)
+ 9817:       return turb.mxl[k];
+ 9818:    else
+ 9819:       return 0.0;
+ 9820: }
+ 9821: 
+ 9822: 
+ 9823: extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
+ 9824:    // Packed local order into res. Caller allocates sizePart * nbytes.
+ 9825:    NODE(node);
+ 9826: 
+ 9827:    switch (varCode) {
+ 9828:       case (int)VarCode::outputCoords: {
+ 9829:          const Point2 coords = node->outputCoords();
+ 9830:          double *out = (double *)((char *)res + idx_node * 16);
+ 9831:          out[0] = coords.x;
+ 9832:          out[1] = coords.y;
+ 9833:          break;
+ 9834:       }
+ 9835:       case (int)VarCode::depth:
+ 9836:          *(double *)((char *)res + idx_node * 8) = node->depth;
+ 9837:          break;
+ 9838:       case (int)VarCode::kb:
+ 9839:          *(int *)((char *)res + idx_node * 4) = (int)node->kb;
  9840:          break;
- 9841:       case (int)VarCode::u: {
- 9842:          double *out = (double *)((char *)res + idx_node * nvrt * 16);
- 9843:          if (k >= 0) {
- 9844:             out[0] = node->u2[k].x;
- 9845:             out[1] = node->u2[k].y;
- 9846:          } else {
- 9847:             for (int lev = 0; lev < nvrt; lev++) {
- 9848:                out[lev*2    ] = node->u2[lev].x;
- 9849:                out[lev*2 + 1] = node->u2[lev].y;
- 9850:             }
- 9851:          }
+ 9841:       case (int)VarCode::eta:
+ 9842:          *(double *)((char *)res + idx_node * 8) = node->eta2;
+ 9843:          break;
+ 9844:       case (int)VarCode::u_air: {
+ 9845:          double *out = (double *)((char *)res + idx_node * 16);
+ 9846:          out[0] = node->u_air.x;
+ 9847:          out[1] = node->u_air.y;
+ 9848:          break;
+ 9849:       }
+ 9850:       case (int)VarCode::isdry:
+ 9851:          *(int *)((char *)res + idx_node * 4) = (int)node->isDry;
  9852:          break;
- 9853:       }
- 9854:       case (int)VarCode::z: {
- 9855:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9856:          if (k >= 0)
- 9857:             out[0] = node->z[k];
- 9858:          else
- 9859:             for (int lev = 0; lev < nvrt; lev++)
- 9860:                out[lev] = node->z[lev];
- 9861:          break;
- 9862:       }
- 9863:       case (int)VarCode::w: {
- 9864:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9865:          if (k >= 0)
- 9866:             out[0] = node->w2[k];
- 9867:          else
- 9868:             for (int lev = 0; lev < nvrt; lev++)
- 9869:                out[lev] = node->w2[lev];
- 9870:          break;
- 9871:       }
- 9872:       case (int)VarCode::dfh: {
- 9873:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9874:          if (k >= 0)
- 9875:             out[0] = node->dfh[k];
- 9876:          else
- 9877:             for (int lev = 0; lev < nvrt; lev++)
- 9878:                out[lev] = node->dfh[lev];
- 9879:          break;
- 9880:       }
- 9881:       case (int)VarCode::dfv: {
- 9882:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9883:          if (k >= 0)
- 9884:             out[0] = node->dfv[k];
- 9885:          else
- 9886:             for (int lev = 0; lev < nvrt; lev++)
- 9887:                out[lev] = node->dfv[lev];
- 9888:          break;
- 9889:       }
- 9890:       case (int)VarCode::tke: {
- 9891:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9892:          if (k >= 0)
- 9893:             out[0] = getTKE(node->turb, k);
- 9894:          else
- 9895:             for (int lev = 0; lev < nvrt; lev++)
- 9896:                out[lev] = getTKE(node->turb, lev);
- 9897:          break;
- 9898:       }
- 9899:       case (int)VarCode::mxl: {
- 9900:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9901:          if (k >= 0)
- 9902:             out[0] = getMXL(node->turb, k);
- 9903:          else
- 9904:             for (int lev = 0; lev < nvrt; lev++)
- 9905:                out[lev] = getMXL(node->turb, lev);
- 9906:          break;
- 9907:       }
- 9908:       case (int)VarCode::temp: {
- 9909:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9910:          if (k >= 0)
- 9911:             out[0] = node->tracers[k].tracer[0];
- 9912:          else
- 9913:             for (int lev = 0; lev < nvrt; lev++)
- 9914:                out[lev] = node->tracers[lev].tracer[0];
- 9915:          break;
- 9916:       }
- 9917:       case (int)VarCode::salt: {
- 9918:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
- 9919:          if (k >= 0)
- 9920:             out[0] = node->tracers[k].tracer[1];
- 9921:          else
- 9922:             for (int lev = 0; lev < nvrt; lev++)
- 9923:                out[lev] = node->tracers[lev].tracer[1];
- 9924:          break;
- 9925:       }
- 9926:    }
- 9927: }
- 9928: 
- 9929: 
- 9930: extern "C" __global__ void getSideVar(int varCode, void *res, int k) {
- 9931:    SIDE(side);
- 9932: 
- 9933:    switch (varCode) {
- 9934:       case (int)VarCode::outputCoords: {
- 9935:          const Point2 coords = side->outputCoords();
- 9936:          double *out = (double *)((char *)res + idx_side * 16);
- 9937:          out[0] = coords.x;
- 9938:          out[1] = coords.y;
- 9939:          break;
- 9940:       }
- 9941:       case (int)VarCode::n1:
- 9942:          *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n1 != nullptr) ? side->n1->idx + 1 : -1);
- 9943:          break;
- 9944:       case (int)VarCode::n2:
- 9945:          *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n2 != nullptr) ? side->n2->idx + 1 : -1);
- 9946:          break;
- 9947:       case (int)VarCode::isdry:
- 9948:          *(int *)((char *)res + idx_side * 4) = (int)side->isDry;
- 9949:          break;
- 9950:    }
- 9951: }
- 9952: 
- 9953: 
- 9954: extern "C" __global__ void getElementVar(int varCode, void *res, int k) {
- 9955:    ELEM(elem);
- 9956: 
- 9957:    switch (varCode) {
- 9958:       case (int)VarCode::outputCoords: {
- 9959:          const Point2 coords = elem->outputCoords();
- 9960:          double *out = (double *)((char *)res + idx_elem * 16);
- 9961:          out[0] = coords.x;
- 9962:          out[1] = coords.y;
- 9963:          break;
- 9964:       }
- 9965:       case (int)VarCode::FaceIndices: {
- 9966:          uintptr_t *out = (uintptr_t *)((char *)res + idx_elem * 32);
- 9967:          for (int j = 0; j < 4; j++)
- 9968:             out[j] = (j < elem->i34 && elem->nodes[j]) ? elem->nodes[j]->idx + 1 : -1;
- 9969:          break;
- 9970:       }
- 9971:       case (int)VarCode::isdry:
- 9972:          *(int *)((char *)res + idx_elem * 4) = (int)elem->isDry;
- 9973:          break;
- 9974:       case (int)VarCode::w: {
- 9975:          double *out = (double *)((char *)res + idx_elem * nvrt * 8);
- 9976:          if (k >= 0)
- 9977:             out[0] = elem->w[k];
- 9978:          else
- 9979:             for (int lev = 0; lev < nvrt; lev++)
- 9980:                out[lev] = elem->w[lev];
+ 9853:       case (int)VarCode::u: {
+ 9854:          double *out = (double *)((char *)res + idx_node * nvrt * 16);
+ 9855:          if (k >= 0) {
+ 9856:             out[0] = node->u2[k].x;
+ 9857:             out[1] = node->u2[k].y;
+ 9858:          } else {
+ 9859:             for (int lev = 0; lev < nvrt; lev++) {
+ 9860:                out[lev*2    ] = node->u2[lev].x;
+ 9861:                out[lev*2 + 1] = node->u2[lev].y;
+ 9862:             }
+ 9863:          }
+ 9864:          break;
+ 9865:       }
+ 9866:       case (int)VarCode::z: {
+ 9867:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9868:          if (k >= 0)
+ 9869:             out[0] = node->z[k];
+ 9870:          else
+ 9871:             for (int lev = 0; lev < nvrt; lev++)
+ 9872:                out[lev] = node->z[lev];
+ 9873:          break;
+ 9874:       }
+ 9875:       case (int)VarCode::w: {
+ 9876:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9877:          if (k >= 0)
+ 9878:             out[0] = node->w2[k];
+ 9879:          else
+ 9880:             for (int lev = 0; lev < nvrt; lev++)
+ 9881:                out[lev] = node->w2[lev];
+ 9882:          break;
+ 9883:       }
+ 9884:       case (int)VarCode::dfh: {
+ 9885:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9886:          if (k >= 0)
+ 9887:             out[0] = node->dfh[k];
+ 9888:          else
+ 9889:             for (int lev = 0; lev < nvrt; lev++)
+ 9890:                out[lev] = node->dfh[lev];
+ 9891:          break;
+ 9892:       }
+ 9893:       case (int)VarCode::dfv: {
+ 9894:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9895:          if (k >= 0)
+ 9896:             out[0] = node->dfv[k];
+ 9897:          else
+ 9898:             for (int lev = 0; lev < nvrt; lev++)
+ 9899:                out[lev] = node->dfv[lev];
+ 9900:          break;
+ 9901:       }
+ 9902:       case (int)VarCode::tke: {
+ 9903:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9904:          if (k >= 0)
+ 9905:             out[0] = getTKE(node->turb, k);
+ 9906:          else
+ 9907:             for (int lev = 0; lev < nvrt; lev++)
+ 9908:                out[lev] = getTKE(node->turb, lev);
+ 9909:          break;
+ 9910:       }
+ 9911:       case (int)VarCode::mxl: {
+ 9912:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9913:          if (k >= 0)
+ 9914:             out[0] = getMXL(node->turb, k);
+ 9915:          else
+ 9916:             for (int lev = 0; lev < nvrt; lev++)
+ 9917:                out[lev] = getMXL(node->turb, lev);
+ 9918:          break;
+ 9919:       }
+ 9920:       case (int)VarCode::temp: {
+ 9921:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9922:          if (k >= 0)
+ 9923:             out[0] = node->tracers[k].tracer[0];
+ 9924:          else
+ 9925:             for (int lev = 0; lev < nvrt; lev++)
+ 9926:                out[lev] = node->tracers[lev].tracer[0];
+ 9927:          break;
+ 9928:       }
+ 9929:       case (int)VarCode::salt: {
+ 9930:          double *out = (double *)((char *)res + idx_node * nvrt * 8);
+ 9931:          if (k >= 0)
+ 9932:             out[0] = node->tracers[k].tracer[1];
+ 9933:          else
+ 9934:             for (int lev = 0; lev < nvrt; lev++)
+ 9935:                out[lev] = node->tracers[lev].tracer[1];
+ 9936:          break;
+ 9937:       }
+ 9938:    }
+ 9939: }
+ 9940: 
+ 9941: 
+ 9942: extern "C" __global__ void getSideVar(int varCode, void *res, int k) {
+ 9943:    SIDE(side);
+ 9944: 
+ 9945:    switch (varCode) {
+ 9946:       case (int)VarCode::outputCoords: {
+ 9947:          const Point2 coords = side->outputCoords();
+ 9948:          double *out = (double *)((char *)res + idx_side * 16);
+ 9949:          out[0] = coords.x;
+ 9950:          out[1] = coords.y;
+ 9951:          break;
+ 9952:       }
+ 9953:       case (int)VarCode::n1:
+ 9954:          *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n1 != nullptr) ? side->n1->idx + 1 : -1);
+ 9955:          break;
+ 9956:       case (int)VarCode::n2:
+ 9957:          *(uintptr_t *)((char *)res + idx_side * 8) = (uintptr_t)((side->n2 != nullptr) ? side->n2->idx + 1 : -1);
+ 9958:          break;
+ 9959:       case (int)VarCode::isdry:
+ 9960:          *(int *)((char *)res + idx_side * 4) = (int)side->isDry;
+ 9961:          break;
+ 9962:    }
+ 9963: }
+ 9964: 
+ 9965: 
+ 9966: extern "C" __global__ void getElementVar(int varCode, void *res, int k) {
+ 9967:    ELEM(elem);
+ 9968: 
+ 9969:    switch (varCode) {
+ 9970:       case (int)VarCode::outputCoords: {
+ 9971:          const Point2 coords = elem->outputCoords();
+ 9972:          double *out = (double *)((char *)res + idx_elem * 16);
+ 9973:          out[0] = coords.x;
+ 9974:          out[1] = coords.y;
+ 9975:          break;
+ 9976:       }
+ 9977:       case (int)VarCode::FaceIndices: {
+ 9978:          uintptr_t *out = (uintptr_t *)((char *)res + idx_elem * 32);
+ 9979:          for (int j = 0; j < 4; j++)
+ 9980:             out[j] = (j < elem->i34 && elem->nodes[j]) ? elem->nodes[j]->idx + 1 : -1;
  9981:          break;
  9982:       }
- 9983:    }
- 9984: }
- 9985: 
- 9986: 
- 9987: 
- 9988: 
- 9989: extern "C" __global__ void getNodeVarFunc(int varCode, double *res) {
- 9990: 
- 9991:    NODE(node);
- 9992: 
- 9993:    switch (varCode) {
- 9994:       case (int)VarCode::outputCoords:
- 9995:          const Point2 coords = node->outputCoords();
- 9996:          res[node->idx*2    ] = coords.x;
- 9997:          res[node->idx*2 + 1] = coords.y;
- 9998:          break;
- 9999:    }
-10000: }
-10001: 
+ 9983:       case (int)VarCode::isdry:
+ 9984:          *(int *)((char *)res + idx_elem * 4) = (int)elem->isDry;
+ 9985:          break;
+ 9986:       case (int)VarCode::w: {
+ 9987:          double *out = (double *)((char *)res + idx_elem * nvrt * 8);
+ 9988:          if (k >= 0)
+ 9989:             out[0] = elem->w[k];
+ 9990:          else
+ 9991:             for (int lev = 0; lev < nvrt; lev++)
+ 9992:                out[lev] = elem->w[lev];
+ 9993:          break;
+ 9994:       }
+ 9995:    }
+ 9996: }
+ 9997: 
+ 9998: 
+ 9999: 
+10000: 
+10001: extern "C" __global__ void getNodeVarFunc(int varCode, double *res) {
 10002: 
-10003: extern "C" __global__ void getElementVarAddr(int varCode, void **addr, int *offset, int *sizeElement, int *sizeType) {
-10004:    Element *elems = mesh->localElemData;
-10005: 
-10006:    *addr = elems;
-10007:    *sizeElement = sizeof(Element);
-10008:    switch (varCode) {
-10009:       case (int)VarCode::z:
-10010:          *offset = (int)((char*)&elems[0].z - (char*)elems);
-10011:          *sizeType = sizeof(double);
-10012:          break;
-10013:       case (int)VarCode::x:
-10014:          *offset = (int)((char*)&elems[0].center.x - (char*)elems);
-10015:          *sizeType = sizeof(Vector2);
-10016:          break;
-10017:       case (int)VarCode::gradETP:
-10018:          *offset = (int)((char*)&elems[0].gradETP.x - (char*)elems);
-10019:          *sizeType = sizeof(Vector2);
-10020:          break;
-10021:       case (int)VarCode::area:
-10022:          *offset = (int)((char*)&elems[0].area - (char*)elems);
+10003:    NODE(node);
+10004: 
+10005:    switch (varCode) {
+10006:       case (int)VarCode::outputCoords:
+10007:          const Point2 coords = node->outputCoords();
+10008:          res[node->idx*2    ] = coords.x;
+10009:          res[node->idx*2 + 1] = coords.y;
+10010:          break;
+10011:    }
+10012: }
+10013: 
+10014: 
+10015: extern "C" __global__ void getElementVarAddr(int varCode, void **addr, int *offset, int *sizeElement, int *sizeType) {
+10016:    Element *elems = mesh->localElemData;
+10017: 
+10018:    *addr = elems;
+10019:    *sizeElement = sizeof(Element);
+10020:    switch (varCode) {
+10021:       case (int)VarCode::z:
+10022:          *offset = (int)((char*)&elems[0].z - (char*)elems);
 10023:          *sizeType = sizeof(double);
 10024:          break;
-10025:       case (int)VarCode::depth:
-10026:          *offset = (int)((char*)&elems[0].depth - (char*)elems);
-10027:          *sizeType = sizeof(double);
+10025:       case (int)VarCode::x:
+10026:          *offset = (int)((char*)&elems[0].center.x - (char*)elems);
+10027:          *sizeType = sizeof(Vector2);
 10028:          break;
-10029:       case (int)VarCode::radius:
-10030:          *offset = (int)((char*)&elems[0].radius - (char*)elems);
-10031:          *sizeType = sizeof(double);
+10029:       case (int)VarCode::gradETP:
+10030:          *offset = (int)((char*)&elems[0].gradETP.x - (char*)elems);
+10031:          *sizeType = sizeof(Vector2);
 10032:          break;
-10033:       case (int)VarCode::ghat:
-10034:          *offset = (int)((char*)&elems[0].ghat1.x - (char*)elems);
-10035:          *sizeType = sizeof(Vector2);
+10033:       case (int)VarCode::area:
+10034:          *offset = (int)((char*)&elems[0].area - (char*)elems);
+10035:          *sizeType = sizeof(double);
 10036:          break;
-10037:       case (int)VarCode::kb:
-10038:          *offset = (int)((char*)&elems[0].kb - (char*)elems);
-10039:          *sizeType = sizeof(int);
+10037:       case (int)VarCode::depth:
+10038:          *offset = (int)((char*)&elems[0].depth - (char*)elems);
+10039:          *sizeType = sizeof(double);
 10040:          break;
-10041:       case (int)VarCode::isdry:
-10042:          *offset = (int)((char*)&elems[0].isDry - (char*)elems);
-10043:          *sizeType = sizeof(int);
-10044:          break;            
-10045:       case (int)VarCode::w:
-10046:          *offset = (int)((char*)&elems[0].w - (char*)elems);
-10047:          *sizeType = sizeof(double);
+10041:       case (int)VarCode::radius:
+10042:          *offset = (int)((char*)&elems[0].radius - (char*)elems);
+10043:          *sizeType = sizeof(double);
+10044:          break;
+10045:       case (int)VarCode::ghat:
+10046:          *offset = (int)((char*)&elems[0].ghat1.x - (char*)elems);
+10047:          *sizeType = sizeof(Vector2);
 10048:          break;
-10049:       case (int)VarCode::FaceIndices:
-10050:          // Notice that this returns pointers to the nodes of the element, some arithmetic is needed to get the actual indices
-10051:          *offset = (int)((char*)&elems[0].nodes[0] - (char*)elems);
-10052:          *sizeType = sizeof(Node);
-10053:          break;
-10054:       default:
-10055:          *offset = -1;
-10056:    }
-10057: }
-10058: 
-10059: 
-10060: extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset, int *sizeSide, int *sizeType) {
-10061:    Side *sides = mesh->localSideData;
-10062: 
-10063:    *addr = sides;
-10064:    *sizeSide = sizeof(Side);
-10065:    switch (varCode) {
-10066:       case (int)VarCode::z:
-10067:          *offset = (int)((char*)&sides[0].zc - (char*)sides);
-10068:          *sizeType = sizeof(double);
-10069:          break;
-10070:       // case (int)VarCode::depth:
-10071:       //    *offset = (int)((char*)&sides[0].depth - (char*)sides);
-10072:       //    *sizeType = sizeof(double);
-10073:       //    break;         
-10074:       case (int)VarCode::x:
-10075:          *offset = (int)((char*)&sides[0].center.x - (char*)sides);
-10076:          *sizeType = sizeof(Vector2);
-10077:          break;
-10078:       case (int)VarCode::len:
-10079:          *offset = (int)((char*)&sides[0].len - (char*)sides);
+10049:       case (int)VarCode::kb:
+10050:          *offset = (int)((char*)&elems[0].kb - (char*)elems);
+10051:          *sizeType = sizeof(int);
+10052:          break;
+10053:       case (int)VarCode::isdry:
+10054:          *offset = (int)((char*)&elems[0].isDry - (char*)elems);
+10055:          *sizeType = sizeof(int);
+10056:          break;            
+10057:       case (int)VarCode::w:
+10058:          *offset = (int)((char*)&elems[0].w - (char*)elems);
+10059:          *sizeType = sizeof(double);
+10060:          break;
+10061:       case (int)VarCode::FaceIndices:
+10062:          // Notice that this returns pointers to the nodes of the element, some arithmetic is needed to get the actual indices
+10063:          *offset = (int)((char*)&elems[0].nodes[0] - (char*)elems);
+10064:          *sizeType = sizeof(Node);
+10065:          break;
+10066:       default:
+10067:          *offset = -1;
+10068:    }
+10069: }
+10070: 
+10071: 
+10072: extern "C" __global__ void getSideVarAddr(int varCode, void **addr, int *offset, int *sizeSide, int *sizeType) {
+10073:    Side *sides = mesh->localSideData;
+10074: 
+10075:    *addr = sides;
+10076:    *sizeSide = sizeof(Side);
+10077:    switch (varCode) {
+10078:       case (int)VarCode::z:
+10079:          *offset = (int)((char*)&sides[0].zc - (char*)sides);
 10080:          *sizeType = sizeof(double);
 10081:          break;
-10082:       case (int)VarCode::kb:
-10083:          *offset = (int)((char*)&sides[0].kb - (char*)sides);
-10084:          *sizeType = sizeof(int);
-10085:          break;
-10086:       case (int)VarCode::isdry:
-10087:          *offset = (int)((char*)&sides[0].isDry - (char*)sides);
-10088:          *sizeType = sizeof(int);
-10089:          break;            
-10090:       // case (int)VarCode::w:
-10091:       //    *offset = (int)((char*)&sides[0].w2 - (char*)sides);
-10092:       //    *sizeType = sizeof(double);
-10093:       //    break;
-10094:       case (int)VarCode::u:
-10095:          *offset = (int)((char*)&sides[0].u2[0].x - (char*)sides);
-10096:          *sizeType = sizeof(Vector2);
-10097:          break;   
-10098:       case (int)VarCode::btu:
-10099:          *offset = (int)((char*)&sides[0].btu[0].x - (char*)sides);
-10100:          *sizeType = sizeof(Vector2);
-10101:          break;          
-10102:       case (int)VarCode::U:
-10103:          *offset = (int)((char*)&sides[0].U.x - (char*)sides);
-10104:          *sizeType = sizeof(Vector2);
-10105:          break;
-10106:       case (int)VarCode::gradETP:
-10107:          *offset = (int)((char*)&sides[0].gradETP.x - (char*)sides);
+10082:       // case (int)VarCode::depth:
+10083:       //    *offset = (int)((char*)&sides[0].depth - (char*)sides);
+10084:       //    *sizeType = sizeof(double);
+10085:       //    break;         
+10086:       case (int)VarCode::x:
+10087:          *offset = (int)((char*)&sides[0].center.x - (char*)sides);
+10088:          *sizeType = sizeof(Vector2);
+10089:          break;
+10090:       case (int)VarCode::len:
+10091:          *offset = (int)((char*)&sides[0].len - (char*)sides);
+10092:          *sizeType = sizeof(double);
+10093:          break;
+10094:       case (int)VarCode::kb:
+10095:          *offset = (int)((char*)&sides[0].kb - (char*)sides);
+10096:          *sizeType = sizeof(int);
+10097:          break;
+10098:       case (int)VarCode::isdry:
+10099:          *offset = (int)((char*)&sides[0].isDry - (char*)sides);
+10100:          *sizeType = sizeof(int);
+10101:          break;            
+10102:       // case (int)VarCode::w:
+10103:       //    *offset = (int)((char*)&sides[0].w2 - (char*)sides);
+10104:       //    *sizeType = sizeof(double);
+10105:       //    break;
+10106:       case (int)VarCode::u:
+10107:          *offset = (int)((char*)&sides[0].u2[0].x - (char*)sides);
 10108:          *sizeType = sizeof(Vector2);
-10109:          break;
-10110:       case (int)VarCode::gradPr:
-10111:          *offset = (int)((char*)&sides[0].gradPr.x - (char*)sides);
+10109:          break;   
+10110:       case (int)VarCode::btu:
+10111:          *offset = (int)((char*)&sides[0].btu[0].x - (char*)sides);
 10112:          *sizeType = sizeof(Vector2);
-10113:          break;
-10114:       case (int)VarCode::gradEta1:
-10115:          *offset = (int)((char*)&sides[0].gradEta1.x - (char*)sides);
+10113:          break;          
+10114:       case (int)VarCode::U:
+10115:          *offset = (int)((char*)&sides[0].U.x - (char*)sides);
 10116:          *sizeType = sizeof(Vector2);
 10117:          break;
-10118:       case (int)VarCode::gradEta2:
-10119:          *offset = (int)((char*)&sides[0].gradEta2.x - (char*)sides);
+10118:       case (int)VarCode::gradETP:
+10119:          *offset = (int)((char*)&sides[0].gradETP.x - (char*)sides);
 10120:          *sizeType = sizeof(Vector2);
 10121:          break;
-10122:       // case (int)VarCode::ghat:
-10123:       //    *offset = (int)((char*)&sides[0].ghat.x - (char*)sides);
-10124:       //    *sizeType = sizeof(Vector2);
-10125:       //    break;   
-10126:       case (int)VarCode::hhat:
-10127:          *offset = (int)((char*)&sides[0].hhat - (char*)sides);
+10122:       case (int)VarCode::gradPr:
+10123:          *offset = (int)((char*)&sides[0].gradPr.x - (char*)sides);
+10124:          *sizeType = sizeof(Vector2);
+10125:          break;
+10126:       case (int)VarCode::gradEta1:
+10127:          *offset = (int)((char*)&sides[0].gradEta1.x - (char*)sides);
 10128:          *sizeType = sizeof(Vector2);
-10129:          break;      
-10130:       case (int)VarCode::chi:
-10131:          *offset = (int)((char*)&sides[0].chi - (char*)sides);
-10132:          *sizeType = sizeof(double);
+10129:          break;
+10130:       case (int)VarCode::gradEta2:
+10131:          *offset = (int)((char*)&sides[0].gradEta2.x - (char*)sides);
+10132:          *sizeType = sizeof(Vector2);
 10133:          break;
-10134:       case (int)VarCode::n1:
-10135:          *offset = (int)((char*)&sides[0].n1 - (char*)sides);
-10136:          *sizeType = sizeof(Node);
-10137:          break;
-10138:       case (int)VarCode::n2:
-10139:          *offset = (int)((char*)&sides[0].n2 - (char*)sides);
-10140:          *sizeType = sizeof(Node);
-10141:          break;                   
-10142:       default:
-10143:          *offset = -1;
-10144:    }
-10145: }
-10146: 
-10147: 
-10148: extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset, int *sizeNode, int *sizeType) {
-10149:    Node *nodes = mesh->localNodeData;
-10150: 
-10151:    *addr = nodes;
-10152:    *sizeNode = sizeof(Node);
-10153: 
-10154:    switch (varCode) {
-10155:       case (int)VarCode::depth:
-10156:          *offset = (int)((char*)&nodes[0].depth - (char*)nodes);
-10157:          *sizeType = sizeof(double);
-10158:          break;
-10159:       case (int)VarCode::eta:
-10160:          *offset = (int)((char*)&nodes[0].eta2 - (char*)nodes);
-10161:          *sizeType = sizeof(double);
-10162:          break;
-10163:       case (int)VarCode::x:
-10164:          *offset = (int)((char*)&nodes[0].p.x - (char*)nodes);
-10165:          *sizeType = sizeof(Vector2);
-10166:          break;
-10167:       case (int)VarCode::z:
-10168:          *offset = (int)((char*)&nodes[0].z - (char*)nodes);
+10134:       // case (int)VarCode::ghat:
+10135:       //    *offset = (int)((char*)&sides[0].ghat.x - (char*)sides);
+10136:       //    *sizeType = sizeof(Vector2);
+10137:       //    break;   
+10138:       case (int)VarCode::hhat:
+10139:          *offset = (int)((char*)&sides[0].hhat - (char*)sides);
+10140:          *sizeType = sizeof(Vector2);
+10141:          break;      
+10142:       case (int)VarCode::chi:
+10143:          *offset = (int)((char*)&sides[0].chi - (char*)sides);
+10144:          *sizeType = sizeof(double);
+10145:          break;
+10146:       case (int)VarCode::n1:
+10147:          *offset = (int)((char*)&sides[0].n1 - (char*)sides);
+10148:          *sizeType = sizeof(Node);
+10149:          break;
+10150:       case (int)VarCode::n2:
+10151:          *offset = (int)((char*)&sides[0].n2 - (char*)sides);
+10152:          *sizeType = sizeof(Node);
+10153:          break;                   
+10154:       default:
+10155:          *offset = -1;
+10156:    }
+10157: }
+10158: 
+10159: 
+10160: extern "C" __global__ void getNodeVarAddr(int varCode, void **addr, int *offset, int *sizeNode, int *sizeType) {
+10161:    Node *nodes = mesh->localNodeData;
+10162: 
+10163:    *addr = nodes;
+10164:    *sizeNode = sizeof(Node);
+10165: 
+10166:    switch (varCode) {
+10167:       case (int)VarCode::depth:
+10168:          *offset = (int)((char*)&nodes[0].depth - (char*)nodes);
 10169:          *sizeType = sizeof(double);
 10170:          break;
-10171:       case (int)VarCode::kb:
-10172:          *offset = (int)((char*)&nodes[0].kb - (char*)nodes);
-10173:          *sizeType = sizeof(int);
+10171:       case (int)VarCode::eta:
+10172:          *offset = (int)((char*)&nodes[0].eta2 - (char*)nodes);
+10173:          *sizeType = sizeof(double);
 10174:          break;
-10175:       case (int)VarCode::isdry:
-10176:          *offset = (int)((char*)&nodes[0].isDry - (char*)nodes);
-10177:          *sizeType = sizeof(int);
-10178:          break;         
-10179:       case (int)VarCode::w:
-10180:          *offset = (int)((char*)&nodes[0].w2 - (char*)nodes);
+10175:       case (int)VarCode::x:
+10176:          *offset = (int)((char*)&nodes[0].p.x - (char*)nodes);
+10177:          *sizeType = sizeof(Vector2);
+10178:          break;
+10179:       case (int)VarCode::z:
+10180:          *offset = (int)((char*)&nodes[0].z - (char*)nodes);
 10181:          *sizeType = sizeof(double);
 10182:          break;
-10183:       case (int)VarCode::u:
-10184:          *offset = (int)((char*)&nodes[0].u2[0].x - (char*)nodes);
-10185:          *sizeType = sizeof(Vector2);
-10186:          break;  
-10187:       case (int)VarCode::u_air:
-10188:          *offset = (int)((char*)&nodes[0].u_air - (char*)nodes);
-10189:          *sizeType = sizeof(Vector2);
-10190:          break;
-10191:       default:
-10192:          *offset = -1;    
-10193:    }  
-10194:    
-10195: }
-10196: 
-10197: 
-10198: 
-10199: 
-10200: extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
-10201:    // Get the value of a variable from an side
-10202:    // varName is the name of the variable to get
-10203:    // var is the array to store the value
-10204:    // k is the vertical level index of the variable to get
-10205:    SIDE_BND(sideBnd);   
-10206: 
-10207:    int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-1;
-10208:    if (sideBnd->segment->isLand) idx = -7;
+10183:       case (int)VarCode::kb:
+10184:          *offset = (int)((char*)&nodes[0].kb - (char*)nodes);
+10185:          *sizeType = sizeof(int);
+10186:          break;
+10187:       case (int)VarCode::isdry:
+10188:          *offset = (int)((char*)&nodes[0].isDry - (char*)nodes);
+10189:          *sizeType = sizeof(int);
+10190:          break;         
+10191:       case (int)VarCode::w:
+10192:          *offset = (int)((char*)&nodes[0].w2 - (char*)nodes);
+10193:          *sizeType = sizeof(double);
+10194:          break;
+10195:       case (int)VarCode::u:
+10196:          *offset = (int)((char*)&nodes[0].u2[0].x - (char*)nodes);
+10197:          *sizeType = sizeof(Vector2);
+10198:          break;  
+10199:       case (int)VarCode::u_air:
+10200:          *offset = (int)((char*)&nodes[0].u_air - (char*)nodes);
+10201:          *sizeType = sizeof(Vector2);
+10202:          break;
+10203:       default:
+10204:          *offset = -1;    
+10205:    }  
+10206:    
+10207: }
+10208: 
 10209: 
-10210:    if      (varCode == (int)VarCode::idx     && k == -1)   var[idx_side_bnd] = idx;
-10211:    else if (varCode == (int)VarCode::ifltype && k == -1)   var[idx_side_bnd] = (sideBnd->segment!=nullptr)?sideBnd->segment->ifltype:-1.1;
-10212: 
-10213: }
+10210: 
+10211: 
+10212: extern "C" __global__ void getSideBndVar(int varCode, double *var, int k = -1) {
+10213:    // Get the value of a variable from an side
+10214:    // varName is the name of the variable to get
+10215:    // var is the array to store the value
+10216:    // k is the vertical level index of the variable to get
+10217:    SIDE_BND(sideBnd);   
+10218: 
+10219:    int idx = sideBnd->side!=nullptr?sideBnd->side->idx:-1;
+10220:    if (sideBnd->segment->isLand) idx = -7;
+10221: 
+10222:    if      (varCode == (int)VarCode::idx     && k == -1)   var[idx_side_bnd] = idx;
+10223:    else if (varCode == (int)VarCode::ifltype && k == -1)   var[idx_side_bnd] = (sideBnd->segment!=nullptr)?sideBnd->segment->ifltype:-1.1;
+10224: 
+10225: }

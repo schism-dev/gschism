@@ -87,7 +87,7 @@ def computeTransport(dt: float):
         cufunc.horizontalAdvectionUpdate(dtb)
         remaining_dt -= dtb
 
-    # cufunc.verticalAdvectionUpdate(dt)
+    cufunc.verticalAdvectionUpdate(dt)
     # cufunc.verticalDiffusionUpdate(dt)
     # Update the tracers at the nodes from the elements
     cufunc.nodalTracerUpdate()

@@ -6745,18 +6745,30 @@ __global__ void nodalTracerUpdate(void) {
 
       for (int j = 0; j < node->numElements; j++) {
          const Element *elem = node->elements[j];
-         if (elem->isDry || k <= elem->kb) continue;
+         if (elem->isDry) continue;
+
+         // Element value at whole level kin (Fortran swild98): prisms kin and kin+1 are
+         // interpolated linearly in z between their centers; surface takes the top prism,
+         // the bed takes the bottom prism.
+         const int kb  = elem->kb;
+         const int kin = max(k, kb);
+         int kLo = kin, kHi = kin + 1;
+         double zrat = 0.0;  // Weight of prism kLo
+
+         if      (kin == ivrt) { kLo = ivrt;   kHi = ivrt; }
+         else if (kin == kb)   { kLo = kb + 1; kHi = kb + 1; }
+         else zrat = (elem->z[kin + 1] - elem->z[kin]) / (elem->z[kin + 1] - elem->z[kin - 1]);
 
          const double A = elem->area;
          for (int itr = 0; itr < ntracers; itr++)
-            sum.tracer[itr] += A * elem->tracers[k].tracer[itr];
+            sum.tracer[itr] += A * ((1.0 - zrat)*elem->tracers[kHi].tracer[itr] + zrat*elem->tracers[kLo].tracer[itr]);
          sumA += A;
       }
 
       if (sumA == 0.0) continue;
-      const double inv = 1.0 / sumA;
+      const double invsumA = 1.0/sumA;
       for (int itr = 0; itr < ntracers; itr++)
-         node->tracers[k].tracer[itr] = inv * sum.tracer[itr];
+         node->tracers[k].tracer[itr] = invsumA * sum.tracer[itr];
    }
 }
 
