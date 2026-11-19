@@ -315,6 +315,10 @@ def schism_step(it: int, namelist, bctides, sflux, solver):
 
     cufunc.ul0UpdateSides2()  # iths XXXXXXXX
 
+    # Density
+    cufunc.computeNodeDensity()
+    cufunc.computeElemDensity()
+
     # Adjust mass after level change
     # XXXXXXXXX IMPLEMENT THIS
 

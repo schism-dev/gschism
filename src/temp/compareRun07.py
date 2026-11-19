@@ -12,6 +12,8 @@ snaps 10 points spread over the domain to the nearest grid nodes, and writes:
     compare<RUN>_wvel.png       w profiles, same layout
     compare<RUN>_salinity.png   salinity profiles, same layout (skipped if either run
                                 has no salinity_1.nc)
+    compare<RUN>_density.png    water density profiles, same layout (skipped if either run
+                                has no waterDensity_1.nc)
 
 CPU  : .../<RUN>/outputs
 GPU  : .../<RUN>/gpuoutput
@@ -133,6 +135,12 @@ def main():
         gpuS, sGvar = openVar(GPU_DIR, "salinity_1.nc", "salinity")
     else:
         print("salinity_1.nc missing in CPU or GPU output: salinity skipped")
+    hasRho = all(os.path.exists(os.path.join(d, "waterDensity_1.nc")) for d in (CPU_DIR, GPU_DIR))
+    if hasRho:
+        cpuR, rCvar = openVar(CPU_DIR, "waterDensity_1.nc", "waterDensity")
+        gpuR, rGvar = openVar(GPU_DIR, "waterDensity_1.nc", "waterDensity")
+    else:
+        print("waterDensity_1.nc missing in CPU or GPU output: density skipped")
 
     botC = np.array(cpu2d["bottom_index_node"][:])[nodes]
     botG = np.array(gpu2d["bottom_index_node"][:])[nodes]
@@ -147,6 +155,8 @@ def main():
     wC, wG = readAt(wCvar), readAt(wGvar)
     if hasSalt:
         sC, sG = readAt(sCvar), readAt(sGvar)
+    if hasRho:
+        rC, rG = readAt(rCvar), readAt(rGvar)
     wetC = np.array([wetMask(z, botC) for z in zC])
     wetG = np.array([wetMask(z, botG) for z in zG])
 
@@ -209,6 +219,11 @@ def main():
                    "salinity", RUN + " salinity profiles", PREFIX + "_salinity.png", minXMax=0.01)
         cpuS.close()
         gpuS.close()
+    if hasRho:
+        profileFig([(rC, rG, cpuStyle, gpuStyle, "CPU", "GPU")],
+                   "density (kg/m^3)", RUN + " water density profiles", PREFIX + "_density.png")
+        cpuR.close()
+        gpuR.close()
 
     for ds in (cpu2d, gpu2d, cpuZ, gpuZ, cpuU, gpuU, cpuV, gpuV, cpuW, gpuW):
         ds.close()

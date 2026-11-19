@@ -144,6 +144,12 @@ constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-compone
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
 constexpr double rho0 = 1000; // [kg/m^3]
+
+constexpr int    ieos_type = 0; // EOS: 0 = UNESCO 1980 (T,S[,p]); 1 = linear in T only
+constexpr int    ieos_pres = 0; // Only for ieos_type=0: 1 = include pressure (compressibility)
+constexpr double eos_a     = -0.1;     // Linear EOS slope [kg/m^3/C], <= 0
+constexpr double eos_b     = 1001;     // Linear EOS intercept [kg/m^3]
+
 constexpr double dtb_min = 10; 
 constexpr double dtb_max = 30; 
 constexpr double velmin_btrack = 0.0001; // Minimum velocity for backtracking (m/s)
@@ -161,4 +167,4 @@ constexpr double dt = 300;  // Time step  XXX
 
 constexpr double h0 = 0.01;  // Minimum water depth for wetting and drying [m]
 
-enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, dfh=15, dfv=16, tke=17, mxl=18, island=19, ifltype=20, elbc=21, isdry=22, eta=23, area=24, qel=25, depth=26, radius=27, len=28, lonlat=29, kb=30, n1=31, n2=32, idx=33, htot=34, gradPr=35, gradEta1=36, gradEta2=37, gradETP=38, FaceIndices=39, u_air=40, outputCoords=41, temp=42, salt=43}; // Var codes for getElementVar, getNodeVar...
+enum class VarCode {x=0, z=1, u=2, w=3, U=4, nx=5, ny=6, hhat=7, ghat=8, chi=9, ssign=10, btu=11, bcc=12, uth=13, ubc=14, dfh=15, dfv=16, tke=17, mxl=18, island=19, ifltype=20, elbc=21, isdry=22, eta=23, area=24, qel=25, depth=26, radius=27, len=28, lonlat=29, kb=30, n1=31, n2=32, idx=33, htot=34, gradPr=35, gradEta1=36, gradEta2=37, gradETP=38, FaceIndices=39, u_air=40, outputCoords=41, temp=42, salt=43, rho=44}; // Var codes for getElementVar, getNodeVar...

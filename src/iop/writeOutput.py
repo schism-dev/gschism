@@ -25,6 +25,7 @@ dataTke = None
 dataMxl = None
 dataTemp = None
 dataSalt = None
+dataRho = None
 fileNum = 0
 outputTime = 0.0
 
@@ -49,7 +50,7 @@ def initializeOutput(basePath, numNodes, numElements, numSides, numLayers, nodeS
 
 def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     # Write the output files
-    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt, fileNum, sizeNode, outputTime
+    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt, dataRho, fileNum, sizeNode, outputTime
     
 
     ihfskip = core.ihfskip
@@ -73,11 +74,12 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
             dataMxl.close()
             dataTemp.close()
             dataSalt.close()
+            dataRho.close()
 
         fileNum += 1
 
         ifile=(it-1)/ihfskip+1
-        dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
+        dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt, dataRho = createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt)
 
 
     if dataC is None:
@@ -232,6 +234,12 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     salt_var = dataSalt.variables['salinity']
     salt_var[idxTime, :, :] = salt_cpu.T
     del salt_cpu
+
+    rho_cpu = dtoh.getNodeVar("rho")
+    rho_cpu[mask_above_kb] = np.nan
+    rho_var = dataRho.variables['waterDensity']
+    rho_var[idxTime, :, :] = rho_cpu.T
+    del rho_cpu
    
 
     time_var = dataC.variables['time']
@@ -267,6 +275,9 @@ def writeOutput(dtoh: DeviceToHost, it: int, core, opt):
     time_var = dataSalt.variables['time']
     time_var[idxTime] = it*dt
 
+    time_var = dataRho.variables['time']
+    time_var[idxTime] = it*dt
+
     outputTime += time.perf_counter()
 
 
@@ -280,7 +291,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     The data variable is stored in the global variable data.
     """
 
-    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt
+    global dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt, dataRho
     
     filename = 'out2d_%i.nc' % fileNum
     filenameU = 'horizontalVelX_%i.nc' % fileNum
@@ -293,6 +304,7 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     filenameMxl = 'mixingLength_%i.nc' % fileNum
     filenameTemp = 'temperature_%i.nc' % fileNum
     filenameSalt = 'salinity_%i.nc' % fileNum
+    filenameRho = 'waterDensity_%i.nc' % fileNum
 
     isGeographic = getattr(opt, "ics", 1) == 2
 
@@ -344,6 +356,10 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     if os.path.exists(filepathSalt):
         os.remove(filepathSalt)
 
+    filepathRho = os.path.join(path, filenameRho)
+    if os.path.exists(filepathRho):
+        os.remove(filepathRho)
+
     # Create the NetCDF files
     dataC = nc.Dataset(filepath,  "w", format="NETCDF4")
     dataU = nc.Dataset(filepathU, "w", format="NETCDF4")
@@ -356,9 +372,10 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     dataMxl = nc.Dataset(filepathMxl, "w", format="NETCDF4")
     dataTemp = nc.Dataset(filepathTemp, "w", format="NETCDF4")
     dataSalt = nc.Dataset(filepathSalt, "w", format="NETCDF4")
+    dataRho = nc.Dataset(filepathRho, "w", format="NETCDF4")
     
     # Add dimensions to the file
-    for data in [dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt]:
+    for data in [dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt, dataRho]:
         data.createDimension('nSCHISM_hgrid_node',          nNodes)
         data.createDimension('nSCHISM_hgrid_face',          nElements)
         data.createDimension('nSCHISM_hgrid_edge',          nSides)
@@ -677,5 +694,18 @@ def createNetCDFFileHeaders(fileNum, nNodes, nElements, nSides, nLayers, opt):
     salinity.mesh = "SCHISM_hgrid"
     salinity.missing_value = cp.float32(9.96921e36)
 
+    waterDensity = dataRho.createVariable(
+        'waterDensity', 'f4',
+        ('time', 'nSCHISM_hgrid_node', 'nSCHISM_vgrid_layers'),
+        chunksizes=(1, nNodes, nLayers),
+        **paramsCompression,
+    )
+    waterDensity.i23d = cp.int32(2)
+    waterDensity.coordinates = "SCHISM_hgrid_node_x SCHISM_hgrid_node_y"
+    waterDensity.location = "node"
+    waterDensity.grid_mapping = "crs"
+    waterDensity.mesh = "SCHISM_hgrid"
+    waterDensity.missing_value = cp.float32(9.96921e36)
+
     
-    return dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt
+    return dataC, dataU, dataV, dataW, dataZ, dataWElem, dataVisc, dataTke, dataMxl, dataTemp, dataSalt, dataRho

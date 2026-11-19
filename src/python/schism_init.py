@@ -98,6 +98,10 @@ def schism_init(core, opt):
         sys.exit()
         # levels1(0, 0)
 
+    # Initial density at nodes and elements
+    cufunc.computeNodeDensity()
+    cufunc.computeElemDensity()
+
     return int(ntime.item()), int(nrec)
 
 

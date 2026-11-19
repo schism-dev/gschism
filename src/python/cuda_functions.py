@@ -74,6 +74,8 @@ verticalAdvectionUpdate = None
 verticalDiffusionUpdate = None
 nodalTracerUpdate = None
 minTransportDtKernel = None
+computeNodeDensity = None
+computeElemDensity = None
 
 getSideBndVar = None
 getElementVarAddr = None
@@ -147,6 +149,7 @@ def initializeCudaFunctions(sizes):
     global setupCoefficientMatrixAndRHS, rollUpElevation, computeHorGradientAtSide, solveMomentumEquations, applyMomentumBC, backtrackAllNodes, test
     global setupCGSolver, solverCopyResult, gatherBFromMesh, scatterXToMesh, ul0ComputeDryElements, ul0ComputeDryNodes
     global updateBedDeformation, shapiroFilter1, shapiroFilter2, computeHorizAdvecFluxes, horizontalAdvectionPrepare, horizontalAdvectionUpdate, verticalAdvectionUpdate, verticalDiffusionUpdate, nodalTracerUpdate, minTransportDtKernel
+    global computeNodeDensity, computeElemDensity
     global computeMatrixProductAndDotProducts, updateSolutionAndDotProducts, updateSearchDirection
     global initializeScalars, initializePreconditionedResidual, printMatrix, returnMatrix, returnX, returnB
     global ul0UpdateZCoords, ul0ComputeDryElements, ul0ComputeDryNodes, ul0UpdateRewettedNodes, ul0UpdateSides, ul0UpdateSides2
@@ -226,6 +229,8 @@ def initializeCudaFunctions(sizes):
         verticalDiffusionUpdate             = mod.get_function('verticalDiffusionUpdate',             sizes, kernel_type='elements')
         nodalTracerUpdate                   = mod.get_function('nodalTracerUpdate',                   sizes, kernel_type='nodes')
         minTransportDtKernel                = mod.get_function('minTransportDt',                      sizes, kernel_type='elements,onlycurrent')
+        computeNodeDensity                  = mod.get_function('computeNodeDensity',                  sizes, kernel_type='nodes')
+        computeElemDensity                  = mod.get_function('computeElemDensity',                  sizes, kernel_type='elements')
 
         printMatrix                         = mod.get_function('printMatrix',                         sizes, kernel_type='global')
         returnMatrix                        = mod.get_function('returnMatrix',                        sizes, kernel_type='global')

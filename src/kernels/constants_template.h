@@ -144,6 +144,12 @@ constexpr double rmaxvelx = rmaxvel;       // Maximum velocity for the x-compone
 constexpr double rmaxvely = rmaxvel*1.013; // Maximum velocity for the y-component
 
 constexpr double rho0 = __RHO0__; // [kg/m^3]
+
+constexpr int    ieos_type = __IEOS_TYPE__; // EOS: 0 = UNESCO 1980 (T,S[,p]); 1 = linear in T only
+constexpr int    ieos_pres = __IEOS_PRES__; // Only for ieos_type=0: 1 = include pressure (compressibility)
+constexpr double eos_a     = __EOS_A__;     // Linear EOS slope [kg/m^3/C], <= 0
+constexpr double eos_b     = __EOS_B__;     // Linear EOS intercept [kg/m^3]
+
 constexpr double dtb_min = __DTB_MIN__; 
 constexpr double dtb_max = __DTB_MAX__; 
 constexpr double velmin_btrack = __VELMIN_BTRACK__; // Minimum velocity for backtracking (m/s)

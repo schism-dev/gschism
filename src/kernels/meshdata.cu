@@ -1,5 +1,6 @@
 #include "constants.h"
 #include "meshdata.h"
+#include "eqstate.h"
 #include <cuda_runtime.h>
 
 
@@ -6772,6 +6773,44 @@ __global__ void nodalTracerUpdate(void) {
    }
 }
 
+__global__ void computeNodeDensity(void) {
+// Nodal density at whole levels from nodal T, S.
+// Dry nodes get the -99 sentinel. Below the bed, T,S are taken at level k (already extended
+// below kb) and the depth is clamped to the bed, z[max(k,kb)].
+   NODE(node);
+
+   if (node->isDry) {
+      for (int k = 0; k < nvrt; k++) node->rho[k] = -99.0;
+      return;
+   }
+
+   const int kb = node->kb;
+   for (int k = 0; k < nvrt; k++) {
+      const double temp = node->tracers[k].tracer[0];
+      const double salt = node->tracers[k].tracer[1];
+      node->rho[k] = eqstate(temp, salt, node->z[max(k, kb)]);
+   }
+}
+
+__global__ void computeElemDensity(void) {
+// Element (prism) density from element T,S (Fortran erho).
+// Dry elements get the -99 sentinel. Prisms at or below kb hold the kb+1 tracers (see the
+// transport update), and the depth is the whole level z[max(k,kb)], as in Fortran.
+   ELEM(elem);
+
+   if (elem->isDry) {
+      for (int k = 0; k < nvrt; k++) elem->rho[k] = -99.0;
+      return;
+   }
+
+   const int kb = elem->kb;
+   for (int k = 0; k < nvrt; k++) {
+      const double temp = elem->tracers[k].tracer[0];
+      const double salt = elem->tracers[k].tracer[1];
+      elem->rho[k] = eqstate(temp, salt, elem->z[max(k, kb)]);
+   }
+}
+
 
 __device__ __forceinline__ void atomicMinDouble(double *addr, double val) {
    unsigned long long *p = (unsigned long long *)addr;
@@ -7675,6 +7714,15 @@ extern "C" __global__ void getNodeVar(int varCode, void *res, int k) {
          else
             for (int lev = 0; lev < nvrt; lev++)
                out[lev] = node->tracers[lev].tracer[1];
+         break;
+      }
+      case (int)VarCode::rho: {
+         double *out = (double *)((char *)res + idx_node * nvrt * 8);
+         if (k >= 0)
+            out[0] = node->rho[k];
+         else
+            for (int lev = 0; lev < nvrt; lev++)
+               out[lev] = node->rho[lev];
          break;
       }
    }
